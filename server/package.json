@@ -1,0 +1,23 @@
+{
+  "name": "encore-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Encore — concert companion matching. Backend matching engine and API.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test 'test/*.test.js'",
+    "seed": "node src/db/seed.js",
+    "bench": "node bench/evaluate.js",
+    "bench:scale": "node bench/evaluate.js --scale"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  }
+}
