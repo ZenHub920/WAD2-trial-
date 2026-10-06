@@ -26,19 +26,26 @@ const big = args.has('--big');
 const db = getDb();
 const repos = createRepositories(db);
 
-if (args.has('--reset')) {
-  db.exec(`
-    DELETE FROM match_trace;
-    DELETE FROM match_results;
-    DELETE FROM match_rounds;
-    DELETE FROM attendance_feedback;
-    DELETE FROM seeker_requests;
-    DELETE FROM parties;
-    DELETE FROM blocks;
-    DELETE FROM concerts;
-    DELETE FROM users;
-  `);
-  console.log('Cleared existing data.');
+// The seed is a demo fixture, not a migration: it always starts from an empty
+// database so that `npm run seed` is idempotent and safe to re-run. Without this,
+// a second run dies on the concerts' UNIQUE primary keys.
+// (`--reset` is still accepted for backwards compatibility; it is now the default.)
+const existing = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
+
+db.exec(`
+  DELETE FROM match_trace;
+  DELETE FROM match_results;
+  DELETE FROM match_rounds;
+  DELETE FROM attendance_feedback;
+  DELETE FROM seeker_requests;
+  DELETE FROM parties;
+  DELETE FROM blocks;
+  DELETE FROM concerts;
+  DELETE FROM users;
+`);
+
+if (existing > 0) {
+  console.log(`Cleared existing data (${existing} users).`);
 }
 
 const CONCERTS = [
