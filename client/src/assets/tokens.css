@@ -1,0 +1,140 @@
+/**
+ * Design tokens.
+ *
+ * Everything visual in the app resolves to a value defined here. Components never
+ * hard-code a colour, a radius or a spacing step, which is what keeps the interface
+ * reading as one system rather than a pile of screens.
+ *
+ * The palette is built around a dark stage with one hot accent — the visual logic
+ * of a venue: near-black room, a single strong light, warm secondary wash.
+ */
+
+:root {
+  /* ---- Colour: surfaces -------------------------------------------------- */
+  --ink-900: #08070c;   /* page */
+  --ink-850: #0d0c13;   /* raised page */
+  --ink-800: #12111a;   /* card */
+  --ink-750: #191822;   /* card hover */
+  --ink-700: #21202c;   /* input, well */
+  --ink-600: #2e2d3b;   /* border strong */
+  --ink-500: #3d3c4d;   /* border */
+
+  /* ---- Colour: text ------------------------------------------------------ */
+  --text-100: #f5f3ff;  /* headings */
+  --text-200: #d7d4e4;  /* body */
+  --text-300: #a09cbe;  /* secondary */
+  --text-400: #6f6c8f;  /* muted, captions */
+
+  /* ---- Colour: accent ---------------------------------------------------- */
+  --accent-300: #ff9ecb;
+  --accent-400: #ff5fa2;
+  --accent-500: #f0247a;  /* primary accent */
+  --accent-600: #c4145e;
+  --accent-glow: rgba(240, 36, 122, 0.35);
+
+  --cyan-400: #58e0ff;   /* algorithm: proposals, links in data views */
+  --cyan-500: #1fc8ef;
+  --amber-400: #ffc457;  /* algorithm: evictions, warnings */
+  --amber-500: #f0a01c;
+  --mint-400: #4ce0b3;   /* algorithm: accepted, stable */
+  --mint-500: #17c496;
+  --rose-400: #ff7a7a;   /* algorithm: rejected, blocking pairs */
+  --rose-500: #ef4444;
+
+  /* ---- Typography -------------------------------------------------------- */
+  --font-display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* A 1.25 modular scale, clamped so the page reflows without media queries. */
+  --step--2: clamp(0.69rem, 0.68rem + 0.06vw, 0.72rem);
+  --step--1: clamp(0.83rem, 0.81rem + 0.11vw, 0.9rem);
+  --step-0:  clamp(1rem, 0.96rem + 0.18vw, 1.13rem);
+  --step-1:  clamp(1.2rem, 1.14rem + 0.29vw, 1.41rem);
+  --step-2:  clamp(1.44rem, 1.35rem + 0.45vw, 1.76rem);
+  --step-3:  clamp(1.73rem, 1.59rem + 0.68vw, 2.2rem);
+  --step-4:  clamp(2.07rem, 1.88rem + 0.99vw, 2.75rem);
+  --step-5:  clamp(2.49rem, 2.2rem + 1.42vw, 3.43rem);
+  --step-6:  clamp(2.99rem, 2.58rem + 2.01vw, 4.29rem);
+
+  /* ---- Spacing: a 4px base, named so intent survives refactoring --------- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+  --space-9: 6rem;
+  --space-10: 8rem;
+
+  /* ---- Radii, borders, shadows ------------------------------------------ */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+
+  --border-hairline: 1px solid var(--ink-600);
+  --border-soft: 1px solid var(--ink-500);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 24px -8px rgba(0, 0, 0, 0.7);
+  --shadow-lg: 0 24px 64px -16px rgba(0, 0, 0, 0.85);
+  --shadow-accent: 0 8px 32px -8px var(--accent-glow);
+
+  /* ---- Motion ------------------------------------------------------------ */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-fast: 140ms;
+  --dur-base: 240ms;
+  --dur-slow: 420ms;
+
+  /* ---- Layout ------------------------------------------------------------ */
+  --measure: 68ch;          /* readable line length for prose */
+  --container: 1180px;
+  --container-wide: 1440px;
+  --gutter: var(--space-5);
+  --header-height: 68px;
+}
+
+/**
+ * Light theme.
+ *
+ * Not an inversion: the accent darkens so it still passes contrast on white,
+ * and the algorithm hues shift toward their 500/600 steps for the same reason.
+ */
+:root[data-theme='light'] {
+  --ink-900: #faf9fc;
+  --ink-850: #f4f2f8;
+  --ink-800: #ffffff;
+  --ink-750: #f7f5fb;
+  --ink-700: #efedf5;
+  --ink-600: #ddd9e8;
+  --ink-500: #c8c3d8;
+
+  --text-100: #14121d;
+  --text-200: #2f2c40;
+  --text-300: #5b5678;
+  --text-400: #837ea0;
+
+  --accent-500: #d4076a;
+  --accent-600: #a8004f;
+  --accent-glow: rgba(212, 7, 106, 0.18);
+
+  --cyan-400: #0e9fc4;
+  --amber-400: #b87407;
+  --mint-400: #09916c;
+  --rose-400: #d33a3a;
+
+  --shadow-sm: 0 1px 2px rgba(20, 18, 29, 0.06);
+  --shadow-md: 0 8px 24px -10px rgba(20, 18, 29, 0.18);
+  --shadow-lg: 0 24px 64px -20px rgba(20, 18, 29, 0.22);
+}
+
+@media (max-width: 640px) {
+  :root {
+    --gutter: var(--space-4);
+  }
+}
