@@ -1,9 +1,12 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { computed, ref, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
 import SiteHeader from './components/SiteHeader.vue';
 import SiteFooter from './components/SiteFooter.vue';
 
 const theme = ref('dark');
+const route = useRoute();
+const hasFixedHeader = computed(() => route.name === 'marketplace' || route.name === 'list-ticket');
 
 onMounted(() => {
   const stored = localStorage.getItem('encore-theme');
@@ -23,7 +26,7 @@ function toggleTheme() {
 <template>
   <a class="skip-link" href="#main">Skip to content</a>
   <SiteHeader :theme="theme" @toggle-theme="toggleTheme" />
-  <main id="main">
+  <main id="main" :class="{ 'main--with-fixed-header': hasFixedHeader }">
     <RouterView v-slot="{ Component }">
       <Transition name="page" mode="out-in">
         <component :is="Component" />
@@ -39,6 +42,10 @@ function toggleTheme() {
   transition:
     opacity var(--dur-base) var(--ease-out),
     transform var(--dur-base) var(--ease-out);
+}
+
+.main--with-fixed-header {
+  padding-top: var(--header-height);
 }
 
 .page-enter-from {

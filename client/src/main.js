@@ -11,6 +11,8 @@ import AlgorithmView from './views/AlgorithmView.vue';
 import RoundView from './views/RoundView.vue';
 import MethodView from './views/MethodView.vue';
 import LoginView from './views/LoginView.vue';
+import MarketplaceView from './views/MarketplaceView.vue';
+import ListingView from './views/ListingView.vue';
 import NotFoundView from './views/NotFoundView.vue';
 
 const router = createRouter({
@@ -29,6 +31,8 @@ const router = createRouter({
     { path: '/rounds/:id', name: 'round', component: RoundView, props: true },
     { path: '/method', name: 'method', component: MethodView, meta: { title: 'Method' } },
     { path: '/login', name: 'login', component: LoginView, meta: { title: 'Sign in' } },
+    { path: '/marketplace', name: 'marketplace', component: MarketplaceView, meta: { title: 'Ticket Market' } },
+    { path: '/list-ticket', name: 'list-ticket', component: ListingView, meta: { title: 'List a Ticket' } },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView },
   ],
   scrollBehavior(to, from, saved) {
