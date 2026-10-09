@@ -6,7 +6,7 @@ import SiteFooter from './components/SiteFooter.vue';
 
 const theme = ref('dark');
 const route = useRoute();
-const hasFixedHeader = computed(() => route.name === 'marketplace' || route.name === 'list-ticket');
+const hasFixedHeader = computed(() => ['marketplace', 'list-ticket', 'my-listings', 'ticket-detail'].includes(route.name));
 
 onMounted(() => {
   const stored = localStorage.getItem('encore-theme');

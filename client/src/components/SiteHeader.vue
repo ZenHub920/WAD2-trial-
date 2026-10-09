@@ -1,5 +1,6 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import { currentUser, refreshSession, signOut } from '../auth.js';
 
 defineProps({ theme: { type: String, default: 'dark' } });
@@ -9,7 +10,11 @@ const scrolled = ref(false);
 const menuOpen = ref(false);
 const route = useRoute();
 const isMarketplace = computed(() => route.name === 'marketplace');
-const isLoggedIn = computed(() => route.name === 'marketplace' || route.name === 'list-ticket');
+const homeLink = computed(() => (currentUser.value ? '/marketplace' : '/'));
+const isLoggedIn = computed(() =>
+  Boolean(currentUser.value)
+  || ['marketplace', 'list-ticket', 'my-listings', 'ticket-detail'].includes(route.name),
+);
 
 function onScroll() {
   scrolled.value = window.scrollY > 12;
@@ -34,7 +39,7 @@ async function logOut() {
 <template>
   <header class="header" :class="{ 'header--scrolled': scrolled, 'header--fixed': isLoggedIn }">
     <div class="header__inner container container--wide">
-      <RouterLink to="/" class="brand" @click="menuOpen = false">
+      <RouterLink :to="homeLink" class="brand" @click="menuOpen = false">
         <span class="brand__mark" aria-hidden="true">
           <span class="brand__bar" v-for="n in 4" :key="n" :style="{ '--i': n }" />
         </span>
@@ -52,12 +57,11 @@ async function logOut() {
 
       <nav class="nav" :class="{ 'nav--open': menuOpen }" aria-label="Main">
         <template v-if="isLoggedIn">
-          <div v-if="isMarketplace" class="nav-market-tools">
-            <RouterLink to="/list-ticket" class="list-ticket-btn" @click="menuOpen = false">+ List a ticket</RouterLink>
-          </div>
+          <RouterLink to="/list-ticket" class="list-ticket-btn" @click="menuOpen = false">+ List a ticket</RouterLink>
           <RouterLink to="/marketplace" @click="menuOpen = false">KakiFinder</RouterLink>
           <RouterLink to="/marketplace" @click="menuOpen = false">Chat</RouterLink>
           <RouterLink to="/marketplace" @click="menuOpen = false">Profile</RouterLink>
+          <RouterLink to="/my-listings" class="my-listings-btn" @click="menuOpen = false">My listings</RouterLink>
         </template>
         <template v-else>
           <RouterLink to="/concerts" @click="menuOpen = false">Concerts</RouterLink>
@@ -171,33 +175,11 @@ async function logOut() {
   transition: color var(--dur-fast) var(--ease-out);
 }
 
-.nav a:not(.nav__cta)::after {
-  display: none;
-.nav a:not(.nav__cta)::after,
-.nav .signout-btn::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  height: 2px;
-  width: 100%;
-  background: var(--accent-500);
-  border-radius: 2px;
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform var(--dur-base) var(--ease-out);
-}
 
 .nav a:not(.nav__cta):hover,
 .nav a.router-link-active:not(.nav__cta),
 .nav .signout-btn:hover {
   color: var(--text-100);
-}
-
-.nav a.router-link-active:not(.nav__cta)::after,
-.nav a:not(.nav__cta):hover::after,
-.nav .signout-btn:hover::after {
-  transform: scaleX(1);
 }
 
 .theme-btn {
@@ -241,6 +223,23 @@ async function logOut() {
 
 .list-ticket-btn:hover {
   background: var(--accent-400);
+}
+
+.my-listings-btn {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--accent-500);
+  border-radius: var(--radius-pill);
+  color: var(--accent-300) !important;
+  font-size: var(--step--2) !important;
+  font-weight: 700 !important;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.my-listings-btn:hover,
+.my-listings-btn.router-link-active {
+  background: var(--accent-500);
+  color: white !important;
 }
 
 /* ---- Mobile ------------------------------------------------------------- */

@@ -9,6 +9,31 @@ export function createConcertController(repos) {
       res.json({ concerts: repos.concerts.listWithCounts() });
     },
 
+    create(req, res) {
+      const artist = typeof req.body?.artist === 'string' ? req.body.artist.trim() : '';
+      const venue = typeof req.body?.venue === 'string' ? req.body.venue.trim() : '';
+      const eventDate = typeof req.body?.event_date === 'string' ? req.body.event_date.trim() : '';
+      if (!artist) return res.status(400).json({ error: 'concert_title_required' });
+      if (!venue) return res.status(400).json({ error: 'venue_required' });
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) {
+        return res.status(400).json({ error: 'concert_date_required' });
+      }
+
+      try {
+        const concert = repos.concerts.create({
+          artist,
+          venue,
+          city: typeof req.body?.city === 'string' && req.body.city.trim()
+            ? req.body.city.trim()
+            : 'Singapore',
+          event_date: eventDate,
+        });
+        res.status(201).json({ concert });
+      } catch (err) {
+        res.status(409).json({ error: 'could_not_create_concert', detail: err.message });
+      }
+    },
+
     detail(req, res) {
       const concert = repos.concerts.findById(req.params.id);
       if (!concert) return res.status(404).json({ error: 'concert_not_found' });
@@ -42,6 +67,8 @@ export function createConcertController(repos) {
           capacity: p.capacity,
           section: p.section,
           spendBand: p.spend_band,
+          priceCents: p.price_cents,
+          imageData: p.image_data,
           arrivalPlan: p.arrival_plan,
           plans: p.plans,
           notes: p.notes,

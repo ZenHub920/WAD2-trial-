@@ -272,6 +272,34 @@ export function createPartyRepo(db) {
       return rows.map(mapParty);
     },
 
+    forHost(hostUserId) {
+      const rows = db.prepare(`
+        SELECT p.*, ${USER_COLUMNS('u', 'host_')},
+               c.id AS concert_id, c.artist, c.tour_name, c.venue, c.city, c.event_date
+        FROM parties p
+        JOIN users u ON u.id = p.host_user_id
+        JOIN concerts c ON c.id = p.concert_id
+        WHERE p.host_user_id = ?
+        ORDER BY p.created_at DESC
+      `).all(hostUserId);
+      return rows.map((row) => ({
+        ...mapParty(row),
+        concert: {
+          id: row.concert_id,
+          artist: row.artist,
+          tour_name: row.tour_name,
+          venue: row.venue,
+          city: row.city,
+          event_date: row.event_date,
+        },
+      }));
+    },
+
+    deleteOwned(id, hostUserId) {
+      return db.prepare('DELETE FROM parties WHERE id = ? AND host_user_id = ?')
+        .run(id, hostUserId).changes > 0;
+    },
+
     setStatus(id, status) {
       db.prepare('UPDATE parties SET status = ? WHERE id = ?').run(status, id);
     },
