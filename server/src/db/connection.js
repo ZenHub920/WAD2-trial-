@@ -7,7 +7,7 @@
  */
 
 import Database from 'better-sqlite3';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -19,6 +19,7 @@ export function getDb() {
   if (db) return db;
 
   const file = process.env.ENCORE_DB ?? join(here, '../../data/encore.db');
+  if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true });
   db = new Database(file === ':memory:' ? ':memory:' : file);
 
   db.pragma('journal_mode = WAL');
@@ -47,6 +48,10 @@ export function getDb() {
  * table rewrite belongs in a real migration tool, not here.
  */
 const ADDED_COLUMNS = [
+  ['concerts', 'source', 'TEXT'],
+  ['concerts', 'source_event_id', 'TEXT'],
+  ['concerts', 'official_url', 'TEXT'],
+  ['concerts', 'image_attribution', 'TEXT'],
   ['parties', 'min_size', 'INTEGER'],
   ['seeker_requests', 'linked_request_id', 'TEXT'],
   ['match_rounds', 'solver_id', 'TEXT'],
@@ -63,6 +68,8 @@ function migrate(target) {
     if (existing.some((c) => c.name === column)) continue;
     target.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
   }
+  target.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_concerts_source_event
+    ON concerts(source, source_event_id)`);
 }
 
 /** For tests: an isolated in-memory database with the schema applied. */
