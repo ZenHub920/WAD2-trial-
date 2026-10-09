@@ -1,49 +1,68 @@
 /**
- * Design tokens.
+ * Design tokens — Concert Kaki.
  *
  * Everything visual in the app resolves to a value defined here. Components never
  * hard-code a colour, a radius or a spacing step, which is what keeps the interface
  * reading as one system rather than a pile of screens.
  *
- * The palette is built around a dark stage with one hot accent — the visual logic
- * of a venue: near-black room, a single strong light, warm secondary wash.
+ * The palette comes from the Concert Kaki hi-fi prototype: a near-white lavender
+ * room, deep indigo ink, and a purple accent that carries every primary action.
+ * Because every screen already reads from these names, restyling the product is a
+ * change of VALUES here rather than a sweep through the views.
+ *
+ * Token NAMES are deliberately unchanged from the previous palette. `--ink-*` no
+ * longer means "dark" — it means "surface, in page-to-card order" — and keeping
+ * the names is what lets the existing concerts, rounds and method screens adopt
+ * the new look without being touched.
  */
 
 :root {
-  /* ---- Colour: surfaces -------------------------------------------------- */
-  --ink-900: #08070c;   /* page */
-  --ink-850: #0d0c13;   /* raised page */
-  --ink-800: #12111a;   /* card */
-  --ink-750: #191822;   /* card hover */
-  --ink-700: #21202c;   /* input, well */
-  --ink-600: #2e2d3b;   /* border strong */
-  --ink-500: #3d3c4d;   /* border */
+  /* ---- Colour: surfaces --------------------------------------------------
+   * Page is the off-white the prototype uses behind everything; cards are pure
+   * white so they lift off it without needing a heavy shadow. */
+  --ink-900: #fdfbff;   /* page */
+  --ink-850: #faf5ff;   /* raised page */
+  --ink-800: #ffffff;   /* card */
+  --ink-750: #faf5ff;   /* card hover */
+  --ink-700: #f6f2fb;   /* input, well */
+  --ink-600: #ebe7ef;   /* border strong */
+  --ink-500: #ddd6e8;   /* border */
 
-  /* ---- Colour: text ------------------------------------------------------ */
-  --text-100: #f5f3ff;  /* headings */
-  --text-200: #d7d4e4;  /* body */
-  --text-300: #a09cbe;  /* secondary */
-  --text-400: #6f6c8f;  /* muted, captions */
+  /* ---- Colour: text ------------------------------------------------------
+   * Headings and body are both indigo in the prototype — body is not grey, it
+   * is the same ink at a lighter weight. Secondary text is the slate. */
+  --text-100: #2f195f;  /* headings */
+  --text-200: #3a2a63;  /* body */
+  --text-300: #656f77;  /* secondary */
+  --text-400: #8b8f99;  /* muted, captions */
 
-  /* ---- Colour: accent ---------------------------------------------------- */
-  --accent-300: #ff9ecb;
-  --accent-400: #ff5fa2;
-  --accent-500: #f0247a;  /* primary accent */
-  --accent-600: #c4145e;
-  --accent-glow: rgba(240, 36, 122, 0.35);
+  /* ---- Colour: accent ----------------------------------------------------
+   * 600 is the button fill, 500 the selected-chip fill, 400 the interactive
+   * purple, 300 the orchid used for tints and highlights. */
+  --accent-300: #efc3f5;
+  --accent-400: #7353ba;
+  --accent-500: #4f378b;  /* primary accent */
+  --accent-600: #2f195f;
+  --accent-glow: rgba(79, 55, 139, 0.25);
 
-  --cyan-400: #58e0ff;   /* algorithm: proposals, links in data views */
-  --cyan-500: #1fc8ef;
-  --amber-400: #ffc457;  /* algorithm: evictions, warnings */
-  --amber-500: #f0a01c;
-  --mint-400: #4ce0b3;   /* algorithm: accepted, stable */
-  --mint-500: #17c496;
-  --rose-400: #ff7a7a;   /* algorithm: rejected, blocking pairs */
-  --rose-500: #ef4444;
+  /* Data hues for the algorithm views. Darkened from the originals so they
+     still pass contrast on a white card rather than glowing on black. */
+  --cyan-400: #0e7fa4;   /* algorithm: proposals, links in data views */
+  --cyan-500: #0b6c8c;
+  --amber-400: #a9690a;  /* algorithm: evictions, warnings */
+  --amber-500: #8c5607;
+  --mint-400: #0b8f6a;   /* algorithm: accepted, stable */
+  --mint-500: #077355;
+  --rose-400: #cf3b57;   /* algorithm: rejected, blocking pairs */
+  --rose-500: #b02a44;
 
-  /* ---- Typography -------------------------------------------------------- */
-  --font-display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
-  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* ---- Typography --------------------------------------------------------
+   * Nunito carries the product. Rancho is the wordmark face ONLY — it is a
+   * script, and setting headings in it would be illegible at small sizes, so
+   * it gets its own token that only the logo reaches for. */
+  --font-display: 'Nunito', 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'Nunito', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-script: 'Rancho', 'Bricolage Grotesque', cursive;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
   /* A 1.25 modular scale, clamped so the page reflows without media queries. */
@@ -69,19 +88,23 @@
   --space-9: 6rem;
   --space-10: 8rem;
 
-  /* ---- Radii, borders, shadows ------------------------------------------ */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
+  /* ---- Radii, borders, shadows ------------------------------------------
+   * The prototype's inputs and buttons are softer than the old dark theme's,
+   * so the mid steps grow. */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 26px;
   --radius-pill: 999px;
 
   --border-hairline: 1px solid var(--ink-600);
   --border-soft: 1px solid var(--ink-500);
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 8px 24px -8px rgba(0, 0, 0, 0.7);
-  --shadow-lg: 0 24px 64px -16px rgba(0, 0, 0, 0.85);
+  /* Shadows are tinted with the ink rather than pure black, which is what
+     stops a light UI's elevation reading as grey smudge. */
+  --shadow-sm: 0 1px 2px rgba(47, 25, 95, 0.06);
+  --shadow-md: 0 8px 24px -10px rgba(47, 25, 95, 0.18);
+  --shadow-lg: 0 24px 64px -20px rgba(47, 25, 95, 0.22);
   --shadow-accent: 0 8px 32px -8px var(--accent-glow);
 
   /* ---- Motion ------------------------------------------------------------
@@ -117,8 +140,8 @@
   /* Depth. Translucent layers read as glass only if the blur and the tint move
    * together, so they are defined as a pair rather than per-component. */
   --glass-blur: saturate(180%) blur(20px);
-  --glass-tint: rgba(13, 12, 19, 0.72);
-  --glass-edge: rgba(255, 255, 255, 0.08);
+  --glass-tint: rgba(253, 251, 255, 0.78);
+  --glass-edge: rgba(47, 25, 95, 0.08);
 
   /* ---- Layout ------------------------------------------------------------ */
   --measure: 68ch;          /* readable line length for prose */
@@ -126,48 +149,56 @@
   --container-wide: 1440px;
   --gutter: var(--space-5);
   --header-height: 68px;
+
+  /* The prototype is a phone app. `--app-width` is the width the shell clamps
+     to on a large screen so the product keeps its proportions instead of
+     stretching a 390px design across a desktop monitor. */
+  --app-width: 430px;
+  --tabbar-height: 64px;
 }
 
 /**
- * Light theme.
+ * Dark theme.
  *
- * Not an inversion: the accent darkens so it still passes contrast on white,
- * and the algorithm hues shift toward their 500/600 steps for the same reason.
+ * The original Encore stage palette, kept intact and moved behind an explicit
+ * opt-in. Nothing in the app depends on it any more, but the toggle still works
+ * and the algorithm views were tuned against these hues.
  */
-:root[data-theme='light'] {
-  --ink-900: #faf9fc;
-  --ink-850: #f4f2f8;
-  --ink-800: #ffffff;
-  --ink-750: #f7f5fb;
-  --ink-700: #efedf5;
-  --ink-600: #ddd9e8;
-  --ink-500: #c8c3d8;
+:root[data-theme='dark'] {
+  --ink-900: #08070c;
+  --ink-850: #0d0c13;
+  --ink-800: #12111a;
+  --ink-750: #191822;
+  --ink-700: #21202c;
+  --ink-600: #2e2d3b;
+  --ink-500: #3d3c4d;
 
-  --text-100: #14121d;
-  --text-200: #2f2c40;
-  --text-300: #5b5678;
-  --text-400: #837ea0;
+  --text-100: #f5f3ff;
+  --text-200: #d7d4e4;
+  --text-300: #a09cbe;
+  --text-400: #6f6c8f;
 
-  /* The 300 and 400 steps are TEXT colours on tinted pills and links. Left at
-     their dark-theme values they are pale pink on white and fail contrast, so
-     the light theme darkens them rather than inheriting. */
-  --accent-300: #a8004f;
-  --accent-400: #c4145e;
-  --accent-500: #d4076a;
-  --accent-600: #a8004f;
-  --accent-glow: rgba(212, 7, 106, 0.18);
+  --accent-300: #efc3f5;
+  --accent-400: #a685e8;
+  --accent-500: #8b63d6;
+  --accent-600: #6d44bd;
+  --accent-glow: rgba(139, 99, 214, 0.35);
 
-  --cyan-400: #0e9fc4;
-  --amber-400: #b87407;
-  --mint-400: #09916c;
-  --rose-400: #d33a3a;
+  --cyan-400: #58e0ff;
+  --cyan-500: #1fc8ef;
+  --amber-400: #ffc457;
+  --amber-500: #f0a01c;
+  --mint-400: #4ce0b3;
+  --mint-500: #17c496;
+  --rose-400: #ff7a7a;
+  --rose-500: #ef4444;
 
-  --shadow-sm: 0 1px 2px rgba(20, 18, 29, 0.06);
-  --shadow-md: 0 8px 24px -10px rgba(20, 18, 29, 0.18);
-  --shadow-lg: 0 24px 64px -20px rgba(20, 18, 29, 0.22);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 24px -8px rgba(0, 0, 0, 0.7);
+  --shadow-lg: 0 24px 64px -16px rgba(0, 0, 0, 0.85);
 
-  --glass-tint: rgba(250, 249, 252, 0.72);
-  --glass-edge: rgba(20, 18, 29, 0.08);
+  --glass-tint: rgba(13, 12, 19, 0.72);
+  --glass-edge: rgba(255, 255, 255, 0.08);
 }
 
 @media (max-width: 640px) {

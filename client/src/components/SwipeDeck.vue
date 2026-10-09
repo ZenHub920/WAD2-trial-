@@ -36,6 +36,18 @@ const props = defineProps({
   items: { type: Array, required: true },
   /** How many cards behind the top one are rendered. */
   depth: { type: Number, default: 2 },
+
+  /* Wording. The deck is used for groups on a concert page and for people in
+     the Kaki Finder, and "Shortlist this group" is wrong in the second. The
+     defaults preserve the original copy, so existing callers pass nothing. */
+  nounSingular: { type: String, default: 'group' },
+  nounPlural: { type: String, default: 'groups' },
+  yesLabel: { type: String, default: 'Shortlist' },
+  noLabel: { type: String, default: 'Pass' },
+  /* Announced after a commit. Separate props because English past tense is not
+     a suffix — "Skip" would otherwise be read out as "Skiped". */
+  yesPast: { type: String, default: 'Shortlisted' },
+  noPast: { type: String, default: 'Passed' },
 });
 
 const emit = defineEmits(['shortlist', 'pass', 'open', 'exhausted']);
@@ -213,7 +225,7 @@ function commit(direction) {
   const item = current.value;
   if (!item || leaving.value) return;
 
-  const verb = direction === 'right' ? 'Shortlisted' : 'Passed';
+  const verb = direction === 'right' ? props.yesPast : props.noPast;
   announcement.value = `${verb} ${labelFor(item)}. ${remaining.value - 1} left.`;
 
   if (prefersReduced.value) {
@@ -247,7 +259,7 @@ function undo() {
 }
 
 function labelFor(item) {
-  return item?.host?.displayName ?? item?.user?.displayName ?? 'this group';
+  return item?.host?.displayName ?? item?.user?.displayName ?? `this ${props.nounSingular}`;
 }
 
 // -------------------------------------------------------------- keyboard
@@ -290,7 +302,7 @@ defineExpose({ undo, remaining });
     <div class="deck__status">
       <p class="deck__count">
         <span class="tabular">{{ remaining }}</span>
-        {{ remaining === 1 ? 'group' : 'groups' }} to judge
+        {{ remaining === 1 ? nounSingular : nounPlural }} to judge
       </p>
       <div class="deck__track" aria-hidden="true">
         <div class="deck__track-fill" :style="{ transform: `scaleX(${progress})` }" />
@@ -302,8 +314,8 @@ defineExpose({ undo, remaining });
       role="application"
       :aria-label="
         current
-          ? `Judging ${labelFor(current)}. Arrow right to shortlist, arrow left to pass.`
-          : 'No groups left to judge'
+          ? `Judging ${labelFor(current)}. Arrow right to ${yesLabel.toLowerCase()}, arrow left to ${noLabel.toLowerCase()}.`
+          : `No ${nounPlural} left to judge`
       "
       tabindex="0"
       @keydown="onKeydown"
@@ -342,14 +354,14 @@ defineExpose({ undo, remaining });
               :style="{ opacity: Math.max(0, intent), transform: `rotate(${-8 + intent * 4}deg)` }"
               aria-hidden="true"
             >
-              Shortlist
+              {{ yesLabel }}
             </div>
             <div
               class="stamp stamp--no"
               :style="{ opacity: Math.max(0, -intent), transform: `rotate(${8 + intent * 4}deg)` }"
               aria-hidden="true"
             >
-              Pass
+              {{ noLabel }}
             </div>
           </template>
 
@@ -386,7 +398,7 @@ defineExpose({ undo, remaining });
         class="circle circle--no"
         type="button"
         :disabled="!current"
-        aria-label="Pass on this group"
+        :aria-label="`${noLabel} this ${nounSingular}`"
         @click="commit('left')"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
@@ -406,7 +418,7 @@ defineExpose({ undo, remaining });
         class="circle circle--yes"
         type="button"
         :disabled="!current"
-        aria-label="Shortlist this group"
+        :aria-label="`${yesLabel} this ${nounSingular}`"
         @click="commit('right')"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" /></svg>
