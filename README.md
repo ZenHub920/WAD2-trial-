@@ -31,9 +31,42 @@ npm run dev
 
 Open <http://localhost:5173>.
 
+### Live concert discovery
+
+Copy `server/.env.example` to `server/.env` and put the Ticketmaster
+**Consumer Key** in `TICKETMASTER_API_KEY`. The Consumer Secret is not used by
+the Discovery API; do not put it in this file or commit credentials. The server
+and sync command load `.env` automatically, even when started from another
+working directory. Explicit process environment values take precedence.
+
+`GET /api/concerts/external?keyword=...` searches the first 50 upcoming Singapore
+music events via Ticketmaster's Discovery API, without exposing the key to the
+browser. Its `events` are live discovery results, **not** matchable until imported.
+To save them as local concerts with stable IDs, run:
+
 ```bash
 cd server
-npm test              # 109 tests
+npm run sync:concerts
+```
+
+Run the seed **before** syncing if you want demo users: `npm run seed` clears the
+database, including imported events. Syncing again updates imported event details
+without deleting local parties or match rounds. `GET /api/concerts` and
+`GET /api/concerts/:id` then include `source`, `source_event_id`, `official_url`,
+and `image_attribution` for imported events. The existing Vue client does not yet
+render these links; the frontend can use `official_url` for the event's official
+purchase page. Ticketmaster coverage in Singapore varies; events without a
+usable venue or date are skipped. Without a key, live discovery returns HTTP 503.
+No ticket ownership, authenticity or availability is verified by this integration.
+
+AI-use disclosure: The Ticketmaster adapter, sync command, API route, tests, and
+this documentation were generated with AI assistance. The IS216 briefing
+restricts AI use for core backend implementation; review this contribution
+against your course rules before submitting it.
+
+```bash
+cd server
+npm test              # backend unit and API tests
 npm run bench         # algorithm comparison against baselines
 npm run bench:scale   # runtime scaling study
 ```
@@ -207,6 +240,7 @@ rail. It is reading the solver's actual output, not an animation of an idea.
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/api/concerts` | list with live supply/demand counts |
+| `GET` | `/api/concerts/external?keyword=...` | first 50 upcoming SG music events from Ticketmaster (requires server key) |
 | `GET` | `/api/concerts/:id/parties` | groups with spare tickets |
 | `GET` | `/api/concerts/:id/requests` | people looking |
 | `GET` | `/api/concerts/:id/match/preview?baselines=true&trace=true` | dry run, writes nothing |

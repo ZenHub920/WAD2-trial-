@@ -5,6 +5,7 @@ import { getDb } from './db/connection.js';
 import { createRepositories } from './db/repositories.js';
 import { createMatchingService } from './services/matchingService.js';
 import { createRoutes } from './routes/index.js';
+import { createTicketmasterRoutes } from './routes/ticketmaster.js';
 
 export function createApp({ db = getDb() } = {}) {
   const repos = createRepositories(db);
@@ -18,6 +19,7 @@ export function createApp({ db = getDb() } = {}) {
     res.json({ ok: true, time: new Date().toISOString() });
   });
 
+  app.use('/api', createTicketmasterRoutes());
   app.use('/api', createRoutes({ repos, matching }));
 
   app.use((req, res) => res.status(404).json({ error: 'not_found', path: req.path }));
