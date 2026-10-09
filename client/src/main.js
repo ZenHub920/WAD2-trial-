@@ -15,6 +15,9 @@ import MarketplaceView from './views/MarketplaceView.vue';
 import ListingView from './views/ListingView.vue';
 import MyListingsView from './views/MyListingsView.vue';
 import TicketDetailView from './views/TicketDetailView.vue';
+import KakiFinderView from './views/KakiFinderView.vue';
+import ProfileHistoryView from './views/ProfileHistoryView.vue';
+import ComingSoonView from './views/ComingSoonView.vue';
 import NotFoundView from './views/NotFoundView.vue';
 
 const router = createRouter({
@@ -37,6 +40,37 @@ const router = createRouter({
     { path: '/list-ticket', name: 'list-ticket', component: ListingView, meta: { title: 'List a Ticket' } },
     { path: '/my-listings', name: 'my-listings', component: MyListingsView, meta: { title: 'My Listings' } },
     { path: '/tickets/:id', name: 'ticket-detail', component: TicketDetailView, props: true, meta: { title: 'Ticket Details' } },
+
+    { path: '/kaki', name: 'kaki', component: KakiFinderView, meta: { title: 'Kaki Finder' } },
+    {
+      path: '/kaki/history',
+      name: 'kaki-history',
+      component: ProfileHistoryView,
+      meta: { title: 'Profile History' },
+    },
+
+    // Tabs owned by other branches. Routed so the shell is complete; the view
+    // says who each is waiting on rather than pretending to be the feature.
+    {
+      path: '/chat',
+      name: 'chat',
+      component: ComingSoonView,
+      props: {
+        title: 'Chat',
+        body: 'Messaging has not been built yet — no table, endpoint or component exists for it. Matches are saved locally in the meantime.',
+      },
+      meta: { title: 'Chat' },
+    },
+    {
+      path: '/profile',
+      name: 'profile',
+      component: ComingSoonView,
+      props: {
+        title: 'Profile',
+        body: 'Profile creation and editing is still missing: registration only collects a name, email and password, and everything else takes a default.',
+      },
+      meta: { title: 'Profile' },
+    },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView },
   ],
   scrollBehavior(to, from, saved) {
