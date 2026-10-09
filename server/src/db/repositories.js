@@ -42,6 +42,8 @@ function mapParty(row) {
     capacity: row.capacity,
     section: row.section,
     spend_band: row.spend_band,
+    price_cents: row.price_cents ?? null,
+    image_data: row.image_data ?? null,
     arrival_plan: row.arrival_plan,
     plans: JSON.parse(row.plans_json),
     strict_age_policy: row.strict_age_policy,
@@ -229,9 +231,9 @@ export function createPartyRepo(db) {
       const id = data.id ?? `p_${randomUUID().slice(0, 8)}`;
       db.prepare(`
         INSERT INTO parties (id, host_user_id, concert_id, capacity, section, spend_band,
-                             arrival_plan, plans_json, strict_age_policy, min_age_band, notes)
+                             price_cents, image_data, arrival_plan, plans_json, strict_age_policy, min_age_band, notes)
         VALUES (@id, @host_user_id, @concert_id, @capacity, @section, @spend_band,
-                @arrival_plan, @plans_json, @strict_age_policy, @min_age_band, @notes)
+                @price_cents, @image_data, @arrival_plan, @plans_json, @strict_age_policy, @min_age_band, @notes)
       `).run({
         id,
         host_user_id: data.host_user_id,
@@ -239,6 +241,8 @@ export function createPartyRepo(db) {
         capacity: data.capacity,
         section: data.section,
         spend_band: data.spend_band,
+        price_cents: data.price_cents ?? null,
+        image_data: data.image_data ?? null,
         arrival_plan: data.arrival_plan,
         plans_json: JSON.stringify(data.plans ?? {}),
         strict_age_policy: data.strict_age_policy ? 1 : 0,

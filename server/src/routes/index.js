@@ -22,6 +22,27 @@ export function createRoutes({ repos, matching }) {
     res.json({ concerts: repos.concerts.listWithCounts() });
   });
 
+  router.post('/concerts', (req, res) => {
+    const title = typeof req.body?.artist === 'string' ? req.body.artist.trim() : '';
+    const eventDate = typeof req.body?.event_date === 'string' ? req.body.event_date.trim() : '';
+    if (!title) return res.status(400).json({ error: 'concert_title_required' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) {
+      return res.status(400).json({ error: 'concert_date_required' });
+    }
+
+    try {
+      const concert = repos.concerts.create({
+        artist: title,
+        venue: req.body.venue?.trim() || 'Venue to be announced',
+        city: req.body.city?.trim() || 'Singapore',
+        event_date: eventDate,
+      });
+      res.status(201).json({ concert });
+    } catch (err) {
+      res.status(409).json({ error: 'could_not_create_concert', detail: err.message });
+    }
+  });
+
   router.get('/concerts/:id', (req, res) => {
     const concert = repos.concerts.findById(req.params.id);
     if (!concert) return res.status(404).json({ error: 'concert_not_found' });
@@ -59,6 +80,8 @@ export function createRoutes({ repos, matching }) {
         capacity: p.capacity,
         section: p.section,
         spendBand: p.spend_band,
+        priceCents: p.price_cents,
+        imageData: p.image_data,
         arrivalPlan: p.arrival_plan,
         plans: p.plans,
         notes: p.notes,
@@ -326,6 +349,13 @@ function validateParty(body = {}) {
   if (!SECTIONS.includes(body.section)) return 'invalid_section';
   if (!Number.isInteger(body.spend_band) || body.spend_band < 1 || body.spend_band > 4) {
     return 'spend_band_must_be_1_to_4';
+  }
+  if (body.price_cents !== undefined && (!Number.isInteger(body.price_cents) || body.price_cents < 0)) {
+    return 'price_must_be_non_negative_int';
+  }
+  if (body.image_data !== undefined && body.image_data !== null
+      && (typeof body.image_data !== 'string' || body.image_data.length > 2_500_000)) {
+    return 'image_too_large';
   }
   if (!ARRIVALS.includes(body.arrival_plan)) return 'invalid_arrival_plan';
   return null;

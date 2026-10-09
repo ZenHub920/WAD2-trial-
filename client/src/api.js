@@ -33,6 +33,8 @@ export const api = {
   health: () => request('/health'),
 
   concerts: () => request('/concerts'),
+  createConcert: (data) =>
+    request('/concerts', { method: 'POST', body: JSON.stringify(data) }),
   concert: (id) => request(`/concerts/${id}`),
 
   parties: (concertId) => request(`/concerts/${concertId}/parties`),

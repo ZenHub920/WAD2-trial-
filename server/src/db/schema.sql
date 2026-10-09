@@ -73,6 +73,8 @@ CREATE TABLE IF NOT EXISTS parties (
   capacity          INTEGER NOT NULL CHECK (capacity >= 1),
   section           TEXT    NOT NULL CHECK (section IN ('pit','ga_standing','lower_bowl','upper_bowl','seated_any')),
   spend_band        INTEGER NOT NULL CHECK (spend_band BETWEEN 1 AND 4),
+  price_cents       INTEGER CHECK (price_cents IS NULL OR price_cents >= 0),
+  image_data        TEXT,
   arrival_plan      TEXT    NOT NULL CHECK (arrival_plan IN ('early_queue','mid','doors')),
   plans_json        TEXT    NOT NULL DEFAULT '{}',
   strict_age_policy INTEGER NOT NULL DEFAULT 0 CHECK (strict_age_policy IN (0,1)),

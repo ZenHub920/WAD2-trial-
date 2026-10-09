@@ -123,8 +123,8 @@ const LAST_NAMES = [
 ];
 
 const scale = big
-  ? { seekers: 400, parties: 120 }
-  : { seekers: 90, parties: 34 };
+  ? { seekers: 400, parties: 0 }
+  : { seekers: 90, parties: 0 };
 
 const instance = generateInstance({
   ...scale,

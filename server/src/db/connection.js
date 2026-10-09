@@ -30,6 +30,13 @@ export function getDb() {
   if (!userColumns.some((column) => column.name === 'password_hash')) {
     db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT');
   }
+  const partyColumns = db.prepare('PRAGMA table_info(parties)').all();
+  if (!partyColumns.some((column) => column.name === 'price_cents')) {
+    db.exec('ALTER TABLE parties ADD COLUMN price_cents INTEGER');
+  }
+  if (!partyColumns.some((column) => column.name === 'image_data')) {
+    db.exec('ALTER TABLE parties ADD COLUMN image_data TEXT');
+  }
   migrate(db);
 
   return db;

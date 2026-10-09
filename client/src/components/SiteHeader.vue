@@ -1,11 +1,15 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { computed, ref, onMounted, onUnmounted } from 'vue';
+import { useRoute } from 'vue-router';
 
 defineProps({ theme: { type: String, default: 'dark' } });
 defineEmits(['toggle-theme']);
 
 const scrolled = ref(false);
 const menuOpen = ref(false);
+const route = useRoute();
+const isMarketplace = computed(() => route.name === 'marketplace');
+const isLoggedIn = computed(() => route.name === 'marketplace' || route.name === 'list-ticket');
 
 function onScroll() {
   scrolled.value = window.scrollY > 12;
@@ -16,7 +20,7 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
 </script>
 
 <template>
-  <header class="header" :class="{ 'header--scrolled': scrolled }">
+  <header class="header" :class="{ 'header--scrolled': scrolled, 'header--fixed': isLoggedIn }">
     <div class="header__inner container container--wide">
       <RouterLink to="/" class="brand" @click="menuOpen = false">
         <span class="brand__mark" aria-hidden="true">
@@ -35,14 +39,24 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
       </button>
 
       <nav class="nav" :class="{ 'nav--open': menuOpen }" aria-label="Main">
-        <RouterLink to="/concerts" @click="menuOpen = false">Concerts</RouterLink>
-        <RouterLink to="/method" @click="menuOpen = false">How it works</RouterLink>
-        <RouterLink to="/login" @click="menuOpen = false">Sign in</RouterLink>
+        <template v-if="isLoggedIn">
+          <div v-if="isMarketplace" class="nav-market-tools">
+            <RouterLink to="/list-ticket" class="list-ticket-btn" @click="menuOpen = false">+ List a ticket</RouterLink>
+          </div>
+          <RouterLink to="/marketplace" @click="menuOpen = false">KakiFinder</RouterLink>
+          <RouterLink to="/marketplace" @click="menuOpen = false">Chat</RouterLink>
+          <RouterLink to="/marketplace" @click="menuOpen = false">Profile</RouterLink>
+        </template>
+        <template v-else>
+          <RouterLink to="/concerts" @click="menuOpen = false">Concerts</RouterLink>
+          <RouterLink to="/method" @click="menuOpen = false">How it works</RouterLink>
+          <RouterLink to="/login" @click="menuOpen = false">Sign in</RouterLink>
+        </template>
         <button class="theme-btn" @click="$emit('toggle-theme')">
           <span aria-hidden="true">{{ theme === 'dark' ? '☾' : '☀' }}</span>
           <span class="sr-only">Switch to {{ theme === 'dark' ? 'light' : 'dark' }} theme</span>
         </button>
-        <RouterLink to="/concerts" class="btn btn--primary nav__cta" @click="menuOpen = false">
+        <RouterLink v-if="!isLoggedIn" to="/concerts" class="btn btn--primary nav__cta" @click="menuOpen = false">
           Find a group
         </RouterLink>
       </nav>
@@ -69,6 +83,11 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
 .header--scrolled {
   border-bottom-color: var(--ink-600);
   background: color-mix(in oklab, var(--ink-900) 92%, transparent);
+}
+
+.header--fixed {
+  position: fixed;
+  width: 100%;
 }
 
 .header__inner {
@@ -140,17 +159,7 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
 }
 
 .nav a:not(.nav__cta)::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  height: 2px;
-  width: 100%;
-  background: var(--accent-500);
-  border-radius: 2px;
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform var(--dur-base) var(--ease-out);
+  display: none;
 }
 
 .nav a:not(.nav__cta):hover,
@@ -158,10 +167,6 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
   color: var(--text-100);
 }
 
-.nav a.router-link-active:not(.nav__cta)::after,
-.nav a:not(.nav__cta):hover::after {
-  transform: scaleX(1);
-}
 
 .theme-btn {
   width: 34px;
@@ -182,6 +187,28 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
   color: var(--accent-400);
   border-color: var(--accent-500);
   transform: rotate(-20deg);
+}
+
+.nav-market-tools {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+}
+
+.list-ticket-btn {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--accent-500);
+  color: white !important;
+  font-size: var(--step--2);
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.list-ticket-btn:hover {
+  background: var(--accent-400);
 }
 
 /* ---- Mobile ------------------------------------------------------------- */
@@ -244,6 +271,11 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
     transition:
       transform var(--dur-base) var(--ease-out),
       opacity var(--dur-fast) var(--ease-out);
+  }
+
+  .nav-market-tools {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .nav--open {
