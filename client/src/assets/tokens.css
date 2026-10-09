@@ -84,12 +84,41 @@
   --shadow-lg: 0 24px 64px -16px rgba(0, 0, 0, 0.85);
   --shadow-accent: 0 8px 32px -8px var(--accent-glow);
 
-  /* ---- Motion ------------------------------------------------------------ */
+  /* ---- Motion ------------------------------------------------------------
+   * Curves are named for what they communicate, not for their shape, so a
+   * component asks for "settle" rather than guessing at a bezier.
+   *
+   * --ease-settle is the workhorse: a heavy decelerate that reads as mass
+   *   coming to rest. Used for anything arriving.
+   * --ease-spring overshoots slightly — only for things the user just did, where
+   *   the overshoot confirms the action landed.
+   * --ease-snap is for departures: slow to leave, fast to finish, so a card
+   *   flying off-screen does not linger in the periphery.
+   * --ease-glide is symmetric, for continuous things (scrub, progress) where an
+   *   asymmetric curve would read as stuttering.
+   */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-spring-soft: cubic-bezier(0.4, 1.3, 0.6, 1);
+  --ease-snap: cubic-bezier(0.5, 0, 0.75, 0);
+  --ease-glide: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --dur-instant: 80ms;
   --dur-fast: 140ms;
   --dur-base: 240ms;
   --dur-slow: 420ms;
+  --dur-slower: 640ms;
+
+  /* Stagger step for orchestrated entrances. Kept small: a list of twelve at
+   * 60ms each would take three quarters of a second to finish arriving. */
+  --stagger: 36ms;
+
+  /* Depth. Translucent layers read as glass only if the blur and the tint move
+   * together, so they are defined as a pair rather than per-component. */
+  --glass-blur: saturate(180%) blur(20px);
+  --glass-tint: rgba(13, 12, 19, 0.72);
+  --glass-edge: rgba(255, 255, 255, 0.08);
 
   /* ---- Layout ------------------------------------------------------------ */
   --measure: 68ch;          /* readable line length for prose */
@@ -119,6 +148,11 @@
   --text-300: #5b5678;
   --text-400: #837ea0;
 
+  /* The 300 and 400 steps are TEXT colours on tinted pills and links. Left at
+     their dark-theme values they are pale pink on white and fail contrast, so
+     the light theme darkens them rather than inheriting. */
+  --accent-300: #a8004f;
+  --accent-400: #c4145e;
   --accent-500: #d4076a;
   --accent-600: #a8004f;
   --accent-glow: rgba(212, 7, 106, 0.18);
@@ -131,6 +165,9 @@
   --shadow-sm: 0 1px 2px rgba(20, 18, 29, 0.06);
   --shadow-md: 0 8px 24px -10px rgba(20, 18, 29, 0.18);
   --shadow-lg: 0 24px 64px -20px rgba(20, 18, 29, 0.22);
+
+  --glass-tint: rgba(250, 249, 252, 0.72);
+  --glass-edge: rgba(20, 18, 29, 0.08);
 }
 
 @media (max-width: 640px) {
