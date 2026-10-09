@@ -13,10 +13,10 @@ import {
   greedyMatch,
   randomMatch,
   evaluate,
-  assertStable,
-  assertIndividuallyRational,
   findBlockingPairs,
   comparisonTable,
+  solveInstance,
+  getSolver,
 } from '../matching/index.js';
 
 export function createMatchingService({ db, repos }) {
@@ -34,11 +34,17 @@ export function createMatchingService({ db, repos }) {
       const t0 = performance.now();
       const profile = buildPreferences(seekers, parties, { blocklist });
       const t1 = performance.now();
-      const result = galeShapley(profile, { trace });
-      const t2 = performance.now();
 
-      assertIndividuallyRational(profile, result);
-      assertStable(profile, result, `concert ${concertId}`);
+      // Classification, solver selection and verification all happen here. The
+      // severity of the stability check is decided by what the selected solver
+      // promised, not fixed in advance — see matching/guarantees.js.
+      const { result, ledger, classification } = solveInstance({
+        profile,
+        seekers,
+        parties,
+        options: { trace },
+      });
+      const t2 = performance.now();
 
       const metrics = evaluate(profile, result);
       const t3 = performance.now();
@@ -48,6 +54,8 @@ export function createMatchingService({ db, repos }) {
         profile,
         result,
         metrics,
+        ledger,
+        classification,
         timings: {
           preferencesMs: round2(t1 - t0),
           solveMs: round2(t2 - t1),
@@ -77,7 +85,7 @@ export function createMatchingService({ db, repos }) {
       const preview = this.preview(concertId, { trace, withBaselines: false });
       if (preview.empty) return preview;
 
-      const { profile, result, metrics, timings } = preview;
+      const { profile, result, metrics, timings, ledger } = preview;
 
       const roundId = repos.rounds.save({
         concertId,
@@ -85,6 +93,8 @@ export function createMatchingService({ db, repos }) {
         result,
         metrics,
         timings,
+        ledger,
+        algorithm: ledger?.solver ?? 'gale_shapley_hr',
         trace: result.trace,
       });
 
@@ -102,7 +112,7 @@ export function createMatchingService({ db, repos }) {
       });
       markMatched();
 
-      return { empty: false, roundId, metrics, timings };
+      return { empty: false, roundId, metrics, timings, ledger };
     },
 
     /**
@@ -144,6 +154,10 @@ export function createMatchingService({ db, repos }) {
       }
 
       const check = findBlockingPairs(profile, { assignments, partyMembers });
+
+      const ledger = round.ledger_json ? JSON.parse(round.ledger_json) : null;
+      const solver = round.solver_id ? getSolver(round.solver_id) : null;
+
       return {
         roundId,
         verified: check.stable,
@@ -154,6 +168,22 @@ export function createMatchingService({ db, repos }) {
         agreesWithStoredClaim:
           (check.stable ? 1 : 0) === round.is_stable &&
           check.blockingPairs.length === round.blocking_pair_count,
+
+        // What this round was entitled to claim, as recorded when it ran.
+        // A measured zero under a weak promise means "none found on this
+        // instance", which is a smaller claim than "guaranteed none exist" —
+        // re-verification has to preserve that distinction or it quietly
+        // upgrades every round to the strongest wording.
+        ledger: ledger
+          ? {
+              solver: ledger.solver,
+              solverName: ledger.solverName ?? solver?.name ?? null,
+              instanceClass: ledger.instanceClass,
+              promised: ledger.promised,
+              relaxations: ledger.relaxations ?? [],
+              headline: ledger.headline,
+            }
+          : null,
       };
     },
 
