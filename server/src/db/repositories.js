@@ -103,16 +103,17 @@ export function createUserRepo(db) {
     create(data) {
       const id = data.id ?? `u_${randomUUID().slice(0, 8)}`;
       db.prepare(`
-        INSERT INTO users (id, display_name, email, age_band, home_region, gender,
+        INSERT INTO users (id, display_name, email, password_hash, age_band, home_region, gender,
                            companion_gender_pref, languages_json, vibe_json,
                            reliability, verified)
-        VALUES (@id, @display_name, @email, @age_band, @home_region, @gender,
+        VALUES (@id, @display_name, @email, @password_hash, @age_band, @home_region, @gender,
                 @companion_gender_pref, @languages_json, @vibe_json,
                 @reliability, @verified)
       `).run({
         id,
         display_name: data.display_name,
         email: data.email ?? null,
+        password_hash: data.password_hash ?? null,
         age_band: data.age_band,
         home_region: data.home_region,
         gender: data.gender,
@@ -127,6 +128,10 @@ export function createUserRepo(db) {
 
     findById(id) {
       return mapUser(db.prepare('SELECT * FROM users WHERE id = ?').get(id));
+    },
+
+    findByEmail(email) {
+      return db.prepare('SELECT * FROM users WHERE lower(email) = lower(?)').get(email);
     },
 
     list(limit = 100) {

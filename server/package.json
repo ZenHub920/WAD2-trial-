@@ -10,13 +10,13 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test 'test/*.test.js'",
+    "test": "node --test",
     "seed": "node src/db/seed.js",
     "bench": "node bench/evaluate.js",
     "bench:scale": "node bench/evaluate.js --scale"
   },
   "dependencies": {
-    "better-sqlite3": "^11.7.0",
+    "better-sqlite3": "^13.0.3",
     "cors": "^2.8.5",
     "express": "^4.21.2"
   }

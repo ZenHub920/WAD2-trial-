@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
   id                     TEXT PRIMARY KEY,
   display_name           TEXT    NOT NULL,
   email                  TEXT    UNIQUE,
+  password_hash          TEXT,
   age_band               TEXT    NOT NULL CHECK (age_band IN ('18-20','21-24','25-29','30-34','35+')),
   home_region            TEXT    NOT NULL,
   gender                 TEXT    NOT NULL,

@@ -37,6 +37,7 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
       <nav class="nav" :class="{ 'nav--open': menuOpen }" aria-label="Main">
         <RouterLink to="/concerts" @click="menuOpen = false">Concerts</RouterLink>
         <RouterLink to="/method" @click="menuOpen = false">How it works</RouterLink>
+        <RouterLink to="/login" @click="menuOpen = false">Sign in</RouterLink>
         <button class="theme-btn" @click="$emit('toggle-theme')">
           <span aria-hidden="true">{{ theme === 'dark' ? '☾' : '☀' }}</span>
           <span class="sr-only">Switch to {{ theme === 'dark' ? 'light' : 'dark' }} theme</span>
