@@ -316,6 +316,19 @@ code, pre, .mono {
   color: var(--amber-400);
 }
 
+/* Loading placeholder. The page sets the height to match what will replace it. */
+.skeleton {
+  border-radius: var(--radius-lg);
+  background: linear-gradient(100deg, var(--ink-800) 30%, var(--ink-750) 50%, var(--ink-800) 70%);
+  background-size: 220% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  from { background-position: 180% 0; }
+  to   { background-position: -80% 0; }
+}
+
 /* A hairline rule that fades at both ends — used between major sections. */
 .rule {
   height: 1px;
