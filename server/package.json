@@ -12,12 +12,14 @@
     "dev": "node --watch src/server.js",
     "test": "node --test",
     "seed": "node src/db/seed.js",
+    "sync:concerts": "node src/db/syncTicketmaster.js",
     "bench": "node bench/evaluate.js",
     "bench:scale": "node bench/evaluate.js --scale"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
     "cors": "^2.8.5",
+    "dotenv": "^18.0.6",
     "express": "^4.21.2"
   }
 }

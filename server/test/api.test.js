@@ -22,10 +22,11 @@ const api = async (path, init) => {
     headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
   });
   const body = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
-  return { status: res.status, body };
+  return { status: res.status, body, cookie: res.headers.get('set-cookie')?.split(';')[0] };
 };
 
 const vibe = { singalong: 4, photography: 1, dancing: 4, quiet: 1, queue_early: 3, merch: 2 };
+const cookies = {};
 
 before(async () => {
   db = createTestDb();
@@ -68,34 +69,27 @@ describe('Health and concerts', () => {
 describe('Creating users and listings', () => {
   const created = {};
 
-  test('rejects an invalid user', async () => {
-    const { status, body } = await api('/api/users', {
-      method: 'POST',
-      body: JSON.stringify({ display_name: 'X', age_band: 'not-a-band' }),
-    });
-    assert.equal(status, 400);
-    assert.equal(body.error, 'invalid_age_band');
-  });
-
-  test('creates users and never returns their email', async () => {
+  test('registers users without exposing credentials', async () => {
     for (const name of ['host_a', 'host_b', 'seek_a', 'seek_b', 'seek_c']) {
-      const { status, body } = await api('/api/users', {
+      const { status, body, cookie } = await api('/api/auth/register', {
         method: 'POST',
         body: JSON.stringify({
-          id: name,
           display_name: name,
           email: `${name}@example.test`,
+          password: 'test-password',
           age_band: '21-24',
           home_region: 'central',
           gender: 'f',
           vibe,
-          reliability: name.startsWith('host') ? 0.9 : 0.8,
-          verified: true,
         }),
       });
-      assert.equal(status, 201, `creating ${name}`);
+      assert.equal(status, 201, `registering ${name}`);
       assert.equal(body.user.email, undefined, 'email must not be exposed');
+      assert.ok(cookie?.startsWith('encore_session='));
       created[name] = body.user;
+      cookies[name] = cookie;
+      db.prepare('UPDATE users SET reliability = ?, verified = 1 WHERE id = ?')
+        .run(name.startsWith('host') ? 0.9 : 0.8, body.user.id);
     }
     assert.equal(Object.keys(created).length, 5);
   });
@@ -103,9 +97,9 @@ describe('Creating users and listings', () => {
   test('rejects a party with a bad section', async () => {
     const { status, body } = await api('/api/concerts/c_test/parties', {
       method: 'POST',
+      headers: { cookie: cookies.host_a },
       body: JSON.stringify({
-        host_user_id: 'host_a', capacity: 1, section: 'balcony',
-        spend_band: 2, arrival_plan: 'mid',
+        capacity: 1, section: 'balcony', spend_band: 2, arrival_plan: 'mid',
       }),
     });
     assert.equal(status, 400);
@@ -115,9 +109,9 @@ describe('Creating users and listings', () => {
   test('rejects a party with zero capacity', async () => {
     const { status, body } = await api('/api/concerts/c_test/parties', {
       method: 'POST',
+      headers: { cookie: cookies.host_a },
       body: JSON.stringify({
-        host_user_id: 'host_a', capacity: 0, section: 'pit',
-        spend_band: 2, arrival_plan: 'mid',
+        capacity: 0, section: 'pit', spend_band: 2, arrival_plan: 'mid',
       }),
     });
     assert.equal(status, 400);
@@ -126,12 +120,13 @@ describe('Creating users and listings', () => {
 
   test('creates two parties with capacity 2 and 1', async () => {
     const specs = [
-      { id: 'p_a', host_user_id: 'host_a', capacity: 2, section: 'pit', spend_band: 2, arrival_plan: 'early_queue' },
-      { id: 'p_b', host_user_id: 'host_b', capacity: 1, section: 'ga_standing', spend_band: 2, arrival_plan: 'mid' },
+      { id: 'p_a', user: 'host_a', capacity: 2, section: 'pit', spend_band: 2, arrival_plan: 'early_queue' },
+      { id: 'p_b', user: 'host_b', capacity: 1, section: 'ga_standing', spend_band: 2, arrival_plan: 'mid' },
     ];
-    for (const spec of specs) {
+    for (const { user, ...spec } of specs) {
       const { status } = await api('/api/concerts/c_test/parties', {
         method: 'POST',
+        headers: { cookie: cookies[user] },
         body: JSON.stringify({ ...spec, plans: { pre_meetup: true } }),
       });
       assert.equal(status, 201);
@@ -144,13 +139,14 @@ describe('Creating users and listings', () => {
 
   test('creates three seeker requests', async () => {
     const specs = [
-      { id: 's_a', user_id: 'seek_a', section_pref: 'pit', spend_band_max: 3, arrival_pref: 'early_queue' },
-      { id: 's_b', user_id: 'seek_b', section_pref: 'pit', spend_band_max: 3, arrival_pref: 'early_queue' },
-      { id: 's_c', user_id: 'seek_c', section_pref: 'ga_standing', spend_band_max: 3, arrival_pref: 'mid' },
+      { id: 's_a', user: 'seek_a', section_pref: 'pit', spend_band_max: 3, arrival_pref: 'early_queue' },
+      { id: 's_b', user: 'seek_b', section_pref: 'pit', spend_band_max: 3, arrival_pref: 'early_queue' },
+      { id: 's_c', user: 'seek_c', section_pref: 'ga_standing', spend_band_max: 3, arrival_pref: 'mid' },
     ];
-    for (const spec of specs) {
+    for (const { user, ...spec } of specs) {
       const { status } = await api('/api/concerts/c_test/requests', {
         method: 'POST',
+        headers: { cookie: cookies[user] },
         body: JSON.stringify({ ...spec, plans_wanted: { pre_meetup: true } }),
       });
       assert.equal(status, 201);
@@ -187,7 +183,9 @@ describe('Matching over HTTP', () => {
   });
 
   test('committing a round persists it and reports stability', async () => {
-    const { status, body } = await api('/api/concerts/c_test/match', { method: 'POST' });
+    const { status, body } = await api('/api/concerts/c_test/match', {
+      method: 'POST', headers: { cookie: cookies.host_a },
+    });
     assert.equal(status, 201);
     assert.ok(body.roundId);
     assert.equal(body.metrics.stable, true);
@@ -257,7 +255,9 @@ describe('Matching over HTTP', () => {
     assert.ok(body.latestRound);
     assert.equal(body.latestRound.isStable, true);
 
-    const second = await api('/api/concerts/c_test/match', { method: 'POST' });
+    const second = await api('/api/concerts/c_test/match', {
+      method: 'POST', headers: { cookie: cookies.host_a },
+    });
     assert.equal(second.status, 409);
     assert.equal(second.body.error, 'nothing_to_match');
   });
@@ -298,7 +298,9 @@ describe('Empty instances', () => {
     assert.equal(preview.status, 200);
     assert.equal(preview.body.empty, true);
 
-    const run = await api('/api/concerts/c_empty/match', { method: 'POST' });
+    const run = await api('/api/concerts/c_empty/match', {
+      method: 'POST', headers: { cookie: cookies.host_a },
+    });
     assert.equal(run.status, 409);
   });
 });

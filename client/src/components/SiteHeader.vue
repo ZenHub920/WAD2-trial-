@@ -1,6 +1,6 @@
 <script setup>
-import { computed, ref, onMounted, onUnmounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { ref, onMounted, onUnmounted } from 'vue';
+import { currentUser, refreshSession, signOut } from '../auth.js';
 
 defineProps({ theme: { type: String, default: 'dark' } });
 defineEmits(['toggle-theme']);
@@ -15,8 +15,20 @@ function onScroll() {
   scrolled.value = window.scrollY > 12;
 }
 
-onMounted(() => window.addEventListener('scroll', onScroll, { passive: true }));
+onMounted(() => {
+  window.addEventListener('scroll', onScroll, { passive: true });
+  refreshSession().catch((error) => console.error('Could not load session', error));
+});
 onUnmounted(() => window.removeEventListener('scroll', onScroll));
+
+async function logOut() {
+  try {
+    await signOut();
+    menuOpen.value = false;
+  } catch (error) {
+    console.error('Could not sign out', error);
+  }
+}
 </script>
 
 <template>
@@ -148,7 +160,8 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
   gap: var(--space-5);
 }
 
-.nav a:not(.nav__cta) {
+.nav a:not(.nav__cta),
+.nav .signout-btn {
   color: var(--text-300);
   text-decoration: none;
   font-size: var(--step--1);
@@ -160,13 +173,32 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
 
 .nav a:not(.nav__cta)::after {
   display: none;
+.nav a:not(.nav__cta)::after,
+.nav .signout-btn::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  background: var(--accent-500);
+  border-radius: 2px;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--dur-base) var(--ease-out);
 }
 
 .nav a:not(.nav__cta):hover,
-.nav a.router-link-active:not(.nav__cta) {
+.nav a.router-link-active:not(.nav__cta),
+.nav .signout-btn:hover {
   color: var(--text-100);
 }
 
+.nav a.router-link-active:not(.nav__cta)::after,
+.nav a:not(.nav__cta):hover::after,
+.nav .signout-btn:hover::after {
+  transform: scaleX(1);
+}
 
 .theme-btn {
   width: 34px;

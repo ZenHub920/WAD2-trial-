@@ -31,9 +31,61 @@ npm run dev
 
 Open <http://localhost:5173>.
 
+### Account sessions
+
+Register or sign in at `/login`. `POST /api/auth/register` and
+`POST /api/auth/login` return a public user and set a seven-day, HttpOnly,
+SameSite=Lax cookie. Only a SHA-256 hash of its random token is stored in the
+SQLite `sessions` table; `GET /api/auth/me` restores the signed-in user after a
+reload and `POST /api/auth/logout` revokes the cookie (HTTP 204). The cookie is
+marked Secure when `NODE_ENV=production`; serve the app over HTTPS in production.
+The Vue app uses same-origin `/api` requests through its development proxy.
+
+Creating a party or seeker request, and committing a match round, now requires
+a session (HTTP 401 otherwise). Listing ownership comes from the cookie, **not**
+`host_user_id` or `user_id` in request JSON; the open demo-only `POST /api/users`
+endpoint has been removed. Concert browsing remains public. A signed-in user
+can still trigger a round and the full-round read endpoints remain public:
+facilitator-only triggers and private individual results require a separate
+product decision. Existing database files automatically gain the sessions table;
+never run the destructive demo seed on accounts you want to keep.
+
+### Live concert discovery
+
+Copy `server/.env.example` to `server/.env` and put the Ticketmaster
+**Consumer Key** in `TICKETMASTER_API_KEY`. The Consumer Secret is not used by
+the Discovery API; do not put it in this file or commit credentials. The server
+and sync command load `.env` automatically, even when started from another
+working directory. Explicit process environment values take precedence.
+
+`GET /api/concerts/external?keyword=...` searches the first 50 upcoming Singapore
+music events via Ticketmaster's Discovery API, without exposing the key to the
+browser. Its `events` are live discovery results, **not** matchable until imported.
+To save them as local concerts with stable IDs, run:
+
 ```bash
 cd server
-npm test              # 109 tests
+npm run sync:concerts
+```
+
+Run the seed **before** syncing if you want demo users: `npm run seed` clears the
+database, including imported events. Syncing again updates imported event details
+without deleting local parties or match rounds. `GET /api/concerts` and
+`GET /api/concerts/:id` then include `source`, `source_event_id`, `official_url`,
+and `image_attribution` for imported events. The existing Vue client does not yet
+render these links; the frontend can use `official_url` for the event's official
+purchase page. Ticketmaster coverage in Singapore varies; events without a
+usable venue or date are skipped. Without a key, live discovery returns HTTP 503.
+No ticket ownership, authenticity or availability is verified by this integration.
+
+AI-use disclosure: The Ticketmaster integration, MVC extraction, session
+implementation, tests, and this documentation were generated with AI assistance.
+The IS216 briefing restricts AI use for core backend implementation; review these
+contributions against your course rules before submitting them.
+
+```bash
+cd server
+npm test              # backend unit and API tests
 npm run bench         # algorithm comparison against baselines
 npm run bench:scale   # runtime scaling study
 ```
@@ -174,10 +226,11 @@ server/
     metrics.js          evaluation metrics
     stableRoommates.js  Irving's algorithm, peer-to-peer mode
     maxHeap.js          worst-held-offer retrieval in O(log q)
-  src/db/             schema, repositories, seed
-  src/services/       round orchestration, re-verification, per-seeker explanations
-  src/routes/         HTTP layer
-  test/               109 tests
+  src/db/             SQLite schema and repositories (model)
+  src/services/       round orchestration, explanations, provider and session logic
+  src/controllers/    HTTP validation, request handling, response shaping
+  src/routes/         endpoint-to-controller mappings
+  test/               backend unit and HTTP API tests
   bench/              synthetic data generator + evaluation harness
 
 client/
@@ -207,6 +260,7 @@ rail. It is reading the solver's actual output, not an animation of an idea.
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/api/concerts` | list with live supply/demand counts |
+| `GET` | `/api/concerts/external?keyword=...` | first 50 upcoming SG music events from Ticketmaster (requires server key) |
 | `GET` | `/api/concerts/:id/parties` | groups with spare tickets |
 | `GET` | `/api/concerts/:id/requests` | people looking |
 | `GET` | `/api/concerts/:id/match/preview?baselines=true&trace=true` | dry run, writes nothing |
