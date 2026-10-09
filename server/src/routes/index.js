@@ -1,26 +1,24 @@
-/**
- * HTTP API.
- *
- * Thin by design: validation, a repository or service call, and a response shape.
- * No matching logic lives here — the engine is a library the API calls, which is
- * what lets the benchmarks exercise it without an HTTP server.
- */
-
+/** Route declarations only; controllers own HTTP responses and validation. */
 import { Router } from 'express';
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createConcertController } from '../controllers/concertController.js';
+import { createMatchController } from '../controllers/matchController.js';
+import { createUserController } from '../controllers/userController.js';
 
-import { listSolvers } from '../matching/index.js';
-
-export function createRoutes({ repos, matching }) {
+export function createRoutes({ repos, matching, sessions }) {
   const router = Router();
 
-  // -------------------------------------------------------------------------
-  // Concerts
-  // -------------------------------------------------------------------------
+  const concerts = createConcertController(repos);
+  const matches = createMatchController({ repos, matching });
+  const users = createUserController(repos, sessions);
 
-  router.get('/concerts', (req, res) => {
-    res.json({ concerts: repos.concerts.listWithCounts() });
+  router.use((req, res, next) => {
+    req.user = sessions.current(req);
+    next();
   });
+  const requireUser = (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'authentication_required' });
+    next();
+  };
 
   router.post('/concerts', (req, res) => {
     const title = typeof req.body?.artist === 'string' ? req.body.artist.trim() : '';
@@ -46,10 +44,21 @@ export function createRoutes({ repos, matching }) {
   router.get('/concerts/:id', (req, res) => {
     const concert = repos.concerts.findById(req.params.id);
     if (!concert) return res.status(404).json({ error: 'concert_not_found' });
+  router.get('/concerts', concerts.list);
+  router.get('/concerts/:id', concerts.detail);
+  router.get('/concerts/:id/parties', concerts.parties);
+  router.post('/concerts/:id/parties', requireUser, concerts.createParty);
+  router.get('/concerts/:id/requests', concerts.requests);
+  router.post('/concerts/:id/requests', requireUser, concerts.createRequest);
 
-    const parties = repos.parties.openForConcert(concert.id);
-    const seekers = repos.seekers.openForConcert(concert.id);
-    const latestRound = repos.rounds.latestForConcert(concert.id);
+  router.get('/concerts/:id/match/preview', matches.preview);
+  router.post('/concerts/:id/match', requireUser, matches.run);
+  router.get('/rounds/:id', matches.round);
+  router.get('/solvers', matches.solvers);
+  router.get('/rounds/:id/trace', matches.trace);
+  router.get('/rounds/:id/parties/:partyId', matches.roster);
+  router.get('/rounds/:id/verify', matches.verify);
+  router.get('/concerts/:id/explain/:requestId', matches.explain);
 
     res.json({
       concert,
@@ -378,4 +387,12 @@ function validateUser(body = {}) {
   if (!body.gender) return 'gender_required';
   if (!body.vibe || typeof body.vibe !== 'object') return 'vibe_required';
   return null;
+}
+  router.post('/auth/register', users.register);
+  router.post('/auth/login', users.login);
+  router.get('/auth/me', requireUser, users.current);
+  router.post('/auth/logout', users.logout);
+  router.get('/users/:id', users.get);
+
+  return router;
 }

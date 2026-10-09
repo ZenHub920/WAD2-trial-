@@ -9,6 +9,7 @@ const BASE = '/api';
 
 async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
+    credentials: 'same-origin',
     headers: { 'content-type': 'application/json', ...(options.headers ?? {}) },
     ...options,
   });
@@ -29,6 +30,8 @@ async function request(path, options = {}) {
 export const api = {
   login: (data) => request('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   register: (data) => request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
+  me: () => request('/auth/me'),
+  logout: () => request('/auth/logout', { method: 'POST' }),
 
   health: () => request('/health'),
 
@@ -64,7 +67,6 @@ export const api = {
   explain: (concertId, requestId) => request(`/concerts/${concertId}/explain/${requestId}`),
 
   user: (id) => request(`/users/${id}`),
-  createUser: (data) => request('/users', { method: 'POST', body: JSON.stringify(data) }),
 };
 
 /** Human labels for the enum values the API speaks in. */

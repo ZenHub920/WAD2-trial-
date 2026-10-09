@@ -515,6 +515,22 @@ export function createRoundRepo(db) {
   };
 }
 
+export function createSessionRepo(db) {
+  return {
+    create(tokenHash, userId, expiresAt) {
+      db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
+        .run(tokenHash, userId, expiresAt);
+    },
+    findUserId(tokenHash, now) {
+      return db.prepare('SELECT user_id FROM sessions WHERE token_hash = ? AND expires_at > ?')
+        .get(tokenHash, now)?.user_id ?? null;
+    },
+    delete(tokenHash) {
+      db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash);
+    },
+  };
+}
+
 export function createRepositories(db) {
   return {
     users: createUserRepo(db),
@@ -522,5 +538,6 @@ export function createRepositories(db) {
     parties: createPartyRepo(db),
     seekers: createSeekerRepo(db),
     rounds: createRoundRepo(db),
+    sessions: createSessionRepo(db),
   };
 }
