@@ -26,6 +26,10 @@ export function getDb() {
 
   const schema = readFileSync(join(here, 'schema.sql'), 'utf8');
   db.exec(schema);
+  const userColumns = db.prepare('PRAGMA table_info(users)').all();
+  if (!userColumns.some((column) => column.name === 'password_hash')) {
+    db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT');
+  }
 
   return db;
 }
