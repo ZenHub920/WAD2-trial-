@@ -76,10 +76,16 @@ CREATE TABLE IF NOT EXISTS parties (
   plans_json        TEXT    NOT NULL DEFAULT '{}',
   strict_age_policy INTEGER NOT NULL DEFAULT 0 CHECK (strict_age_policy IN (0,1)),
   min_age_band      TEXT,
+  -- Lower quota: the group only goes ahead if it reaches this many members.
+  -- NULL or <= 1 is no constraint. Its presence turns the instance into
+  -- Hospital/Residents with Lower Quotas, which the classifier detects and
+  -- which no registered solver can yet model exactly.
+  min_size          INTEGER CHECK (min_size IS NULL OR min_size >= 1),
   notes             TEXT,
   status            TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open','matched','cancelled')),
   created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
-  UNIQUE (host_user_id, concert_id)
+  UNIQUE (host_user_id, concert_id),
+  CHECK (min_size IS NULL OR min_size <= capacity)
 );
 
 CREATE INDEX IF NOT EXISTS idx_parties_concert ON parties(concert_id, status);
@@ -94,10 +100,17 @@ CREATE TABLE IF NOT EXISTS seeker_requests (
   plans_wanted_json TEXT    NOT NULL DEFAULT '{}',
   strict_age_policy INTEGER NOT NULL DEFAULT 0 CHECK (strict_age_policy IN (0,1)),
   age_tolerance     INTEGER NOT NULL DEFAULT 1,
+  -- All-or-nothing link: two friends who join the same group or neither goes.
+  -- The classifier only counts a pair when the link is RECIPROCATED, so a
+  -- dangling reference is treated as a single rather than silently changing
+  -- the problem. Its presence makes the instance Hospital/Residents with
+  -- Couples, which is NP-hard and may admit no stable matching at all.
+  linked_request_id TEXT    REFERENCES seeker_requests(id) ON DELETE SET NULL,
   notes             TEXT,
   status            TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open','matched','withdrawn')),
   created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
-  UNIQUE (user_id, concert_id)
+  UNIQUE (user_id, concert_id),
+  CHECK (linked_request_id IS NULL OR linked_request_id <> id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_seekers_concert ON seeker_requests(concert_id, status);
@@ -122,7 +135,16 @@ CREATE TABLE IF NOT EXISTS match_rounds (
   metrics_json        TEXT    NOT NULL,
   timings_json        TEXT    NOT NULL,
   -- the exact preference lists the result was computed from, for later re-verification
-  preference_snapshot_json TEXT
+  preference_snapshot_json TEXT,
+  -- The guarantee ledger. `is_stable` above records what was MEASURED; these
+  -- record which solver ran, on what kind of instance, and what it was
+  -- entitled to claim before it ran. Two rounds can now carry genuinely
+  -- different promises, and the interface can say so truthfully.
+  solver_id           TEXT,
+  instance_class      TEXT,
+  stability_promise   TEXT,   -- guaranteed | best_effort | not_guaranteed
+  relaxations_json    TEXT,   -- constraints the solver could not represent
+  ledger_json         TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_rounds_concert ON match_rounds(concert_id, ran_at DESC);

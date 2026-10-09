@@ -46,6 +46,9 @@ function mapParty(row) {
     plans: JSON.parse(row.plans_json),
     strict_age_policy: row.strict_age_policy,
     min_age_band: row.min_age_band,
+    // Lower quota. Read by classifyInstance; omitting it here would leave the
+    // classifier permanently blind to the constraint even once it is stored.
+    min_size: row.min_size ?? null,
     notes: row.notes,
     status: row.status,
     host: row.host_id ? mapUser(prefixed(row, 'host_')) : undefined,
@@ -64,6 +67,8 @@ function mapSeeker(row) {
     plans_wanted: JSON.parse(row.plans_wanted_json),
     strict_age_policy: row.strict_age_policy,
     age_tolerance: row.age_tolerance,
+    // All-or-nothing link to another request. Same reason as min_size above.
+    linked_request_id: row.linked_request_id ?? null,
     notes: row.notes,
     status: row.status,
     user: row.user_id_joined ? mapUser(prefixed(row, 'user_')) : undefined,
@@ -331,17 +336,30 @@ export function createRoundRepo(db) {
      * and the trace either all land or none do — a half-written round would be a
      * matching whose stability proof no longer describes its contents.
      */
-    save({ concertId, profile, result, metrics, timings, trace = [], algorithm = 'gale_shapley_hr' }) {
+    save({
+      concertId,
+      profile,
+      result,
+      metrics,
+      timings,
+      trace = [],
+      algorithm = 'gale_shapley_hr',
+      ledger = null,
+    }) {
       const roundId = `r_${randomUUID().slice(0, 8)}`;
 
       const insertRound = db.prepare(`
         INSERT INTO match_rounds (id, concert_id, algorithm, is_stable, blocking_pair_count,
                                   seeker_count, party_count, total_capacity, feasible_pairs,
                                   matched_count, metrics_json, timings_json,
-                                  preference_snapshot_json)
+                                  preference_snapshot_json,
+                                  solver_id, instance_class, stability_promise,
+                                  relaxations_json, ledger_json)
         VALUES (@id, @concert_id, @algorithm, @is_stable, @blocking_pair_count,
                 @seeker_count, @party_count, @total_capacity, @feasible_pairs,
-                @matched_count, @metrics_json, @timings_json, @preference_snapshot_json)
+                @matched_count, @metrics_json, @timings_json, @preference_snapshot_json,
+                @solver_id, @instance_class, @stability_promise,
+                @relaxations_json, @ledger_json)
       `);
 
       const insertResult = db.prepare(`
@@ -377,6 +395,14 @@ export function createRoundRepo(db) {
             partyPrefs: Object.fromEntries(profile.partyPrefs),
             capacities: Object.fromEntries(profile.capacities),
           }),
+          // The ledger's own columns are duplicated out of ledger_json so a
+          // round can be filtered by solver or promise in SQL without parsing
+          // every blob. The JSON stays authoritative.
+          solver_id: ledger?.solver ?? null,
+          instance_class: ledger?.instanceClass ?? null,
+          stability_promise: ledger?.promised?.stability ?? null,
+          relaxations_json: ledger ? JSON.stringify(ledger.relaxations ?? []) : null,
+          ledger_json: ledger ? JSON.stringify(ledger) : null,
         });
 
         for (const seekerId of profile.seekerPrefs.keys()) {
