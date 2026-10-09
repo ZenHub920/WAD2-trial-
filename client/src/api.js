@@ -58,6 +58,17 @@ export const api = {
 
   explain: (concertId, requestId) => request(`/concerts/${concertId}/explain/${requestId}`),
 
+  listings: (query = '') =>
+    request(`/listings${query ? `?q=${encodeURIComponent(query)}` : ''}`),
+  listing: (id) => request(`/listings/${id}`),
+  /** The server prices the order from the listing; only who pays and how is sent. */
+  buyListing: (id, { buyerUserId, paymentMethod }) =>
+    request(`/listings/${id}/orders`, {
+      method: 'POST',
+      body: JSON.stringify({ buyer_user_id: buyerUserId, payment_method: paymentMethod }),
+    }),
+  order: (id) => request(`/orders/${id}`),
+
   user: (id) => request(`/users/${id}`),
   createUser: (data) => request('/users', { method: 'POST', body: JSON.stringify(data) }),
 };
