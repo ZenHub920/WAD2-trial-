@@ -480,6 +480,157 @@ export function createRoundRepo(db) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Ticket market
+// ---------------------------------------------------------------------------
+
+function mapListing(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    seller_user_id: row.seller_user_id,
+    concert_id: row.concert_id,
+    title: row.title,
+    category: row.category,
+    show_date: row.show_date,
+    seat_row: row.seat_row,
+    seat_numbers: row.seat_numbers,
+    quantity: row.quantity,
+    price_cents: row.price_cents,
+    currency: row.currency,
+    description: row.description,
+    image_url: row.image_url,
+    verified: row.verified,
+    status: row.status,
+    created_at: row.created_at,
+    seller: mapUser(prefixed(row, 'seller_')),
+    concert: {
+      id: row.concert_id,
+      artist: row.concert_artist,
+      tour_name: row.concert_tour_name,
+      venue: row.concert_venue,
+      city: row.concert_city,
+      event_date: row.concert_event_date,
+      hero_image_url: row.concert_hero_image_url,
+    },
+  };
+}
+
+const LISTING_SELECT = `
+  SELECT l.*, ${USER_COLUMNS('u', 'seller_')},
+         c.artist         AS concert_artist,
+         c.tour_name      AS concert_tour_name,
+         c.venue          AS concert_venue,
+         c.city           AS concert_city,
+         c.event_date     AS concert_event_date,
+         c.hero_image_url AS concert_hero_image_url
+  FROM ticket_listings l
+  JOIN users u    ON u.id = l.seller_user_id
+  JOIN concerts c ON c.id = l.concert_id
+`;
+
+/** An error the API layer can map to a status code without string-matching messages. */
+function marketError(code) {
+  return Object.assign(new Error(code), { code });
+}
+
+export function createListingRepo(db) {
+  return {
+    create(data) {
+      const id = data.id ?? `l_${randomUUID().slice(0, 8)}`;
+      db.prepare(`
+        INSERT INTO ticket_listings (id, seller_user_id, concert_id, title, category, show_date,
+                                     seat_row, seat_numbers, quantity, price_cents, currency,
+                                     description, image_url, verified, created_at)
+        VALUES (@id, @seller_user_id, @concert_id, @title, @category, @show_date,
+                @seat_row, @seat_numbers, @quantity, @price_cents, @currency,
+                @description, @image_url, @verified, COALESCE(@created_at, datetime('now')))
+      `).run({
+        id,
+        seller_user_id: data.seller_user_id,
+        concert_id: data.concert_id,
+        title: data.title,
+        category: data.category,
+        show_date: data.show_date ?? null,
+        seat_row: data.seat_row ?? null,
+        seat_numbers: data.seat_numbers ?? null,
+        quantity: data.quantity ?? 1,
+        price_cents: data.price_cents,
+        currency: data.currency ?? 'SGD',
+        description: data.description ?? null,
+        image_url: data.image_url ?? null,
+        verified: data.verified ? 1 : 0,
+        created_at: data.created_at ?? null,
+      });
+      return this.findById(id);
+    },
+
+    findById(id) {
+      return mapListing(db.prepare(`${LISTING_SELECT} WHERE l.id = ?`).get(id));
+    },
+
+    /** Open listings, newest first, optionally filtered by a free-text query. */
+    listOpen({ query = '', limit = 60 } = {}) {
+      const trimmed = query.trim();
+      if (!trimmed) {
+        return db.prepare(`
+          ${LISTING_SELECT}
+          WHERE l.status = 'open'
+          ORDER BY l.created_at DESC, l.id
+          LIMIT ?
+        `).all(limit).map(mapListing);
+      }
+
+      // Escape LIKE wildcards so a search for "100%" means the literal text.
+      const pattern = `%${trimmed.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+      return db.prepare(`
+        ${LISTING_SELECT}
+        WHERE l.status = 'open'
+          AND (l.title LIKE @p ESCAPE '\\' OR l.category LIKE @p ESCAPE '\\'
+               OR c.artist LIKE @p ESCAPE '\\' OR c.tour_name LIKE @p ESCAPE '\\'
+               OR c.venue LIKE @p ESCAPE '\\')
+        ORDER BY l.created_at DESC, l.id
+        LIMIT @limit
+      `).all({ p: pattern, limit }).map(mapListing);
+    },
+  };
+}
+
+export function createOrderRepo(db) {
+  const findById = (id) => db.prepare('SELECT * FROM ticket_orders WHERE id = ?').get(id) ?? null;
+
+  /**
+   * Buy a listing. The status flip and the order insert share one transaction, and
+   * the UPDATE is conditional on the listing still being open — so two buyers racing
+   * for the same ticket cannot both succeed. Prices are read from the database,
+   * never from the request.
+   */
+  const purchase = db.transaction(({ listing_id, buyer_user_id, payment_method }) => {
+    const listing = db.prepare('SELECT * FROM ticket_listings WHERE id = ?').get(listing_id);
+    if (!listing) throw marketError('listing_not_found');
+    if (listing.seller_user_id === buyer_user_id) throw marketError('cannot_buy_own_listing');
+
+    const claimed = db.prepare(`
+      UPDATE ticket_listings SET status = 'sold' WHERE id = ? AND status = 'open'
+    `).run(listing_id);
+    if (claimed.changes !== 1) throw marketError('listing_unavailable');
+
+    const deliveryFee = 0;
+    const id = `o_${randomUUID().slice(0, 8)}`;
+    db.prepare(`
+      INSERT INTO ticket_orders (id, listing_id, buyer_user_id, subtotal_cents,
+                                 delivery_fee_cents, total_cents, currency, payment_method)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id, listing_id, buyer_user_id, listing.price_cents,
+      deliveryFee, listing.price_cents + deliveryFee, listing.currency, payment_method,
+    );
+    return findById(id);
+  });
+
+  return { findById, purchase };
+}
+
 export function createRepositories(db) {
   return {
     users: createUserRepo(db),
@@ -487,5 +638,7 @@ export function createRepositories(db) {
     parties: createPartyRepo(db),
     seekers: createSeekerRepo(db),
     rounds: createRoundRepo(db),
+    listings: createListingRepo(db),
+    orders: createOrderRepo(db),
   };
 }
