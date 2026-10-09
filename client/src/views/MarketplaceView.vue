@@ -125,7 +125,12 @@ function resetFilters() {
             <button class="btn btn--ghost" @click="resetFilters">Clear filters</button>
           </div>
           <div v-else class="ticket-grid">
-            <article v-for="listing in filteredListings" :key="listing.id" class="ticket-card">
+            <RouterLink
+              v-for="listing in filteredListings"
+              :key="listing.id"
+              :to="{ name: 'ticket-detail', params: { id: listing.id } }"
+              class="ticket-card"
+            >
           <img v-if="listing.imageData" class="ticket-card__image" :src="listing.imageData" alt="Ticket listing" />
           <div class="ticket-card__body">
             <div class="ticket-card__seller">
@@ -142,8 +147,8 @@ function resetFilters() {
               <strong>{{ listing.priceCents != null ? `$${(listing.priceCents / 100).toFixed(2)}` : priceLabels[listing.spendBand] }}</strong>
             </div>
           </div>
-          <button class="save-button" aria-label="Save ticket">♡</button>
-            </article>
+              <button class="save-button" aria-label="Save ticket" @click.prevent>♡</button>
+            </RouterLink>
           </div>
         </main>
       </div>
@@ -221,6 +226,8 @@ function resetFilters() {
   border: var(--border-soft);
   border-radius: var(--radius-lg);
   background: var(--ink-850);
+  color: inherit;
+  text-decoration: none;
   transition: transform var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out);
 }
 .ticket-card:hover { transform: translateY(-4px); border-color: var(--accent-400); }

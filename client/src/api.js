@@ -32,6 +32,8 @@ export const api = {
   register: (data) => request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   me: () => request('/auth/me'),
   logout: () => request('/auth/logout', { method: 'POST' }),
+  myListings: () => request('/me/listings'),
+  deleteListing: (id) => request(`/me/listings/${id}`, { method: 'DELETE' }),
 
   health: () => request('/health'),
 

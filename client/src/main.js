@@ -13,6 +13,8 @@ import MethodView from './views/MethodView.vue';
 import LoginView from './views/LoginView.vue';
 import MarketplaceView from './views/MarketplaceView.vue';
 import ListingView from './views/ListingView.vue';
+import MyListingsView from './views/MyListingsView.vue';
+import TicketDetailView from './views/TicketDetailView.vue';
 import NotFoundView from './views/NotFoundView.vue';
 
 const router = createRouter({
@@ -33,6 +35,8 @@ const router = createRouter({
     { path: '/login', name: 'login', component: LoginView, meta: { title: 'Sign in' } },
     { path: '/marketplace', name: 'marketplace', component: MarketplaceView, meta: { title: 'Ticket Market' } },
     { path: '/list-ticket', name: 'list-ticket', component: ListingView, meta: { title: 'List a Ticket' } },
+    { path: '/my-listings', name: 'my-listings', component: MyListingsView, meta: { title: 'My Listings' } },
+    { path: '/tickets/:id', name: 'ticket-detail', component: TicketDetailView, props: true, meta: { title: 'Ticket Details' } },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView },
   ],
   scrollBehavior(to, from, saved) {
