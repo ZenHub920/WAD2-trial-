@@ -156,6 +156,51 @@ CREATE TABLE IF NOT EXISTS match_trace (
 );
 
 -- ---------------------------------------------------------------------------
+-- Ticket market — resale listings and the orders that buy them
+-- ---------------------------------------------------------------------------
+
+-- One listing is one lot: `quantity` tickets sold together at `price_cents` for the lot.
+-- Money is stored in integer cents so totals never pick up floating-point drift.
+CREATE TABLE IF NOT EXISTS ticket_listings (
+  id              TEXT    PRIMARY KEY,
+  seller_user_id  TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  concert_id      TEXT    NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
+  title           TEXT    NOT NULL,
+  category        TEXT    NOT NULL,           -- e.g. 'Cat 3', 'VIP 1'
+  show_date       TEXT,                       -- the night, for multi-night runs
+  seat_row        TEXT,
+  seat_numbers    TEXT,
+  quantity        INTEGER NOT NULL DEFAULT 1 CHECK (quantity >= 1),
+  price_cents     INTEGER NOT NULL CHECK (price_cents > 0),
+  currency        TEXT    NOT NULL DEFAULT 'SGD',
+  description     TEXT,
+  image_url       TEXT,
+  verified        INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0,1)),
+  status          TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open','sold','withdrawn')),
+  created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_listings_status ON ticket_listings(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_listings_concert ON ticket_listings(concert_id, status);
+
+-- Amounts are copied onto the order at purchase time, so a later price edit on the
+-- listing can never change what the buyer was charged.
+CREATE TABLE IF NOT EXISTS ticket_orders (
+  id                 TEXT    PRIMARY KEY,
+  listing_id         TEXT    NOT NULL REFERENCES ticket_listings(id) ON DELETE CASCADE,
+  buyer_user_id      TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  subtotal_cents     INTEGER NOT NULL,
+  delivery_fee_cents INTEGER NOT NULL DEFAULT 0,
+  total_cents        INTEGER NOT NULL,
+  currency           TEXT    NOT NULL DEFAULT 'SGD',
+  payment_method     TEXT    NOT NULL CHECK (payment_method IN ('visa','mastercard','paypal','apple_pay')),
+  status             TEXT    NOT NULL DEFAULT 'paid' CHECK (status IN ('paid','refunded')),
+  created_at         TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_buyer ON ticket_orders(buyer_user_id, created_at DESC);
+
+-- ---------------------------------------------------------------------------
 -- Post-event feedback, which feeds reliability back into future preference lists
 -- ---------------------------------------------------------------------------
 
