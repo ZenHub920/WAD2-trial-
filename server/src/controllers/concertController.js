@@ -54,7 +54,9 @@ export function createConcertController(repos) {
       const error = validateParty(req.body);
       if (error) return res.status(400).json({ error });
       try {
-        const party = repos.parties.create({ ...req.body, concert_id: req.params.id });
+        const party = repos.parties.create({
+          ...req.body, host_user_id: req.user.id, concert_id: req.params.id,
+        });
         res.status(201).json({ party });
       } catch (err) {
         res.status(409).json({ error: 'could_not_create_party', detail: err.message });
@@ -79,7 +81,9 @@ export function createConcertController(repos) {
       const error = validateRequest(req.body);
       if (error) return res.status(400).json({ error });
       try {
-        const request = repos.seekers.create({ ...req.body, concert_id: req.params.id });
+        const request = repos.seekers.create({
+          ...req.body, user_id: req.user.id, concert_id: req.params.id,
+        });
         res.status(201).json({ request });
       } catch (err) {
         res.status(409).json({ error: 'could_not_create_request', detail: err.message });
@@ -89,7 +93,6 @@ export function createConcertController(repos) {
 }
 
 function validateParty(body = {}) {
-  if (!body.host_user_id) return 'host_user_id_required';
   if (!Number.isInteger(body.capacity) || body.capacity < 1) return 'capacity_must_be_positive_int';
   if (!SECTIONS.includes(body.section)) return 'invalid_section';
   if (!Number.isInteger(body.spend_band) || body.spend_band < 1 || body.spend_band > 4) {
@@ -100,7 +103,6 @@ function validateParty(body = {}) {
 }
 
 function validateRequest(body = {}) {
-  if (!body.user_id) return 'user_id_required';
   if (!SECTIONS.includes(body.section_pref)) return 'invalid_section_pref';
   if (!Number.isInteger(body.spend_band_max) || body.spend_band_max < 1 || body.spend_band_max > 4) {
     return 'spend_band_max_must_be_1_to_4';

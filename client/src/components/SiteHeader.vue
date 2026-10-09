@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue';
+import { currentUser, refreshSession, signOut } from '../auth.js';
 
 defineProps({ theme: { type: String, default: 'dark' } });
 defineEmits(['toggle-theme']);
@@ -11,8 +12,20 @@ function onScroll() {
   scrolled.value = window.scrollY > 12;
 }
 
-onMounted(() => window.addEventListener('scroll', onScroll, { passive: true }));
+onMounted(() => {
+  window.addEventListener('scroll', onScroll, { passive: true });
+  refreshSession().catch((error) => console.error('Could not load session', error));
+});
 onUnmounted(() => window.removeEventListener('scroll', onScroll));
+
+async function logOut() {
+  try {
+    await signOut();
+    menuOpen.value = false;
+  } catch (error) {
+    console.error('Could not sign out', error);
+  }
+}
 </script>
 
 <template>
@@ -37,7 +50,8 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
       <nav class="nav" :class="{ 'nav--open': menuOpen }" aria-label="Main">
         <RouterLink to="/concerts" @click="menuOpen = false">Concerts</RouterLink>
         <RouterLink to="/method" @click="menuOpen = false">How it works</RouterLink>
-        <RouterLink to="/login" @click="menuOpen = false">Sign in</RouterLink>
+        <RouterLink v-if="!currentUser" to="/login" @click="menuOpen = false">Sign in</RouterLink>
+        <button v-else class="signout-btn" type="button" @click="logOut">Sign out</button>
         <button class="theme-btn" @click="$emit('toggle-theme')">
           <span aria-hidden="true">{{ theme === 'dark' ? '☾' : '☀' }}</span>
           <span class="sr-only">Switch to {{ theme === 'dark' ? 'light' : 'dark' }} theme</span>
@@ -129,7 +143,8 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
   gap: var(--space-5);
 }
 
-.nav a:not(.nav__cta) {
+.nav a:not(.nav__cta),
+.nav .signout-btn {
   color: var(--text-300);
   text-decoration: none;
   font-size: var(--step--1);
@@ -139,7 +154,8 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
   transition: color var(--dur-fast) var(--ease-out);
 }
 
-.nav a:not(.nav__cta)::after {
+.nav a:not(.nav__cta)::after,
+.nav .signout-btn::after {
   content: '';
   position: absolute;
   left: 0;
@@ -154,12 +170,14 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
 }
 
 .nav a:not(.nav__cta):hover,
-.nav a.router-link-active:not(.nav__cta) {
+.nav a.router-link-active:not(.nav__cta),
+.nav .signout-btn:hover {
   color: var(--text-100);
 }
 
 .nav a.router-link-active:not(.nav__cta)::after,
-.nav a:not(.nav__cta):hover::after {
+.nav a:not(.nav__cta):hover::after,
+.nav .signout-btn:hover::after {
   transform: scaleX(1);
 }
 
