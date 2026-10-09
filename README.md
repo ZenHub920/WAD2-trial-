@@ -207,10 +207,11 @@ server/
     metrics.js          evaluation metrics
     stableRoommates.js  Irving's algorithm, peer-to-peer mode
     maxHeap.js          worst-held-offer retrieval in O(log q)
-  src/db/             schema, repositories, seed
-  src/services/       round orchestration, re-verification, per-seeker explanations
-  src/routes/         HTTP layer
-  test/               109 tests
+  src/db/             SQLite schema and repositories (model)
+  src/services/       round orchestration, explanations, Ticketmaster integration
+  src/controllers/    HTTP validation, request handling, response shaping
+  src/routes/         endpoint-to-controller mappings
+  test/               backend unit and HTTP API tests
   bench/              synthetic data generator + evaluation harness
 
 client/
