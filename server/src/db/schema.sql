@@ -53,6 +53,10 @@ CREATE TABLE IF NOT EXISTS concerts (
   doors_time    TEXT,
   hero_image_url TEXT,
   blurb         TEXT,
+  source        TEXT,
+  source_event_id TEXT,
+  official_url  TEXT,
+  image_attribution TEXT,
   -- Matching for an event closes at this point; rounds run on or after it.
   matching_closes_at TEXT,
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
