@@ -33,7 +33,7 @@ Open <http://localhost:5173>.
 
 ```bash
 cd server
-npm test              # 78 tests
+npm test              # 109 tests
 npm run bench         # algorithm comparison against baselines
 npm run bench:scale   # runtime scaling study
 ```
@@ -63,7 +63,37 @@ Irving's algorithm for stable roommates is also implemented
 (`server/src/matching/stableRoommates.js`) for a true peer-to-peer mode, including correct
 detection of instances with no stable matching.
 
-Full specification: **[`docs/ALGORITHM.md`](docs/ALGORITHM.md)**.
+### One engine, several solvers, and an honest account of each
+
+The problems form a hierarchy — Stable Marriage ⊂ Hospital/Residents ⊂ HR with Couples —
+so a second solver is never added for coverage. It is added because **the more structure an
+instance has, the stronger the promise that can be made about the answer.**
+
+Each round is classified before it is solved, dispatched to the strongest-guarantee solver
+that can represent it, and verified in the manner that solver's promise requires: an
+*assertion* where stability is guaranteed, a *measurement* where the problem class does not
+admit that promise. What was promised beforehand and what was measured afterwards are
+recorded separately, because conflating them is how a system starts overstating its results.
+
+An instance containing something no solver models exactly — two friends who must both be
+placed or neither — is neither refused nor silently mis-answered. Deferred acceptance runs
+on the relaxed instance, the dropped constraint is recorded, the stability promise is
+downgraded, and the round reports:
+
+> Solved with linked_pairs ignored — this is not a solution to the full problem.
+> 0 blocking pairs in the relaxed instance.
+
+Note the result is simultaneously *measured stable* and *not guaranteed stable*. Both are
+true and they are different claims.
+
+One caveat worth stating: a mixed instance must **not** be split into singles and couples
+and solved separately. A single and a member of a couple can form a blocking pair across the
+partition that neither sub-solve would ever examine. Decomposition is sound only where the
+feasibility graph is disconnected — which is exactly why partitioning by concert is free.
+
+`GET /api/solvers` lists every algorithm with what it can and cannot promise.
+
+Full specification: **[`docs/ALGORITHM.md`](docs/ALGORITHM.md)** (§10 for the above).
 
 ---
 
@@ -132,6 +162,10 @@ took the same 5,000-seeker population from **36.2s to 1.7s**, a 24× improvement
 ```
 server/
   src/matching/       the engine — no HTTP, no database, independently testable
+    classify.js         what kind of matching problem this instance actually is
+    registry.js         every solver, and what each may claim about its output
+    guarantees.js       the promise vocabulary, and verification that honours it
+    solve.js            classify -> select -> solve -> verify -> ledger
     compatibility.js    hard constraints + directional scoring
     preferences.js      preference lists and O(1) rank maps
     galeShapley.js      deferred acceptance, Hospital/Residents
@@ -143,7 +177,7 @@ server/
   src/db/             schema, repositories, seed
   src/services/       round orchestration, re-verification, per-seeker explanations
   src/routes/         HTTP layer
-  test/               78 tests
+  test/               109 tests
   bench/              synthetic data generator + evaluation harness
 
 client/
@@ -180,6 +214,7 @@ rail. It is reading the solver's actual output, not an animation of an idea.
 | `GET` | `/api/rounds/:id` | round with per-seeker results |
 | `GET` | `/api/rounds/:id/trace` | the proposal sequence |
 | `GET` | `/api/rounds/:id/verify` | re-check stability against the stored snapshot |
+| `GET` | `/api/solvers` | every algorithm, with its guarantees and limits |
 | `GET` | `/api/concerts/:id/explain/:requestId` | why one seeker got their result |
 
 ---

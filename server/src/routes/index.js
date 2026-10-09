@@ -9,6 +9,8 @@
 import { Router } from 'express';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
+import { listSolvers } from '../matching/index.js';
+
 export function createRoutes({ repos, matching }) {
   const router = Router();
 
@@ -124,6 +126,11 @@ export function createRoutes({ repos, matching }) {
         comparison: preview.comparison ?? null,
         instance: preview.profile.stats,
         solver: preview.result.stats,
+        // Which solver ran, on what kind of instance, and what the result is
+        // entitled to claim. The UI reads `ledger.headline` rather than
+        // deciding for itself whether "verified stable" is warranted.
+        ledger: preview.ledger ?? null,
+        classification: preview.classification ?? null,
         trace: withTrace ? preview.result.trace : undefined,
         assignments: [...preview.result.assignments].map(([seekerId, partyId]) => ({
           seekerId,
@@ -160,9 +167,22 @@ export function createRoutes({ repos, matching }) {
         blockingPairCount: round.blocking_pair_count,
         metrics: round.metrics,
         timings: round.timings,
+        solverId: round.solver_id ?? null,
+        instanceClass: round.instance_class ?? null,
+        stabilityPromise: round.stability_promise ?? null,
+        ledger: round.ledger_json ? JSON.parse(round.ledger_json) : null,
       },
       results: repos.rounds.resultsForRound(round.id),
     });
+  });
+
+  /**
+   * Every algorithm the engine knows about, with what each can and cannot
+   * promise. Drives the method page, and means the guarantees are documented
+   * from the same source the solver path reads.
+   */
+  router.get('/solvers', (req, res) => {
+    res.json({ solvers: listSolvers() });
   });
 
   router.get('/rounds/:id/trace', (req, res) => {
