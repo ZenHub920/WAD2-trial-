@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api.js';
+import { setCurrentUser } from '../auth.js';
 
 const router = useRouter();
 const mode = ref('login');
@@ -60,8 +61,7 @@ async function submit() {
         password: password.value 
       });
 
-    // Store the public user profile for the rest of the client session.
-    localStorage.setItem('encore-user', JSON.stringify(response.user));
+    setCurrentUser(response.user);
     success.value = isRegistering.value ? 'Your account is ready.' : `Welcome back, ${response.user.displayName}.`;
     setTimeout(() => router.push('/concerts'), 500);
   } catch (err) {
