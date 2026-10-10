@@ -205,6 +205,66 @@ const LISTINGS = [
     price_cents: 8800, verified: true, minutes_ago: 60 * 48,
     description: 'Up high but centred. Bring earplugs.',
   },
+  {
+    concert_id: 'c_seraphina',
+    title: 'Seraphina Vale Glasshouse Tour Singapore 15 Nov Cat 1',
+    category: 'Cat 1', show_date: '2026-11-15', seat_row: 'D', seat_numbers: '14, 15, 16',
+    quantity: 3, price_cents: 87000, verified: true, minutes_ago: 4,
+    description:
+      'Three Cat 1 seats together for the Sunday show. Our group shrank, so selling all three ' +
+      'as one lot. Face value, receipts available.',
+  },
+  {
+    concert_id: 'c_kiyoko',
+    title: 'KIYOKO Neon Prefecture Singapore Stalls Pit',
+    category: 'Pit', show_date: '2026-12-06',
+    price_cents: 19800, verified: true, minutes_ago: 27,
+    description: 'Pit standing. Bring your voice — it is a singalong from the first song.',
+  },
+  {
+    concert_id: 'c_halcyon',
+    title: 'Halcyon Drift Low Tide Capitol Theatre Stalls Row B',
+    category: 'Stalls', show_date: '2026-11-02', seat_row: 'B', seat_numbers: '5, 6',
+    quantity: 2, price_cents: 23600, verified: false, minutes_ago: 60 * 2,
+    description: 'Two seats, second row. Will transfer as soon as payment clears.',
+  },
+  {
+    concert_id: 'c_meridian',
+    title: 'Meridian Youth Afterglow Asia VIP Soundcheck',
+    category: 'VIP', show_date: '2027-01-17',
+    price_cents: 48000, verified: true, minutes_ago: 60 * 6,
+    description:
+      'VIP package: soundcheck entry, early merch access and a signed poster. Selling because ' +
+      'I am travelling that week.',
+  },
+  {
+    concert_id: 'c_northbound',
+    title: 'Northbound Atlas Signal Fade Dress Circle',
+    category: 'Dress Circle', show_date: '2026-10-25', seat_row: 'H', seat_numbers: '21',
+    price_cents: 15500, verified: true, minutes_ago: 60 * 9,
+    description: 'Single dress circle seat, centre block. Great sightline to the light rig.',
+  },
+  {
+    concert_id: 'c_seraphina',
+    title: 'Seraphina Vale Glasshouse Tour Singapore 14 Nov Cat 6',
+    category: 'Cat 6', show_date: '2026-11-14', seat_row: 'FF', seat_numbers: '40',
+    price_cents: 14800, verified: false, minutes_ago: 60 * 20,
+    description: 'Upper tier but full stage view. Selling below what I paid.',
+  },
+  {
+    concert_id: 'c_kiyoko',
+    title: 'KIYOKO Neon Prefecture Singapore Balcony Box',
+    category: 'Box', show_date: '2026-12-06', seat_row: 'Box 3', seat_numbers: '1–4',
+    quantity: 4, price_cents: 96000, verified: true, minutes_ago: 60 * 36,
+    description: 'Private balcony box for four. Best seats in the hall for actually listening.',
+  },
+  {
+    concert_id: 'c_meridian',
+    title: 'Meridian Youth Afterglow Asia Standing Pen C',
+    category: 'Pen C', show_date: '2027-01-17',
+    price_cents: 16500, verified: true, minutes_ago: 60 * 72,
+    description: 'Pen C, late entry. Fine if you just want to be in the room.',
+  },
 ];
 
 /** SQLite's own datetime format, so seeded rows sort alongside datetime('now') rows. */
