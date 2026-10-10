@@ -21,10 +21,12 @@ defineEmits(['toggle-save']);
   <article class="lcard">
     <header class="lcard__seller">
       <UserAvatar :user="listing.seller" :size="30" />
-      <span class="lcard__name">{{ listing.seller.displayName }}</span>
-      <time class="lcard__time" :datetime="listing.createdAt">
-        {{ formatRelative(listing.createdAt) }}
-      </time>
+      <div class="lcard__who">
+        <span class="lcard__name">{{ listing.seller.displayName }}</span>
+        <time class="lcard__time" :datetime="listing.createdAt">
+          {{ formatRelative(listing.createdAt) }}
+        </time>
+      </div>
     </header>
 
     <TicketPoster :listing="listing" ratio="3 / 2" compact />
@@ -51,6 +53,7 @@ defineEmits(['toggle-save']);
 
 <style scoped>
 .lcard {
+  container-type: inline-size;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -82,6 +85,22 @@ defineEmits(['toggle-save']);
   min-width: 0;
 }
 
+/* Name and time share a line when the card is wide enough, and stack when it is not. */
+.lcard__who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+@container (min-width: 230px) {
+  .lcard__who {
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+}
+
 .lcard__name {
   flex: 1;
   min-width: 0;
@@ -97,6 +116,7 @@ defineEmits(['toggle-save']);
   flex: none;
   color: var(--text-400);
   font-size: var(--step--2);
+  line-height: 1.3;
 }
 
 .lcard__title {

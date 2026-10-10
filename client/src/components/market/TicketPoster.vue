@@ -42,6 +42,7 @@ const hue = computed(() => hueFor(props.listing.concert.id));
 
 <style scoped>
 .poster {
+  container-type: inline-size;
   position: relative;
   width: 100%;
   overflow: hidden;
@@ -72,7 +73,9 @@ const hue = computed(() => hueFor(props.listing.concert.id));
 .poster__artist {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: var(--step-3);
+  /* Scale with the poster, not the page, so long names fit a narrow card. */
+  font-size: min(var(--step-4), 10cqi);
+  overflow-wrap: anywhere;
   line-height: 0.95;
   letter-spacing: -0.03em;
   text-transform: uppercase;
@@ -99,7 +102,7 @@ const hue = computed(() => hueFor(props.listing.concert.id));
 }
 
 .poster--compact .poster__artist {
-  font-size: var(--step-1);
+  font-size: min(var(--step-1), 11cqi);
 }
 
 .poster--compact .poster__tour {

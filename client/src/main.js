@@ -10,6 +10,11 @@ import ConcertView from './views/ConcertView.vue';
 import AlgorithmView from './views/AlgorithmView.vue';
 import RoundView from './views/RoundView.vue';
 import MethodView from './views/MethodView.vue';
+import MarketView from './views/MarketView.vue';
+import ListingView from './views/ListingView.vue';
+import OrderReviewView from './views/OrderReviewView.vue';
+import CheckoutView from './views/CheckoutView.vue';
+import OrderConfirmationView from './views/OrderConfirmationView.vue';
 import NotFoundView from './views/NotFoundView.vue';
 
 const router = createRouter({
@@ -27,6 +32,35 @@ const router = createRouter({
     },
     { path: '/rounds/:id', name: 'round', component: RoundView, props: true },
     { path: '/method', name: 'method', component: MethodView, meta: { title: 'Method' } },
+    { path: '/market', name: 'market', component: MarketView, meta: { title: 'Ticket market' } },
+    {
+      path: '/market/:id',
+      name: 'listing',
+      component: ListingView,
+      props: true,
+      meta: { title: 'Listing details' },
+    },
+    {
+      path: '/market/:id/order',
+      name: 'order-review',
+      component: OrderReviewView,
+      props: true,
+      meta: { title: 'Order details' },
+    },
+    {
+      path: '/market/:id/checkout',
+      name: 'checkout',
+      component: CheckoutView,
+      props: true,
+      meta: { title: 'Checkout' },
+    },
+    {
+      path: '/orders/:id',
+      name: 'order',
+      component: OrderConfirmationView,
+      props: true,
+      meta: { title: 'Order confirmed' },
+    },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView },
   ],
   scrollBehavior(to, from, saved) {
