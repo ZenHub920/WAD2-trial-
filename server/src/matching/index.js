@@ -11,6 +11,16 @@ export { findBlockingPairs, assertStable, assertIndividuallyRational } from './s
 export { evaluate, comparisonTable } from './metrics.js';
 export { stableRoommates, findRoommateBlockingPairs } from './stableRoommates.js';
 export { MaxHeap } from './maxHeap.js';
+export { classifyInstance, CLASS, FEATURE } from './classify.js';
+export { SOLVERS, listSolvers, getSolver, selectSolver } from './registry.js';
+export {
+  STABILITY,
+  OPTIMALITY,
+  TERMINATION,
+  verifyUnderGuarantee,
+  weakerStability,
+} from './guarantees.js';
+export { solveInstance } from './solve.js';
 export {
   checkFeasibility,
   scorePair,
@@ -23,16 +33,17 @@ export {
 } from './compatibility.js';
 
 import { buildPreferences } from './preferences.js';
-import { galeShapley } from './galeShapley.js';
 import { greedyMatch, randomMatch } from './baselines.js';
-import { assertStable, assertIndividuallyRational } from './stability.js';
 import { evaluate } from './metrics.js';
+import { solveInstance } from './solve.js';
 
 /**
- * Run a complete match round: build preferences, solve, verify, evaluate.
+ * Run a complete match round: build preferences, classify, solve, verify, evaluate.
  *
- * The stability assertion is deliberately not optional in the default path — an
- * unstable matching is a bug, and it should never reach the database.
+ * Verification is not optional, but its SEVERITY is chosen by the solver that
+ * ran. Where stability is guaranteed, a blocking pair is a bug and throws; where
+ * the problem class does not admit that promise, it is measured and recorded.
+ * `output.ledger` says which happened and why.
  *
  * @param {Array} seekers
  * @param {Array} parties
@@ -40,19 +51,22 @@ import { evaluate } from './metrics.js';
  * @param {boolean} [options.trace=false]         record the proposal sequence
  * @param {boolean} [options.withBaselines=false] also run greedy and random
  * @param {Set<string>} [options.blocklist]
+ * @param {string} [options.force]                solver id, bypassing selection
  */
 export function runMatchRound(seekers, parties, options = {}) {
-  const { trace = false, withBaselines = false, blocklist } = options;
+  const { trace = false, withBaselines = false, blocklist, force } = options;
 
   const t0 = performance.now();
   const profile = buildPreferences(seekers, parties, { blocklist });
   const tPrefs = performance.now();
 
-  const result = galeShapley(profile, { trace });
+  const { result, ledger, classification } = solveInstance({
+    profile,
+    seekers,
+    parties,
+    options: { trace, force },
+  });
   const tSolve = performance.now();
-
-  assertIndividuallyRational(profile, result);
-  assertStable(profile, result, 'gale-shapley');
 
   const metrics = evaluate(profile, result);
   const tEval = performance.now();
@@ -61,6 +75,8 @@ export function runMatchRound(seekers, parties, options = {}) {
     profile,
     result,
     metrics,
+    ledger,
+    classification,
     timings: {
       preferencesMs: round2(tPrefs - t0),
       solveMs: round2(tSolve - tPrefs),

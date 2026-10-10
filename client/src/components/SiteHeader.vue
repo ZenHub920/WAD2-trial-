@@ -1,24 +1,44 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
+import { currentUser, signOut } from '../auth.js';
 
 defineProps({ theme: { type: String, default: 'dark' } });
 defineEmits(['toggle-theme']);
 
 const scrolled = ref(false);
 const menuOpen = ref(false);
+const route = useRoute();
+const homeLink = computed(() => (currentUser.value ? '/marketplace' : '/'));
+const isLoggedIn = computed(() => Boolean(currentUser.value));
+const hasFixedHeader = computed(() =>
+  isLoggedIn.value || ['marketplace', 'list-ticket', 'my-listings', 'ticket-detail'].includes(route.name),
+);
 
 function onScroll() {
   scrolled.value = window.scrollY > 12;
 }
 
-onMounted(() => window.addEventListener('scroll', onScroll, { passive: true }));
+onMounted(() => {
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+});
 onUnmounted(() => window.removeEventListener('scroll', onScroll));
+
+async function logOut() {
+  try {
+    await signOut();
+    menuOpen.value = false;
+  } catch (error) {
+    console.error('Could not sign out', error);
+  }
+}
 </script>
 
 <template>
-  <header class="header" :class="{ 'header--scrolled': scrolled }">
+  <header class="header" :class="{ 'header--scrolled': scrolled, 'header--fixed': hasFixedHeader }">
     <div class="header__inner container container--wide">
-      <RouterLink to="/" class="brand" @click="menuOpen = false">
+      <RouterLink :to="homeLink" class="brand" @click="menuOpen = false">
         <span class="brand__mark" aria-hidden="true">
           <span class="brand__bar" v-for="n in 4" :key="n" :style="{ '--i': n }" />
         </span>
@@ -35,14 +55,25 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
       </button>
 
       <nav class="nav" :class="{ 'nav--open': menuOpen }" aria-label="Main">
-        <RouterLink to="/concerts" @click="menuOpen = false">Concerts</RouterLink>
-        <RouterLink to="/market" @click="menuOpen = false">Ticket market</RouterLink>
-        <RouterLink to="/method" @click="menuOpen = false">How it works</RouterLink>
+        <template v-if="isLoggedIn">
+          <RouterLink to="/list-ticket" class="list-ticket-btn" @click="menuOpen = false">+ List a ticket</RouterLink>
+          <RouterLink to="/marketplace" @click="menuOpen = false">Ticket Market</RouterLink>
+          <RouterLink to="/kaki" @click="menuOpen = false">KakiFinder</RouterLink>
+          <RouterLink to="/chat" @click="menuOpen = false">Chat</RouterLink>
+          <RouterLink to="/profile" @click="menuOpen = false">Profile</RouterLink>
+          <RouterLink to="/my-listings" class="my-listings-btn" @click="menuOpen = false">My listings</RouterLink>
+        </template>
+        <template v-else>
+          <RouterLink to="/marketplace" @click="menuOpen = false">Ticket Market</RouterLink>
+          <RouterLink to="/concerts" @click="menuOpen = false">Concerts</RouterLink>
+          <RouterLink to="/method" @click="menuOpen = false">How it works</RouterLink>
+          <RouterLink to="/login" @click="menuOpen = false">Sign in</RouterLink>
+        </template>
         <button class="theme-btn" @click="$emit('toggle-theme')">
           <span aria-hidden="true">{{ theme === 'dark' ? '☾' : '☀' }}</span>
           <span class="sr-only">Switch to {{ theme === 'dark' ? 'light' : 'dark' }} theme</span>
         </button>
-        <RouterLink to="/concerts" class="btn btn--primary nav__cta" @click="menuOpen = false">
+        <RouterLink v-if="!isLoggedIn" to="/concerts" class="btn btn--primary nav__cta" @click="menuOpen = false">
           Find a group
         </RouterLink>
       </nav>
@@ -69,6 +100,11 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
 .header--scrolled {
   border-bottom-color: var(--ink-600);
   background: color-mix(in oklab, var(--ink-900) 92%, transparent);
+}
+
+.header--fixed {
+  position: fixed;
+  width: 100%;
 }
 
 .header__inner {
@@ -129,7 +165,8 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
   gap: var(--space-5);
 }
 
-.nav a:not(.nav__cta) {
+.nav a:not(.nav__cta),
+.nav .signout-btn {
   color: var(--text-300);
   text-decoration: none;
   font-size: var(--step--1);
@@ -139,28 +176,11 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
   transition: color var(--dur-fast) var(--ease-out);
 }
 
-.nav a:not(.nav__cta)::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  height: 2px;
-  width: 100%;
-  background: var(--accent-500);
-  border-radius: 2px;
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform var(--dur-base) var(--ease-out);
-}
 
 .nav a:not(.nav__cta):hover,
-.nav a.router-link-active:not(.nav__cta) {
+.nav a.router-link-active:not(.nav__cta),
+.nav .signout-btn:hover {
   color: var(--text-100);
-}
-
-.nav a.router-link-active:not(.nav__cta)::after,
-.nav a:not(.nav__cta):hover::after {
-  transform: scaleX(1);
 }
 
 .theme-btn {
@@ -182,6 +202,45 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
   color: var(--accent-400);
   border-color: var(--accent-500);
   transform: rotate(-20deg);
+}
+
+.nav-market-tools {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+}
+
+.list-ticket-btn {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--accent-500);
+  color: white !important;
+  font-size: var(--step--2);
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.list-ticket-btn:hover {
+  background: var(--accent-400);
+}
+
+.my-listings-btn {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--accent-500);
+  border-radius: var(--radius-pill);
+  color: var(--accent-300) !important;
+  font-size: var(--step--2) !important;
+  font-weight: 700 !important;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.my-listings-btn:hover,
+.my-listings-btn.router-link-active {
+  background: var(--accent-500);
+  color: white !important;
 }
 
 /* ---- Mobile ------------------------------------------------------------- */
@@ -244,6 +303,11 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
     transition:
       transform var(--dur-base) var(--ease-out),
       opacity var(--dur-fast) var(--ease-out);
+  }
+
+  .nav-market-tools {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .nav--open {

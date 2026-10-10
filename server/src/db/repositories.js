@@ -29,6 +29,7 @@ function mapUser(row) {
     vibe: JSON.parse(row.vibe_json),
     reliability: row.reliability,
     verified: row.verified,
+    ...(Object.hasOwn(row, 'is_operator') ? { is_operator: Boolean(row.is_operator) } : {}),
     created_at: row.created_at,
   };
 }
@@ -46,6 +47,9 @@ function mapParty(row) {
     plans: JSON.parse(row.plans_json),
     strict_age_policy: row.strict_age_policy,
     min_age_band: row.min_age_band,
+    // Lower quota. Read by classifyInstance; omitting it here would leave the
+    // classifier permanently blind to the constraint even once it is stored.
+    min_size: row.min_size ?? null,
     notes: row.notes,
     status: row.status,
     host: row.host_id ? mapUser(prefixed(row, 'host_')) : undefined,
@@ -64,6 +68,8 @@ function mapSeeker(row) {
     plans_wanted: JSON.parse(row.plans_wanted_json),
     strict_age_policy: row.strict_age_policy,
     age_tolerance: row.age_tolerance,
+    // All-or-nothing link to another request. Same reason as min_size above.
+    linked_request_id: row.linked_request_id ?? null,
     notes: row.notes,
     status: row.status,
     user: row.user_id_joined ? mapUser(prefixed(row, 'user_')) : undefined,
@@ -103,16 +109,17 @@ export function createUserRepo(db) {
     create(data) {
       const id = data.id ?? `u_${randomUUID().slice(0, 8)}`;
       db.prepare(`
-        INSERT INTO users (id, display_name, email, age_band, home_region, gender,
+        INSERT INTO users (id, display_name, email, password_hash, age_band, home_region, gender,
                            companion_gender_pref, languages_json, vibe_json,
                            reliability, verified)
-        VALUES (@id, @display_name, @email, @age_band, @home_region, @gender,
+        VALUES (@id, @display_name, @email, @password_hash, @age_band, @home_region, @gender,
                 @companion_gender_pref, @languages_json, @vibe_json,
                 @reliability, @verified)
       `).run({
         id,
         display_name: data.display_name,
         email: data.email ?? null,
+        password_hash: data.password_hash ?? null,
         age_band: data.age_band,
         home_region: data.home_region,
         gender: data.gender,
@@ -129,9 +136,31 @@ export function createUserRepo(db) {
       return mapUser(db.prepare('SELECT * FROM users WHERE id = ?').get(id));
     },
 
+    findByEmail(email) {
+      return db.prepare('SELECT * FROM users WHERE lower(email) = lower(?)').get(email);
+    },
+
     list(limit = 100) {
       return db.prepare('SELECT * FROM users ORDER BY created_at DESC LIMIT ?')
         .all(limit).map(mapUser);
+    },
+    updateProfile(id, changes) {
+      const columns = {
+        displayName: 'display_name',
+        ageBand: 'age_band',
+        homeRegion: 'home_region',
+        gender: 'gender',
+        companionGenderPref: 'companion_gender_pref',
+        languages: 'languages_json',
+        vibe: 'vibe_json',
+      };
+      const entries = Object.entries(changes).map(([key, value]) =>
+        [columns[key], key === 'languages' || key === 'vibe' ? JSON.stringify(value) : value]);
+      if (entries.length) {
+        db.prepare(`UPDATE users SET ${entries.map(([column]) => `${column} = ?`).join(', ')} WHERE id = ?`)
+          .run(...entries.map(([, value]) => value), id);
+      }
+      return this.findById(id);
     },
 
     /** Recompute the cached reliability projection from the feedback view. */
@@ -197,15 +226,68 @@ export function createConcertRepo(db) {
         SELECT
           c.*,
           (SELECT COUNT(*) FROM parties p
-            WHERE p.concert_id = c.id AND p.status = 'open')            AS open_parties,
+            WHERE p.concert_id = c.id AND p.status = 'open'
+              AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.source_party_id = p.id)) AS open_parties,
           (SELECT COALESCE(SUM(p.capacity), 0) FROM parties p
-            WHERE p.concert_id = c.id AND p.status = 'open')            AS open_slots,
+            WHERE p.concert_id = c.id AND p.status = 'open'
+              AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.source_party_id = p.id)) AS open_slots,
           (SELECT COUNT(*) FROM seeker_requests s
             WHERE s.concert_id = c.id AND s.status = 'open')            AS open_seekers
         FROM concerts c
         ORDER BY c.event_date ASC
       `).all();
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Explicit Kaki participation (independent of seeker requests)
+// ---------------------------------------------------------------------------
+
+export function createParticipationRepo(db) {
+  const byUserConcert = db.prepare(`
+    SELECT concert_id AS concertId, section_pref AS sectionPref, arrival_pref AS arrivalPref
+    FROM concert_participants WHERE user_id = ? AND concert_id = ? AND status = 'joined'
+  `);
+  const mine = db.prepare(`
+    SELECT c.*, p.section_pref AS sectionPref, p.arrival_pref AS arrivalPref
+    FROM concert_participants p
+    JOIN concerts c ON c.id = p.concert_id
+    WHERE p.user_id = ? AND p.status = 'joined'
+    ORDER BY c.event_date, c.id
+  `);
+  const upsert = db.prepare(`
+    INSERT INTO concert_participants (user_id, concert_id, section_pref, arrival_pref)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT (user_id, concert_id) DO UPDATE SET
+      section_pref = excluded.section_pref, arrival_pref = excluded.arrival_pref,
+      status = 'joined', joined_at = datetime('now')
+  `);
+  const withdraw = db.prepare(`
+    UPDATE concert_participants SET status = 'withdrawn'
+    WHERE user_id = ? AND concert_id = ?
+  `);
+  const removeLikes = db.prepare(`
+    DELETE FROM kaki_decisions
+    WHERE actor_user_id = ? AND concert_id = ? AND decision = 'like'
+  `);
+  return {
+    find(userId, concertId) {
+      return byUserConcert.get(userId, concertId) ?? null;
+    },
+    mine(userId) {
+      return mine.all(userId).map(({ sectionPref, arrivalPref, ...concert }) => ({
+        concert, participation: { concertId: concert.id, sectionPref, arrivalPref },
+      }));
+    },
+    join: db.transaction((userId, concertId, sectionPref, arrivalPref) => {
+      upsert.run(userId, concertId, sectionPref, arrivalPref);
+      return byUserConcert.get(userId, concertId);
+    }),
+    leave: db.transaction((userId, concertId) => {
+      withdraw.run(userId, concertId);
+      removeLikes.run(userId, concertId);
+    }),
   };
 }
 
@@ -253,6 +335,7 @@ export function createPartyRepo(db) {
         SELECT p.*, ${USER_COLUMNS('u', 'host_')}
         FROM parties p JOIN users u ON u.id = p.host_user_id
         WHERE p.concert_id = ? AND p.status = 'open'
+          AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.source_party_id = p.id)
         ORDER BY p.id
       `).all(concertId);
       return rows.map(mapParty);
@@ -260,6 +343,81 @@ export function createPartyRepo(db) {
 
     setStatus(id, status) {
       db.prepare('UPDATE parties SET status = ? WHERE id = ?').run(status, id);
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Ticket inventory — intentionally separate from matchmaking parties
+// ---------------------------------------------------------------------------
+
+function mapTicket(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    seller_user_id: row.seller_user_id,
+    concert: {
+      id: row.concert_id, artist: row.artist, venue: row.venue,
+      city: row.city, event_date: row.event_date,
+    },
+    seller: mapUser(prefixed(row, 'seller_')),
+    priceCents: row.price_cents,
+    quantity: row.quantity,
+    section: row.section,
+    description: row.description,
+    imageUrl: row.image_path ? `/api/ticket-images/${row.image_path}` : null,
+    status: row.status,
+    image_path: row.image_path,
+  };
+}
+
+export function createTicketRepo(db) {
+  const joined = `
+    SELECT t.*, c.artist, c.venue, c.city, c.event_date,
+           ${USER_COLUMNS('u', 'seller_')}
+    FROM tickets t
+    JOIN users u ON u.id = t.seller_user_id
+    JOIN concerts c ON c.id = t.concert_id
+  `;
+  const get = db.prepare(`${joined} WHERE t.id = ? AND t.status <> 'deleted'`);
+  return {
+    create({ seller_user_id, concert, priceCents, quantity, section, description, image_path }) {
+      const id = `t_${randomUUID()}`;
+      db.transaction(() => {
+        const concertId = `c_${randomUUID()}`;
+        db.prepare(`INSERT INTO concerts (id, artist, venue, city, event_date)
+                    VALUES (?, ?, ?, ?, ?)`)
+          .run(concertId, concert.artist, concert.venue, concert.city ?? 'Singapore', concert.event_date);
+        db.prepare(`INSERT INTO tickets
+                    (id, seller_user_id, concert_id, price_cents, quantity, section, description, image_path)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(id, seller_user_id, concertId, priceCents, quantity, section, description, image_path);
+      })();
+      return this.findById(id);
+    },
+    findById(id) {
+      return mapTicket(get.get(id));
+    },
+    list() {
+      return db.prepare(`${joined} WHERE t.status = 'active' ORDER BY t.created_at DESC, t.id DESC`)
+        .all().map(mapTicket);
+    },
+    forSeller(userId) {
+      return db.prepare(`${joined} WHERE t.seller_user_id = ? AND t.status <> 'deleted'
+        ORDER BY t.created_at DESC, t.id DESC`).all(userId).map(mapTicket);
+    },
+    updateOwned(id, sellerId, fields) {
+      const result = db.prepare(`UPDATE tickets
+        SET price_cents = ?, quantity = ?, section = ?, description = ?, image_path = ?
+        WHERE id = ? AND seller_user_id = ? AND status = 'active'`)
+        .run(fields.priceCents, fields.quantity, fields.section, fields.description, fields.image_path,
+          id, sellerId);
+      return result.changes ? this.findById(id) : null;
+    },
+    deleteOwned(id, sellerId) {
+      const result = db.prepare(`UPDATE tickets SET status = 'deleted'
+        WHERE id = ? AND seller_user_id = ? AND status = 'active'`).run(id, sellerId);
+      return result.changes > 0;
     },
   };
 }
@@ -331,17 +489,30 @@ export function createRoundRepo(db) {
      * and the trace either all land or none do — a half-written round would be a
      * matching whose stability proof no longer describes its contents.
      */
-    save({ concertId, profile, result, metrics, timings, trace = [], algorithm = 'gale_shapley_hr' }) {
+    save({
+      concertId,
+      profile,
+      result,
+      metrics,
+      timings,
+      trace = [],
+      algorithm = 'gale_shapley_hr',
+      ledger = null,
+    }) {
       const roundId = `r_${randomUUID().slice(0, 8)}`;
 
       const insertRound = db.prepare(`
         INSERT INTO match_rounds (id, concert_id, algorithm, is_stable, blocking_pair_count,
                                   seeker_count, party_count, total_capacity, feasible_pairs,
                                   matched_count, metrics_json, timings_json,
-                                  preference_snapshot_json)
+                                  preference_snapshot_json,
+                                  solver_id, instance_class, stability_promise,
+                                  relaxations_json, ledger_json)
         VALUES (@id, @concert_id, @algorithm, @is_stable, @blocking_pair_count,
                 @seeker_count, @party_count, @total_capacity, @feasible_pairs,
-                @matched_count, @metrics_json, @timings_json, @preference_snapshot_json)
+                @matched_count, @metrics_json, @timings_json, @preference_snapshot_json,
+                @solver_id, @instance_class, @stability_promise,
+                @relaxations_json, @ledger_json)
       `);
 
       const insertResult = db.prepare(`
@@ -377,6 +548,14 @@ export function createRoundRepo(db) {
             partyPrefs: Object.fromEntries(profile.partyPrefs),
             capacities: Object.fromEntries(profile.capacities),
           }),
+          // The ledger's own columns are duplicated out of ledger_json so a
+          // round can be filtered by solver or promise in SQL without parsing
+          // every blob. The JSON stays authoritative.
+          solver_id: ledger?.solver ?? null,
+          instance_class: ledger?.instanceClass ?? null,
+          stability_promise: ledger?.promised?.stability ?? null,
+          relaxations_json: ledger ? JSON.stringify(ledger.relaxations ?? []) : null,
+          ledger_json: ledger ? JSON.stringify(ledger) : null,
         });
 
         for (const seekerId of profile.seekerPrefs.keys()) {
@@ -436,6 +615,51 @@ export function createRoundRepo(db) {
       };
     },
 
+    /** Only the latest round can reveal a result; ownership is always the session user. */
+    resultForUser(concertId, userId) {
+      const round = this.latestForConcert(concertId);
+      if (!round) return null;
+      const roundInfo = { id: round.id, ranAt: round.ran_at };
+      const seeker = db.prepare(`
+        SELECT mr.outcome, mr.party_id FROM match_results mr
+        JOIN seeker_requests s ON s.id = mr.seeker_request_id
+        WHERE mr.round_id = ? AND s.user_id = ?
+      `).get(round.id, userId);
+      if (seeker) {
+        if (seeker.outcome !== 'matched') {
+          return { role: 'seeker', outcome: 'unmatched', round: roundInfo };
+        }
+        const party = db.prepare('SELECT id, section, host_user_id FROM parties WHERE id = ?')
+          .get(seeker.party_id);
+        return {
+          role: 'seeker', outcome: 'matched', round: roundInfo,
+          group: { id: party.id, section: party.section, host: mapUser(
+            db.prepare('SELECT * FROM users WHERE id = ?').get(party.host_user_id),
+          ) },
+        };
+      }
+
+      const party = db.prepare(`
+        SELECT id, section FROM parties WHERE concert_id = ? AND host_user_id = ?
+      `).get(concertId, userId);
+      if (!party || !Object.hasOwn(JSON.parse(round.preference_snapshot_json ?? '{}').capacities ?? {}, party.id)) {
+        return null;
+      }
+      const members = db.prepare(`
+        SELECT u.* FROM match_results mr
+        JOIN seeker_requests s ON s.id = mr.seeker_request_id
+        JOIN users u ON u.id = s.user_id
+        WHERE mr.round_id = ? AND mr.party_id = ? AND mr.outcome = 'matched'
+        ORDER BY mr.party_rank ASC
+      `).all(round.id, party.id).map(mapUser);
+      return {
+        role: 'host', outcome: members.length ? 'matched' : 'no_members', round: roundInfo,
+        group: { id: party.id, section: party.section,
+          host: mapUser(db.prepare('SELECT * FROM users WHERE id = ?').get(userId)) },
+        members,
+      };
+    },
+
     /** Full results for a round, joined out to human-readable names. */
     resultsForRound(roundId) {
       return db.prepare(`
@@ -480,165 +704,179 @@ export function createRoundRepo(db) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Ticket market
-// ---------------------------------------------------------------------------
-
-function mapListing(row) {
-  if (!row) return null;
+export function createSessionRepo(db) {
   return {
-    id: row.id,
-    seller_user_id: row.seller_user_id,
-    concert_id: row.concert_id,
-    title: row.title,
-    category: row.category,
-    show_date: row.show_date,
-    seat_row: row.seat_row,
-    seat_numbers: row.seat_numbers,
-    quantity: row.quantity,
-    price_cents: row.price_cents,
-    currency: row.currency,
-    description: row.description,
-    image_url: row.image_url,
-    verified: row.verified,
-    status: row.status,
-    created_at: row.created_at,
-    seller: mapUser(prefixed(row, 'seller_')),
-    concert: {
-      id: row.concert_id,
-      artist: row.concert_artist,
-      tour_name: row.concert_tour_name,
-      venue: row.concert_venue,
-      city: row.concert_city,
-      event_date: row.concert_event_date,
-      hero_image_url: row.concert_hero_image_url,
+    create(tokenHash, userId, expiresAt) {
+      db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
+        .run(tokenHash, userId, expiresAt);
+    },
+    findUserId(tokenHash, now) {
+      return db.prepare('SELECT user_id FROM sessions WHERE token_hash = ? AND expires_at > ?')
+        .get(tokenHash, now)?.user_id ?? null;
+    },
+    delete(tokenHash) {
+      db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash);
     },
   };
 }
 
-const LISTING_SELECT = `
-  SELECT l.*, ${USER_COLUMNS('u', 'seller_')},
-         c.artist         AS concert_artist,
-         c.tour_name      AS concert_tour_name,
-         c.venue          AS concert_venue,
-         c.city           AS concert_city,
-         c.event_date     AS concert_event_date,
-         c.hero_image_url AS concert_hero_image_url
-  FROM ticket_listings l
-  JOIN users u    ON u.id = l.seller_user_id
-  JOIN concerts c ON c.id = l.concert_id
-`;
+// A withdrawal overrides legacy open seeker/host membership.
+const kakiWithdrawn = (user, concert) => `EXISTS (
+  SELECT 1 FROM concert_participants withdrawn
+  WHERE withdrawn.user_id = ${user} AND withdrawn.concert_id = ${concert}
+    AND withdrawn.status = 'withdrawn'
+)`;
+const kakiJoined = (user, concert) => `EXISTS (
+  SELECT 1 FROM concert_participants joined
+  WHERE joined.user_id = ${user} AND joined.concert_id = ${concert}
+    AND joined.status = 'joined'
+)`;
+const kakiOpenSeeker = (user, concert) => `EXISTS (
+  SELECT 1 FROM seeker_requests active_seeker
+  WHERE active_seeker.user_id = ${user} AND active_seeker.concert_id = ${concert}
+    AND active_seeker.status = 'open'
+)`;
+const kakiCandidate = (user, concert) => `(
+  NOT ${kakiWithdrawn(user, concert)}
+  AND (${kakiJoined(user, concert)} OR ${kakiOpenSeeker(user, concert)})
+)`;
+const kakiActiveMember = (user, concert) => `(
+  NOT ${kakiWithdrawn(user, concert)}
+  AND (${kakiJoined(user, concert)} OR ${kakiOpenSeeker(user, concert)}
+    OR EXISTS (SELECT 1 FROM parties active_party
+               WHERE active_party.host_user_id = ${user} AND active_party.concert_id = ${concert}
+                 AND active_party.status = 'open'))
+)`;
+const kakiEligiblePair = (actor, concert, target) => `(
+  ${actor} <> ${target}
+  AND ${kakiActiveMember(actor, concert)}
+  AND ${kakiCandidate(target, concert)}
+  AND NOT EXISTS (SELECT 1 FROM blocks b
+                  WHERE (b.blocker_user_id = ${actor} AND b.blocked_user_id = ${target})
+                     OR (b.blocker_user_id = ${target} AND b.blocked_user_id = ${actor}))
+)`;
 
-/** An error the API layer can map to a status code without string-matching messages. */
-function marketError(code) {
-  return Object.assign(new Error(code), { code });
-}
-
-export function createListingRepo(db) {
-  return {
-    create(data) {
-      const id = data.id ?? `l_${randomUUID().slice(0, 8)}`;
-      db.prepare(`
-        INSERT INTO ticket_listings (id, seller_user_id, concert_id, title, category, show_date,
-                                     seat_row, seat_numbers, quantity, price_cents, currency,
-                                     description, image_url, verified, created_at)
-        VALUES (@id, @seller_user_id, @concert_id, @title, @category, @show_date,
-                @seat_row, @seat_numbers, @quantity, @price_cents, @currency,
-                @description, @image_url, @verified, COALESCE(@created_at, datetime('now')))
-      `).run({
-        id,
-        seller_user_id: data.seller_user_id,
-        concert_id: data.concert_id,
-        title: data.title,
-        category: data.category,
-        show_date: data.show_date ?? null,
-        seat_row: data.seat_row ?? null,
-        seat_numbers: data.seat_numbers ?? null,
-        quantity: data.quantity ?? 1,
-        price_cents: data.price_cents,
-        currency: data.currency ?? 'SGD',
-        description: data.description ?? null,
-        image_url: data.image_url ?? null,
-        verified: data.verified ? 1 : 0,
-        created_at: data.created_at ?? null,
-      });
-      return this.findById(id);
-    },
-
-    findById(id) {
-      return mapListing(db.prepare(`${LISTING_SELECT} WHERE l.id = ?`).get(id));
-    },
-
-    /** Open listings, newest first, optionally filtered by a free-text query. */
-    listOpen({ query = '', limit = 60 } = {}) {
-      const trimmed = query.trim();
-      if (!trimmed) {
-        return db.prepare(`
-          ${LISTING_SELECT}
-          WHERE l.status = 'open'
-          ORDER BY l.created_at DESC, l.id
-          LIMIT ?
-        `).all(limit).map(mapListing);
-      }
-
-      // Escape LIKE wildcards so a search for "100%" means the literal text.
-      const pattern = `%${trimmed.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
-      return db.prepare(`
-        ${LISTING_SELECT}
-        WHERE l.status = 'open'
-          AND (l.title LIKE @p ESCAPE '\\' OR l.category LIKE @p ESCAPE '\\'
-               OR c.artist LIKE @p ESCAPE '\\' OR c.tour_name LIKE @p ESCAPE '\\'
-               OR c.venue LIKE @p ESCAPE '\\')
-        ORDER BY l.created_at DESC, l.id
-        LIMIT @limit
-      `).all({ p: pattern, limit }).map(mapListing);
-    },
-  };
-}
-
-export function createOrderRepo(db) {
-  const findById = (id) => db.prepare('SELECT * FROM ticket_orders WHERE id = ?').get(id) ?? null;
-
-  /**
-   * Buy a listing. The status flip and the order insert share one transaction, and
-   * the UPDATE is conditional on the listing still being open — so two buyers racing
-   * for the same ticket cannot both succeed. Prices are read from the database,
-   * never from the request.
-   */
-  const purchase = db.transaction(({ listing_id, buyer_user_id, payment_method }) => {
-    const listing = db.prepare('SELECT * FROM ticket_listings WHERE id = ?').get(listing_id);
-    if (!listing) throw marketError('listing_not_found');
-    if (listing.seller_user_id === buyer_user_id) throw marketError('cannot_buy_own_listing');
-
-    const claimed = db.prepare(`
-      UPDATE ticket_listings SET status = 'sold' WHERE id = ? AND status = 'open'
-    `).run(listing_id);
-    if (claimed.changes !== 1) throw marketError('listing_unavailable');
-
-    const deliveryFee = 0;
-    const id = `o_${randomUUID().slice(0, 8)}`;
-    db.prepare(`
-      INSERT INTO ticket_orders (id, listing_id, buyer_user_id, subtotal_cents,
-                                 delivery_fee_cents, total_cents, currency, payment_method)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id, listing_id, buyer_user_id, listing.price_cents,
-      deliveryFee, listing.price_cents + deliveryFee, listing.currency, payment_method,
-    );
-    return findById(id);
+export function createKakiRepo(db) {
+  const concerts = db.prepare(`
+    SELECT c.* FROM concerts c
+    WHERE ${kakiActiveMember('@viewer', 'c.id')}
+    ORDER BY c.event_date, c.id
+  `);
+  const people = db.prepare(`
+    WITH candidates AS (
+      SELECT concert_id, user_id FROM seeker_requests WHERE status = 'open'
+      UNION
+      SELECT concert_id, user_id FROM concert_participants WHERE status = 'joined'
+    )
+    SELECT c.id AS concert_id, c.artist, c.tour_name, c.event_date, c.venue,
+           COALESCE(p.section_pref, s.section_pref) AS section_pref,
+           s.spend_band_max,
+           COALESCE(p.arrival_pref, s.arrival_pref) AS arrival_pref,
+           COALESCE(s.plans_wanted_json, '{}') AS plans_wanted_json,
+           u.id AS user_id, u.display_name AS user_display_name,
+           u.age_band AS user_age_band, u.home_region AS user_home_region,
+           u.languages_json AS user_languages_json, u.vibe_json AS user_vibe_json,
+           u.reliability AS user_reliability, u.verified AS user_verified
+    FROM candidates candidate
+    JOIN concerts c ON c.id = candidate.concert_id
+    JOIN users u ON u.id = candidate.user_id
+    LEFT JOIN seeker_requests s ON s.concert_id = candidate.concert_id
+      AND s.user_id = candidate.user_id AND s.status = 'open'
+    LEFT JOIN concert_participants p ON p.concert_id = candidate.concert_id
+      AND p.user_id = candidate.user_id AND p.status = 'joined'
+    WHERE ${kakiEligiblePair('@viewer', 'c.id', 'u.id')}
+    ORDER BY c.event_date, c.id, u.id
+  `);
+  const eligible = db.prepare(`
+    SELECT 1 WHERE ${kakiEligiblePair('@actor', '@concert', '@target')}
+  `);
+  const decisions = db.prepare(`
+    SELECT d.concert_id, d.target_user_id, d.decision, d.decided_at,
+           reverse.decision AS reverse_decision,
+           ${kakiCandidate('d.actor_user_id', 'd.concert_id')} AS actor_is_candidate
+    FROM kaki_decisions d
+    LEFT JOIN kaki_decisions reverse ON reverse.concert_id = d.concert_id
+      AND reverse.actor_user_id = d.target_user_id
+      AND reverse.target_user_id = d.actor_user_id
+    WHERE d.actor_user_id = ?
+  `);
+  const upsert = db.prepare(`
+    INSERT INTO kaki_decisions (concert_id, actor_user_id, target_user_id, decision, decided_at)
+    VALUES (@concert, @actor, @target, @decision, @at)
+    ON CONFLICT (concert_id, actor_user_id, target_user_id)
+    DO UPDATE SET decision = excluded.decision, decided_at = excluded.decided_at
+  `);
+  const reciprocal = db.prepare(`
+    SELECT 1 FROM kaki_decisions d
+    WHERE d.concert_id = @concert AND d.actor_user_id = @target
+      AND d.target_user_id = @actor AND d.decision = 'like'
+      AND ${kakiCandidate('@actor', '@concert')}
+  `);
+  const remove = db.prepare(`
+    DELETE FROM kaki_decisions
+    WHERE concert_id = @concert AND actor_user_id = @actor AND target_user_id = @target
+  `);
+  const toPerson = (row) => ({
+    id: `${row.concert_id}:${row.user_id}`,
+    concertId: row.concert_id,
+    artist: row.artist,
+    tourName: row.tour_name,
+    eventDate: row.event_date,
+    venue: row.venue,
+    sectionPref: row.section_pref,
+    spendBandMax: row.spend_band_max,
+    arrivalPref: row.arrival_pref,
+    plansWanted: JSON.parse(row.plans_wanted_json),
+    user: mapUser(prefixed(row, 'user_')),
   });
-
-  return { findById, purchase };
+  return {
+    people(viewer) {
+      return people.all({ viewer }).map(toPerson);
+    },
+    pool(viewer) {
+      return { concerts: concerts.all({ viewer }), people: this.people(viewer) };
+    },
+    decisions(viewer, visiblePeople) {
+      const visible = new Set(visiblePeople.map((person) => person.id));
+      const result = {};
+      for (const row of decisions.all(viewer)) {
+        const id = `${row.concert_id}:${row.target_user_id}`;
+        if (!visible.has(id)) continue;
+        result[id] = {
+          decision: row.decision,
+          at: row.decided_at,
+          mutual: row.decision === 'like' && row.reverse_decision === 'like'
+            && Boolean(row.actor_is_candidate),
+        };
+      }
+      return result;
+    },
+    setDecision: db.transaction((actor, concert, target, decision) => {
+      const pair = { actor, concert, target };
+      if (!eligible.get(pair)) return null;
+      const at = Date.now();
+      upsert.run({ ...pair, decision, at });
+      return { decision, at, mutual: decision === 'like' && Boolean(reciprocal.get(pair)) };
+    }),
+    deleteDecision: db.transaction((actor, concert, target) => {
+      const pair = { actor, concert, target };
+      if (!eligible.get(pair)) return false;
+      remove.run(pair);
+      return true;
+    }),
+  };
 }
 
 export function createRepositories(db) {
   return {
     users: createUserRepo(db),
     concerts: createConcertRepo(db),
+    participation: createParticipationRepo(db),
     parties: createPartyRepo(db),
+    tickets: createTicketRepo(db),
     seekers: createSeekerRepo(db),
     rounds: createRoundRepo(db),
-    listings: createListingRepo(db),
-    orders: createOrderRepo(db),
+    sessions: createSessionRepo(db),
+    kaki: createKakiRepo(db),
   };
 }

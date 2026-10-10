@@ -9,6 +9,7 @@ const BASE = '/api';
 
 async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
+    credentials: 'same-origin',
     headers: { 'content-type': 'application/json', ...(options.headers ?? {}) },
     ...options,
   });
@@ -27,14 +28,46 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  login: (data) => request('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
+  register: (data) => request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
+  me: () => request('/auth/me'),
+  logout: () => request('/auth/logout', { method: 'POST' }),
+  profile: () => request('/me/profile'),
+  updateProfile: (data) => request('/me/profile', { method: 'PATCH', body: JSON.stringify(data) }),
+  myConcerts: () => request('/me/concerts'),
+  myConcertResult: (concertId) => request(`/me/concerts/${encodeURIComponent(concertId)}/result`),
+  participation: (concertId) => request(`/concerts/${encodeURIComponent(concertId)}/participation`),
+  joinConcert: (concertId, data) =>
+    request(`/concerts/${encodeURIComponent(concertId)}/participation`, {
+      method: 'POST', body: JSON.stringify(data),
+    }),
+  leaveConcert: (concertId) =>
+    request(`/concerts/${encodeURIComponent(concertId)}/participation`, { method: 'DELETE' }),
+  tickets: () => request('/tickets'),
+  ticket: (id) => request(`/tickets/${encodeURIComponent(id)}`),
+  createTicket: (data) => request('/tickets', { method: 'POST', body: JSON.stringify(data) }),
+  updateTicket: (id, data) => request(`/tickets/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  myTickets: () => request('/me/tickets'),
+  deleteTicket: (id) => request(`/tickets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  kakiPool: () => request('/kaki/pool'),
+  kakiDecisions: () => request('/kaki/decisions'),
+  kakiMatches: () => request('/kaki/matches'),
+  putKakiDecision: (concertId, targetUserId, decision) =>
+    request(`/kaki/decisions/${encodeURIComponent(concertId)}/${encodeURIComponent(targetUserId)}`, {
+      method: 'PUT', body: JSON.stringify({ decision }),
+    }),
+  deleteKakiDecision: (concertId, targetUserId) =>
+    request(`/kaki/decisions/${encodeURIComponent(concertId)}/${encodeURIComponent(targetUserId)}`, {
+      method: 'DELETE',
+    }),
+
   health: () => request('/health'),
 
   concerts: () => request('/concerts'),
   concert: (id) => request(`/concerts/${id}`),
 
   parties: (concertId) => request(`/concerts/${concertId}/parties`),
-  createParty: (concertId, data) =>
-    request(`/concerts/${concertId}/parties`, { method: 'POST', body: JSON.stringify(data) }),
 
   requests: (concertId) => request(`/concerts/${concertId}/requests`),
   createRequest: (concertId, data) =>
@@ -58,19 +91,7 @@ export const api = {
 
   explain: (concertId, requestId) => request(`/concerts/${concertId}/explain/${requestId}`),
 
-  listings: (query = '') =>
-    request(`/listings${query ? `?q=${encodeURIComponent(query)}` : ''}`),
-  listing: (id) => request(`/listings/${id}`),
-  /** The server prices the order from the listing; only who pays and how is sent. */
-  buyListing: (id, { buyerUserId, paymentMethod }) =>
-    request(`/listings/${id}/orders`, {
-      method: 'POST',
-      body: JSON.stringify({ buyer_user_id: buyerUserId, payment_method: paymentMethod }),
-    }),
-  order: (id) => request(`/orders/${id}`),
-
   user: (id) => request(`/users/${id}`),
-  createUser: (data) => request('/users', { method: 'POST', body: JSON.stringify(data) }),
 };
 
 /** Human labels for the enum values the API speaks in. */

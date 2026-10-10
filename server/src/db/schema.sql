@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
   id                     TEXT PRIMARY KEY,
   display_name           TEXT    NOT NULL,
   email                  TEXT    UNIQUE,
+  password_hash          TEXT,
   age_band               TEXT    NOT NULL CHECK (age_band IN ('18-20','21-24','25-29','30-34','35+')),
   home_region            TEXT    NOT NULL,
   gender                 TEXT    NOT NULL,
@@ -27,8 +28,18 @@ CREATE TABLE IF NOT EXISTS users (
   vibe_json              TEXT    NOT NULL,
   reliability            REAL    NOT NULL DEFAULT 0.75 CHECK (reliability BETWEEN 0 AND 1),
   verified               INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0,1)),
+  is_operator            INTEGER NOT NULL DEFAULT 0 CHECK (is_operator IN (0,1)),
   created_at             TEXT    NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Only hashes of opaque login cookies are stored, so a database read alone
+-- cannot replay an active session.
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 -- Mutual exclusions. Stored one row per direction so a one-sided block still works.
 CREATE TABLE IF NOT EXISTS blocks (
@@ -52,6 +63,10 @@ CREATE TABLE IF NOT EXISTS concerts (
   doors_time    TEXT,
   hero_image_url TEXT,
   blurb         TEXT,
+  source        TEXT,
+  source_event_id TEXT,
+  official_url  TEXT,
+  image_attribution TEXT,
   -- Matching for an event closes at this point; rounds run on or after it.
   matching_closes_at TEXT,
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
@@ -76,13 +91,50 @@ CREATE TABLE IF NOT EXISTS parties (
   plans_json        TEXT    NOT NULL DEFAULT '{}',
   strict_age_policy INTEGER NOT NULL DEFAULT 0 CHECK (strict_age_policy IN (0,1)),
   min_age_band      TEXT,
+  -- Lower quota: the group only goes ahead if it reaches this many members.
+  -- NULL or <= 1 is no constraint. Its presence turns the instance into
+  -- Hospital/Residents with Lower Quotas, which the classifier detects and
+  -- which no registered solver can yet model exactly.
+  min_size          INTEGER CHECK (min_size IS NULL OR min_size >= 1),
   notes             TEXT,
   status            TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open','matched','cancelled')),
   created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
-  UNIQUE (host_user_id, concert_id)
+  UNIQUE (host_user_id, concert_id),
+  CHECK (min_size IS NULL OR min_size <= capacity)
 );
 
 CREATE INDEX IF NOT EXISTS idx_parties_concert ON parties(concert_id, status);
+
+-- Ticket inventory is independent from the matchmaking party/host instance.
+CREATE TABLE IF NOT EXISTS tickets (
+  id             TEXT PRIMARY KEY,
+  seller_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  concert_id     TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
+  price_cents    INTEGER NOT NULL CHECK (price_cents >= 0),
+  quantity       INTEGER NOT NULL CHECK (quantity > 0),
+  section        TEXT NOT NULL,
+  description    TEXT NOT NULL DEFAULT '',
+  image_path     TEXT,
+  status         TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','sold','cancelled','deleted')),
+  source_party_id TEXT UNIQUE REFERENCES parties(id) ON DELETE SET NULL,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_tickets_status_created ON tickets(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tickets_seller ON tickets(seller_user_id, created_at DESC);
+
+-- Kaki participation does not enroll a user in group matching.
+-- Keep withdrawn rows so a legacy open seeker/host cannot reappear in Kaki.
+CREATE TABLE IF NOT EXISTS concert_participants (
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  concert_id   TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
+  section_pref TEXT NOT NULL CHECK (section_pref IN ('pit','ga_standing','lower_bowl','upper_bowl','seated_any')),
+  arrival_pref TEXT NOT NULL CHECK (arrival_pref IN ('early_queue','mid','doors')),
+  status       TEXT NOT NULL DEFAULT 'joined' CHECK (status IN ('joined','withdrawn')),
+  joined_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, concert_id)
+);
+CREATE INDEX IF NOT EXISTS idx_participants_concert ON concert_participants(concert_id, status);
 
 CREATE TABLE IF NOT EXISTS seeker_requests (
   id                TEXT    PRIMARY KEY,
@@ -94,13 +146,33 @@ CREATE TABLE IF NOT EXISTS seeker_requests (
   plans_wanted_json TEXT    NOT NULL DEFAULT '{}',
   strict_age_policy INTEGER NOT NULL DEFAULT 0 CHECK (strict_age_policy IN (0,1)),
   age_tolerance     INTEGER NOT NULL DEFAULT 1,
+  -- All-or-nothing link: two friends who join the same group or neither goes.
+  -- The classifier only counts a pair when the link is RECIPROCATED, so a
+  -- dangling reference is treated as a single rather than silently changing
+  -- the problem. Its presence makes the instance Hospital/Residents with
+  -- Couples, which is NP-hard and may admit no stable matching at all.
+  linked_request_id TEXT    REFERENCES seeker_requests(id) ON DELETE SET NULL,
   notes             TEXT,
   status            TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open','matched','withdrawn')),
   created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
-  UNIQUE (user_id, concert_id)
+  UNIQUE (user_id, concert_id),
+  CHECK (linked_request_id IS NULL OR linked_request_id <> id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_seekers_concert ON seeker_requests(concert_id, status);
+
+-- Kaki decisions are keyed by concert and person, not by a request's lifecycle.
+CREATE TABLE IF NOT EXISTS kaki_decisions (
+  concert_id    TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
+  actor_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  target_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  decision      TEXT NOT NULL CHECK (decision IN ('like','skip')),
+  decided_at    INTEGER NOT NULL,
+  PRIMARY KEY (concert_id, actor_user_id, target_user_id),
+  CHECK (actor_user_id <> target_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_kaki_decisions_target
+  ON kaki_decisions (concert_id, target_user_id, actor_user_id);
 
 -- ---------------------------------------------------------------------------
 -- Match rounds — immutable results with their own stability proof
@@ -122,7 +194,16 @@ CREATE TABLE IF NOT EXISTS match_rounds (
   metrics_json        TEXT    NOT NULL,
   timings_json        TEXT    NOT NULL,
   -- the exact preference lists the result was computed from, for later re-verification
-  preference_snapshot_json TEXT
+  preference_snapshot_json TEXT,
+  -- The guarantee ledger. `is_stable` above records what was MEASURED; these
+  -- record which solver ran, on what kind of instance, and what it was
+  -- entitled to claim before it ran. Two rounds can now carry genuinely
+  -- different promises, and the interface can say so truthfully.
+  solver_id           TEXT,
+  instance_class      TEXT,
+  stability_promise   TEXT,   -- guaranteed | best_effort | not_guaranteed
+  relaxations_json    TEXT,   -- constraints the solver could not represent
+  ledger_json         TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_rounds_concert ON match_rounds(concert_id, ran_at DESC);
@@ -154,51 +235,6 @@ CREATE TABLE IF NOT EXISTS match_trace (
   evicted_seeker_id TEXT,
   PRIMARY KEY (round_id, step)
 );
-
--- ---------------------------------------------------------------------------
--- Ticket market — resale listings and the orders that buy them
--- ---------------------------------------------------------------------------
-
--- One listing is one lot: `quantity` tickets sold together at `price_cents` for the lot.
--- Money is stored in integer cents so totals never pick up floating-point drift.
-CREATE TABLE IF NOT EXISTS ticket_listings (
-  id              TEXT    PRIMARY KEY,
-  seller_user_id  TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  concert_id      TEXT    NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
-  title           TEXT    NOT NULL,
-  category        TEXT    NOT NULL,           -- e.g. 'Cat 3', 'VIP 1'
-  show_date       TEXT,                       -- the night, for multi-night runs
-  seat_row        TEXT,
-  seat_numbers    TEXT,
-  quantity        INTEGER NOT NULL DEFAULT 1 CHECK (quantity >= 1),
-  price_cents     INTEGER NOT NULL CHECK (price_cents > 0),
-  currency        TEXT    NOT NULL DEFAULT 'SGD',
-  description     TEXT,
-  image_url       TEXT,
-  verified        INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0,1)),
-  status          TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open','sold','withdrawn')),
-  created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_listings_status ON ticket_listings(status, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_listings_concert ON ticket_listings(concert_id, status);
-
--- Amounts are copied onto the order at purchase time, so a later price edit on the
--- listing can never change what the buyer was charged.
-CREATE TABLE IF NOT EXISTS ticket_orders (
-  id                 TEXT    PRIMARY KEY,
-  listing_id         TEXT    NOT NULL REFERENCES ticket_listings(id) ON DELETE CASCADE,
-  buyer_user_id      TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  subtotal_cents     INTEGER NOT NULL,
-  delivery_fee_cents INTEGER NOT NULL DEFAULT 0,
-  total_cents        INTEGER NOT NULL,
-  currency           TEXT    NOT NULL DEFAULT 'SGD',
-  payment_method     TEXT    NOT NULL CHECK (payment_method IN ('visa','mastercard','paypal','apple_pay')),
-  status             TEXT    NOT NULL DEFAULT 'paid' CHECK (status IN ('paid','refunded')),
-  created_at         TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_orders_buyer ON ticket_orders(buyer_user_id, created_at DESC);
 
 -- ---------------------------------------------------------------------------
 -- Post-event feedback, which feeds reliability back into future preference lists
