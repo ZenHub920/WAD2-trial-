@@ -4,6 +4,7 @@ import { createConcertController } from '../controllers/concertController.js';
 import { createMatchController } from '../controllers/matchController.js';
 import { createUserController } from '../controllers/userController.js';
 import { createTicketController } from '../controllers/ticketController.js';
+import { createKakiController } from '../controllers/kakiController.js';
 
 export function createRoutes({ repos, matching, sessions, images }) {
   const router = Router();
@@ -11,6 +12,7 @@ export function createRoutes({ repos, matching, sessions, images }) {
   const matches = createMatchController({ repos, matching });
   const users = createUserController(repos, sessions);
   const tickets = createTicketController(repos, images);
+  const kaki = createKakiController(repos);
 
   router.use((req, res, next) => {
     req.user = sessions.current(req);
@@ -28,6 +30,12 @@ export function createRoutes({ repos, matching, sessions, images }) {
   router.patch('/tickets/:id', requireUser, tickets.update);
   router.delete('/tickets/:id', requireUser, tickets.delete);
   router.get('/me/tickets', requireUser, tickets.mine);
+
+  router.get('/kaki/pool', requireUser, kaki.pool);
+  router.get('/kaki/decisions', requireUser, kaki.decisions);
+  router.put('/kaki/decisions/:concertId/:targetUserId', requireUser, kaki.setDecision);
+  router.delete('/kaki/decisions/:concertId/:targetUserId', requireUser, kaki.deleteDecision);
+  router.get('/kaki/matches', requireUser, kaki.matches);
 
   router.get('/concerts', concerts.list);
   router.post('/concerts', concerts.create);
