@@ -1,6 +1,8 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
-import { api, formatDate, LABELS } from '../api.js';
+import { api, LABELS } from '../api.js';
+import { useSavedListings } from '../market.js';
+import ListingCard from '../components/market/ListingCard.vue';
 
 const listings = ref([]);
 const loading = ref(true);
@@ -10,6 +12,8 @@ const selectedDate = ref('');
 const selectedSection = ref('all');
 const minPrice = ref(0);
 const maxPrice = ref(100000);
+const savedOnly = ref(false);
+const { isSaved, toggle } = useSavedListings();
 
 onMounted(async () => {
   try {
@@ -24,6 +28,7 @@ onMounted(async () => {
 const filteredListings = computed(() => {
   const query = search.value.trim().toLowerCase();
   return listings.value.filter((listing) => {
+    if (savedOnly.value && !isSaved(listing.id)) return false;
     const matchesSearch =
       !query ||
       listing.concert.artist.toLowerCase().includes(query) ||
@@ -43,6 +48,7 @@ function resetFilters() {
   selectedSection.value = 'all';
   minPrice.value = 0;
   maxPrice.value = 100000;
+  savedOnly.value = false;
 }
 
 </script>
@@ -58,7 +64,7 @@ function resetFilters() {
         <aside class="filter-panel" aria-label="Search and filter tickets">
           <label class="marketplace__search">
             <span aria-hidden="true">⌕</span>
-            <input v-model="search" type="search" placeholder="Search tickets" />
+            <input v-model="search" type="search" aria-label="Search tickets" placeholder="Search tickets" />
           </label>
 
         <div class="filter-panel__heading">
@@ -90,8 +96,9 @@ function resetFilters() {
           </label>
         </div>
 
+        <button type="button" class="saved-filter" :aria-pressed="savedOnly" @click="savedOnly = !savedOnly">Saved only</button>
         <div class="filter-panel__footer">
-          <button class="text-button" @click="resetFilters">Reset filters</button>
+          <button type="button" class="text-button" @click="resetFilters">Reset filters</button>
           <span class="filter-count">{{ filteredListings.length }} tickets</span>
         </div>
         </aside>
@@ -111,27 +118,13 @@ function resetFilters() {
             <button class="btn btn--ghost" @click="resetFilters">Clear filters</button>
           </div>
           <div v-else class="ticket-grid">
-            <RouterLink
+            <ListingCard
               v-for="listing in filteredListings"
               :key="listing.id"
-              :to="{ name: 'ticket-detail', params: { id: listing.id } }"
-              class="ticket-card"
-            >
-              <img v-if="listing.imageUrl" class="ticket-card__image" :src="listing.imageUrl" alt="Ticket listing" />
-              <div class="ticket-card__body">
-                <div class="ticket-card__seller">
-                  <span class="seller-avatar">{{ listing.seller.displayName.slice(0, 1) }}</span>
-                  <span>{{ listing.seller.displayName }}</span>
-                </div>
-                <h2>{{ listing.concert.artist }}</h2>
-                <p class="ticket-card__date">{{ formatDate(listing.concert.event_date) }} · {{ listing.concert.venue }}</p>
-                <div class="ticket-card__meta">
-                  <span>{{ LABELS.section[listing.section] }}</span>
-                  <span>{{ listing.quantity }} {{ listing.quantity === 1 ? 'ticket' : 'tickets' }}</span>
-                  <strong>${{ (listing.priceCents / 100).toFixed(2) }}</strong>
-                </div>
-              </div>
-            </RouterLink>
+              :listing="listing"
+              :saved="isSaved(listing.id)"
+              @toggle-save="toggle"
+            />
           </div>
         </main>
       </div>
@@ -158,7 +151,7 @@ function resetFilters() {
 }
 
 .marketplace__title {
-  color: #000;
+  color: var(--text-100);
   font-family: var(--font-display);
   font-size: var(--step-3);
   font-weight: 700;
@@ -197,31 +190,22 @@ function resetFilters() {
   border-color: var(--accent-400);
   outline: none;
 }
-.text-button { color: var(--accent-300); }
+.saved-filter {
+  width: 100%;
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--ink-700);
+  color: var(--text-200);
+  text-align: left;
+}
+.saved-filter[aria-pressed='true'] { border-color: var(--accent-500); color: var(--text-100); }
+.text-button { color: var(--text-200); }
 .text-button:hover { color: var(--text-100); }
 .filter-count { color: var(--text-400); font-size: var(--step--2); }
 
 .ticket-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-5); }
-.ticket-card__image { display: block; width: 100%; height: 180px; object-fit: cover; }
-.ticket-card {
-  position: relative;
-  overflow: hidden;
-  border: var(--border-soft);
-  border-radius: var(--radius-lg);
-  background: var(--ink-850);
-  color: inherit;
-  text-decoration: none;
-  transition: transform var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out);
-}
-.ticket-card:hover { transform: translateY(-4px); border-color: var(--accent-400); }
-.ticket-card__body { padding: var(--space-4); }
-.ticket-card__seller { display: flex; align-items: center; gap: var(--space-2); color: var(--text-300); font-size: var(--step--2); }
-.seller-avatar { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent-500); color: white; }
-.ticket-card h2 { margin-top: var(--space-3); font-size: var(--step-1); }
-.ticket-card__date { margin-top: var(--space-2); color: var(--text-400); font-size: var(--step--1); }
-.ticket-card__meta { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-4); font-size: var(--step--2); }
-.ticket-card__meta span { padding: 3px 7px; border-radius: var(--radius-pill); background: var(--ink-700); }
-.ticket-card__meta strong { margin-left: auto; color: var(--accent-300); }
 
 .marketplace__empty { padding: var(--space-9) var(--space-4); text-align: center; }
 .marketplace__empty > span { color: var(--accent-300); font-size: 3rem; }
