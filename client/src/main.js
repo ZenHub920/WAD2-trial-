@@ -17,6 +17,7 @@ import MyListingsView from './views/MyListingsView.vue';
 import TicketDetailView from './views/TicketDetailView.vue';
 import KakiFinderView from './views/KakiFinderView.vue';
 import ProfileHistoryView from './views/ProfileHistoryView.vue';
+import ProfileView from './views/ProfileView.vue';
 import ComingSoonView from './views/ComingSoonView.vue';
 import NotFoundView from './views/NotFoundView.vue';
 
@@ -49,8 +50,7 @@ const router = createRouter({
       meta: { title: 'Profile History' },
     },
 
-    // Tabs owned by other branches. Routed so the shell is complete; the view
-    // says who each is waiting on rather than pretending to be the feature.
+    // Messaging is not implemented yet.
     {
       path: '/chat',
       name: 'chat',
@@ -61,16 +61,7 @@ const router = createRouter({
       },
       meta: { title: 'Chat' },
     },
-    {
-      path: '/profile',
-      name: 'profile',
-      component: ComingSoonView,
-      props: {
-        title: 'Profile',
-        body: 'Profile creation and editing is still missing: registration only collects a name, email and password, and everything else takes a default.',
-      },
-      meta: { title: 'Profile' },
-    },
+    { path: '/profile', name: 'profile', component: ProfileView, meta: { title: 'Profile' } },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView },
   ],
   scrollBehavior(to, from, saved) {

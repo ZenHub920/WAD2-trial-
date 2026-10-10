@@ -32,6 +32,16 @@ export const api = {
   register: (data) => request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   me: () => request('/auth/me'),
   logout: () => request('/auth/logout', { method: 'POST' }),
+  profile: () => request('/me/profile'),
+  updateProfile: (data) => request('/me/profile', { method: 'PATCH', body: JSON.stringify(data) }),
+  myConcerts: () => request('/me/concerts'),
+  participation: (concertId) => request(`/concerts/${encodeURIComponent(concertId)}/participation`),
+  joinConcert: (concertId, data) =>
+    request(`/concerts/${encodeURIComponent(concertId)}/participation`, {
+      method: 'POST', body: JSON.stringify(data),
+    }),
+  leaveConcert: (concertId) =>
+    request(`/concerts/${encodeURIComponent(concertId)}/participation`, { method: 'DELETE' }),
   tickets: () => request('/tickets'),
   ticket: (id) => request(`/tickets/${encodeURIComponent(id)}`),
   createTicket: (data) => request('/tickets', { method: 'POST', body: JSON.stringify(data) }),

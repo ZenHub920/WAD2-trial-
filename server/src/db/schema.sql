@@ -122,6 +122,19 @@ CREATE TABLE IF NOT EXISTS tickets (
 CREATE INDEX IF NOT EXISTS idx_tickets_status_created ON tickets(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tickets_seller ON tickets(seller_user_id, created_at DESC);
 
+-- Kaki participation does not enroll a user in group matching.
+-- Keep withdrawn rows so a legacy open seeker/host cannot reappear in Kaki.
+CREATE TABLE IF NOT EXISTS concert_participants (
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  concert_id   TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
+  section_pref TEXT NOT NULL CHECK (section_pref IN ('pit','ga_standing','lower_bowl','upper_bowl','seated_any')),
+  arrival_pref TEXT NOT NULL CHECK (arrival_pref IN ('early_queue','mid','doors')),
+  status       TEXT NOT NULL DEFAULT 'joined' CHECK (status IN ('joined','withdrawn')),
+  joined_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, concert_id)
+);
+CREATE INDEX IF NOT EXISTS idx_participants_concert ON concert_participants(concert_id, status);
+
 CREATE TABLE IF NOT EXISTS seeker_requests (
   id                TEXT    PRIMARY KEY,
   user_id           TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,

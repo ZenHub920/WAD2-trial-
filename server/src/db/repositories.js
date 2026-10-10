@@ -143,6 +143,24 @@ export function createUserRepo(db) {
       return db.prepare('SELECT * FROM users ORDER BY created_at DESC LIMIT ?')
         .all(limit).map(mapUser);
     },
+    updateProfile(id, changes) {
+      const columns = {
+        displayName: 'display_name',
+        ageBand: 'age_band',
+        homeRegion: 'home_region',
+        gender: 'gender',
+        companionGenderPref: 'companion_gender_pref',
+        languages: 'languages_json',
+        vibe: 'vibe_json',
+      };
+      const entries = Object.entries(changes).map(([key, value]) =>
+        [columns[key], key === 'languages' || key === 'vibe' ? JSON.stringify(value) : value]);
+      if (entries.length) {
+        db.prepare(`UPDATE users SET ${entries.map(([column]) => `${column} = ?`).join(', ')} WHERE id = ?`)
+          .run(...entries.map(([, value]) => value), id);
+      }
+      return this.findById(id);
+    },
 
     /** Recompute the cached reliability projection from the feedback view. */
     refreshReliability(userId) {
@@ -218,6 +236,57 @@ export function createConcertRepo(db) {
         ORDER BY c.event_date ASC
       `).all();
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Explicit Kaki participation (independent of seeker requests)
+// ---------------------------------------------------------------------------
+
+export function createParticipationRepo(db) {
+  const byUserConcert = db.prepare(`
+    SELECT concert_id AS concertId, section_pref AS sectionPref, arrival_pref AS arrivalPref
+    FROM concert_participants WHERE user_id = ? AND concert_id = ? AND status = 'joined'
+  `);
+  const mine = db.prepare(`
+    SELECT c.*, p.section_pref AS sectionPref, p.arrival_pref AS arrivalPref
+    FROM concert_participants p
+    JOIN concerts c ON c.id = p.concert_id
+    WHERE p.user_id = ? AND p.status = 'joined'
+    ORDER BY c.event_date, c.id
+  `);
+  const upsert = db.prepare(`
+    INSERT INTO concert_participants (user_id, concert_id, section_pref, arrival_pref)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT (user_id, concert_id) DO UPDATE SET
+      section_pref = excluded.section_pref, arrival_pref = excluded.arrival_pref,
+      status = 'joined', joined_at = datetime('now')
+  `);
+  const withdraw = db.prepare(`
+    UPDATE concert_participants SET status = 'withdrawn'
+    WHERE user_id = ? AND concert_id = ?
+  `);
+  const removeLikes = db.prepare(`
+    DELETE FROM kaki_decisions
+    WHERE actor_user_id = ? AND concert_id = ? AND decision = 'like'
+  `);
+  return {
+    find(userId, concertId) {
+      return byUserConcert.get(userId, concertId) ?? null;
+    },
+    mine(userId) {
+      return mine.all(userId).map(({ sectionPref, arrivalPref, ...concert }) => ({
+        concert, participation: { concertId: concert.id, sectionPref, arrivalPref },
+      }));
+    },
+    join: db.transaction((userId, concertId, sectionPref, arrivalPref) => {
+      upsert.run(userId, concertId, sectionPref, arrivalPref);
+      return byUserConcert.get(userId, concertId);
+    }),
+    leave: db.transaction((userId, concertId) => {
+      withdraw.run(userId, concertId);
+      removeLikes.run(userId, concertId);
+    }),
   };
 }
 
@@ -605,23 +674,37 @@ export function createSessionRepo(db) {
   };
 }
 
-// Actor membership and candidate eligibility are shared by the pool and
-// mutations; concert participation can extend these predicates in one place.
+// A withdrawal overrides legacy open seeker/host membership.
+const kakiWithdrawn = (user, concert) => `EXISTS (
+  SELECT 1 FROM concert_participants withdrawn
+  WHERE withdrawn.user_id = ${user} AND withdrawn.concert_id = ${concert}
+    AND withdrawn.status = 'withdrawn'
+)`;
+const kakiJoined = (user, concert) => `EXISTS (
+  SELECT 1 FROM concert_participants joined
+  WHERE joined.user_id = ${user} AND joined.concert_id = ${concert}
+    AND joined.status = 'joined'
+)`;
 const kakiOpenSeeker = (user, concert) => `EXISTS (
   SELECT 1 FROM seeker_requests active_seeker
   WHERE active_seeker.user_id = ${user} AND active_seeker.concert_id = ${concert}
     AND active_seeker.status = 'open'
 )`;
+const kakiCandidate = (user, concert) => `(
+  NOT ${kakiWithdrawn(user, concert)}
+  AND (${kakiJoined(user, concert)} OR ${kakiOpenSeeker(user, concert)})
+)`;
 const kakiActiveMember = (user, concert) => `(
-  ${kakiOpenSeeker(user, concert)}
-  OR EXISTS (SELECT 1 FROM parties active_party
-             WHERE active_party.host_user_id = ${user} AND active_party.concert_id = ${concert}
-               AND active_party.status = 'open')
+  NOT ${kakiWithdrawn(user, concert)}
+  AND (${kakiJoined(user, concert)} OR ${kakiOpenSeeker(user, concert)}
+    OR EXISTS (SELECT 1 FROM parties active_party
+               WHERE active_party.host_user_id = ${user} AND active_party.concert_id = ${concert}
+                 AND active_party.status = 'open'))
 )`;
 const kakiEligiblePair = (actor, concert, target) => `(
   ${actor} <> ${target}
   AND ${kakiActiveMember(actor, concert)}
-  AND ${kakiOpenSeeker(target, concert)}
+  AND ${kakiCandidate(target, concert)}
   AND NOT EXISTS (SELECT 1 FROM blocks b
                   WHERE (b.blocker_user_id = ${actor} AND b.blocked_user_id = ${target})
                      OR (b.blocker_user_id = ${target} AND b.blocked_user_id = ${actor}))
@@ -634,17 +717,29 @@ export function createKakiRepo(db) {
     ORDER BY c.event_date, c.id
   `);
   const people = db.prepare(`
+    WITH candidates AS (
+      SELECT concert_id, user_id FROM seeker_requests WHERE status = 'open'
+      UNION
+      SELECT concert_id, user_id FROM concert_participants WHERE status = 'joined'
+    )
     SELECT c.id AS concert_id, c.artist, c.tour_name, c.event_date, c.venue,
-           s.section_pref, s.spend_band_max, s.arrival_pref, s.plans_wanted_json,
+           COALESCE(p.section_pref, s.section_pref) AS section_pref,
+           s.spend_band_max,
+           COALESCE(p.arrival_pref, s.arrival_pref) AS arrival_pref,
+           COALESCE(s.plans_wanted_json, '{}') AS plans_wanted_json,
            u.id AS user_id, u.display_name AS user_display_name,
            u.age_band AS user_age_band, u.home_region AS user_home_region,
            u.languages_json AS user_languages_json, u.vibe_json AS user_vibe_json,
            u.reliability AS user_reliability, u.verified AS user_verified
-    FROM seeker_requests s
-    JOIN concerts c ON c.id = s.concert_id
-    JOIN users u ON u.id = s.user_id
-    WHERE s.status = 'open' AND ${kakiEligiblePair('@viewer', 'c.id', 's.user_id')}
-    ORDER BY c.event_date, c.id, s.user_id
+    FROM candidates candidate
+    JOIN concerts c ON c.id = candidate.concert_id
+    JOIN users u ON u.id = candidate.user_id
+    LEFT JOIN seeker_requests s ON s.concert_id = candidate.concert_id
+      AND s.user_id = candidate.user_id AND s.status = 'open'
+    LEFT JOIN concert_participants p ON p.concert_id = candidate.concert_id
+      AND p.user_id = candidate.user_id AND p.status = 'joined'
+    WHERE ${kakiEligiblePair('@viewer', 'c.id', 'u.id')}
+    ORDER BY c.event_date, c.id, u.id
   `);
   const eligible = db.prepare(`
     SELECT 1 WHERE ${kakiEligiblePair('@actor', '@concert', '@target')}
@@ -652,7 +747,7 @@ export function createKakiRepo(db) {
   const decisions = db.prepare(`
     SELECT d.concert_id, d.target_user_id, d.decision, d.decided_at,
            reverse.decision AS reverse_decision,
-           ${kakiOpenSeeker('d.actor_user_id', 'd.concert_id')} AS actor_is_seeker
+           ${kakiCandidate('d.actor_user_id', 'd.concert_id')} AS actor_is_candidate
     FROM kaki_decisions d
     LEFT JOIN kaki_decisions reverse ON reverse.concert_id = d.concert_id
       AND reverse.actor_user_id = d.target_user_id
@@ -669,7 +764,7 @@ export function createKakiRepo(db) {
     SELECT 1 FROM kaki_decisions d
     WHERE d.concert_id = @concert AND d.actor_user_id = @target
       AND d.target_user_id = @actor AND d.decision = 'like'
-      AND ${kakiOpenSeeker('@actor', '@concert')}
+      AND ${kakiCandidate('@actor', '@concert')}
   `);
   const remove = db.prepare(`
     DELETE FROM kaki_decisions
@@ -705,7 +800,7 @@ export function createKakiRepo(db) {
           decision: row.decision,
           at: row.decided_at,
           mutual: row.decision === 'like' && row.reverse_decision === 'like'
-            && Boolean(row.actor_is_seeker),
+            && Boolean(row.actor_is_candidate),
         };
       }
       return result;
@@ -730,6 +825,7 @@ export function createRepositories(db) {
   return {
     users: createUserRepo(db),
     concerts: createConcertRepo(db),
+    participation: createParticipationRepo(db),
     parties: createPartyRepo(db),
     tickets: createTicketRepo(db),
     seekers: createSeekerRepo(db),
