@@ -77,6 +77,12 @@ image directory in backups. Existing priced party rows are copied to tickets
 once and removed from active companion matching without deleting historical
 round references. Neither a listing nor a seller is proof of ticket ownership.
 
+The `/marketplace` cards use the existing `/api/tickets` listings, including
+the seller, concert, section, quantity, price and optional image. Search and
+filters work on that inventory; “Saved only” bookmarks are stored in this
+browser's local storage, not in an account. Checkout and payment are not
+implemented; viewing a listing never records a paid order.
+
 
 ### Kaki Finder
 
