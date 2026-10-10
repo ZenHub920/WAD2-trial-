@@ -31,9 +31,61 @@ npm run dev
 
 Open <http://localhost:5173>.
 
+### Account sessions
+
+Register or sign in at `/login`. `POST /api/auth/register` and
+`POST /api/auth/login` return a public user and set a seven-day, HttpOnly,
+SameSite=Lax cookie. Only a SHA-256 hash of its random token is stored in the
+SQLite `sessions` table; `GET /api/auth/me` restores the signed-in user after a
+reload and `POST /api/auth/logout` revokes the cookie (HTTP 204). The cookie is
+marked Secure when `NODE_ENV=production`; serve the app over HTTPS in production.
+The Vue app uses same-origin `/api` requests through its development proxy.
+
+Creating a party or seeker request, and committing a match round, now requires
+a session (HTTP 401 otherwise). Listing ownership comes from the cookie, **not**
+`host_user_id` or `user_id` in request JSON; the open demo-only `POST /api/users`
+endpoint has been removed. Concert browsing remains public. A signed-in user
+can still trigger a round and the full-round read endpoints remain public:
+facilitator-only triggers and private individual results require a separate
+product decision. Existing database files automatically gain the sessions table;
+never run the destructive demo seed on accounts you want to keep.
+
+### Live concert discovery
+
+Copy `server/.env.example` to `server/.env` and put the Ticketmaster
+**Consumer Key** in `TICKETMASTER_API_KEY`. The Consumer Secret is not used by
+the Discovery API; do not put it in this file or commit credentials. The server
+and sync command load `.env` automatically, even when started from another
+working directory. Explicit process environment values take precedence.
+
+`GET /api/concerts/external?keyword=...` searches the first 50 upcoming Singapore
+music events via Ticketmaster's Discovery API, without exposing the key to the
+browser. Its `events` are live discovery results, **not** matchable until imported.
+To save them as local concerts with stable IDs, run:
+
 ```bash
 cd server
-npm test              # 78 tests
+npm run sync:concerts
+```
+
+Run the seed **before** syncing if you want demo users: `npm run seed` clears the
+database, including imported events. Syncing again updates imported event details
+without deleting local parties or match rounds. `GET /api/concerts` and
+`GET /api/concerts/:id` then include `source`, `source_event_id`, `official_url`,
+and `image_attribution` for imported events. The existing Vue client does not yet
+render these links; the frontend can use `official_url` for the event's official
+purchase page. Ticketmaster coverage in Singapore varies; events without a
+usable venue or date are skipped. Without a key, live discovery returns HTTP 503.
+No ticket ownership, authenticity or availability is verified by this integration.
+
+AI-use disclosure: The Ticketmaster integration, MVC extraction, session
+implementation, tests, and this documentation were generated with AI assistance.
+The IS216 briefing restricts AI use for core backend implementation; review these
+contributions against your course rules before submitting them.
+
+```bash
+cd server
+npm test              # backend unit and API tests
 npm run bench         # algorithm comparison against baselines
 npm run bench:scale   # runtime scaling study
 ```
@@ -63,7 +115,37 @@ Irving's algorithm for stable roommates is also implemented
 (`server/src/matching/stableRoommates.js`) for a true peer-to-peer mode, including correct
 detection of instances with no stable matching.
 
-Full specification: **[`docs/ALGORITHM.md`](docs/ALGORITHM.md)**.
+### One engine, several solvers, and an honest account of each
+
+The problems form a hierarchy — Stable Marriage ⊂ Hospital/Residents ⊂ HR with Couples —
+so a second solver is never added for coverage. It is added because **the more structure an
+instance has, the stronger the promise that can be made about the answer.**
+
+Each round is classified before it is solved, dispatched to the strongest-guarantee solver
+that can represent it, and verified in the manner that solver's promise requires: an
+*assertion* where stability is guaranteed, a *measurement* where the problem class does not
+admit that promise. What was promised beforehand and what was measured afterwards are
+recorded separately, because conflating them is how a system starts overstating its results.
+
+An instance containing something no solver models exactly — two friends who must both be
+placed or neither — is neither refused nor silently mis-answered. Deferred acceptance runs
+on the relaxed instance, the dropped constraint is recorded, the stability promise is
+downgraded, and the round reports:
+
+> Solved with linked_pairs ignored — this is not a solution to the full problem.
+> 0 blocking pairs in the relaxed instance.
+
+Note the result is simultaneously *measured stable* and *not guaranteed stable*. Both are
+true and they are different claims.
+
+One caveat worth stating: a mixed instance must **not** be split into singles and couples
+and solved separately. A single and a member of a couple can form a blocking pair across the
+partition that neither sub-solve would ever examine. Decomposition is sound only where the
+feasibility graph is disconnected — which is exactly why partitioning by concert is free.
+
+`GET /api/solvers` lists every algorithm with what it can and cannot promise.
+
+Full specification: **[`docs/ALGORITHM.md`](docs/ALGORITHM.md)** (§10 for the above).
 
 ---
 
@@ -132,6 +214,10 @@ took the same 5,000-seeker population from **36.2s to 1.7s**, a 24× improvement
 ```
 server/
   src/matching/       the engine — no HTTP, no database, independently testable
+    classify.js         what kind of matching problem this instance actually is
+    registry.js         every solver, and what each may claim about its output
+    guarantees.js       the promise vocabulary, and verification that honours it
+    solve.js            classify -> select -> solve -> verify -> ledger
     compatibility.js    hard constraints + directional scoring
     preferences.js      preference lists and O(1) rank maps
     galeShapley.js      deferred acceptance, Hospital/Residents
@@ -140,10 +226,11 @@ server/
     metrics.js          evaluation metrics
     stableRoommates.js  Irving's algorithm, peer-to-peer mode
     maxHeap.js          worst-held-offer retrieval in O(log q)
-  src/db/             schema, repositories, seed
-  src/services/       round orchestration, re-verification, per-seeker explanations
-  src/routes/         HTTP layer
-  test/               78 tests
+  src/db/             SQLite schema and repositories (model)
+  src/services/       round orchestration, explanations, provider and session logic
+  src/controllers/    HTTP validation, request handling, response shaping
+  src/routes/         endpoint-to-controller mappings
+  test/               backend unit and HTTP API tests
   bench/              synthetic data generator + evaluation harness
 
 client/
@@ -173,6 +260,7 @@ rail. It is reading the solver's actual output, not an animation of an idea.
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/api/concerts` | list with live supply/demand counts |
+| `GET` | `/api/concerts/external?keyword=...` | first 50 upcoming SG music events from Ticketmaster (requires server key) |
 | `GET` | `/api/concerts/:id/parties` | groups with spare tickets |
 | `GET` | `/api/concerts/:id/requests` | people looking |
 | `GET` | `/api/concerts/:id/match/preview?baselines=true&trace=true` | dry run, writes nothing |
@@ -180,6 +268,7 @@ rail. It is reading the solver's actual output, not an animation of an idea.
 | `GET` | `/api/rounds/:id` | round with per-seeker results |
 | `GET` | `/api/rounds/:id/trace` | the proposal sequence |
 | `GET` | `/api/rounds/:id/verify` | re-check stability against the stored snapshot |
+| `GET` | `/api/solvers` | every algorithm, with its guarantees and limits |
 | `GET` | `/api/concerts/:id/explain/:requestId` | why one seeker got their result |
 
 ---

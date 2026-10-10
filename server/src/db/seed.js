@@ -124,8 +124,6 @@ const LAST_NAMES = [
   'Menon', 'Ng', 'Hassan', 'Teo', 'Raj', 'Koh', 'Abdullah', 'Lee', 'Pillai',
 ];
 
-const DEMO_BUYER_ID = 'u_demo_buyer';
-
 /** Resale listings for the ticket market. Prices are per lot, in cents. */
 const LISTINGS = [
   {
@@ -273,8 +271,8 @@ function minutesAgo(minutes) {
 }
 
 const scale = big
-  ? { seekers: 400, parties: 120 }
-  : { seekers: 90, parties: 34 };
+  ? { seekers: 400, parties: 0 }
+  : { seekers: 90, parties: 0 };
 
 const instance = generateInstance({
   ...scale,
@@ -332,18 +330,6 @@ const insert = db.transaction(() => {
       notes: null,
     });
   }
-
-  // The ticket market's buyer. There is no auth, so the client acts as this user.
-  repos.users.create({
-    id: DEMO_BUYER_ID,
-    display_name: 'Demo Buyer',
-    email: `${DEMO_BUYER_ID}@example.test`,
-    age_band: '21-24',
-    home_region: 'central',
-    gender: 'nb',
-    vibe: { singalong: 3, photography: 2, dancing: 3, quiet: 2, queue_early: 2, merch: 3 },
-    verified: true,
-  });
 
   // Sellers are drawn from the synthetic population with a stride, so the market
   // does not show the same handful of people the matching pages lead with.

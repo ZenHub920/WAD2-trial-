@@ -9,6 +9,7 @@ const BASE = '/api';
 
 async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
+    credentials: 'same-origin',
     headers: { 'content-type': 'application/json', ...(options.headers ?? {}) },
     ...options,
   });
@@ -27,9 +28,18 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  login: (data) => request('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
+  register: (data) => request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
+  me: () => request('/auth/me'),
+  logout: () => request('/auth/logout', { method: 'POST' }),
+  myListings: () => request('/me/listings'),
+  deleteListing: (id) => request(`/me/listings/${id}`, { method: 'DELETE' }),
+
   health: () => request('/health'),
 
   concerts: () => request('/concerts'),
+  createConcert: (data) =>
+    request('/concerts', { method: 'POST', body: JSON.stringify(data) }),
   concert: (id) => request(`/concerts/${id}`),
 
   parties: (concertId) => request(`/concerts/${concertId}/parties`),
@@ -61,16 +71,15 @@ export const api = {
   listings: (query = '') =>
     request(`/listings${query ? `?q=${encodeURIComponent(query)}` : ''}`),
   listing: (id) => request(`/listings/${id}`),
-  /** The server prices the order from the listing; only who pays and how is sent. */
-  buyListing: (id, { buyerUserId, paymentMethod }) =>
+  /** The buyer is the session's user and the price comes from the listing; only the method is sent. */
+  buyListing: (id, { paymentMethod }) =>
     request(`/listings/${id}/orders`, {
       method: 'POST',
-      body: JSON.stringify({ buyer_user_id: buyerUserId, payment_method: paymentMethod }),
+      body: JSON.stringify({ payment_method: paymentMethod }),
     }),
   order: (id) => request(`/orders/${id}`),
 
   user: (id) => request(`/users/${id}`),
-  createUser: (data) => request('/users', { method: 'POST', body: JSON.stringify(data) }),
 };
 
 /** Human labels for the enum values the API speaks in. */

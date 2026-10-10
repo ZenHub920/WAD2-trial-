@@ -247,3 +247,118 @@ on stability — which is exactly the argument for using deferred acceptance ins
 - aggregate and mean compatibility score
 - capacity utilisation
 - wall-clock runtime at n ∈ {100, 500, 1000, 5000}
+
+## 10. Instance classification, solver registry, and the guarantee ledger
+
+### 10.1 Why more than one solver
+
+The matching problems in this domain form a hierarchy of generality:
+
+```
+Stable Marriage  ⊂  Hospital/Residents  ⊂  HR with Couples
+```
+
+One-to-one is not a different problem from one-to-many — it is the case where every
+capacity is 1, and deferred acceptance handles it unchanged. So a second solver is never
+added for *coverage*. It is added because **the more structure an instance has, the
+stronger the promise that can be made about the answer**, and picking the narrowest class
+an instance belongs to is what lets the engine claim the strongest guarantee it is
+entitled to.
+
+Stable Roommates (§7) sits on a separate axis: non-bipartite, one pool, and no guarantee
+a stable matching exists at all.
+
+### 10.2 Decomposition is only valid along infeasibility boundaries
+
+It is tempting to split a mixed instance — solve the single seekers with
+Hospital/Residents, the linked pairs separately, and union the results.
+
+**This silently destroys stability.** A single and a member of a linked pair can form a
+blocking pair across the partition, and neither sub-solve would ever examine it.
+
+An instance may be split only where the feasibility graph is **disconnected**, i.e. where
+no cross-pair could be acceptable in the first place. Partitioning by concert is sound for
+exactly that reason (§4) and is why it was free. Partitioning by couples, or by capacity,
+is not. The classifier therefore describes the whole instance and never splits it.
+
+### 10.3 Classification
+
+`classifyInstance()` reports the narrowest class that fits, plus the features present:
+
+| Class | Condition | Solver |
+|---|---|---|
+| `empty` | either side empty | — |
+| `one_to_one` | all capacities = 1 | deferred acceptance |
+| `one_to_many` | some capacity > 1 | deferred acceptance |
+| `with_couples` | ≥1 reciprocated `linked_request_id` | none exact yet |
+| `with_lower_quotas` | ≥1 party with `min_size` > 1 | none exact yet |
+| `peer_to_peer` | one pool, no parties | Irving's algorithm |
+
+A link counts only when **reciprocated**. A one-sided link is malformed data or a
+withdrawn partner; treating it as a couple would change the problem being solved without
+anyone asking. A `min_size` of 0 or 1 is not a constraint.
+
+### 10.4 Selection and relaxation
+
+Of the solvers that can run on an instance, selection takes the one offering the strongest
+guarantee. If none can represent every feature present, the strongest partial solver runs
+on the **relaxed** instance and the dropped constraints are recorded.
+
+A solver that ignored a constraint did not solve the problem it was given, so its
+guarantees about *its* problem are not carried over to *this* one. The stability promise is
+downgraded to `not_guaranteed` and optimality to `none`.
+
+This is what keeps the design honest while the engine is still growing: an instance with
+couples is neither refused nor silently mis-answered.
+
+### 10.5 Verification severity follows the promise
+
+With one solver, "verify and throw" was correct: deferred acceptance on a Hospital/Residents
+instance *always* produces a stable matching, so a blocking pair means a bug.
+
+That stops being true with a second solver. HR with Couples is NP-hard and a stable
+matching **may not exist** — a blocking pair there is a property of the input. Asserting
+would crash on a correct result; loosening the assertion globally would strip protection
+from the solvers that genuinely do guarantee stability.
+
+So the promise chooses the check:
+
+| Promise | Check | On a blocking pair |
+|---|---|---|
+| `guaranteed` | assert | throw — it is a bug |
+| `best_effort`, `not_guaranteed` | measure | record the count |
+
+### 10.6 The ledger
+
+Every round records what was **promised** before it ran (theory, from the solver's
+declaration) separately from what was **measured** after it (this instance, from the
+verifier). Conflating the two is how a system starts overstating its results.
+
+```json
+{
+  "solver": "hospital-residents",
+  "instanceClass": "with_couples",
+  "selectedBecause": "... no registered solver models every constraint, so hospital-residents runs on the relaxed instance",
+  "relaxations": ["linked_pairs"],
+  "promised": { "stability": "not_guaranteed", "optimality": "none" },
+  "verification": { "mode": "measure", "stable": true, "blockingPairs": 0, "pairsChecked": 74 },
+  "headline": "Solved with linked_pairs ignored — this is not a solution to the full problem."
+}
+```
+
+Note that `verification.stable` is `true` while `promised.stability` is `not_guaranteed`.
+Both are correct and they mean different things: no blocking pair was found *in the relaxed
+instance*, which is a far smaller claim than *this is a stable solution to the problem that
+was asked*. An interface reading only the measured flag would overstate the result, which
+is why `headline` exists and why the UI shows it rather than deciding for itself.
+
+Stored on `match_rounds` as `solver_id`, `instance_class`, `stability_promise`,
+`relaxations_json` and `ledger_json`. The first four are duplicated out of the JSON so
+rounds can be filtered in SQL without parsing every blob.
+
+### 10.7 Not yet implemented
+
+`with_couples` and `with_lower_quotas` are detected and reported, but no exact solver
+exists for either. Both are NP-hard. The intended implementations are a Roth–Peranson style
+iterative heuristic (as used by the NRMP) with an integer-programming exact solver for small
+instances, which would also give ground truth to measure the heuristic against.

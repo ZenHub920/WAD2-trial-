@@ -1,8 +1,8 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api.js';
-import { DEMO_BUYER_ID, PAYMENT_METHODS, formatMoney, useListing } from '../market.js';
+import { PAYMENT_METHODS, formatMoney, useListing } from '../market.js';
 import CheckoutSteps from '../components/market/CheckoutSteps.vue';
 import MarketIcon from '../components/market/MarketIcon.vue';
 import MarketPageHead from '../components/market/MarketPageHead.vue';
@@ -11,6 +11,7 @@ import OrderSummary from '../components/market/OrderSummary.vue';
 
 const props = defineProps({ id: { type: String, required: true } });
 
+const route = useRoute();
 const router = useRouter();
 const { listing, loading, error } = useListing(() => props.id);
 
@@ -33,13 +34,15 @@ async function pay() {
   paying.value = true;
   payError.value = null;
   try {
-    const { order } = await api.buyListing(props.id, {
-      buyerUserId: DEMO_BUYER_ID,
-      paymentMethod: method.value,
-    });
+    const { order } = await api.buyListing(props.id, { paymentMethod: method.value });
     // Replace, so Back from the receipt cannot land on a payable form again.
     router.replace({ name: 'order', params: { id: order.id } });
   } catch (err) {
+    if (err.status === 401) {
+      // Signed out (or the session expired): sign in, then come straight back here.
+      router.push({ name: 'login', query: { redirect: route.fullPath } });
+      return;
+    }
     payError.value = {
       code: err.message,
       message: PAY_ERRORS[err.message] ?? 'The payment could not be completed. Please try again.',

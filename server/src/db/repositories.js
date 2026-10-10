@@ -42,10 +42,15 @@ function mapParty(row) {
     capacity: row.capacity,
     section: row.section,
     spend_band: row.spend_band,
+    price_cents: row.price_cents ?? null,
+    image_data: row.image_data ?? null,
     arrival_plan: row.arrival_plan,
     plans: JSON.parse(row.plans_json),
     strict_age_policy: row.strict_age_policy,
     min_age_band: row.min_age_band,
+    // Lower quota. Read by classifyInstance; omitting it here would leave the
+    // classifier permanently blind to the constraint even once it is stored.
+    min_size: row.min_size ?? null,
     notes: row.notes,
     status: row.status,
     host: row.host_id ? mapUser(prefixed(row, 'host_')) : undefined,
@@ -64,6 +69,8 @@ function mapSeeker(row) {
     plans_wanted: JSON.parse(row.plans_wanted_json),
     strict_age_policy: row.strict_age_policy,
     age_tolerance: row.age_tolerance,
+    // All-or-nothing link to another request. Same reason as min_size above.
+    linked_request_id: row.linked_request_id ?? null,
     notes: row.notes,
     status: row.status,
     user: row.user_id_joined ? mapUser(prefixed(row, 'user_')) : undefined,
@@ -103,16 +110,17 @@ export function createUserRepo(db) {
     create(data) {
       const id = data.id ?? `u_${randomUUID().slice(0, 8)}`;
       db.prepare(`
-        INSERT INTO users (id, display_name, email, age_band, home_region, gender,
+        INSERT INTO users (id, display_name, email, password_hash, age_band, home_region, gender,
                            companion_gender_pref, languages_json, vibe_json,
                            reliability, verified)
-        VALUES (@id, @display_name, @email, @age_band, @home_region, @gender,
+        VALUES (@id, @display_name, @email, @password_hash, @age_band, @home_region, @gender,
                 @companion_gender_pref, @languages_json, @vibe_json,
                 @reliability, @verified)
       `).run({
         id,
         display_name: data.display_name,
         email: data.email ?? null,
+        password_hash: data.password_hash ?? null,
         age_band: data.age_band,
         home_region: data.home_region,
         gender: data.gender,
@@ -127,6 +135,10 @@ export function createUserRepo(db) {
 
     findById(id) {
       return mapUser(db.prepare('SELECT * FROM users WHERE id = ?').get(id));
+    },
+
+    findByEmail(email) {
+      return db.prepare('SELECT * FROM users WHERE lower(email) = lower(?)').get(email);
     },
 
     list(limit = 100) {
@@ -219,9 +231,9 @@ export function createPartyRepo(db) {
       const id = data.id ?? `p_${randomUUID().slice(0, 8)}`;
       db.prepare(`
         INSERT INTO parties (id, host_user_id, concert_id, capacity, section, spend_band,
-                             arrival_plan, plans_json, strict_age_policy, min_age_band, notes)
+                             price_cents, image_data, arrival_plan, plans_json, strict_age_policy, min_age_band, notes)
         VALUES (@id, @host_user_id, @concert_id, @capacity, @section, @spend_band,
-                @arrival_plan, @plans_json, @strict_age_policy, @min_age_band, @notes)
+                @price_cents, @image_data, @arrival_plan, @plans_json, @strict_age_policy, @min_age_band, @notes)
       `).run({
         id,
         host_user_id: data.host_user_id,
@@ -229,6 +241,8 @@ export function createPartyRepo(db) {
         capacity: data.capacity,
         section: data.section,
         spend_band: data.spend_band,
+        price_cents: data.price_cents ?? null,
+        image_data: data.image_data ?? null,
         arrival_plan: data.arrival_plan,
         plans_json: JSON.stringify(data.plans ?? {}),
         strict_age_policy: data.strict_age_policy ? 1 : 0,
@@ -256,6 +270,34 @@ export function createPartyRepo(db) {
         ORDER BY p.id
       `).all(concertId);
       return rows.map(mapParty);
+    },
+
+    forHost(hostUserId) {
+      const rows = db.prepare(`
+        SELECT p.*, ${USER_COLUMNS('u', 'host_')},
+               c.id AS concert_id, c.artist, c.tour_name, c.venue, c.city, c.event_date
+        FROM parties p
+        JOIN users u ON u.id = p.host_user_id
+        JOIN concerts c ON c.id = p.concert_id
+        WHERE p.host_user_id = ?
+        ORDER BY p.created_at DESC
+      `).all(hostUserId);
+      return rows.map((row) => ({
+        ...mapParty(row),
+        concert: {
+          id: row.concert_id,
+          artist: row.artist,
+          tour_name: row.tour_name,
+          venue: row.venue,
+          city: row.city,
+          event_date: row.event_date,
+        },
+      }));
+    },
+
+    deleteOwned(id, hostUserId) {
+      return db.prepare('DELETE FROM parties WHERE id = ? AND host_user_id = ?')
+        .run(id, hostUserId).changes > 0;
     },
 
     setStatus(id, status) {
@@ -331,17 +373,30 @@ export function createRoundRepo(db) {
      * and the trace either all land or none do — a half-written round would be a
      * matching whose stability proof no longer describes its contents.
      */
-    save({ concertId, profile, result, metrics, timings, trace = [], algorithm = 'gale_shapley_hr' }) {
+    save({
+      concertId,
+      profile,
+      result,
+      metrics,
+      timings,
+      trace = [],
+      algorithm = 'gale_shapley_hr',
+      ledger = null,
+    }) {
       const roundId = `r_${randomUUID().slice(0, 8)}`;
 
       const insertRound = db.prepare(`
         INSERT INTO match_rounds (id, concert_id, algorithm, is_stable, blocking_pair_count,
                                   seeker_count, party_count, total_capacity, feasible_pairs,
                                   matched_count, metrics_json, timings_json,
-                                  preference_snapshot_json)
+                                  preference_snapshot_json,
+                                  solver_id, instance_class, stability_promise,
+                                  relaxations_json, ledger_json)
         VALUES (@id, @concert_id, @algorithm, @is_stable, @blocking_pair_count,
                 @seeker_count, @party_count, @total_capacity, @feasible_pairs,
-                @matched_count, @metrics_json, @timings_json, @preference_snapshot_json)
+                @matched_count, @metrics_json, @timings_json, @preference_snapshot_json,
+                @solver_id, @instance_class, @stability_promise,
+                @relaxations_json, @ledger_json)
       `);
 
       const insertResult = db.prepare(`
@@ -377,6 +432,14 @@ export function createRoundRepo(db) {
             partyPrefs: Object.fromEntries(profile.partyPrefs),
             capacities: Object.fromEntries(profile.capacities),
           }),
+          // The ledger's own columns are duplicated out of ledger_json so a
+          // round can be filtered by solver or promise in SQL without parsing
+          // every blob. The JSON stays authoritative.
+          solver_id: ledger?.solver ?? null,
+          instance_class: ledger?.instanceClass ?? null,
+          stability_promise: ledger?.promised?.stability ?? null,
+          relaxations_json: ledger ? JSON.stringify(ledger.relaxations ?? []) : null,
+          ledger_json: ledger ? JSON.stringify(ledger) : null,
         });
 
         for (const seekerId of profile.seekerPrefs.keys()) {
@@ -516,6 +579,22 @@ function mapListing(row) {
   };
 }
 
+export function createSessionRepo(db) {
+  return {
+    create(tokenHash, userId, expiresAt) {
+      db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
+        .run(tokenHash, userId, expiresAt);
+    },
+    findUserId(tokenHash, now) {
+      return db.prepare('SELECT user_id FROM sessions WHERE token_hash = ? AND expires_at > ?')
+        .get(tokenHash, now)?.user_id ?? null;
+    },
+    delete(tokenHash) {
+      db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash);
+    },
+  };
+}
+
 const LISTING_SELECT = `
   SELECT l.*, ${USER_COLUMNS('u', 'seller_')},
          c.artist         AS concert_artist,
@@ -640,5 +719,6 @@ export function createRepositories(db) {
     rounds: createRoundRepo(db),
     listings: createListingRepo(db),
     orders: createOrderRepo(db),
+    sessions: createSessionRepo(db),
   };
 }

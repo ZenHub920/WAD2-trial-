@@ -42,6 +42,10 @@ function methodLabel(id) {
 
     <div v-if="loading" class="skeleton" aria-busy="true" />
 
+    <MarketNotice v-else-if="error?.status === 401" title="Sign in to see this order">
+      <RouterLink :to="{ name: 'login', query: { redirect: $route.fullPath } }">Sign in</RouterLink>
+    </MarketNotice>
+
     <MarketNotice v-else-if="error?.status === 404" title="Order not found">
       <RouterLink :to="{ name: 'market' }">Back to the market</RouterLink>
     </MarketNotice>
