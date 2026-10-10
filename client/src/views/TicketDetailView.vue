@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { api, formatDate, LABELS } from '../api.js';
 import { currentUser } from '../auth.js';
 import { useRouter } from 'vue-router';
@@ -11,29 +11,71 @@ const loading = ref(true);
 const error = ref('');
 const message = ref('');
 const removing = ref(false);
+const editing = ref(false);
+const saving = ref(false);
+const editImage = ref('');
+const draft = ref({ price: 0, quantity: 1, section: 'seated_any', description: '' });
 
 const isOwnListing = computed(() =>
-  Boolean(currentUser.value?.id && listing.value?.host?.id === currentUser.value.id),
+  Boolean(currentUser.value?.id && listing.value?.seller?.id === currentUser.value.id),
 );
 
-onMounted(async () => {
+watch(() => props.id, async (id) => {
+  loading.value = true;
+  error.value = '';
+  listing.value = null;
+  editing.value = false;
   try {
-    const { concerts } = await api.concerts();
-    for (const concert of concerts) {
-      const { parties } = await api.parties(concert.id);
-      const party = parties.find((item) => item.id === props.id);
-      if (party) {
-        listing.value = { ...party, concert };
-        break;
-      }
-    }
-    if (!listing.value) error.value = 'This ticket listing could not be found.';
+    listing.value = (await api.ticket(id)).listing;
   } catch (err) {
     error.value = err.body?.error ?? err.message;
   } finally {
     loading.value = false;
   }
-});
+}, { immediate: true });
+
+function startEditing() {
+  draft.value = {
+    price: listing.value.priceCents / 100,
+    quantity: listing.value.quantity,
+    section: listing.value.section,
+    description: listing.value.description ?? '',
+  };
+  editImage.value = '';
+  message.value = '';
+  editing.value = true;
+}
+
+function previewEditImage(event) {
+  const [file] = event.target.files;
+  if (!file) return;
+  message.value = '';
+  const reader = new FileReader();
+  reader.onload = () => { editImage.value = String(reader.result); };
+  reader.onerror = () => { message.value = 'Could not read the selected image.'; };
+  reader.readAsDataURL(file);
+}
+
+async function saveListing() {
+  saving.value = true;
+  message.value = '';
+  try {
+    const { listing: updated } = await api.updateTicket(listing.value.id, {
+      priceCents: Math.round(Number(draft.value.price) * 100),
+      quantity: Number(draft.value.quantity),
+      section: draft.value.section,
+      description: draft.value.description,
+      ...(editImage.value ? { imageData: editImage.value } : {}),
+    });
+    listing.value = updated;
+    editing.value = false;
+    message.value = 'Listing updated.';
+  } catch (err) {
+    message.value = err.body?.error ?? err.message;
+  } finally {
+    saving.value = false;
+  }
+}
 
 function showMessage(text) {
   message.value = text;
@@ -44,7 +86,7 @@ async function removeListing() {
   removing.value = true;
   message.value = '';
   try {
-    await api.deleteListing(listing.value.id);
+    await api.deleteTicket(listing.value.id);
     await router.push('/my-listings');
   } catch (err) {
     message.value = err.body?.error ?? err.message;
@@ -62,25 +104,49 @@ async function removeListing() {
       <div v-if="loading" class="ticket-detail__loading">Loading ticket details…</div>
       <div v-else-if="error" class="notice notice--error">{{ error }}</div>
       <article v-else class="ticket-detail">
-        <img v-if="listing.imageData" class="ticket-detail__image" :src="listing.imageData" alt="Ticket listing" />
+        <img v-if="listing.imageUrl" class="ticket-detail__image" :src="listing.imageUrl" alt="Ticket listing" />
         <div class="ticket-detail__content">
           <div class="ticket-detail__seller">
-            <span class="seller-avatar">{{ listing.host.displayName.slice(0, 1) }}</span>
-            <span>Listed by {{ listing.host.displayName }}</span>
+            <span class="seller-avatar">{{ listing.seller.displayName.slice(0, 1) }}</span>
+            <span>Listed by {{ listing.seller.displayName }}</span>
           </div>
           <p class="eyebrow">Ticket listing</p>
           <h1>{{ listing.concert.artist }}</h1>
-          <p class="ticket-detail__tour">{{ listing.concert.tour_name || 'Live concert' }}</p>
           <p class="ticket-detail__date">
             {{ formatDate(listing.concert.event_date) }} · {{ listing.concert.venue }}
           </p>
-          <p v-if="listing.notes" class="ticket-detail__description">{{ listing.notes.split('\n').slice(1).join('\n') }}</p>
+          <p v-if="listing.description" class="ticket-detail__description">{{ listing.description }}</p>
           <div class="ticket-detail__meta">
             <span>{{ LABELS.section[listing.section] }}</span>
-            <span>{{ listing.capacity }} {{ listing.capacity === 1 ? 'ticket' : 'tickets' }}</span>
-            <strong>${{ ((listing.priceCents ?? 0) / 100).toFixed(2) }}</strong>
+            <span>{{ listing.quantity }} {{ listing.quantity === 1 ? 'ticket' : 'tickets' }}</span>
+            <strong>${{ (listing.priceCents / 100).toFixed(2) }}</strong>
           </div>
-          <div v-if="isOwnListing" class="ticket-detail__actions">
+          <form v-if="isOwnListing && editing" class="ticket-detail__edit" @submit.prevent="saveListing">
+            <label>Ticket price
+              <input v-model.number="draft.price" type="number" min="0" step="0.01" required />
+            </label>
+            <label>Number of tickets
+              <input v-model.number="draft.quantity" type="number" min="1" max="10" required />
+            </label>
+            <label>Seat section
+              <select v-model="draft.section">
+                <option v-for="(label, section) in LABELS.section" :key="section" :value="section">{{ label }}</option>
+              </select>
+            </label>
+            <label>Description
+              <textarea v-model.trim="draft.description" rows="4" />
+            </label>
+            <label>Replace image
+              <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" @change="previewEditImage" />
+            </label>
+            <img v-if="editImage" class="ticket-detail__edit-preview" :src="editImage" alt="New listing image preview" />
+            <div class="ticket-detail__actions">
+              <button class="btn btn--ghost" type="button" :disabled="saving" @click="editing = false">Cancel</button>
+              <button class="btn btn--primary" type="submit" :disabled="saving">{{ saving ? 'Saving…' : 'Save changes' }}</button>
+            </div>
+          </form>
+          <div v-else-if="isOwnListing" class="ticket-detail__actions">
+            <button class="btn btn--ghost" type="button" @click="startEditing">Edit listing</button>
             <button class="btn btn--primary" type="button" :disabled="removing" @click="removeListing">
               {{ removing ? 'Removing…' : 'Remove listing' }}
             </button>
@@ -105,11 +171,15 @@ async function removeListing() {
 .ticket-detail__content { padding: var(--space-5); }
 .ticket-detail__seller { display: flex; align-items: center; gap: var(--space-2); color: var(--text-300); font-size: var(--step--1); margin-bottom: var(--space-3); }
 .ticket-detail h1 { margin-top: var(--space-2); font-size: var(--step-3); }
-.ticket-detail__tour, .ticket-detail__date { margin-top: var(--space-2); color: var(--text-300); }
+.ticket-detail__date { margin-top: var(--space-2); color: var(--text-300); }
 .ticket-detail__description { margin-top: var(--space-3); white-space: pre-line; color: var(--text-200); }
 .ticket-detail__meta { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-4); }
 .ticket-detail__meta span { padding: 5px 9px; border-radius: var(--radius-pill); background: var(--ink-700); color: var(--text-300); font-size: var(--step--1); }
 .ticket-detail__meta strong { margin-left: auto; color: var(--accent-300); font-size: var(--step-1); }
+.ticket-detail__edit { display: grid; gap: var(--space-3); margin-top: var(--space-4); }
+.ticket-detail__edit label { display: grid; gap: var(--space-2); color: var(--text-300); }
+.ticket-detail__edit input, .ticket-detail__edit select, .ticket-detail__edit textarea { width: 100%; padding: var(--space-3); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-700); }
+.ticket-detail__edit-preview { max-width: 100%; max-height: 180px; object-fit: contain; }
 .ticket-detail__actions { display: flex; gap: var(--space-3); margin-top: var(--space-4); }
 .ticket-detail__actions .btn { flex: 1; text-align: center; }
 .ticket-detail__message { margin-top: var(--space-3); color: var(--text-300); text-align: center; }

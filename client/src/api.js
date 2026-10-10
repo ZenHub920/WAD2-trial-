@@ -32,19 +32,42 @@ export const api = {
   register: (data) => request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   me: () => request('/auth/me'),
   logout: () => request('/auth/logout', { method: 'POST' }),
-  myListings: () => request('/me/listings'),
-  deleteListing: (id) => request(`/me/listings/${id}`, { method: 'DELETE' }),
+  profile: () => request('/me/profile'),
+  updateProfile: (data) => request('/me/profile', { method: 'PATCH', body: JSON.stringify(data) }),
+  myConcerts: () => request('/me/concerts'),
+  myConcertResult: (concertId) => request(`/me/concerts/${encodeURIComponent(concertId)}/result`),
+  participation: (concertId) => request(`/concerts/${encodeURIComponent(concertId)}/participation`),
+  joinConcert: (concertId, data) =>
+    request(`/concerts/${encodeURIComponent(concertId)}/participation`, {
+      method: 'POST', body: JSON.stringify(data),
+    }),
+  leaveConcert: (concertId) =>
+    request(`/concerts/${encodeURIComponent(concertId)}/participation`, { method: 'DELETE' }),
+  tickets: () => request('/tickets'),
+  ticket: (id) => request(`/tickets/${encodeURIComponent(id)}`),
+  createTicket: (data) => request('/tickets', { method: 'POST', body: JSON.stringify(data) }),
+  updateTicket: (id, data) => request(`/tickets/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  myTickets: () => request('/me/tickets'),
+  deleteTicket: (id) => request(`/tickets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  kakiPool: () => request('/kaki/pool'),
+  kakiDecisions: () => request('/kaki/decisions'),
+  kakiMatches: () => request('/kaki/matches'),
+  putKakiDecision: (concertId, targetUserId, decision) =>
+    request(`/kaki/decisions/${encodeURIComponent(concertId)}/${encodeURIComponent(targetUserId)}`, {
+      method: 'PUT', body: JSON.stringify({ decision }),
+    }),
+  deleteKakiDecision: (concertId, targetUserId) =>
+    request(`/kaki/decisions/${encodeURIComponent(concertId)}/${encodeURIComponent(targetUserId)}`, {
+      method: 'DELETE',
+    }),
 
   health: () => request('/health'),
 
   concerts: () => request('/concerts'),
-  createConcert: (data) =>
-    request('/concerts', { method: 'POST', body: JSON.stringify(data) }),
   concert: (id) => request(`/concerts/${id}`),
 
   parties: (concertId) => request(`/concerts/${concertId}/parties`),
-  createParty: (concertId, data) =>
-    request(`/concerts/${concertId}/parties`, { method: 'POST', body: JSON.stringify(data) }),
 
   requests: (concertId) => request(`/concerts/${concertId}/requests`),
   createRequest: (concertId, data) =>

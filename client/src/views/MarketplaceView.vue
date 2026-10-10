@@ -2,7 +2,6 @@
 import { computed, onMounted, ref } from 'vue';
 import { api, formatDate, LABELS } from '../api.js';
 
-const concerts = ref([]);
 const listings = ref([]);
 const loading = ref(true);
 const error = ref('');
@@ -12,25 +11,11 @@ const selectedSection = ref('all');
 const minPrice = ref(0);
 const maxPrice = ref(100000);
 
-const priceLabels = {
-  1: '$',
-  2: '$$',
-  3: '$$$',
-  4: '$$$$',
-};
-
 onMounted(async () => {
   try {
-    concerts.value = (await api.concerts()).concerts;
-    const results = await Promise.all(
-      concerts.value.map(async (concert) => {
-        const { parties } = await api.parties(concert.id);
-        return parties.map((party) => ({ ...party, concert }));
-      }),
-    );
-    listings.value = results.flat();
+    listings.value = (await api.tickets()).listings;
   } catch (err) {
-    error.value = err.message;
+    error.value = err.body?.error ?? err.message;
   } finally {
     loading.value = false;
   }
@@ -43,16 +28,17 @@ const filteredListings = computed(() => {
       !query ||
       listing.concert.artist.toLowerCase().includes(query) ||
       listing.concert.venue.toLowerCase().includes(query) ||
-      listing.host.displayName.toLowerCase().includes(query);
+      listing.seller.displayName.toLowerCase().includes(query);
     const matchesDate = !selectedDate.value || listing.concert.event_date.slice(0, 10) === selectedDate.value;
     const matchesSection = selectedSection.value === 'all' || listing.section === selectedSection.value;
-    const listingPrice = listing.priceCents != null ? listing.priceCents / 100 : listing.spendBand * 250;
+    const listingPrice = listing.priceCents / 100;
     const matchesPrice = listingPrice >= minPrice.value && listingPrice <= maxPrice.value;
     return matchesSearch && matchesDate && matchesSection && matchesPrice;
   });
 });
 
 function resetFilters() {
+  search.value = '';
   selectedDate.value = '';
   selectedSection.value = 'all';
   minPrice.value = 0;
@@ -131,23 +117,20 @@ function resetFilters() {
               :to="{ name: 'ticket-detail', params: { id: listing.id } }"
               class="ticket-card"
             >
-          <img v-if="listing.imageData" class="ticket-card__image" :src="listing.imageData" alt="Ticket listing" />
-          <div class="ticket-card__body">
-            <div class="ticket-card__seller">
-              <span class="seller-avatar">{{ listing.host.displayName.slice(0, 1) }}</span>
-              <span>{{ listing.host.displayName }}</span>
-              <small>verified fan</small>
-            </div>
-            <h2>{{ listing.concert.artist }}</h2>
-            <p class="ticket-card__tour">{{ listing.concert.tour_name || 'Live concert' }}</p>
-            <p class="ticket-card__date">{{ formatDate(listing.concert.event_date) }} · {{ listing.concert.venue }}</p>
-            <div class="ticket-card__meta">
-              <span>{{ LABELS.section[listing.section] }}</span>
-              <span>{{ listing.capacity }} {{ listing.capacity === 1 ? 'ticket' : 'tickets' }}</span>
-              <strong>{{ listing.priceCents != null ? `$${(listing.priceCents / 100).toFixed(2)}` : priceLabels[listing.spendBand] }}</strong>
-            </div>
-          </div>
-              <button class="save-button" aria-label="Save ticket" @click.prevent>♡</button>
+              <img v-if="listing.imageUrl" class="ticket-card__image" :src="listing.imageUrl" alt="Ticket listing" />
+              <div class="ticket-card__body">
+                <div class="ticket-card__seller">
+                  <span class="seller-avatar">{{ listing.seller.displayName.slice(0, 1) }}</span>
+                  <span>{{ listing.seller.displayName }}</span>
+                </div>
+                <h2>{{ listing.concert.artist }}</h2>
+                <p class="ticket-card__date">{{ formatDate(listing.concert.event_date) }} · {{ listing.concert.venue }}</p>
+                <div class="ticket-card__meta">
+                  <span>{{ LABELS.section[listing.section] }}</span>
+                  <span>{{ listing.quantity }} {{ listing.quantity === 1 ? 'ticket' : 'tickets' }}</span>
+                  <strong>${{ (listing.priceCents / 100).toFixed(2) }}</strong>
+                </div>
+              </div>
             </RouterLink>
           </div>
         </main>
@@ -234,15 +217,11 @@ function resetFilters() {
 .ticket-card__body { padding: var(--space-4); }
 .ticket-card__seller { display: flex; align-items: center; gap: var(--space-2); color: var(--text-300); font-size: var(--step--2); }
 .seller-avatar { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent-500); color: white; }
-.ticket-card__seller small { margin-left: auto; color: var(--mint-400); }
 .ticket-card h2 { margin-top: var(--space-3); font-size: var(--step-1); }
-.ticket-card__tour, .ticket-card__date { color: var(--text-300); font-size: var(--step--1); }
-.ticket-card__date { margin-top: var(--space-2); color: var(--text-400); }
+.ticket-card__date { margin-top: var(--space-2); color: var(--text-400); font-size: var(--step--1); }
 .ticket-card__meta { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-4); font-size: var(--step--2); }
 .ticket-card__meta span { padding: 3px 7px; border-radius: var(--radius-pill); background: var(--ink-700); }
 .ticket-card__meta strong { margin-left: auto; color: var(--accent-300); }
-.save-button { position: absolute; top: var(--space-3); right: var(--space-3); color: white; font-size: 1.5rem; }
-.save-button:hover { color: var(--accent-300); }
 
 .marketplace__empty { padding: var(--space-9) var(--space-4); text-align: center; }
 .marketplace__empty > span { color: var(--accent-300); font-size: 3rem; }

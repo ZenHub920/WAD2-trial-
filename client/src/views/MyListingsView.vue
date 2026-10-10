@@ -9,7 +9,7 @@ const removing = ref('');
 
 async function loadListings() {
   try {
-    listings.value = (await api.myListings()).listings;
+    listings.value = (await api.myTickets()).listings;
   } catch (err) {
     error.value = err.body?.error ?? err.message;
   } finally {
@@ -22,7 +22,7 @@ async function removeListing(listing) {
   removing.value = listing.id;
   error.value = '';
   try {
-    await api.deleteListing(listing.id);
+    await api.deleteTicket(listing.id);
     listings.value = listings.value.filter((item) => item.id !== listing.id);
   } catch (err) {
     error.value = err.body?.error ?? err.message;
@@ -57,7 +57,7 @@ onMounted(loadListings);
       </div>
       <div v-else class="listing-grid">
         <article v-for="listing in listings" :key="listing.id" class="listing-card">
-          <img v-if="listing.image_data" class="listing-card__image" :src="listing.image_data" alt="Ticket listing" />
+          <img v-if="listing.imageUrl" class="listing-card__image" :src="listing.imageUrl" alt="Ticket listing" />
           <div class="listing-card__body">
             <p class="listing-card__status">{{ listing.status }}</p>
             <h2>{{ listing.concert.artist }}</h2>
@@ -66,9 +66,10 @@ onMounted(loadListings);
             </p>
             <div class="listing-card__meta">
               <span>{{ LABELS.section[listing.section] }}</span>
-              <span>{{ listing.capacity }} {{ listing.capacity === 1 ? 'ticket' : 'tickets' }}</span>
-              <strong>${{ ((listing.price_cents ?? 0) / 100).toFixed(2) }}</strong>
+              <span>{{ listing.quantity }} {{ listing.quantity === 1 ? 'ticket' : 'tickets' }}</span>
+              <strong>${{ (listing.priceCents / 100).toFixed(2) }}</strong>
             </div>
+            <RouterLink :to="{ name: 'ticket-detail', params: { id: listing.id } }" class="edit-link">View or edit listing</RouterLink>
             <button
               class="remove-button"
               type="button"
@@ -109,6 +110,7 @@ onMounted(loadListings);
 .listing-card__meta { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-4); font-size: var(--step--2); }
 .listing-card__meta span { padding: 3px 7px; border-radius: var(--radius-pill); background: var(--ink-700); }
 .listing-card__meta strong { margin-left: auto; color: var(--accent-300); }
+.edit-link { display: block; margin-top: var(--space-4); color: var(--accent-300); }
 .remove-button { width: 100%; margin-top: var(--space-5); padding: var(--space-3); border: 1px solid var(--rose-400); border-radius: var(--radius-md); color: var(--rose-400); }
 .remove-button:hover { background: color-mix(in oklab, var(--rose-400) 12%, transparent); }
 .remove-button:disabled { opacity: .6; }

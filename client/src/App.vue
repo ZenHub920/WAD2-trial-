@@ -4,11 +4,13 @@ import { useRoute } from 'vue-router';
 import SiteHeader from './components/SiteHeader.vue';
 import SiteFooter from './components/SiteFooter.vue';
 import TabBar from './components/TabBar.vue';
+import { refreshSession } from './auth.js';
 
 // Concert Kaki is a light product; dark is the opt-in now, not the default.
 const theme = ref('light');
 const route = useRoute();
 const hasFixedHeader = computed(() => ['marketplace', 'list-ticket', 'my-listings', 'ticket-detail'].includes(route.name));
+refreshSession().catch((error) => console.error('Could not load session', error));
 
 onMounted(() => {
   const stored = localStorage.getItem('encore-theme');
