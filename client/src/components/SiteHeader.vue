@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { currentUser, refreshSession, signOut } from '../auth.js';
+import { currentUser, signOut } from '../auth.js';
 
 defineProps({ theme: { type: String, default: 'dark' } });
 defineEmits(['toggle-theme']);
@@ -9,11 +9,10 @@ defineEmits(['toggle-theme']);
 const scrolled = ref(false);
 const menuOpen = ref(false);
 const route = useRoute();
-const isMarketplace = computed(() => route.name === 'marketplace');
 const homeLink = computed(() => (currentUser.value ? '/marketplace' : '/'));
-const isLoggedIn = computed(() =>
-  Boolean(currentUser.value)
-  || ['marketplace', 'list-ticket', 'my-listings', 'ticket-detail'].includes(route.name),
+const isLoggedIn = computed(() => Boolean(currentUser.value));
+const hasFixedHeader = computed(() =>
+  isLoggedIn.value || ['marketplace', 'list-ticket', 'my-listings', 'ticket-detail'].includes(route.name),
 );
 
 function onScroll() {
@@ -22,7 +21,7 @@ function onScroll() {
 
 onMounted(() => {
   window.addEventListener('scroll', onScroll, { passive: true });
-  refreshSession().catch((error) => console.error('Could not load session', error));
+  onScroll();
 });
 onUnmounted(() => window.removeEventListener('scroll', onScroll));
 
@@ -37,7 +36,7 @@ async function logOut() {
 </script>
 
 <template>
-  <header class="header" :class="{ 'header--scrolled': scrolled, 'header--fixed': isLoggedIn }">
+  <header class="header" :class="{ 'header--scrolled': scrolled, 'header--fixed': hasFixedHeader }">
     <div class="header__inner container container--wide">
       <RouterLink :to="homeLink" class="brand" @click="menuOpen = false">
         <span class="brand__mark" aria-hidden="true">
@@ -58,12 +57,14 @@ async function logOut() {
       <nav class="nav" :class="{ 'nav--open': menuOpen }" aria-label="Main">
         <template v-if="isLoggedIn">
           <RouterLink to="/list-ticket" class="list-ticket-btn" @click="menuOpen = false">+ List a ticket</RouterLink>
-          <RouterLink to="/marketplace" @click="menuOpen = false">KakiFinder</RouterLink>
-          <RouterLink to="/marketplace" @click="menuOpen = false">Chat</RouterLink>
-          <RouterLink to="/marketplace" @click="menuOpen = false">Profile</RouterLink>
+          <RouterLink to="/marketplace" @click="menuOpen = false">Ticket Market</RouterLink>
+          <RouterLink to="/kaki" @click="menuOpen = false">KakiFinder</RouterLink>
+          <RouterLink to="/chat" @click="menuOpen = false">Chat</RouterLink>
+          <RouterLink to="/profile" @click="menuOpen = false">Profile</RouterLink>
           <RouterLink to="/my-listings" class="my-listings-btn" @click="menuOpen = false">My listings</RouterLink>
         </template>
         <template v-else>
+          <RouterLink to="/marketplace" @click="menuOpen = false">Ticket Market</RouterLink>
           <RouterLink to="/concerts" @click="menuOpen = false">Concerts</RouterLink>
           <RouterLink to="/method" @click="menuOpen = false">How it works</RouterLink>
           <RouterLink to="/login" @click="menuOpen = false">Sign in</RouterLink>

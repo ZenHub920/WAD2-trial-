@@ -15,7 +15,7 @@ const listing = ref({
   eventDate: '',
   price: '',
   description: '',
-  capacity: 1,
+  quantity: 1,
   section: 'seated_any',
 });
 
@@ -26,45 +26,34 @@ function chooseImage() {
 function previewImage(event) {
   const [file] = event.target.files;
   if (!file) return;
+  error.value = '';
   const reader = new FileReader();
   reader.onload = () => {
     imagePreview.value = String(reader.result);
   };
+  reader.onerror = () => { error.value = 'Could not read the selected image.'; };
   reader.readAsDataURL(file);
 }
 
 async function submitListing() {
-  const user = JSON.parse(localStorage.getItem('encore-user') ?? 'null');
-  if (!user?.id) {
-    error.value = 'Please sign in again before listing a ticket.';
-    return;
-  }
-
   creating.value = true;
   error.value = '';
   try {
-    const price = Number(listing.value.price);
-    const spendBand = price <= 100 ? 1 : price <= 250 ? 2 : price <= 500 ? 3 : 4;
-    const { concert } = await api.createConcert({
-      artist: listing.value.title.trim(),
-      venue: listing.value.venue.trim(),
-      event_date: listing.value.eventDate,
-    });
-    await api.createParty(concert.id, {
-      host_user_id: user.id,
-      capacity: Number(listing.value.capacity),
+    const { listing: created } = await api.createTicket({
+      concert: {
+        artist: listing.value.title.trim(),
+        venue: listing.value.venue.trim(),
+        event_date: listing.value.eventDate,
+      },
+      priceCents: Math.round(Number(listing.value.price) * 100),
+      quantity: Number(listing.value.quantity),
       section: listing.value.section,
-      spend_band: spendBand,
-      price_cents: Math.round(price * 100),
-      image_data: imagePreview.value || null,
-      // Listings still use the matching schema internally, but sellers do not
-      // need to provide a meetup arrival preference.
-      arrival_plan: 'doors',
-      notes: `${listing.value.title}\n${listing.value.description}`.trim(),
+      description: listing.value.description,
+      ...(imagePreview.value ? { imageData: imagePreview.value } : {}),
     });
-    await router.push('/marketplace');
+    await router.push({ name: 'ticket-detail', params: { id: created.id } });
   } catch (err) {
-    error.value = err.body?.error ?? err.message;
+    error.value = err.status === 401 ? 'Please sign in before listing a ticket.' : (err.body?.error ?? err.message);
   } finally {
     creating.value = false;
   }
@@ -92,7 +81,7 @@ async function submitListing() {
               <span v-else aria-hidden="true">+</span>
               <small>{{ imagePreview ? 'Change image' : 'Add an image' }}</small>
             </button>
-            <input ref="imageInput" type="file" accept="image/*" hidden @change="previewImage" />
+            <input ref="imageInput" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden @change="previewImage" />
           </label>
 
           <label class="listing-form__field listing-form__field--wide">
@@ -122,7 +111,7 @@ async function submitListing() {
 
           <label class="listing-form__field">
             Number of tickets
-            <input v-model.number="listing.capacity" type="number" min="1" max="10" required />
+            <input v-model.number="listing.quantity" type="number" min="1" max="10" required />
           </label>
           <label class="listing-form__field">
             Seat section

@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS users (
   vibe_json              TEXT    NOT NULL,
   reliability            REAL    NOT NULL DEFAULT 0.75 CHECK (reliability BETWEEN 0 AND 1),
   verified               INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0,1)),
+  is_operator            INTEGER NOT NULL DEFAULT 0 CHECK (is_operator IN (0,1)),
   created_at             TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -86,8 +87,6 @@ CREATE TABLE IF NOT EXISTS parties (
   capacity          INTEGER NOT NULL CHECK (capacity >= 1),
   section           TEXT    NOT NULL CHECK (section IN ('pit','ga_standing','lower_bowl','upper_bowl','seated_any')),
   spend_band        INTEGER NOT NULL CHECK (spend_band BETWEEN 1 AND 4),
-  price_cents       INTEGER CHECK (price_cents IS NULL OR price_cents >= 0),
-  image_data        TEXT,
   arrival_plan      TEXT    NOT NULL CHECK (arrival_plan IN ('early_queue','mid','doors')),
   plans_json        TEXT    NOT NULL DEFAULT '{}',
   strict_age_policy INTEGER NOT NULL DEFAULT 0 CHECK (strict_age_policy IN (0,1)),
@@ -105,6 +104,37 @@ CREATE TABLE IF NOT EXISTS parties (
 );
 
 CREATE INDEX IF NOT EXISTS idx_parties_concert ON parties(concert_id, status);
+
+-- Ticket inventory is independent from the matchmaking party/host instance.
+CREATE TABLE IF NOT EXISTS tickets (
+  id             TEXT PRIMARY KEY,
+  seller_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  concert_id     TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
+  price_cents    INTEGER NOT NULL CHECK (price_cents >= 0),
+  quantity       INTEGER NOT NULL CHECK (quantity > 0),
+  section        TEXT NOT NULL,
+  description    TEXT NOT NULL DEFAULT '',
+  image_path     TEXT,
+  status         TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','sold','cancelled','deleted')),
+  source_party_id TEXT UNIQUE REFERENCES parties(id) ON DELETE SET NULL,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_tickets_status_created ON tickets(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tickets_seller ON tickets(seller_user_id, created_at DESC);
+
+-- Kaki participation does not enroll a user in group matching.
+-- Keep withdrawn rows so a legacy open seeker/host cannot reappear in Kaki.
+CREATE TABLE IF NOT EXISTS concert_participants (
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  concert_id   TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
+  section_pref TEXT NOT NULL CHECK (section_pref IN ('pit','ga_standing','lower_bowl','upper_bowl','seated_any')),
+  arrival_pref TEXT NOT NULL CHECK (arrival_pref IN ('early_queue','mid','doors')),
+  status       TEXT NOT NULL DEFAULT 'joined' CHECK (status IN ('joined','withdrawn')),
+  joined_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, concert_id)
+);
+CREATE INDEX IF NOT EXISTS idx_participants_concert ON concert_participants(concert_id, status);
 
 CREATE TABLE IF NOT EXISTS seeker_requests (
   id                TEXT    PRIMARY KEY,
@@ -130,6 +160,19 @@ CREATE TABLE IF NOT EXISTS seeker_requests (
 );
 
 CREATE INDEX IF NOT EXISTS idx_seekers_concert ON seeker_requests(concert_id, status);
+
+-- Kaki decisions are keyed by concert and person, not by a request's lifecycle.
+CREATE TABLE IF NOT EXISTS kaki_decisions (
+  concert_id    TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
+  actor_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  target_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  decision      TEXT NOT NULL CHECK (decision IN ('like','skip')),
+  decided_at    INTEGER NOT NULL,
+  PRIMARY KEY (concert_id, actor_user_id, target_user_id),
+  CHECK (actor_user_id <> target_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_kaki_decisions_target
+  ON kaki_decisions (concert_id, target_user_id, actor_user_id);
 
 -- ---------------------------------------------------------------------------
 -- Match rounds — immutable results with their own stability proof

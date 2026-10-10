@@ -48,9 +48,12 @@ const props = defineProps({
      a suffix — "Skip" would otherwise be read out as "Skiped". */
   yesPast: { type: String, default: 'Shortlisted' },
   noPast: { type: String, default: 'Passed' },
+  /** Optional persisted actions. When present the cursor advances only after success. */
+  commitItem: { type: Function, default: null },
+  undoItem: { type: Function, default: null },
 });
 
-const emit = defineEmits(['shortlist', 'pass', 'open', 'exhausted']);
+const emit = defineEmits(['shortlist', 'pass', 'open', 'exhausted', 'commit-error', 'pending-change']);
 
 const prefersReduced = useReducedMotion();
 
@@ -59,6 +62,7 @@ const drag = ref({ x: 0, y: 0, active: false, grabBelowCentre: 0 });
 const leaving = ref(null); // { id, direction } while a committed card flies out
 const history = ref([]); // for undo
 const announcement = ref('');
+const pending = ref(false);
 
 /** Distance past which a release commits, in px. */
 const COMMIT_DISTANCE = 110;
@@ -147,7 +151,7 @@ function stackStyle(offset) {
 // --------------------------------------------------------------- gestures
 
 function onPointerDown(event) {
-  if (leaving.value || !current.value) return;
+  if (leaving.value || pending.value || !current.value) return;
   // Let interactive children (the open button) handle their own clicks.
   if (event.target.closest('[data-no-drag]')) return;
 
@@ -223,39 +227,59 @@ function onPointerCancel() {
 
 function commit(direction) {
   const item = current.value;
-  if (!item || leaving.value) return;
-
-  const verb = direction === 'right' ? props.yesPast : props.noPast;
-  announcement.value = `${verb} ${labelFor(item)}. ${remaining.value - 1} left.`;
+  if (!item || leaving.value || pending.value) return;
+  pending.value = true;
+  emit('pending-change', true);
 
   if (prefersReduced.value) {
-    finish(item, direction);
+    void finish(item, direction);
     return;
   }
 
   leaving.value = { id: item.id, direction };
-  window.setTimeout(() => finish(item, direction), 300);
+  window.setTimeout(() => { void finish(item, direction); }, 300);
 }
 
-function finish(item, direction) {
-  history.value.push({ item, direction, at: index.value });
-  emit(direction === 'right' ? 'shortlist' : 'pass', item);
-
-  index.value += 1;
-  leaving.value = null;
-  drag.value.x = 0;
-  drag.value.y = 0;
-
-  if (index.value >= props.items.length) emit('exhausted');
+async function finish(item, direction) {
+  try {
+    if (props.commitItem) await props.commitItem(item, direction);
+    history.value.push({ item, direction, at: index.value });
+    index.value += 1;
+    const verb = direction === 'right' ? props.yesPast : props.noPast;
+    announcement.value = `${verb} ${labelFor(item)}. ${remaining.value} left.`;
+    emit(direction === 'right' ? 'shortlist' : 'pass', item);
+    if (index.value >= props.items.length) emit('exhausted');
+  } catch (error) {
+    announcement.value = `Could not save decision for ${labelFor(item)}. Try again.`;
+    emit('commit-error', error);
+  } finally {
+    pending.value = false;
+    emit('pending-change', false);
+    leaving.value = null;
+    drag.value.x = 0;
+    drag.value.y = 0;
+  }
 }
 
-function undo() {
-  const last = history.value.pop();
-  if (!last) return;
-  index.value = last.at;
-  drag.value.x = 0;
-  drag.value.y = 0;
-  announcement.value = `Put ${labelFor(last.item)} back.`;
+async function undo() {
+  if (pending.value || !history.value.length) return;
+  pending.value = true;
+  emit('pending-change', true);
+  const last = history.value[history.value.length - 1];
+  try {
+    if (props.undoItem) await props.undoItem(last.item);
+    history.value.pop();
+    index.value = last.at;
+    drag.value.x = 0;
+    drag.value.y = 0;
+    announcement.value = `Put ${labelFor(last.item)} back.`;
+  } catch (error) {
+    announcement.value = `Could not undo decision for ${labelFor(last.item)}. Try again.`;
+    emit('commit-error', error);
+  } finally {
+    pending.value = false;
+    emit('pending-change', false);
+  }
 }
 
 function labelFor(item) {
@@ -265,6 +289,7 @@ function labelFor(item) {
 // -------------------------------------------------------------- keyboard
 
 function onKeydown(event) {
+  if (pending.value) return;
   if (event.key === 'ArrowRight') {
     event.preventDefault();
     commit('right');
@@ -284,9 +309,9 @@ function onKeydown(event) {
 watch(
   () => props.items,
   () => {
+    if (pending.value) return;
     index.value = 0;
     history.value = [];
-    leaving.value = null;
     drag.value.x = 0;
     drag.value.y = 0;
   },
@@ -381,11 +406,13 @@ defineExpose({ undo, remaining });
 
       <div v-if="!current" class="deck__empty">
         <h3>That's everyone</h3>
-        <p>
-          Your shortlist is ready for the next matching round. Nothing is final —
-          the algorithm still has to find a stable assignment.
-        </p>
-        <button v-if="history.length" class="btn btn--ghost" type="button" @click="undo">
+        <slot name="empty">
+          <p>
+            Your shortlist is ready for the next matching round. Nothing is final —
+            the algorithm still has to find a stable assignment.
+          </p>
+        </slot>
+        <button v-if="history.length" class="btn btn--ghost" type="button" :disabled="pending" @click="undo">
           Back one
         </button>
       </div>
@@ -397,7 +424,7 @@ defineExpose({ undo, remaining });
       <button
         class="circle circle--no"
         type="button"
-        :disabled="!current"
+        :disabled="!current || pending"
         :aria-label="`${noLabel} this ${nounSingular}`"
         @click="commit('left')"
       >
@@ -406,7 +433,7 @@ defineExpose({ undo, remaining });
       <button
         class="circle circle--undo"
         type="button"
-        :disabled="!history.length"
+        :disabled="!history.length || pending"
         aria-label="Undo last decision"
         @click="undo"
       >
@@ -417,7 +444,7 @@ defineExpose({ undo, remaining });
       <button
         class="circle circle--yes"
         type="button"
-        :disabled="!current"
+        :disabled="!current || pending"
         :aria-label="`${yesLabel} this ${nounSingular}`"
         @click="commit('right')"
       >

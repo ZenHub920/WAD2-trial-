@@ -33,6 +33,10 @@ const repos = createRepositories(db);
 const existing = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
 
 db.exec(`
+  DELETE FROM kaki_decisions;
+  DELETE FROM concert_participants;
+  DELETE FROM tickets;
+  DELETE FROM sessions;
   DELETE FROM match_trace;
   DELETE FROM match_results;
   DELETE FROM match_rounds;
@@ -204,4 +208,5 @@ for (const row of repos.concerts.listWithCounts()) {
     `${String(row.open_seekers).padStart(3)} seekers`,
   );
 }
-console.log('\nRun a match round:  curl -X POST localhost:3000/api/concerts/c_seraphina/match');
+console.log('\nPublic match preview:  curl localhost:3000/api/concerts/c_seraphina/match/preview');
+console.log('To run a round, register a real account, grant it with npm run operator:grant -- <existing-email>, then POST with its session cookie.');

@@ -29,6 +29,7 @@ function mapUser(row) {
     vibe: JSON.parse(row.vibe_json),
     reliability: row.reliability,
     verified: row.verified,
+    ...(Object.hasOwn(row, 'is_operator') ? { is_operator: Boolean(row.is_operator) } : {}),
     created_at: row.created_at,
   };
 }
@@ -42,8 +43,6 @@ function mapParty(row) {
     capacity: row.capacity,
     section: row.section,
     spend_band: row.spend_band,
-    price_cents: row.price_cents ?? null,
-    image_data: row.image_data ?? null,
     arrival_plan: row.arrival_plan,
     plans: JSON.parse(row.plans_json),
     strict_age_policy: row.strict_age_policy,
@@ -145,6 +144,24 @@ export function createUserRepo(db) {
       return db.prepare('SELECT * FROM users ORDER BY created_at DESC LIMIT ?')
         .all(limit).map(mapUser);
     },
+    updateProfile(id, changes) {
+      const columns = {
+        displayName: 'display_name',
+        ageBand: 'age_band',
+        homeRegion: 'home_region',
+        gender: 'gender',
+        companionGenderPref: 'companion_gender_pref',
+        languages: 'languages_json',
+        vibe: 'vibe_json',
+      };
+      const entries = Object.entries(changes).map(([key, value]) =>
+        [columns[key], key === 'languages' || key === 'vibe' ? JSON.stringify(value) : value]);
+      if (entries.length) {
+        db.prepare(`UPDATE users SET ${entries.map(([column]) => `${column} = ?`).join(', ')} WHERE id = ?`)
+          .run(...entries.map(([, value]) => value), id);
+      }
+      return this.findById(id);
+    },
 
     /** Recompute the cached reliability projection from the feedback view. */
     refreshReliability(userId) {
@@ -209,15 +226,68 @@ export function createConcertRepo(db) {
         SELECT
           c.*,
           (SELECT COUNT(*) FROM parties p
-            WHERE p.concert_id = c.id AND p.status = 'open')            AS open_parties,
+            WHERE p.concert_id = c.id AND p.status = 'open'
+              AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.source_party_id = p.id)) AS open_parties,
           (SELECT COALESCE(SUM(p.capacity), 0) FROM parties p
-            WHERE p.concert_id = c.id AND p.status = 'open')            AS open_slots,
+            WHERE p.concert_id = c.id AND p.status = 'open'
+              AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.source_party_id = p.id)) AS open_slots,
           (SELECT COUNT(*) FROM seeker_requests s
             WHERE s.concert_id = c.id AND s.status = 'open')            AS open_seekers
         FROM concerts c
         ORDER BY c.event_date ASC
       `).all();
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Explicit Kaki participation (independent of seeker requests)
+// ---------------------------------------------------------------------------
+
+export function createParticipationRepo(db) {
+  const byUserConcert = db.prepare(`
+    SELECT concert_id AS concertId, section_pref AS sectionPref, arrival_pref AS arrivalPref
+    FROM concert_participants WHERE user_id = ? AND concert_id = ? AND status = 'joined'
+  `);
+  const mine = db.prepare(`
+    SELECT c.*, p.section_pref AS sectionPref, p.arrival_pref AS arrivalPref
+    FROM concert_participants p
+    JOIN concerts c ON c.id = p.concert_id
+    WHERE p.user_id = ? AND p.status = 'joined'
+    ORDER BY c.event_date, c.id
+  `);
+  const upsert = db.prepare(`
+    INSERT INTO concert_participants (user_id, concert_id, section_pref, arrival_pref)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT (user_id, concert_id) DO UPDATE SET
+      section_pref = excluded.section_pref, arrival_pref = excluded.arrival_pref,
+      status = 'joined', joined_at = datetime('now')
+  `);
+  const withdraw = db.prepare(`
+    UPDATE concert_participants SET status = 'withdrawn'
+    WHERE user_id = ? AND concert_id = ?
+  `);
+  const removeLikes = db.prepare(`
+    DELETE FROM kaki_decisions
+    WHERE actor_user_id = ? AND concert_id = ? AND decision = 'like'
+  `);
+  return {
+    find(userId, concertId) {
+      return byUserConcert.get(userId, concertId) ?? null;
+    },
+    mine(userId) {
+      return mine.all(userId).map(({ sectionPref, arrivalPref, ...concert }) => ({
+        concert, participation: { concertId: concert.id, sectionPref, arrivalPref },
+      }));
+    },
+    join: db.transaction((userId, concertId, sectionPref, arrivalPref) => {
+      upsert.run(userId, concertId, sectionPref, arrivalPref);
+      return byUserConcert.get(userId, concertId);
+    }),
+    leave: db.transaction((userId, concertId) => {
+      withdraw.run(userId, concertId);
+      removeLikes.run(userId, concertId);
+    }),
   };
 }
 
@@ -231,9 +301,9 @@ export function createPartyRepo(db) {
       const id = data.id ?? `p_${randomUUID().slice(0, 8)}`;
       db.prepare(`
         INSERT INTO parties (id, host_user_id, concert_id, capacity, section, spend_band,
-                             price_cents, image_data, arrival_plan, plans_json, strict_age_policy, min_age_band, notes)
+                             arrival_plan, plans_json, strict_age_policy, min_age_band, notes)
         VALUES (@id, @host_user_id, @concert_id, @capacity, @section, @spend_band,
-                @price_cents, @image_data, @arrival_plan, @plans_json, @strict_age_policy, @min_age_band, @notes)
+                @arrival_plan, @plans_json, @strict_age_policy, @min_age_band, @notes)
       `).run({
         id,
         host_user_id: data.host_user_id,
@@ -241,8 +311,6 @@ export function createPartyRepo(db) {
         capacity: data.capacity,
         section: data.section,
         spend_band: data.spend_band,
-        price_cents: data.price_cents ?? null,
-        image_data: data.image_data ?? null,
         arrival_plan: data.arrival_plan,
         plans_json: JSON.stringify(data.plans ?? {}),
         strict_age_policy: data.strict_age_policy ? 1 : 0,
@@ -267,41 +335,89 @@ export function createPartyRepo(db) {
         SELECT p.*, ${USER_COLUMNS('u', 'host_')}
         FROM parties p JOIN users u ON u.id = p.host_user_id
         WHERE p.concert_id = ? AND p.status = 'open'
+          AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.source_party_id = p.id)
         ORDER BY p.id
       `).all(concertId);
       return rows.map(mapParty);
     },
 
-    forHost(hostUserId) {
-      const rows = db.prepare(`
-        SELECT p.*, ${USER_COLUMNS('u', 'host_')},
-               c.id AS concert_id, c.artist, c.tour_name, c.venue, c.city, c.event_date
-        FROM parties p
-        JOIN users u ON u.id = p.host_user_id
-        JOIN concerts c ON c.id = p.concert_id
-        WHERE p.host_user_id = ?
-        ORDER BY p.created_at DESC
-      `).all(hostUserId);
-      return rows.map((row) => ({
-        ...mapParty(row),
-        concert: {
-          id: row.concert_id,
-          artist: row.artist,
-          tour_name: row.tour_name,
-          venue: row.venue,
-          city: row.city,
-          event_date: row.event_date,
-        },
-      }));
-    },
-
-    deleteOwned(id, hostUserId) {
-      return db.prepare('DELETE FROM parties WHERE id = ? AND host_user_id = ?')
-        .run(id, hostUserId).changes > 0;
-    },
-
     setStatus(id, status) {
       db.prepare('UPDATE parties SET status = ? WHERE id = ?').run(status, id);
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Ticket inventory — intentionally separate from matchmaking parties
+// ---------------------------------------------------------------------------
+
+function mapTicket(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    seller_user_id: row.seller_user_id,
+    concert: {
+      id: row.concert_id, artist: row.artist, venue: row.venue,
+      city: row.city, event_date: row.event_date,
+    },
+    seller: mapUser(prefixed(row, 'seller_')),
+    priceCents: row.price_cents,
+    quantity: row.quantity,
+    section: row.section,
+    description: row.description,
+    imageUrl: row.image_path ? `/api/ticket-images/${row.image_path}` : null,
+    status: row.status,
+    image_path: row.image_path,
+  };
+}
+
+export function createTicketRepo(db) {
+  const joined = `
+    SELECT t.*, c.artist, c.venue, c.city, c.event_date,
+           ${USER_COLUMNS('u', 'seller_')}
+    FROM tickets t
+    JOIN users u ON u.id = t.seller_user_id
+    JOIN concerts c ON c.id = t.concert_id
+  `;
+  const get = db.prepare(`${joined} WHERE t.id = ? AND t.status <> 'deleted'`);
+  return {
+    create({ seller_user_id, concert, priceCents, quantity, section, description, image_path }) {
+      const id = `t_${randomUUID()}`;
+      db.transaction(() => {
+        const concertId = `c_${randomUUID()}`;
+        db.prepare(`INSERT INTO concerts (id, artist, venue, city, event_date)
+                    VALUES (?, ?, ?, ?, ?)`)
+          .run(concertId, concert.artist, concert.venue, concert.city ?? 'Singapore', concert.event_date);
+        db.prepare(`INSERT INTO tickets
+                    (id, seller_user_id, concert_id, price_cents, quantity, section, description, image_path)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(id, seller_user_id, concertId, priceCents, quantity, section, description, image_path);
+      })();
+      return this.findById(id);
+    },
+    findById(id) {
+      return mapTicket(get.get(id));
+    },
+    list() {
+      return db.prepare(`${joined} WHERE t.status = 'active' ORDER BY t.created_at DESC, t.id DESC`)
+        .all().map(mapTicket);
+    },
+    forSeller(userId) {
+      return db.prepare(`${joined} WHERE t.seller_user_id = ? AND t.status <> 'deleted'
+        ORDER BY t.created_at DESC, t.id DESC`).all(userId).map(mapTicket);
+    },
+    updateOwned(id, sellerId, fields) {
+      const result = db.prepare(`UPDATE tickets
+        SET price_cents = ?, quantity = ?, section = ?, description = ?, image_path = ?
+        WHERE id = ? AND seller_user_id = ? AND status = 'active'`)
+        .run(fields.priceCents, fields.quantity, fields.section, fields.description, fields.image_path,
+          id, sellerId);
+      return result.changes ? this.findById(id) : null;
+    },
+    deleteOwned(id, sellerId) {
+      const result = db.prepare(`UPDATE tickets SET status = 'deleted'
+        WHERE id = ? AND seller_user_id = ? AND status = 'active'`).run(id, sellerId);
+      return result.changes > 0;
     },
   };
 }
@@ -499,6 +615,51 @@ export function createRoundRepo(db) {
       };
     },
 
+    /** Only the latest round can reveal a result; ownership is always the session user. */
+    resultForUser(concertId, userId) {
+      const round = this.latestForConcert(concertId);
+      if (!round) return null;
+      const roundInfo = { id: round.id, ranAt: round.ran_at };
+      const seeker = db.prepare(`
+        SELECT mr.outcome, mr.party_id FROM match_results mr
+        JOIN seeker_requests s ON s.id = mr.seeker_request_id
+        WHERE mr.round_id = ? AND s.user_id = ?
+      `).get(round.id, userId);
+      if (seeker) {
+        if (seeker.outcome !== 'matched') {
+          return { role: 'seeker', outcome: 'unmatched', round: roundInfo };
+        }
+        const party = db.prepare('SELECT id, section, host_user_id FROM parties WHERE id = ?')
+          .get(seeker.party_id);
+        return {
+          role: 'seeker', outcome: 'matched', round: roundInfo,
+          group: { id: party.id, section: party.section, host: mapUser(
+            db.prepare('SELECT * FROM users WHERE id = ?').get(party.host_user_id),
+          ) },
+        };
+      }
+
+      const party = db.prepare(`
+        SELECT id, section FROM parties WHERE concert_id = ? AND host_user_id = ?
+      `).get(concertId, userId);
+      if (!party || !Object.hasOwn(JSON.parse(round.preference_snapshot_json ?? '{}').capacities ?? {}, party.id)) {
+        return null;
+      }
+      const members = db.prepare(`
+        SELECT u.* FROM match_results mr
+        JOIN seeker_requests s ON s.id = mr.seeker_request_id
+        JOIN users u ON u.id = s.user_id
+        WHERE mr.round_id = ? AND mr.party_id = ? AND mr.outcome = 'matched'
+        ORDER BY mr.party_rank ASC
+      `).all(round.id, party.id).map(mapUser);
+      return {
+        role: 'host', outcome: members.length ? 'matched' : 'no_members', round: roundInfo,
+        group: { id: party.id, section: party.section,
+          host: mapUser(db.prepare('SELECT * FROM users WHERE id = ?').get(userId)) },
+        members,
+      };
+    },
+
     /** Full results for a round, joined out to human-readable names. */
     resultsForRound(roundId) {
       return db.prepare(`
@@ -559,13 +720,163 @@ export function createSessionRepo(db) {
   };
 }
 
+// A withdrawal overrides legacy open seeker/host membership.
+const kakiWithdrawn = (user, concert) => `EXISTS (
+  SELECT 1 FROM concert_participants withdrawn
+  WHERE withdrawn.user_id = ${user} AND withdrawn.concert_id = ${concert}
+    AND withdrawn.status = 'withdrawn'
+)`;
+const kakiJoined = (user, concert) => `EXISTS (
+  SELECT 1 FROM concert_participants joined
+  WHERE joined.user_id = ${user} AND joined.concert_id = ${concert}
+    AND joined.status = 'joined'
+)`;
+const kakiOpenSeeker = (user, concert) => `EXISTS (
+  SELECT 1 FROM seeker_requests active_seeker
+  WHERE active_seeker.user_id = ${user} AND active_seeker.concert_id = ${concert}
+    AND active_seeker.status = 'open'
+)`;
+const kakiCandidate = (user, concert) => `(
+  NOT ${kakiWithdrawn(user, concert)}
+  AND (${kakiJoined(user, concert)} OR ${kakiOpenSeeker(user, concert)})
+)`;
+const kakiActiveMember = (user, concert) => `(
+  NOT ${kakiWithdrawn(user, concert)}
+  AND (${kakiJoined(user, concert)} OR ${kakiOpenSeeker(user, concert)}
+    OR EXISTS (SELECT 1 FROM parties active_party
+               WHERE active_party.host_user_id = ${user} AND active_party.concert_id = ${concert}
+                 AND active_party.status = 'open'))
+)`;
+const kakiEligiblePair = (actor, concert, target) => `(
+  ${actor} <> ${target}
+  AND ${kakiActiveMember(actor, concert)}
+  AND ${kakiCandidate(target, concert)}
+  AND NOT EXISTS (SELECT 1 FROM blocks b
+                  WHERE (b.blocker_user_id = ${actor} AND b.blocked_user_id = ${target})
+                     OR (b.blocker_user_id = ${target} AND b.blocked_user_id = ${actor}))
+)`;
+
+export function createKakiRepo(db) {
+  const concerts = db.prepare(`
+    SELECT c.* FROM concerts c
+    WHERE ${kakiActiveMember('@viewer', 'c.id')}
+    ORDER BY c.event_date, c.id
+  `);
+  const people = db.prepare(`
+    WITH candidates AS (
+      SELECT concert_id, user_id FROM seeker_requests WHERE status = 'open'
+      UNION
+      SELECT concert_id, user_id FROM concert_participants WHERE status = 'joined'
+    )
+    SELECT c.id AS concert_id, c.artist, c.tour_name, c.event_date, c.venue,
+           COALESCE(p.section_pref, s.section_pref) AS section_pref,
+           s.spend_band_max,
+           COALESCE(p.arrival_pref, s.arrival_pref) AS arrival_pref,
+           COALESCE(s.plans_wanted_json, '{}') AS plans_wanted_json,
+           u.id AS user_id, u.display_name AS user_display_name,
+           u.age_band AS user_age_band, u.home_region AS user_home_region,
+           u.languages_json AS user_languages_json, u.vibe_json AS user_vibe_json,
+           u.reliability AS user_reliability, u.verified AS user_verified
+    FROM candidates candidate
+    JOIN concerts c ON c.id = candidate.concert_id
+    JOIN users u ON u.id = candidate.user_id
+    LEFT JOIN seeker_requests s ON s.concert_id = candidate.concert_id
+      AND s.user_id = candidate.user_id AND s.status = 'open'
+    LEFT JOIN concert_participants p ON p.concert_id = candidate.concert_id
+      AND p.user_id = candidate.user_id AND p.status = 'joined'
+    WHERE ${kakiEligiblePair('@viewer', 'c.id', 'u.id')}
+    ORDER BY c.event_date, c.id, u.id
+  `);
+  const eligible = db.prepare(`
+    SELECT 1 WHERE ${kakiEligiblePair('@actor', '@concert', '@target')}
+  `);
+  const decisions = db.prepare(`
+    SELECT d.concert_id, d.target_user_id, d.decision, d.decided_at,
+           reverse.decision AS reverse_decision,
+           ${kakiCandidate('d.actor_user_id', 'd.concert_id')} AS actor_is_candidate
+    FROM kaki_decisions d
+    LEFT JOIN kaki_decisions reverse ON reverse.concert_id = d.concert_id
+      AND reverse.actor_user_id = d.target_user_id
+      AND reverse.target_user_id = d.actor_user_id
+    WHERE d.actor_user_id = ?
+  `);
+  const upsert = db.prepare(`
+    INSERT INTO kaki_decisions (concert_id, actor_user_id, target_user_id, decision, decided_at)
+    VALUES (@concert, @actor, @target, @decision, @at)
+    ON CONFLICT (concert_id, actor_user_id, target_user_id)
+    DO UPDATE SET decision = excluded.decision, decided_at = excluded.decided_at
+  `);
+  const reciprocal = db.prepare(`
+    SELECT 1 FROM kaki_decisions d
+    WHERE d.concert_id = @concert AND d.actor_user_id = @target
+      AND d.target_user_id = @actor AND d.decision = 'like'
+      AND ${kakiCandidate('@actor', '@concert')}
+  `);
+  const remove = db.prepare(`
+    DELETE FROM kaki_decisions
+    WHERE concert_id = @concert AND actor_user_id = @actor AND target_user_id = @target
+  `);
+  const toPerson = (row) => ({
+    id: `${row.concert_id}:${row.user_id}`,
+    concertId: row.concert_id,
+    artist: row.artist,
+    tourName: row.tour_name,
+    eventDate: row.event_date,
+    venue: row.venue,
+    sectionPref: row.section_pref,
+    spendBandMax: row.spend_band_max,
+    arrivalPref: row.arrival_pref,
+    plansWanted: JSON.parse(row.plans_wanted_json),
+    user: mapUser(prefixed(row, 'user_')),
+  });
+  return {
+    people(viewer) {
+      return people.all({ viewer }).map(toPerson);
+    },
+    pool(viewer) {
+      return { concerts: concerts.all({ viewer }), people: this.people(viewer) };
+    },
+    decisions(viewer, visiblePeople) {
+      const visible = new Set(visiblePeople.map((person) => person.id));
+      const result = {};
+      for (const row of decisions.all(viewer)) {
+        const id = `${row.concert_id}:${row.target_user_id}`;
+        if (!visible.has(id)) continue;
+        result[id] = {
+          decision: row.decision,
+          at: row.decided_at,
+          mutual: row.decision === 'like' && row.reverse_decision === 'like'
+            && Boolean(row.actor_is_candidate),
+        };
+      }
+      return result;
+    },
+    setDecision: db.transaction((actor, concert, target, decision) => {
+      const pair = { actor, concert, target };
+      if (!eligible.get(pair)) return null;
+      const at = Date.now();
+      upsert.run({ ...pair, decision, at });
+      return { decision, at, mutual: decision === 'like' && Boolean(reciprocal.get(pair)) };
+    }),
+    deleteDecision: db.transaction((actor, concert, target) => {
+      const pair = { actor, concert, target };
+      if (!eligible.get(pair)) return false;
+      remove.run(pair);
+      return true;
+    }),
+  };
+}
+
 export function createRepositories(db) {
   return {
     users: createUserRepo(db),
     concerts: createConcertRepo(db),
+    participation: createParticipationRepo(db),
     parties: createPartyRepo(db),
+    tickets: createTicketRepo(db),
     seekers: createSeekerRepo(db),
     rounds: createRoundRepo(db),
     sessions: createSessionRepo(db),
+    kaki: createKakiRepo(db),
   };
 }
