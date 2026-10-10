@@ -39,6 +39,18 @@ export const api = {
   myTickets: () => request('/me/tickets'),
   deleteTicket: (id) => request(`/tickets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
+  kakiPool: () => request('/kaki/pool'),
+  kakiDecisions: () => request('/kaki/decisions'),
+  kakiMatches: () => request('/kaki/matches'),
+  putKakiDecision: (concertId, targetUserId, decision) =>
+    request(`/kaki/decisions/${encodeURIComponent(concertId)}/${encodeURIComponent(targetUserId)}`, {
+      method: 'PUT', body: JSON.stringify({ decision }),
+    }),
+  deleteKakiDecision: (concertId, targetUserId) =>
+    request(`/kaki/decisions/${encodeURIComponent(concertId)}/${encodeURIComponent(targetUserId)}`, {
+      method: 'DELETE',
+    }),
+
   health: () => request('/health'),
 
   concerts: () => request('/concerts'),

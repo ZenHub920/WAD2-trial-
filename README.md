@@ -67,6 +67,17 @@ once and removed from active companion matching without deleting historical
 round references. Neither a listing nor a seller is proof of ticket ownership.
 
 
+### Kaki Finder
+
+The signed-in finder reads profiles of eligible concertgoers through
+`GET /api/kaki/pool`. Likes and skips are stored per account and concert, not
+in browser storage. `GET /api/kaki/decisions` restores history; `PUT` or
+`DELETE /api/kaki/decisions/:concertId/:targetUserId` changes or undoes a
+decision. A like is pending until both people like one another for the same
+concert. `GET /api/kaki/matches` reports only those mutual, currently eligible
+pairs. Signing in and joining the concert's matching pool are required to
+view or like candidates; blocking either direction hides the pair.
+
 ### Live concert discovery
 
 Copy `server/.env.example` to `server/.env` and put the Ticketmaster
@@ -281,6 +292,8 @@ rail. It is reading the solver's actual output, not an animation of an idea.
 | `GET` / `POST` | `/api/tickets` | browse listings / create a seller listing (session required for POST) |
 | `GET` / `PATCH` / `DELETE` | `/api/tickets/:id` | detail / owner-only edit or remove |
 | `GET` | `/api/me/tickets` | seller's listings (session required) |
+| `GET` | `/api/kaki/pool`, `/api/kaki/decisions`, `/api/kaki/matches` | signed-in candidate pool, decision history, mutual likes |
+| `PUT` / `DELETE` | `/api/kaki/decisions/:concertId/:targetUserId` | signed-in like/skip or undo |
 | `GET` | `/api/concerts/:id/parties` | groups with spare tickets |
 | `GET` | `/api/concerts/:id/requests` | people looking |
 | `GET` | `/api/concerts/:id/match/preview?baselines=true&trace=true` | dry run, writes nothing |

@@ -57,7 +57,7 @@ const router = createRouter({
       component: ComingSoonView,
       props: {
         title: 'Chat',
-        body: 'Messaging has not been built yet — no table, endpoint or component exists for it. Matches are saved locally in the meantime.',
+        body: 'Messaging has not been built yet. Kaki likes and mutual matches are saved to your account, but chat is not available.',
       },
       meta: { title: 'Chat' },
     },

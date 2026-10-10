@@ -147,6 +147,19 @@ CREATE TABLE IF NOT EXISTS seeker_requests (
 
 CREATE INDEX IF NOT EXISTS idx_seekers_concert ON seeker_requests(concert_id, status);
 
+-- Kaki decisions are keyed by concert and person, not by a request's lifecycle.
+CREATE TABLE IF NOT EXISTS kaki_decisions (
+  concert_id    TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
+  actor_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  target_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  decision      TEXT NOT NULL CHECK (decision IN ('like','skip')),
+  decided_at    INTEGER NOT NULL,
+  PRIMARY KEY (concert_id, actor_user_id, target_user_id),
+  CHECK (actor_user_id <> target_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_kaki_decisions_target
+  ON kaki_decisions (concert_id, target_user_id, actor_user_id);
+
 -- ---------------------------------------------------------------------------
 -- Match rounds — immutable results with their own stability proof
 -- ---------------------------------------------------------------------------
