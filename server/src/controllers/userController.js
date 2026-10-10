@@ -54,16 +54,6 @@ export function createUserController(repos, sessions) {
       res.json({ user: publicUser(user) });
     },
 
-    listings(req, res) {
-      res.json({ listings: repos.parties.forHost(req.user.id) });
-    },
-
-    deleteListing(req, res) {
-      if (!repos.parties.deleteOwned(req.params.id, req.user.id)) {
-        return res.status(404).json({ error: 'listing_not_found' });
-      }
-      res.status(204).end();
-    },
   };
 }
 

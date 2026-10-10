@@ -86,8 +86,6 @@ CREATE TABLE IF NOT EXISTS parties (
   capacity          INTEGER NOT NULL CHECK (capacity >= 1),
   section           TEXT    NOT NULL CHECK (section IN ('pit','ga_standing','lower_bowl','upper_bowl','seated_any')),
   spend_band        INTEGER NOT NULL CHECK (spend_band BETWEEN 1 AND 4),
-  price_cents       INTEGER CHECK (price_cents IS NULL OR price_cents >= 0),
-  image_data        TEXT,
   arrival_plan      TEXT    NOT NULL CHECK (arrival_plan IN ('early_queue','mid','doors')),
   plans_json        TEXT    NOT NULL DEFAULT '{}',
   strict_age_policy INTEGER NOT NULL DEFAULT 0 CHECK (strict_age_policy IN (0,1)),
@@ -105,6 +103,24 @@ CREATE TABLE IF NOT EXISTS parties (
 );
 
 CREATE INDEX IF NOT EXISTS idx_parties_concert ON parties(concert_id, status);
+
+-- Ticket inventory is independent from the matchmaking party/host instance.
+CREATE TABLE IF NOT EXISTS tickets (
+  id             TEXT PRIMARY KEY,
+  seller_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  concert_id     TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
+  price_cents    INTEGER NOT NULL CHECK (price_cents >= 0),
+  quantity       INTEGER NOT NULL CHECK (quantity > 0),
+  section        TEXT NOT NULL,
+  description    TEXT NOT NULL DEFAULT '',
+  image_path     TEXT,
+  status         TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','sold','cancelled','deleted')),
+  source_party_id TEXT UNIQUE REFERENCES parties(id) ON DELETE SET NULL,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_tickets_status_created ON tickets(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tickets_seller ON tickets(seller_user_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS seeker_requests (
   id                TEXT    PRIMARY KEY,

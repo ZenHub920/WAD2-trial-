@@ -20,7 +20,7 @@ Two processes. Backend first.
 # Terminal 1 — API on :3000
 cd server
 npm install
-npm run seed          # 5 concerts, ~124 people, ~34 groups
+npm run seed          # demo users and concerts; clears the existing database
 npm start
 
 # Terminal 2 — Vue app on :5173
@@ -49,6 +49,23 @@ can still trigger a round and the full-round read endpoints remain public:
 facilitator-only triggers and private individual results require a separate
 product decision. Existing database files automatically gain the sessions table;
 never run the destructive demo seed on accounts you want to keep.
+
+### Ticket marketplace
+
+Ticket sales and companion groups are separate inventories. `POST /api/tickets`
+creates a concert and its ticket listing atomically for the signed-in seller;
+it accepts `concert` (`artist`, `venue`, `event_date`), `priceCents`, `quantity`,
+`section`, optional `description` and optional `imageData`. `GET /api/tickets`
+lists active sales, and `GET /api/tickets/:id` shows one sale. Sellers manage
+their own listings with `GET /api/me/tickets`, `PATCH /api/tickets/:id` and
+`DELETE /api/tickets/:id`. Prices are integer cents and quantities positive
+integers. Images are validated (PNG/JPEG/GIF/WebP, up to 2 MiB) and stored in
+`server/data/ticket-images` by default, not in SQLite; set
+`ENCORE_TICKET_IMAGE_DIR` to change the directory. Keep both the database and
+image directory in backups. Existing priced party rows are copied to tickets
+once and removed from active companion matching without deleting historical
+round references. Neither a listing nor a seller is proof of ticket ownership.
+
 
 ### Live concert discovery
 
@@ -261,6 +278,9 @@ rail. It is reading the solver's actual output, not an animation of an idea.
 |---|---|---|
 | `GET` | `/api/concerts` | list with live supply/demand counts |
 | `GET` | `/api/concerts/external?keyword=...` | first 50 upcoming SG music events from Ticketmaster (requires server key) |
+| `GET` / `POST` | `/api/tickets` | browse listings / create a seller listing (session required for POST) |
+| `GET` / `PATCH` / `DELETE` | `/api/tickets/:id` | detail / owner-only edit or remove |
+| `GET` | `/api/me/tickets` | seller's listings (session required) |
 | `GET` | `/api/concerts/:id/parties` | groups with spare tickets |
 | `GET` | `/api/concerts/:id/requests` | people looking |
 | `GET` | `/api/concerts/:id/match/preview?baselines=true&trace=true` | dry run, writes nothing |
@@ -282,6 +302,7 @@ rail. It is reading the solver's actual output, not an animation of an idea.
   best stable outcome instead. Which side proposes is a policy decision.
 - **SQLite.** Fine for this scale and it keeps the project runnable from a clone. All SQL is
   confined to `repositories.js`, so moving to MySQL or Postgres is one file.
-- **No authentication.** Out of scope; user identity is passed directly.
+- **Authentication exists; verification does not.** Sessions establish account
+  ownership, but neither identity nor ticket authenticity has been verified.
 
 All people and events in the seed data are fictional.

@@ -32,19 +32,19 @@ export const api = {
   register: (data) => request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   me: () => request('/auth/me'),
   logout: () => request('/auth/logout', { method: 'POST' }),
-  myListings: () => request('/me/listings'),
-  deleteListing: (id) => request(`/me/listings/${id}`, { method: 'DELETE' }),
+  tickets: () => request('/tickets'),
+  ticket: (id) => request(`/tickets/${encodeURIComponent(id)}`),
+  createTicket: (data) => request('/tickets', { method: 'POST', body: JSON.stringify(data) }),
+  updateTicket: (id, data) => request(`/tickets/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  myTickets: () => request('/me/tickets'),
+  deleteTicket: (id) => request(`/tickets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   health: () => request('/health'),
 
   concerts: () => request('/concerts'),
-  createConcert: (data) =>
-    request('/concerts', { method: 'POST', body: JSON.stringify(data) }),
   concert: (id) => request(`/concerts/${id}`),
 
   parties: (concertId) => request(`/concerts/${concertId}/parties`),
-  createParty: (concertId, data) =>
-    request(`/concerts/${concertId}/parties`, { method: 'POST', body: JSON.stringify(data) }),
 
   requests: (concertId) => request(`/concerts/${concertId}/requests`),
   createRequest: (concertId, data) =>

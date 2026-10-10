@@ -67,8 +67,6 @@ export function createConcertController(repos) {
           capacity: p.capacity,
           section: p.section,
           spendBand: p.spend_band,
-          priceCents: p.price_cents,
-          imageData: p.image_data,
           arrivalPlan: p.arrival_plan,
           plans: p.plans,
           notes: p.notes,
@@ -79,6 +77,10 @@ export function createConcertController(repos) {
 
     createParty(req, res) {
       const error = validateParty(req.body);
+      if (req.body && typeof req.body === 'object' && ('price_cents' in req.body || 'image_data' in req.body
+        || 'priceCents' in req.body || 'imageData' in req.body)) {
+        return res.status(400).json({ error: 'ticket_fields_not_allowed_on_party' });
+      }
       if (error) return res.status(400).json({ error });
       try {
         const party = repos.parties.create({

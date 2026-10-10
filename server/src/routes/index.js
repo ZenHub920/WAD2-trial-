@@ -3,12 +3,14 @@ import { Router } from 'express';
 import { createConcertController } from '../controllers/concertController.js';
 import { createMatchController } from '../controllers/matchController.js';
 import { createUserController } from '../controllers/userController.js';
+import { createTicketController } from '../controllers/ticketController.js';
 
-export function createRoutes({ repos, matching, sessions }) {
+export function createRoutes({ repos, matching, sessions, images }) {
   const router = Router();
   const concerts = createConcertController(repos);
   const matches = createMatchController({ repos, matching });
   const users = createUserController(repos, sessions);
+  const tickets = createTicketController(repos, images);
 
   router.use((req, res, next) => {
     req.user = sessions.current(req);
@@ -19,6 +21,13 @@ export function createRoutes({ repos, matching, sessions }) {
     if (!req.user) return res.status(401).json({ error: 'authentication_required' });
     next();
   };
+
+  router.get('/tickets', tickets.list);
+  router.get('/tickets/:id', tickets.detail);
+  router.post('/tickets', requireUser, tickets.create);
+  router.patch('/tickets/:id', requireUser, tickets.update);
+  router.delete('/tickets/:id', requireUser, tickets.delete);
+  router.get('/me/tickets', requireUser, tickets.mine);
 
   router.get('/concerts', concerts.list);
   router.post('/concerts', concerts.create);
@@ -41,8 +50,6 @@ export function createRoutes({ repos, matching, sessions }) {
   router.post('/auth/login', users.login);
   router.get('/auth/me', requireUser, users.current);
   router.post('/auth/logout', requireUser, users.logout);
-  router.get('/me/listings', requireUser, users.listings);
-  router.delete('/me/listings/:id', requireUser, users.deleteListing);
   router.get('/users/:id', users.get);
 
   return router;

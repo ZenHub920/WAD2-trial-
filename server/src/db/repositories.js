@@ -42,8 +42,6 @@ function mapParty(row) {
     capacity: row.capacity,
     section: row.section,
     spend_band: row.spend_band,
-    price_cents: row.price_cents ?? null,
-    image_data: row.image_data ?? null,
     arrival_plan: row.arrival_plan,
     plans: JSON.parse(row.plans_json),
     strict_age_policy: row.strict_age_policy,
@@ -209,9 +207,11 @@ export function createConcertRepo(db) {
         SELECT
           c.*,
           (SELECT COUNT(*) FROM parties p
-            WHERE p.concert_id = c.id AND p.status = 'open')            AS open_parties,
+            WHERE p.concert_id = c.id AND p.status = 'open'
+              AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.source_party_id = p.id)) AS open_parties,
           (SELECT COALESCE(SUM(p.capacity), 0) FROM parties p
-            WHERE p.concert_id = c.id AND p.status = 'open')            AS open_slots,
+            WHERE p.concert_id = c.id AND p.status = 'open'
+              AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.source_party_id = p.id)) AS open_slots,
           (SELECT COUNT(*) FROM seeker_requests s
             WHERE s.concert_id = c.id AND s.status = 'open')            AS open_seekers
         FROM concerts c
@@ -231,9 +231,9 @@ export function createPartyRepo(db) {
       const id = data.id ?? `p_${randomUUID().slice(0, 8)}`;
       db.prepare(`
         INSERT INTO parties (id, host_user_id, concert_id, capacity, section, spend_band,
-                             price_cents, image_data, arrival_plan, plans_json, strict_age_policy, min_age_band, notes)
+                             arrival_plan, plans_json, strict_age_policy, min_age_band, notes)
         VALUES (@id, @host_user_id, @concert_id, @capacity, @section, @spend_band,
-                @price_cents, @image_data, @arrival_plan, @plans_json, @strict_age_policy, @min_age_band, @notes)
+                @arrival_plan, @plans_json, @strict_age_policy, @min_age_band, @notes)
       `).run({
         id,
         host_user_id: data.host_user_id,
@@ -241,8 +241,6 @@ export function createPartyRepo(db) {
         capacity: data.capacity,
         section: data.section,
         spend_band: data.spend_band,
-        price_cents: data.price_cents ?? null,
-        image_data: data.image_data ?? null,
         arrival_plan: data.arrival_plan,
         plans_json: JSON.stringify(data.plans ?? {}),
         strict_age_policy: data.strict_age_policy ? 1 : 0,
@@ -267,41 +265,89 @@ export function createPartyRepo(db) {
         SELECT p.*, ${USER_COLUMNS('u', 'host_')}
         FROM parties p JOIN users u ON u.id = p.host_user_id
         WHERE p.concert_id = ? AND p.status = 'open'
+          AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.source_party_id = p.id)
         ORDER BY p.id
       `).all(concertId);
       return rows.map(mapParty);
     },
 
-    forHost(hostUserId) {
-      const rows = db.prepare(`
-        SELECT p.*, ${USER_COLUMNS('u', 'host_')},
-               c.id AS concert_id, c.artist, c.tour_name, c.venue, c.city, c.event_date
-        FROM parties p
-        JOIN users u ON u.id = p.host_user_id
-        JOIN concerts c ON c.id = p.concert_id
-        WHERE p.host_user_id = ?
-        ORDER BY p.created_at DESC
-      `).all(hostUserId);
-      return rows.map((row) => ({
-        ...mapParty(row),
-        concert: {
-          id: row.concert_id,
-          artist: row.artist,
-          tour_name: row.tour_name,
-          venue: row.venue,
-          city: row.city,
-          event_date: row.event_date,
-        },
-      }));
-    },
-
-    deleteOwned(id, hostUserId) {
-      return db.prepare('DELETE FROM parties WHERE id = ? AND host_user_id = ?')
-        .run(id, hostUserId).changes > 0;
-    },
-
     setStatus(id, status) {
       db.prepare('UPDATE parties SET status = ? WHERE id = ?').run(status, id);
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Ticket inventory — intentionally separate from matchmaking parties
+// ---------------------------------------------------------------------------
+
+function mapTicket(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    seller_user_id: row.seller_user_id,
+    concert: {
+      id: row.concert_id, artist: row.artist, venue: row.venue,
+      city: row.city, event_date: row.event_date,
+    },
+    seller: mapUser(prefixed(row, 'seller_')),
+    priceCents: row.price_cents,
+    quantity: row.quantity,
+    section: row.section,
+    description: row.description,
+    imageUrl: row.image_path ? `/api/ticket-images/${row.image_path}` : null,
+    status: row.status,
+    image_path: row.image_path,
+  };
+}
+
+export function createTicketRepo(db) {
+  const joined = `
+    SELECT t.*, c.artist, c.venue, c.city, c.event_date,
+           ${USER_COLUMNS('u', 'seller_')}
+    FROM tickets t
+    JOIN users u ON u.id = t.seller_user_id
+    JOIN concerts c ON c.id = t.concert_id
+  `;
+  const get = db.prepare(`${joined} WHERE t.id = ? AND t.status <> 'deleted'`);
+  return {
+    create({ seller_user_id, concert, priceCents, quantity, section, description, image_path }) {
+      const id = `t_${randomUUID()}`;
+      db.transaction(() => {
+        const concertId = `c_${randomUUID()}`;
+        db.prepare(`INSERT INTO concerts (id, artist, venue, city, event_date)
+                    VALUES (?, ?, ?, ?, ?)`)
+          .run(concertId, concert.artist, concert.venue, concert.city ?? 'Singapore', concert.event_date);
+        db.prepare(`INSERT INTO tickets
+                    (id, seller_user_id, concert_id, price_cents, quantity, section, description, image_path)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(id, seller_user_id, concertId, priceCents, quantity, section, description, image_path);
+      })();
+      return this.findById(id);
+    },
+    findById(id) {
+      return mapTicket(get.get(id));
+    },
+    list() {
+      return db.prepare(`${joined} WHERE t.status = 'active' ORDER BY t.created_at DESC, t.id DESC`)
+        .all().map(mapTicket);
+    },
+    forSeller(userId) {
+      return db.prepare(`${joined} WHERE t.seller_user_id = ? AND t.status <> 'deleted'
+        ORDER BY t.created_at DESC, t.id DESC`).all(userId).map(mapTicket);
+    },
+    updateOwned(id, sellerId, fields) {
+      const result = db.prepare(`UPDATE tickets
+        SET price_cents = ?, quantity = ?, section = ?, description = ?, image_path = ?
+        WHERE id = ? AND seller_user_id = ? AND status = 'active'`)
+        .run(fields.priceCents, fields.quantity, fields.section, fields.description, fields.image_path,
+          id, sellerId);
+      return result.changes ? this.findById(id) : null;
+    },
+    deleteOwned(id, sellerId) {
+      const result = db.prepare(`UPDATE tickets SET status = 'deleted'
+        WHERE id = ? AND seller_user_id = ? AND status = 'active'`).run(id, sellerId);
+      return result.changes > 0;
     },
   };
 }
@@ -564,6 +610,7 @@ export function createRepositories(db) {
     users: createUserRepo(db),
     concerts: createConcertRepo(db),
     parties: createPartyRepo(db),
+    tickets: createTicketRepo(db),
     seekers: createSeekerRepo(db),
     rounds: createRoundRepo(db),
     sessions: createSessionRepo(db),
