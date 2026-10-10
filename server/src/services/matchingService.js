@@ -230,10 +230,27 @@ export function createMatchingService({ db, repos }) {
 }
 
 function loadInstance(repos, concertId) {
+
+  const parties = repos.parties.openForConcert(concertId);
+
+  const availableParties = parties.map(party => ({
+
+    ...party,
+
+    totalCapacity: party.capacity,
+
+    capacity: party.remaining_capacity
+
+  }));
+
   return {
+
     seekers: repos.seekers.openForConcert(concertId),
-    parties: repos.parties.openForConcert(concertId),
-    blocklist: repos.users.blocklist(),
+
+    parties: availableParties,
+
+    blocklist: repos.users.blocklist()
+
   };
 }
 

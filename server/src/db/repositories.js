@@ -16,73 +16,78 @@ import { randomUUID } from 'node:crypto';
 // ---------------------------------------------------------------------------
 
 function mapUser(row) {
-  if (!row) return null;
-  return {
-    id: row.id,
-    display_name: row.display_name,
-    email: row.email,
-    age_band: row.age_band,
-    home_region: row.home_region,
-    gender: row.gender,
-    companion_gender_pref: row.companion_gender_pref,
-    languages: JSON.parse(row.languages_json),
-    vibe: JSON.parse(row.vibe_json),
-    reliability: row.reliability,
-    verified: row.verified,
-    ...(Object.hasOwn(row, 'is_operator') ? { is_operator: Boolean(row.is_operator) } : {}),
-    created_at: row.created_at,
-  };
+    if (!row) return null;
+    return {
+        id: row.id,
+        display_name: row.display_name,
+        email: row.email,
+        age_band: row.age_band,
+        home_region: row.home_region,
+        gender: row.gender,
+        companion_gender_pref: row.companion_gender_pref,
+        languages: JSON.parse(row.languages_json),
+        vibe: JSON.parse(row.vibe_json),
+        reliability: row.reliability,
+        verified: row.verified,
+        ...(Object.hasOwn(row, 'is_operator') ? { is_operator: Boolean(row.is_operator) } : {}),
+        created_at: row.created_at,
+    };
 }
 
 function mapParty(row) {
-  if (!row) return null;
-  return {
-    id: row.id,
-    host_user_id: row.host_user_id,
-    concert_id: row.concert_id,
-    capacity: row.capacity,
-    section: row.section,
-    spend_band: row.spend_band,
-    arrival_plan: row.arrival_plan,
-    plans: JSON.parse(row.plans_json),
-    strict_age_policy: row.strict_age_policy,
-    min_age_band: row.min_age_band,
-    // Lower quota. Read by classifyInstance; omitting it here would leave the
-    // classifier permanently blind to the constraint even once it is stored.
-    min_size: row.min_size ?? null,
-    notes: row.notes,
-    status: row.status,
-    host: row.host_id ? mapUser(prefixed(row, 'host_')) : undefined,
-  };
+    if (!row) return null;
+    return {
+        id: row.id,
+        host_user_id: row.host_user_id,
+        concert_id: row.concert_id,
+
+        capacity: row.capacity,
+
+        // NEW: Available slots after previous assignments
+        remaining_capacity: row.remaining_capacity ?? row.capacity,
+
+        section: row.section,
+        spend_band: row.spend_band,
+        arrival_plan: row.arrival_plan,
+        plans: JSON.parse(row.plans_json),
+        strict_age_policy: row.strict_age_policy,
+        min_age_band: row.min_age_band,
+        // Lower quota. Read by classifyInstance; omitting it here would leave the
+        // classifier permanently blind to the constraint even once it is stored.
+        min_size: row.min_size ?? null,
+        notes: row.notes,
+        status: row.status,
+        host: row.host_id ? mapUser(prefixed(row, 'host_')) : undefined,
+    };
 }
 
 function mapSeeker(row) {
-  if (!row) return null;
-  return {
-    id: row.id,
-    user_id: row.user_id,
-    concert_id: row.concert_id,
-    section_pref: row.section_pref,
-    spend_band_max: row.spend_band_max,
-    arrival_pref: row.arrival_pref,
-    plans_wanted: JSON.parse(row.plans_wanted_json),
-    strict_age_policy: row.strict_age_policy,
-    age_tolerance: row.age_tolerance,
-    // All-or-nothing link to another request. Same reason as min_size above.
-    linked_request_id: row.linked_request_id ?? null,
-    notes: row.notes,
-    status: row.status,
-    user: row.user_id_joined ? mapUser(prefixed(row, 'user_')) : undefined,
-  };
+    if (!row) return null;
+    return {
+        id: row.id,
+        user_id: row.user_id,
+        concert_id: row.concert_id,
+        section_pref: row.section_pref,
+        spend_band_max: row.spend_band_max,
+        arrival_pref: row.arrival_pref,
+        plans_wanted: JSON.parse(row.plans_wanted_json),
+        strict_age_policy: row.strict_age_policy,
+        age_tolerance: row.age_tolerance,
+        // All-or-nothing link to another request. Same reason as min_size above.
+        linked_request_id: row.linked_request_id ?? null,
+        notes: row.notes,
+        status: row.status,
+        user: row.user_id_joined ? mapUser(prefixed(row, 'user_')) : undefined,
+    };
 }
 
 /** Lift `prefix_col` keys out of a joined row into a bare row shape. */
 function prefixed(row, prefix) {
-  const out = {};
-  for (const [key, value] of Object.entries(row)) {
-    if (key.startsWith(prefix)) out[key.slice(prefix.length)] = value;
-  }
-  return out;
+    const out = {};
+    for (const [key, value] of Object.entries(row)) {
+        if (key.startsWith(prefix)) out[key.slice(prefix.length)] = value;
+    }
+    return out;
 }
 
 const USER_COLUMNS = (alias, prefix) => `
@@ -105,10 +110,10 @@ const USER_COLUMNS = (alias, prefix) => `
 // ---------------------------------------------------------------------------
 
 export function createUserRepo(db) {
-  return {
-    create(data) {
-      const id = data.id ?? `u_${randomUUID().slice(0, 8)}`;
-      db.prepare(`
+    return {
+        create(data) {
+            const id = data.id ?? `u_${randomUUID().slice(0, 8)}`;
+            db.prepare(`
         INSERT INTO users (id, display_name, email, password_hash, age_band, home_region, gender,
                            companion_gender_pref, languages_json, vibe_json,
                            reliability, verified)
@@ -116,48 +121,47 @@ export function createUserRepo(db) {
                 @companion_gender_pref, @languages_json, @vibe_json,
                 @reliability, @verified)
       `).run({
-        id,
-        display_name: data.display_name,
-        email: data.email ?? null,
-        password_hash: data.password_hash ?? null,
-        age_band: data.age_band,
-        home_region: data.home_region,
-        gender: data.gender,
-        companion_gender_pref: data.companion_gender_pref ?? 'any',
-        languages_json: JSON.stringify(data.languages ?? ['en']),
-        vibe_json: JSON.stringify(data.vibe),
-        reliability: data.reliability ?? 0.75,
-        verified: data.verified ? 1 : 0,
-      });
-      return this.findById(id);
-    },
+                id,
+                display_name: data.display_name,
+                email: data.email ?? null,
+                password_hash: data.password_hash ?? null,
+                age_band: data.age_band,
+                home_region: data.home_region,
+                gender: data.gender,
+                companion_gender_pref: data.companion_gender_pref ?? 'any',
+                languages_json: JSON.stringify(data.languages ?? ['en']),
+                vibe_json: JSON.stringify(data.vibe),
+                reliability: data.reliability ?? 0.75,
+                verified: data.verified ? 1 : 0,
+            });
+            return this.findById(id);
+        },
 
-    findById(id) {
-      return mapUser(db.prepare('SELECT * FROM users WHERE id = ?').get(id));
-    },
+        findById(id) {
+            return mapUser(db.prepare('SELECT * FROM users WHERE id = ?').get(id));
+        },
 
-    findByEmail(email) {
-      return db.prepare('SELECT * FROM users WHERE lower(email) = lower(?)').get(email);
-    },
+        findByEmail(email) {
+            return db.prepare('SELECT * FROM users WHERE lower(email) = lower(?)').get(email);
+        },
 
-    list(limit = 100) {
-      return db.prepare('SELECT * FROM users ORDER BY created_at DESC LIMIT ?')
-        .all(limit).map(mapUser);
-    },
-    updateProfile(id, changes) {
-      const columns = {
-        displayName: 'display_name',
-        ageBand: 'age_band',
-        homeRegion: 'home_region',
-        gender: 'gender',
-        companionGenderPref: 'companion_gender_pref',
-        languages: 'languages_json',
-        vibe: 'vibe_json',
-      };
-      const entries = Object.entries(changes).map(([key, value]) =>
-        [columns[key], key === 'languages' || key === 'vibe' ? JSON.stringify(value) : value]);
-      if (entries.length) {
-        db.prepare(`UPDATE users SET ${entries.map(([column]) => `${column} = ?`).join(', ')} WHERE id = ?`)
+        list(limit = 100) {
+            return db.prepare('SELECT * FROM users ORDER BY created_at DESC LIMIT ?')
+                .all(limit).map(mapUser);
+        },
+        updateProfile(id, changes) {
+            const columns = {
+                displayName: 'display_name',
+                ageBand: 'age_band',
+                homeRegion: 'home_region',
+                gender: 'gender',
+                companionGenderPref: 'companion_gender_pref',
+                languages: 'languages_json',
+                vibe: 'vibe_json',
+            };
+            const entries = Object.entries(changes).map(([key, value]) => [columns[key], key === 'languages' || key === 'vibe' ? JSON.stringify(value) : value]);
+            if (entries.length) {
+                db.prepare(`UPDATE users SET ${entries.map(([column]) => `${column} = ?`).join(', ')} WHERE id = ?`)
           .run(...entries.map(([, value]) => value), id);
       }
       return this.findById(id);
@@ -330,17 +334,60 @@ export function createPartyRepo(db) {
     },
 
     /** Hydrated open parties for one concert — the left side of the instance. */
-    openForConcert(concertId) {
-      const rows = db.prepare(`
-        SELECT p.*, ${USER_COLUMNS('u', 'host_')}
-        FROM parties p JOIN users u ON u.id = p.host_user_id
-        WHERE p.concert_id = ? AND p.status = 'open'
-          AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.source_party_id = p.id)
-        ORDER BY p.id
-      `).all(concertId);
-      return rows.map(mapParty);
-    },
+    /** Hydrated open parties with their remaining available capacity. */
+openForConcert(concertId) {
 
+  const rows = db.prepare(`
+
+    WITH reserved AS (
+
+      SELECT
+        party_id,
+        COUNT(*) AS reserved_slots
+
+      FROM match_results
+
+      WHERE outcome = 'matched'
+        AND party_id IS NOT NULL
+
+      GROUP BY party_id
+
+    )
+
+    SELECT
+      p.*,
+
+      ${USER_COLUMNS('u', 'host_')},
+
+      p.capacity - COALESCE(r.reserved_slots, 0)
+        AS remaining_capacity
+
+    FROM parties p
+
+    JOIN users u
+      ON u.id = p.host_user_id
+
+    LEFT JOIN reserved r
+      ON r.party_id = p.id
+
+    WHERE p.concert_id = ?
+      AND p.status = 'open'
+
+      AND NOT EXISTS (
+        SELECT 1
+        FROM tickets t
+        WHERE t.source_party_id = p.id
+      )
+
+      AND p.capacity > COALESCE(r.reserved_slots, 0)
+
+    ORDER BY p.id
+
+  `).all(concertId);
+
+  return rows.map(mapParty);
+
+},
     setStatus(id, status) {
       db.prepare('UPDATE parties SET status = ? WHERE id = ?').run(status, id);
     },

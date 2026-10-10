@@ -270,3 +270,50 @@ SELECT
 FROM users u
 LEFT JOIN attendance_feedback f ON f.rated_user_id = u.id
 GROUP BY u.id;
+
+CREATE TABLE IF NOT EXISTS match_proposals (
+    id TEXT PRIMARY KEY,
+
+    round_id TEXT NOT NULL,
+    match_result_id TEXT NOT NULL UNIQUE,
+
+    seeker_request_id TEXT NOT NULL,
+    party_id TEXT NOT NULL,
+
+    status TEXT NOT NULL DEFAULT 'proposed'
+        CHECK (
+            status IN (
+                'proposed',
+                'confirmed',
+                'declined',
+                'expired',
+                'cancelled'
+            )
+        ),
+
+    expires_at INTEGER NOT NULL,
+
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (round_id)
+        REFERENCES match_rounds(id),
+
+    FOREIGN KEY (match_result_id)
+        REFERENCES match_results(id),
+
+    FOREIGN KEY (seeker_request_id)
+        REFERENCES seeker_requests(id),
+
+    FOREIGN KEY (party_id)
+        REFERENCES parties(id)
+);
+
+CREATE UNIQUE INDEX idx_active_seeker_proposal
+ON match_proposals(seeker_request_id)
+WHERE status IN ('proposed', 'confirmed');
+
+-- This index prevents a seeker request from having multiple active proposals simultaneously.
+
+-- For example, suppose a seeker has already been offered a place in Group A.
+
+-- Until they accept, decline, or their proposal expires, the system should not reserve a second place for the same request in Group B.
