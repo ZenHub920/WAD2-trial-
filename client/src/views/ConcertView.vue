@@ -1,8 +1,11 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api, LABELS, formatDate } from '../api.js';
 import VibeChart from '../components/VibeChart.vue';
+import SwipeDeck from '../components/SwipeDeck.vue';
+import PartyCard from '../components/PartyCard.vue';
+import { useCountUp } from '../composables/useCountUp.js';
 
 const props = defineProps({ id: { type: String, required: true } });
 const router = useRouter();
@@ -63,6 +66,85 @@ const totalSlots = computed(() => parties.value.reduce((a, p) => a + p.capacity,
 const canRun = computed(
   () => parties.value.length > 0 && requests.value.length > 0 && !running.value,
 );
+
+/* ---- Judging mode -------------------------------------------------------
+ * Two ways to read the same set. The deck is for deciding one at a time, which
+ * is how preference data would really be collected; the list is for scanning
+ * and comparing. The choice is remembered, because it reflects what a person
+ * came to do rather than a passing preference.
+ */
+const mode = ref(localStorage.getItem('encore-browse-mode') === 'list' ? 'list' : 'deck');
+
+watch(mode, (value) => localStorage.setItem('encore-browse-mode', value));
+
+/** Shortlisted and passed ids, so the deck's decisions survive a mode switch. */
+const shortlisted = ref([]);
+const passed = ref([]);
+
+const undecided = computed(() => {
+  const seen = new Set([...shortlisted.value, ...passed.value]);
+  return parties.value.filter((p) => !seen.has(p.id));
+});
+
+function onShortlist(party) {
+  if (!shortlisted.value.includes(party.id)) shortlisted.value.push(party.id);
+}
+
+function onPass(party) {
+  if (!passed.value.includes(party.id)) passed.value.push(party.id);
+}
+
+/** The expanded card. Null when nothing is open. */
+const opened = ref(null);
+
+function openParty(party) {
+  opened.value = party;
+}
+
+function closeParty() {
+  opened.value = null;
+}
+
+/* A dialog that cannot be dismissed from the keyboard is not a dialog. The
+ * listener is bound only while something is open so it never competes with the
+ * deck's own arrow-key handling. */
+function onGlobalKeydown(event) {
+  if (event.key === 'Escape' && opened.value) {
+    event.stopPropagation();
+    closeParty();
+  }
+}
+
+watch(opened, (value) => {
+  if (value) {
+    window.addEventListener('keydown', onGlobalKeydown);
+    // Stop the page behind scrolling under the overlay.
+    document.body.style.overflow = 'hidden';
+  } else {
+    window.removeEventListener('keydown', onGlobalKeydown);
+    document.body.style.overflow = '';
+  }
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onGlobalKeydown);
+  document.body.style.overflow = '';
+});
+
+function resetDecisions() {
+  shortlisted.value = [];
+  passed.value = [];
+}
+
+/* Headline forecast numbers count up, because they are the figures the page is
+ * actually about. Everything else on the page renders statically. */
+const forecastMatched = useCountUp(() => preview.value?.metrics?.matched ?? 0, {
+  duration: 1000,
+});
+const forecastFirstChoice = useCountUp(
+  () => Math.round((preview.value?.metrics?.firstChoiceRate ?? 0) * 100),
+  { duration: 1100 },
+);
 </script>
 
 <template>
@@ -114,12 +196,12 @@ const canRun = computed(
           <div v-if="preview && !preview.empty" class="head__forecast">
             <p class="head__forecast-label">If the round ran now</p>
             <p class="head__forecast-value">
-              <strong class="tabular">{{ preview.metrics.matched }}</strong>
+              <strong class="tabular">{{ forecastMatched }}</strong>
               of {{ preview.metrics.eligibleSeekers }} placed
             </p>
             <p class="head__forecast-note">
               <span class="tag tag--mint">{{ preview.metrics.blockingPairs }} blocking pairs</span>
-              <span class="tag">{{ Math.round(preview.metrics.firstChoiceRate * 100) }}% first choice</span>
+              <span class="tag tabular">{{ forecastFirstChoice }}% first choice</span>
             </p>
           </div>
 
@@ -170,7 +252,87 @@ const canRun = computed(
       </div>
 
       <!-- --------------------------------------------------------- Listings -->
-      <div v-if="tab === 'parties'" class="listing">
+      <div v-if="tab === 'parties'" class="browse">
+        <div class="browse__bar">
+          <div class="segmented" role="group" aria-label="How to browse groups">
+            <button
+              type="button"
+              class="segmented__btn"
+              :class="{ 'segmented__btn--on': mode === 'deck' }"
+              :aria-pressed="mode === 'deck'"
+              @click="mode = 'deck'"
+            >
+              Decide
+            </button>
+            <button
+              type="button"
+              class="segmented__btn"
+              :class="{ 'segmented__btn--on': mode === 'list' }"
+              :aria-pressed="mode === 'list'"
+              @click="mode = 'list'"
+            >
+              Compare
+            </button>
+            <span class="segmented__thumb" :class="`segmented__thumb--${mode}`" aria-hidden="true" />
+          </div>
+
+          <div v-if="shortlisted.length || passed.length" class="browse__tally">
+            <span class="tag tag--mint tabular">{{ shortlisted.length }} shortlisted</span>
+            <span class="tag tabular">{{ passed.length }} passed</span>
+            <button type="button" class="browse__reset" @click="resetDecisions">Start over</button>
+          </div>
+        </div>
+
+        <!-- Deck mode --------------------------------------------------- -->
+        <div v-if="mode === 'deck'" class="judge">
+          <p v-if="!parties.length" class="notice">
+            No groups have listed spare tickets yet.
+          </p>
+          <template v-else>
+            <div class="judge__deck">
+              <SwipeDeck
+                :items="undecided"
+                @shortlist="onShortlist"
+                @pass="onPass"
+                @open="openParty"
+              >
+                <template #card="{ item, isTop }">
+                  <PartyCard :party="item" :show-chart="isTop" />
+                </template>
+              </SwipeDeck>
+            </div>
+
+            <!-- The panel is not filler: it is where a person learns that
+                 shortlisting is an input to the algorithm, not a request sent
+                 to the group. That distinction is the whole product. -->
+            <aside class="judge__aside">
+              <h3 class="judge__title">What this does</h3>
+              <p class="judge__body">
+                Shortlisting builds your preference list. It does not message anyone.
+                When the round runs, the algorithm reads every list at once and finds
+                an assignment nobody would want to break.
+              </p>
+
+              <div class="judge__shortlist">
+                <p class="judge__label">
+                  Your shortlist
+                  <span class="tabular judge__label-count">{{ shortlisted.length }}</span>
+                </p>
+                <TransitionGroup name="chip" tag="ul" class="judge__chips">
+                  <li v-for="id in shortlisted" :key="id" class="judge__chip">
+                    {{ parties.find((p) => p.id === id)?.host.displayName }}
+                  </li>
+                </TransitionGroup>
+                <p v-if="!shortlisted.length" class="judge__empty">
+                  Nothing yet. Drag a card right, or press →.
+                </p>
+              </div>
+            </aside>
+          </template>
+        </div>
+
+        <!-- Compare mode ------------------------------------------------ -->
+        <div v-else class="listing">
         <p v-if="!parties.length" class="notice">No groups have listed spare tickets yet.</p>
         <article v-for="party in parties" :key="party.id" class="card entry">
           <div class="entry__main">
@@ -208,6 +370,7 @@ const canRun = computed(
             <VibeChart :vibe="party.host.vibe" :size="150" />
           </div>
         </article>
+        </div>
       </div>
 
       <div v-else class="listing">
@@ -249,10 +412,327 @@ const canRun = computed(
         </article>
       </div>
     </template>
+
+    <!-- ------------------------------------------------------ Expanded card -->
+    <Teleport to="body">
+      <Transition name="sheet">
+        <div v-if="opened" class="sheet" @click.self="closeParty">
+          <div
+            class="sheet__panel"
+            role="dialog"
+            aria-modal="true"
+            :aria-label="`${opened.host.displayName}'s group`"
+          >
+            <button class="sheet__close" type="button" aria-label="Close" @click="closeParty">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+            <PartyCard :party="opened" />
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
 <style scoped>
+/* ---- Browse: mode switch ------------------------------------------------ */
+
+.browse {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.browse__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* A sliding thumb rather than two independently styled buttons: the movement
+   shows that these are two states of one control, and where you came from. */
+.segmented {
+  position: relative;
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  border: var(--border-hairline);
+  background: var(--ink-850);
+}
+
+.segmented__btn {
+  position: relative;
+  z-index: 1;
+  padding: var(--space-2) var(--space-5);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--text-300);
+  font: inherit;
+  font-size: var(--step--1);
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--dur-base) var(--ease-glide);
+}
+
+.segmented__btn--on {
+  color: var(--ink-900);
+}
+
+.segmented__btn:focus-visible {
+  outline: 2px solid var(--accent-500);
+  outline-offset: 2px;
+}
+
+.segmented__thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: calc(50% - 3px);
+  border-radius: var(--radius-pill);
+  background: linear-gradient(180deg, var(--accent-400), var(--accent-500));
+  box-shadow: var(--shadow-accent);
+  transition: transform var(--dur-base) var(--ease-spring-soft);
+}
+
+.segmented__thumb--deck { transform: translateX(0); }
+.segmented__thumb--list { transform: translateX(100%); }
+
+.browse__tally {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.browse__reset {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--text-400);
+  font: inherit;
+  font-size: var(--step--2);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.browse__reset:hover { color: var(--text-200); }
+
+/* Deck and explanation share a row so the deck is anchored to the page's left
+   edge like everything else, instead of floating in the middle of the column. */
+.judge {
+  display: grid;
+  grid-template-columns: minmax(0, 26rem) minmax(0, 1fr);
+  gap: var(--space-7);
+  align-items: start;
+}
+
+.judge__deck {
+  min-width: 0;
+}
+
+.judge__aside {
+  position: sticky;
+  top: calc(var(--header-height) + var(--space-5));
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  border: var(--border-hairline);
+  background: var(--ink-850);
+}
+
+.judge__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--step-1);
+  letter-spacing: -0.015em;
+}
+
+.judge__body {
+  margin: 0;
+  max-width: 46ch;
+  font-size: var(--step--1);
+  line-height: 1.6;
+  color: var(--text-300);
+}
+
+.judge__shortlist {
+  padding-top: var(--space-4);
+  border-top: var(--border-hairline);
+}
+
+.judge__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  font-size: var(--step--2);
+  color: var(--text-400);
+}
+
+.judge__label-count {
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklab, var(--mint-400) 16%, transparent);
+  color: var(--mint-400);
+}
+
+.judge__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.judge__chip {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in oklab, var(--mint-400) 28%, transparent);
+  background: color-mix(in oklab, var(--mint-400) 10%, transparent);
+  color: var(--text-200);
+  font-size: var(--step--2);
+}
+
+.judge__empty {
+  margin: 0;
+  font-size: var(--step--2);
+  color: var(--text-400);
+}
+
+/* A name arriving in the shortlist is the only confirmation that a swipe did
+   anything, so it gets a spring rather than a fade. */
+.chip-enter-active {
+  transition:
+    transform var(--dur-slow) var(--ease-spring),
+    opacity var(--dur-fast) linear;
+}
+
+.chip-leave-active {
+  transition:
+    transform var(--dur-fast) var(--ease-glide),
+    opacity var(--dur-fast) linear;
+  position: absolute;
+}
+
+.chip-enter-from {
+  opacity: 0;
+  transform: scale(0.6);
+}
+
+.chip-leave-to {
+  opacity: 0;
+  transform: scale(0.8);
+}
+
+@media (max-width: 900px) {
+  .judge {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-5);
+  }
+
+  .judge__aside {
+    position: static;
+  }
+}
+
+/* ---- Expanded card ------------------------------------------------------ */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: var(--gutter);
+  background: rgba(4, 3, 8, 0.6);
+  backdrop-filter: blur(8px);
+}
+
+.sheet__panel {
+  position: relative;
+  width: min(32rem, 100%);
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: var(--space-6);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--ink-500);
+  background: var(--ink-800);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Keep the card's own badges clear of the close button, which sits over the
+   same corner. */
+.sheet__panel :deep(.face__head) {
+  padding-right: var(--space-7);
+}
+
+.sheet__close {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: var(--border-hairline);
+  background: var(--ink-700);
+  color: var(--text-300);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-glide),
+    transform var(--dur-fast) var(--ease-spring);
+}
+
+.sheet__close svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.sheet__close:hover {
+  background: var(--ink-600);
+  color: var(--text-100);
+}
+
+.sheet__close:active { transform: scale(0.92); }
+
+/* The panel scales up from slightly small as it fades in, which reads as the
+   card you tapped growing rather than a new surface appearing over it. */
+.sheet-enter-active,
+.sheet-leave-active {
+  transition: opacity var(--dur-base) var(--ease-glide);
+}
+
+.sheet-enter-active .sheet__panel {
+  transition: transform var(--dur-slow) var(--ease-spring-soft);
+}
+
+.sheet-leave-active .sheet__panel {
+  transition: transform var(--dur-fast) var(--ease-glide);
+}
+
+.sheet-enter-from,
+.sheet-leave-to {
+  opacity: 0;
+}
+
+.sheet-enter-from .sheet__panel {
+  transform: scale(0.92) translateY(12px);
+}
+
+.sheet-leave-to .sheet__panel {
+  transform: scale(0.97);
+}
+
 .back {
   display: inline-block;
   margin-bottom: var(--space-5);
@@ -510,21 +990,7 @@ const canRun = computed(
   min-width: 3ch;
 }
 
-.meter {
-  flex: 1;
-  height: 5px;
-  border-radius: var(--radius-pill);
-  background: var(--ink-700);
-  overflow: hidden;
-}
-
-.meter__fill {
-  display: block;
-  height: 100%;
-  border-radius: var(--radius-pill);
-  background: linear-gradient(90deg, var(--accent-600), var(--accent-400));
-  transition: width var(--dur-slow) var(--ease-out);
-}
+/* .meter now lives in base.css — both this listing and the swipe card use it. */
 
 .entry__chart {
   justify-self: center;

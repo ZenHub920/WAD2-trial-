@@ -6,12 +6,6 @@ import { ref, watch, toValue } from 'vue';
 import { api } from './api.js';
 
 /**
- * There is no authentication, so the market acts as one seeded buyer
- * (see server/src/db/seed.js).
- */
-export const DEMO_BUYER_ID = 'u_demo_buyer';
-
-/**
  * The demo buyer's saved payment methods. Only a display mask lives here — the
  * API receives the method id, never card details.
  */

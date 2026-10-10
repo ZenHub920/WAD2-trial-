@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue';
-import { DEMO_BUYER_ID, useListing } from '../market.js';
+import { currentUser } from '../auth.js';
+import { useListing } from '../market.js';
 import CheckoutSteps from '../components/market/CheckoutSteps.vue';
 import MarketPageHead from '../components/market/MarketPageHead.vue';
 import MarketNotice from '../components/market/MarketNotice.vue';
@@ -11,7 +12,7 @@ const props = defineProps({ id: { type: String, required: true } });
 
 const { listing, loading, error } = useListing(() => props.id);
 
-const ownListing = computed(() => listing.value?.seller.id === DEMO_BUYER_ID);
+const ownListing = computed(() => Boolean(currentUser.value) && listing.value?.seller.id === currentUser.value.id);
 const buyable = computed(() => listing.value?.status === 'open' && !ownListing.value);
 </script>
 
