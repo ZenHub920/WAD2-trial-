@@ -27,6 +27,11 @@ export function createRoutes({ repos, matching, sessions, images }) {
     if (!req.user) return res.status(401).json({ error: 'authentication_required' });
     next();
   };
+  const requireOperator = (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'authentication_required' });
+    if (!req.user.is_operator) return res.status(403).json({ error: 'operator_required' });
+    next();
+  };
 
   router.get('/tickets', tickets.list);
   router.get('/tickets/:id', tickets.detail);
@@ -56,13 +61,14 @@ export function createRoutes({ repos, matching, sessions, images }) {
   router.post('/concerts/:id/requests', requireUser, concerts.createRequest);
 
   router.get('/concerts/:id/match/preview', matches.preview);
-  router.post('/concerts/:id/match', requireUser, matches.run);
-  router.get('/rounds/:id', matches.round);
+  router.post('/concerts/:id/match', requireOperator, matches.run);
+  router.get('/me/concerts/:id/result', requireUser, matches.myResult);
+  router.get('/rounds/:id', requireOperator, matches.round);
   router.get('/solvers', matches.solvers);
-  router.get('/rounds/:id/trace', matches.trace);
-  router.get('/rounds/:id/parties/:partyId', matches.roster);
-  router.get('/rounds/:id/verify', matches.verify);
-  router.get('/concerts/:id/explain/:requestId', matches.explain);
+  router.get('/rounds/:id/trace', requireOperator, matches.trace);
+  router.get('/rounds/:id/parties/:partyId', requireOperator, matches.roster);
+  router.get('/rounds/:id/verify', requireOperator, matches.verify);
+  router.get('/concerts/:id/explain/:requestId', requireOperator, matches.explain);
 
   router.post('/auth/register', users.register);
   router.post('/auth/login', users.login);

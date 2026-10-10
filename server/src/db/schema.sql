@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS users (
   vibe_json              TEXT    NOT NULL,
   reliability            REAL    NOT NULL DEFAULT 0.75 CHECK (reliability BETWEEN 0 AND 1),
   verified               INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0,1)),
+  is_operator            INTEGER NOT NULL DEFAULT 0 CHECK (is_operator IN (0,1)),
   created_at             TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
