@@ -1,17 +1,40 @@
 import { listSolvers } from '../matching/index.js';
+import { publicUser } from './publicUser.js';
+
+function publicLedger(ledger) {
+  if (!ledger) return null;
+  return {
+    solver: ledger.solver,
+    solverName: ledger.solverName,
+    instanceClass: ledger.instanceClass,
+    selectedBecause: ledger.selectedBecause,
+    features: ledger.features,
+    counts: ledger.counts,
+    promised: ledger.promised,
+    relaxations: ledger.relaxations,
+    verification: {
+      mode: ledger.verification.mode,
+      stable: ledger.verification.stable,
+      blockingPairs: ledger.verification.blockingPairs,
+      pairsChecked: ledger.verification.pairsChecked,
+    },
+    timings: ledger.timings,
+    headline: ledger.headline,
+  };
+}
 
 export function createMatchController({ repos, matching }) {
   return {
     preview(req, res) {
       const withBaselines = req.query.baselines === 'true';
-      const withTrace = req.query.trace === 'true';
+      const withTrace = req.user?.is_operator && req.query.trace === 'true';
 
       try {
         const preview = matching.preview(req.params.id, {
           trace: withTrace,
           withBaselines,
         });
-        if (preview.empty) return res.json({ empty: true, ...preview });
+        if (preview.empty) return res.json(preview);
 
         res.json({
           empty: false,
@@ -20,18 +43,32 @@ export function createMatchController({ repos, matching }) {
           comparison: preview.comparison ?? null,
           instance: preview.profile.stats,
           solver: preview.result.stats,
-          ledger: preview.ledger ?? null,
+          ledger: req.user?.is_operator ? preview.ledger ?? null : publicLedger(preview.ledger),
           classification: preview.classification ?? null,
-          trace: withTrace ? preview.result.trace : undefined,
-          assignments: [...preview.result.assignments].map(([seekerId, partyId]) => ({
-            seekerId,
-            partyId,
-          })),
-          unmatched: preview.result.unmatchedSeekers,
+          ...(req.user?.is_operator ? {
+            trace: withTrace ? preview.result.trace : undefined,
+            assignments: [...preview.result.assignments].map(([seekerId, partyId]) => ({
+              seekerId, partyId,
+            })),
+            unmatched: preview.result.unmatchedSeekers,
+          } : {}),
         });
       } catch (err) {
-        res.status(500).json({ error: 'match_failed', detail: err.message });
+        res.status(500).json({
+          error: 'match_failed',
+          ...(req.user?.is_operator ? { detail: err.message } : {}),
+        });
       }
+    },
+
+    myResult(req, res) {
+      const result = repos.rounds.resultForUser(req.params.id, req.user.id);
+      if (!result) return res.json({ result: null });
+      res.json({ result: {
+        ...result,
+        group: result.group ? { ...result.group, host: publicUser(result.group.host) } : undefined,
+        members: result.members?.map(publicUser),
+      } });
     },
 
     run(req, res) {

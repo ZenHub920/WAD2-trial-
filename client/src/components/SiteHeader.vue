@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { currentUser, refreshSession, signOut } from '../auth.js';
+import { currentUser, signOut } from '../auth.js';
 
 defineProps({ theme: { type: String, default: 'dark' } });
 defineEmits(['toggle-theme']);
@@ -21,7 +21,7 @@ function onScroll() {
 
 onMounted(() => {
   window.addEventListener('scroll', onScroll, { passive: true });
-  refreshSession().catch((error) => console.error('Could not load session', error));
+  onScroll();
 });
 onUnmounted(() => window.removeEventListener('scroll', onScroll));
 

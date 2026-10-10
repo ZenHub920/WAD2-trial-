@@ -29,6 +29,7 @@ function mapUser(row) {
     vibe: JSON.parse(row.vibe_json),
     reliability: row.reliability,
     verified: row.verified,
+    ...(Object.hasOwn(row, 'is_operator') ? { is_operator: Boolean(row.is_operator) } : {}),
     created_at: row.created_at,
   };
 }
@@ -611,6 +612,51 @@ export function createRoundRepo(db) {
         ...round,
         metrics: JSON.parse(round.metrics_json),
         timings: JSON.parse(round.timings_json),
+      };
+    },
+
+    /** Only the latest round can reveal a result; ownership is always the session user. */
+    resultForUser(concertId, userId) {
+      const round = this.latestForConcert(concertId);
+      if (!round) return null;
+      const roundInfo = { id: round.id, ranAt: round.ran_at };
+      const seeker = db.prepare(`
+        SELECT mr.outcome, mr.party_id FROM match_results mr
+        JOIN seeker_requests s ON s.id = mr.seeker_request_id
+        WHERE mr.round_id = ? AND s.user_id = ?
+      `).get(round.id, userId);
+      if (seeker) {
+        if (seeker.outcome !== 'matched') {
+          return { role: 'seeker', outcome: 'unmatched', round: roundInfo };
+        }
+        const party = db.prepare('SELECT id, section, host_user_id FROM parties WHERE id = ?')
+          .get(seeker.party_id);
+        return {
+          role: 'seeker', outcome: 'matched', round: roundInfo,
+          group: { id: party.id, section: party.section, host: mapUser(
+            db.prepare('SELECT * FROM users WHERE id = ?').get(party.host_user_id),
+          ) },
+        };
+      }
+
+      const party = db.prepare(`
+        SELECT id, section FROM parties WHERE concert_id = ? AND host_user_id = ?
+      `).get(concertId, userId);
+      if (!party || !Object.hasOwn(JSON.parse(round.preference_snapshot_json ?? '{}').capacities ?? {}, party.id)) {
+        return null;
+      }
+      const members = db.prepare(`
+        SELECT u.* FROM match_results mr
+        JOIN seeker_requests s ON s.id = mr.seeker_request_id
+        JOIN users u ON u.id = s.user_id
+        WHERE mr.round_id = ? AND mr.party_id = ? AND mr.outcome = 'matched'
+        ORDER BY mr.party_rank ASC
+      `).all(round.id, party.id).map(mapUser);
+      return {
+        role: 'host', outcome: members.length ? 'matched' : 'no_members', round: roundInfo,
+        group: { id: party.id, section: party.section,
+          host: mapUser(db.prepare('SELECT * FROM users WHERE id = ?').get(userId)) },
+        members,
       };
     },
 

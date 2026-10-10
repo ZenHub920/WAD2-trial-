@@ -35,6 +35,7 @@ export const api = {
   profile: () => request('/me/profile'),
   updateProfile: (data) => request('/me/profile', { method: 'PATCH', body: JSON.stringify(data) }),
   myConcerts: () => request('/me/concerts'),
+  myConcertResult: (concertId) => request(`/me/concerts/${encodeURIComponent(concertId)}/result`),
   participation: (concertId) => request(`/concerts/${encodeURIComponent(concertId)}/participation`),
   joinConcert: (concertId, data) =>
     request(`/concerts/${encodeURIComponent(concertId)}/participation`, {

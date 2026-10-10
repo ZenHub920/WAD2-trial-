@@ -45,10 +45,11 @@ export function getDb() {
  * never applied. Without this, anyone with a database from before the guarantee
  * ledger lands gets "no such column" on their next round instead of a migration.
  *
- * Deliberately minimal: additive, nullable columns only. Anything needing a
- * table rewrite belongs in a real migration tool, not here.
+ * Additive migrations only. Columns with defaults preserve existing rows
+ * without rebuilding their tables.
  */
 const ADDED_COLUMNS = [
+  ['users', 'is_operator', 'INTEGER NOT NULL DEFAULT 0 CHECK (is_operator IN (0,1))'],
   ['concerts', 'source', 'TEXT'],
   ['concerts', 'source_event_id', 'TEXT'],
   ['concerts', 'official_url', 'TEXT'],

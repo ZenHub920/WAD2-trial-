@@ -1,8 +1,14 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { api, LABELS } from '../api.js';
+import { useRoute } from 'vue-router';
 
 const props = defineProps({ id: { type: String, required: true } });
+const route = useRoute();
+const concertLink = computed(() => {
+  const concertId = route.query.concertId;
+  return typeof concertId === 'string' && concertId ? `/concerts/${encodeURIComponent(concertId)}` : '/concerts';
+});
 
 const round = ref(null);
 const results = ref([]);
@@ -66,9 +72,14 @@ const rankHistogram = computed(() => {
   <div class="container section">
     <div v-if="loading" class="skeleton" />
 
-    <div v-else-if="error" class="notice--error">
-      <h3>Could not load this round</h3>
-      <p class="mono">{{ error.message }}</p>
+    <div v-else-if="error" class="notice--error" role="alert">
+      <h3>{{ error.status === 403 ? 'Operator access required'
+        : error.status === 401 ? 'Sign in required' : 'Could not load this round' }}</h3>
+      <p v-if="error.status === 403">Detailed round results are available only to operators. You can still see the public forecast and your own result on the concert page.</p>
+      <p v-else-if="error.status === 401">Sign in with an operator account to see detailed round results. Your own result is available on the concert page after signing in.</p>
+      <p v-else class="mono">{{ error.message }}</p>
+      <RouterLink v-if="error.status === 401" to="/login" class="btn btn--primary">Sign in</RouterLink>
+      <RouterLink :to="concertLink" class="btn btn--ghost">{{ route.query.concertId ? 'Concert and your result' : 'Browse concerts and your result' }}</RouterLink>
     </div>
 
     <template v-else-if="round">

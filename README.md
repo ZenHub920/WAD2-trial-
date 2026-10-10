@@ -41,14 +41,25 @@ reload and `POST /api/auth/logout` revokes the cookie (HTTP 204). The cookie is
 marked Secure when `NODE_ENV=production`; serve the app over HTTPS in production.
 The Vue app uses same-origin `/api` requests through its development proxy.
 
-Creating a party or seeker request, and committing a match round, now requires
-a session (HTTP 401 otherwise). Listing ownership comes from the cookie, **not**
-`host_user_id` or `user_id` in request JSON; the open demo-only `POST /api/users`
-endpoint has been removed. Concert browsing remains public. A signed-in user
-can still trigger a round and the full-round read endpoints remain public:
-facilitator-only triggers and private individual results require a separate
-product decision. Existing database files automatically gain the sessions table;
-never run the destructive demo seed on accounts you want to keep.
+Creating a party, seeker request, or Kaki participation requires a session
+(HTTP 401 otherwise). Ownership comes from the cookie, **not** user IDs in
+request JSON; the old open `POST /api/users` endpoint is gone. Concert browsing
+and aggregate matching previews remain public. Only a database-provisioned
+operator can run a round or read full round results, traces, rosters and
+explanations (HTTP 403 for ordinary accounts). Members see only their own
+latest group result via `GET /api/me/concerts/:id/result`.
+
+Provision an existing account from the server host (never via a web request):
+
+```bash
+cd server
+npm run operator:grant -- person@example.com
+```
+
+This command uses `ENCORE_DB` when configured; the server and command must
+point at the same database. Registration and profile editing cannot grant
+operator access. Existing database files are migrated in place; never run
+the destructive demo seed on accounts you want to keep.
 
 ### Ticket marketplace
 
@@ -111,10 +122,11 @@ purchase page. Ticketmaster coverage in Singapore varies; events without a
 usable venue or date are skipped. Without a key, live discovery returns HTTP 503.
 No ticket ownership, authenticity or availability is verified by this integration.
 
-AI-use disclosure: The Ticketmaster integration, MVC extraction, session
-implementation, tests, and this documentation were generated with AI assistance.
-The IS216 briefing restricts AI use for core backend implementation; review these
-contributions against your course rules before submitting them.
+AI-use disclosure: The Ticketmaster integration, MVC extraction, sessions,
+ticket marketplace, Kaki decision API, profiles/participation, round access
+controls, tests, and this documentation were generated with AI assistance.
+The IS216 briefing restricts AI use for core backend implementation; review
+these contributions against your course rules before submitting them.
 
 ```bash
 cd server
@@ -281,10 +293,10 @@ run it directly and why the tests cover the algorithm without standing up a serv
 
 ## The visualiser
 
-`/concerts/:id/algorithm` replays a round's recorded proposal trace — play, pause, step,
-scrub, speed. Accepts, rejects and evictions are colour-coded, groups show their held
-offers filling and emptying, and displaced seekers drop back into the "still proposing"
-rail. It is reading the solver's actual output, not an animation of an idea.
+`/concerts/:id/algorithm` replays a round's recorded proposal trace for an
+operator — play, pause, step, scrub, speed. Accepts, rejects and evictions
+are colour-coded; groups show held offers filling and emptying. The public
+concert page still shows aggregate forecast metrics without personal results.
 
 ---
 
@@ -304,13 +316,15 @@ rail. It is reading the solver's actual output, not an animation of an idea.
 | `GET` | `/api/me/concerts` | concerts explicitly joined for Kaki |
 | `GET` | `/api/concerts/:id/parties` | groups with spare tickets |
 | `GET` | `/api/concerts/:id/requests` | people looking |
-| `GET` | `/api/concerts/:id/match/preview?baselines=true&trace=true` | dry run, writes nothing |
-| `POST` | `/api/concerts/:id/match` | run and persist a round |
-| `GET` | `/api/rounds/:id` | round with per-seeker results |
-| `GET` | `/api/rounds/:id/trace` | the proposal sequence |
-| `GET` | `/api/rounds/:id/verify` | re-check stability against the stored snapshot |
+| `GET` | `/api/concerts/:id/match/preview?baselines=true` | public aggregate dry run; only operators receive identities/trace |
+| `POST` | `/api/concerts/:id/match` | operator-only: run and persist a round |
+| `GET` | `/api/me/concerts/:id/result` | own latest group-round result (session required) |
+| `GET` | `/api/rounds/:id` | operator-only full per-seeker results |
+| `GET` | `/api/rounds/:id/trace` | operator-only proposal sequence |
+| `GET` | `/api/rounds/:id/parties/:partyId` | operator-only full party roster |
+| `GET` | `/api/rounds/:id/verify` | operator-only re-check against stored snapshot |
 | `GET` | `/api/solvers` | every algorithm, with its guarantees and limits |
-| `GET` | `/api/concerts/:id/explain/:requestId` | why one seeker got their result |
+| `GET` | `/api/concerts/:id/explain/:requestId` | operator-only explanation for one seeker |
 
 ---
 

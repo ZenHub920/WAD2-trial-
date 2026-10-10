@@ -20,7 +20,7 @@ export function createUserController(repos, sessions) {
           password_hash: hashPassword(req.body.password),
         });
         sessions.start(req, res, user.id);
-        res.status(201).json({ user: publicUser(user) });
+        res.status(201).json({ user: ownUser(user) });
       } catch (err) {
         res.status(409).json({ error: 'could_not_create_user', detail: err.message });
       }
@@ -36,11 +36,11 @@ export function createUserController(repos, sessions) {
         return res.status(401).json({ error: 'invalid_credentials' });
       }
       sessions.start(req, res, user.id);
-      res.json({ user: publicUser(repos.users.findById(user.id)) });
+      res.json({ user: ownUser(repos.users.findById(user.id)) });
     },
 
     current(req, res) {
-      res.json({ user: publicUser(req.user) });
+      res.json({ user: ownUser(req.user) });
     },
 
     logout(req, res) {
@@ -55,6 +55,10 @@ export function createUserController(repos, sessions) {
     },
 
   };
+}
+
+function ownUser(user) {
+  return { ...publicUser(user), isOperator: Boolean(user.is_operator) };
 }
 
 function validateRegistration(body = {}) {

@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api, LABELS, formatDate } from '../api.js';
-import { currentUser } from '../auth.js';
+import { currentUser, sessionReady } from '../auth.js';
 import VibeChart from '../components/VibeChart.vue';
 import SwipeDeck from '../components/SwipeDeck.vue';
 import PartyCard from '../components/PartyCard.vue';
@@ -18,6 +18,7 @@ const preview = ref(null);
 const loading = ref(true);
 const running = ref(false);
 const error = ref(null);
+const runError = ref('');
 const tab = ref('parties');
 const participation = ref(null);
 const participationLoading = ref(false);
@@ -29,6 +30,31 @@ const participationNeedsSignIn = ref(false);
 const sectionPref = ref('seated_any');
 const arrivalPref = ref('doors');
 let participationRequest = 0;
+const myResult = ref(null);
+const resultLoading = ref(false);
+const resultError = ref(null);
+const resultRetry = ref(0);
+let resultRequest = 0;
+
+watch(
+  [() => props.id, () => currentUser.value?.id, sessionReady, resultRetry],
+  async ([concertId, userId, ready]) => {
+    const requestId = ++resultRequest;
+    myResult.value = null;
+    resultError.value = null;
+    resultLoading.value = Boolean(ready && userId);
+    if (!ready || !userId) return;
+    try {
+      const { result } = await api.myConcertResult(concertId);
+      if (requestId === resultRequest) myResult.value = result;
+    } catch (err) {
+      if (requestId === resultRequest) resultError.value = err;
+    } finally {
+      if (requestId === resultRequest) resultLoading.value = false;
+    }
+  },
+  { immediate: true },
+);
 
 watch(
   [() => props.id, () => currentUser.value?.id, () => participationRetry.value],
@@ -111,6 +137,7 @@ async function leaveParticipation() {
 async function load() {
   loading.value = true;
   error.value = null;
+  runError.value = '';
   try {
     const [detail, partyData, requestData] = await Promise.all([
       api.concert(props.id),
@@ -139,12 +166,18 @@ onMounted(load);
 watch(() => props.id, load);
 
 async function runRound() {
+  if (!canRun.value) return;
+  runError.value = '';
   running.value = true;
   try {
     const outcome = await api.runMatch(props.id);
-    router.push(`/rounds/${outcome.roundId}`);
+    router.push({ path: `/rounds/${outcome.roundId}`, query: { concertId: props.id } });
   } catch (err) {
-    error.value = err;
+    runError.value = err.status === 403
+      ? 'Only an operator can run matching rounds.'
+      : err.status === 401
+        ? 'Your session has expired. Sign in as an operator to run a round.'
+        : `Could not run this round: ${err.message}`;
   } finally {
     running.value = false;
   }
@@ -153,7 +186,8 @@ async function runRound() {
 const totalSlots = computed(() => parties.value.reduce((a, p) => a + p.capacity, 0));
 
 const canRun = computed(
-  () => parties.value.length > 0 && requests.value.length > 0 && !running.value,
+  () => sessionReady.value && currentUser.value?.isOperator === true
+    && parties.value.length > 0 && requests.value.length > 0 && !running.value,
 );
 
 /* ---- Judging mode -------------------------------------------------------
@@ -294,7 +328,7 @@ const forecastFirstChoice = useCountUp(
             </p>
           </div>
 
-          <div class="head__actions">
+          <div v-if="sessionReady && currentUser?.isOperator" class="head__actions">
             <button class="btn btn--primary" :disabled="!canRun" @click="runRound">
               {{ running ? 'Running…' : 'Run matching round' }}
             </button>
@@ -302,10 +336,11 @@ const forecastFirstChoice = useCountUp(
               Watch it run
             </RouterLink>
           </div>
+          <p v-if="runError" class="kaki-join__error" role="alert">{{ runError }}</p>
 
           <RouterLink
-            v-if="concert.latestRound"
-            :to="`/rounds/${concert.latestRound.id}`"
+            v-if="concert.latestRound && sessionReady && currentUser?.isOperator"
+            :to="{ path: `/rounds/${concert.latestRound.id}`, query: { concertId: id } }"
             class="head__previous"
           >
             Last round: {{ concert.latestRound.matched }} matched
@@ -313,8 +348,51 @@ const forecastFirstChoice = useCountUp(
               {{ concert.latestRound.isStable ? '· verified stable' : '· UNSTABLE' }}
             </span>
           </RouterLink>
+          <p v-else-if="concert.latestRound" class="head__previous">
+            Last round: {{ concert.latestRound.matched }} matched
+          </p>
         </aside>
       </header>
+      <section class="my-result card" aria-labelledby="my-result-title">
+        <h2 id="my-result-title">Your matching result</h2>
+        <p v-if="!sessionReady || resultLoading" role="status">Loading your result…</p>
+        <p v-else-if="!currentUser">
+          <RouterLink to="/login">Sign in</RouterLink> to see your own result from the latest round.
+        </p>
+        <div v-else-if="resultError" role="alert">
+          <p>{{ resultError.status === 401
+            ? 'Your session has expired. Sign in again to see your result.'
+            : `Could not load your result: ${resultError.message}` }}</p>
+          <RouterLink v-if="resultError.status === 401" to="/login">Sign in</RouterLink>
+          <button v-if="resultError.status !== 401" type="button" class="btn btn--ghost" @click="resultRetry++">Retry loading result</button>
+        </div>
+        <p v-else-if="!myResult">
+          {{ concert.latestRound
+            ? 'You did not participate in the latest matching round. Joining Kaki is separate from group matching.'
+            : 'No matching round has run for this concert yet.' }}
+        </p>
+        <template v-else>
+          <p class="my-result__round">Latest round · {{ formatDate(myResult.round.ranAt) }}</p>
+          <template v-if="myResult.role === 'seeker'">
+            <p v-if="myResult.outcome === 'matched' && myResult.group">
+              You matched with {{ myResult.group.host.displayName }}'s group
+              <template v-if="myResult.group.section"> in {{ LABELS.section[myResult.group.section] ?? myResult.group.section }}</template>.
+            </p>
+            <p v-else>You were not matched with a group in this round.</p>
+          </template>
+          <template v-else>
+            <p v-if="myResult.outcome === 'no_members' || !myResult.members?.length">
+              No seekers were assigned to your group in this round.
+            </p>
+            <template v-else>
+              <p>{{ myResult.members.length }} {{ myResult.members.length === 1 ? 'seeker was' : 'seekers were' }} assigned to your group:</p>
+              <ul class="my-result__members">
+                <li v-for="member in myResult.members" :key="member.id">{{ member.displayName }}</li>
+              </ul>
+            </template>
+          </template>
+        </template>
+      </section>
 
       <section class="kaki-join card" aria-labelledby="kaki-join-title">
         <div class="kaki-join__intro">
@@ -568,6 +646,11 @@ const forecastFirstChoice = useCountUp(
 </template>
 
 <style scoped>
+.my-result { display: grid; gap: var(--space-3); margin-bottom: var(--space-6); padding: var(--space-5); }
+.my-result h2 { font-size: var(--step-1); }
+.my-result p { margin: 0; color: var(--text-300); }
+.my-result__round { font-size: var(--step--1); }
+.my-result__members { margin: 0; padding-left: var(--space-5); }
 .kaki-join { display: grid; gap: var(--space-4); margin-bottom: var(--space-6); padding: var(--space-5); }
 .kaki-join__intro h2 { font-size: var(--step-1); }
 .kaki-join__intro p { margin-top: var(--space-2); color: var(--text-300); }

@@ -208,4 +208,5 @@ for (const row of repos.concerts.listWithCounts()) {
     `${String(row.open_seekers).padStart(3)} seekers`,
   );
 }
-console.log('\nRun a match round:  curl -X POST localhost:3000/api/concerts/c_seraphina/match');
+console.log('\nPublic match preview:  curl localhost:3000/api/concerts/c_seraphina/match/preview');
+console.log('To run a round, register a real account, grant it with npm run operator:grant -- <existing-email>, then POST with its session cookie.');
