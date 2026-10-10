@@ -75,8 +75,13 @@ in browser storage. `GET /api/kaki/decisions` restores history; `PUT` or
 `DELETE /api/kaki/decisions/:concertId/:targetUserId` changes or undoes a
 decision. A like is pending until both people like one another for the same
 concert. `GET /api/kaki/matches` reports only those mutual, currently eligible
-pairs. Signing in and joining the concert's matching pool are required to
-view or like candidates; blocking either direction hides the pair.
+pairs. Joining a concert through `POST /api/concerts/:id/participation`
+enrolls you in Kaki Finder; it does **not** create a seeker request or enter
+the group-matching round. Existing open group seekers and hosts are also
+eligible for Kaki until they explicitly withdraw. Withdrawal removes your
+outgoing Kaki decisions for that concert; blocking either direction hides
+the pair. The Profile tab edits matching preferences and vibe axes through
+`GET` / `PATCH /api/me/profile`; public user responses never expose email.
 
 ### Live concert discovery
 
@@ -294,6 +299,9 @@ rail. It is reading the solver's actual output, not an animation of an idea.
 | `GET` | `/api/me/tickets` | seller's listings (session required) |
 | `GET` | `/api/kaki/pool`, `/api/kaki/decisions`, `/api/kaki/matches` | signed-in candidate pool, decision history, mutual likes |
 | `PUT` / `DELETE` | `/api/kaki/decisions/:concertId/:targetUserId` | signed-in like/skip or undo |
+| `GET` / `PATCH` | `/api/me/profile` | view and edit own matching profile |
+| `GET` / `POST` / `DELETE` | `/api/concerts/:id/participation` | check, join/update or leave Kaki for a concert |
+| `GET` | `/api/me/concerts` | concerts explicitly joined for Kaki |
 | `GET` | `/api/concerts/:id/parties` | groups with spare tickets |
 | `GET` | `/api/concerts/:id/requests` | people looking |
 | `GET` | `/api/concerts/:id/match/preview?baselines=true&trace=true` | dry run, writes nothing |

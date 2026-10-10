@@ -33,6 +33,10 @@ const repos = createRepositories(db);
 const existing = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
 
 db.exec(`
+  DELETE FROM kaki_decisions;
+  DELETE FROM concert_participants;
+  DELETE FROM tickets;
+  DELETE FROM sessions;
   DELETE FROM match_trace;
   DELETE FROM match_results;
   DELETE FROM match_rounds;
