@@ -1,4 +1,6 @@
 node_modules/
+# Private notes and documents for local agent use
+.agent-local/
 dist/
 data/
 *.db

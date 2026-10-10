@@ -1,5 +1,6 @@
 <script setup>
-import { formatMoney, formatRelative } from '../../market.js';
+import { formatMoney } from '../../market.js';
+import { formatDate, LABELS } from '../../api.js';
 import MarketIcon from './MarketIcon.vue';
 import TicketPoster from './TicketPoster.vue';
 import UserAvatar from './UserAvatar.vue';
@@ -23,22 +24,21 @@ defineEmits(['toggle-save']);
       <UserAvatar :user="listing.seller" :size="30" />
       <div class="lcard__who">
         <span class="lcard__name">{{ listing.seller.displayName }}</span>
-        <time class="lcard__time" :datetime="listing.createdAt">
-          {{ formatRelative(listing.createdAt) }}
-        </time>
       </div>
     </header>
 
     <TicketPoster :listing="listing" ratio="3 / 2" compact />
 
     <h3 class="lcard__title">
-      <RouterLink :to="{ name: 'listing', params: { id: listing.id } }" class="lcard__link">
-        {{ listing.title }}
+      <RouterLink :to="{ name: 'ticket-detail', params: { id: listing.id } }" class="lcard__link">
+        {{ listing.concert.artist }}
       </RouterLink>
     </h3>
+    <p class="lcard__meta">{{ formatDate(listing.concert.event_date) }} · {{ listing.concert.venue }}</p>
+    <p class="lcard__meta">{{ LABELS.section[listing.section] ?? listing.section }} · {{ listing.quantity }} {{ listing.quantity === 1 ? 'ticket' : 'tickets' }}</p>
 
     <footer class="lcard__foot">
-      <span class="lcard__price tabular">{{ formatMoney(listing.priceCents, listing.currency) }}</span>
+      <span class="lcard__price tabular">{{ formatMoney(listing.priceCents) }}</span>
       <button
         class="lcard__save"
         :aria-pressed="saved"
@@ -85,20 +85,9 @@ defineEmits(['toggle-save']);
   min-width: 0;
 }
 
-/* Name and time share a line when the card is wide enough, and stack when it is not. */
 .lcard__who {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-@container (min-width: 230px) {
-  .lcard__who {
-    flex-direction: row;
-    align-items: baseline;
-    gap: var(--space-2);
-  }
 }
 
 .lcard__name {
@@ -110,13 +99,6 @@ defineEmits(['toggle-save']);
   color: var(--text-100);
   font-size: var(--step--1);
   font-weight: 500;
-}
-
-.lcard__time {
-  flex: none;
-  color: var(--text-400);
-  font-size: var(--step--2);
-  line-height: 1.3;
 }
 
 .lcard__title {
@@ -131,6 +113,12 @@ defineEmits(['toggle-save']);
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.lcard__meta {
+  color: var(--text-300);
+  font-size: var(--step--2);
+  line-height: 1.4;
 }
 
 .lcard__link {

@@ -31,10 +31,8 @@ const hue = computed(() => hueFor(props.listing.concert.id));
     />
     <div v-else class="poster__art" :style="{ '--hue': hue }" aria-hidden="true">
       <p class="poster__artist">{{ listing.concert.artist }}</p>
-      <p v-if="listing.concert.tourName" class="poster__tour">{{ listing.concert.tourName }}</p>
       <p class="poster__meta">
-        {{ formatShortDate(listing.showDate ?? listing.concert.eventDate) }}
-        · {{ listing.concert.venue }}
+        {{ formatShortDate(listing.concert.event_date) }} · {{ listing.concert.venue }}
       </p>
     </div>
   </div>
@@ -82,13 +80,6 @@ const hue = computed(() => hueFor(props.listing.concert.id));
   text-wrap: balance;
 }
 
-.poster__tour {
-  margin-top: var(--space-2);
-  font-size: var(--step--1);
-  font-weight: 500;
-  opacity: 0.9;
-}
-
 .poster__meta {
   margin-top: var(--space-1);
   font-family: var(--font-mono);
@@ -103,11 +94,6 @@ const hue = computed(() => hueFor(props.listing.concert.id));
 
 .poster--compact .poster__artist {
   font-size: min(var(--step-1), 11cqi);
-}
-
-.poster--compact .poster__tour {
-  font-size: var(--step--2);
-  margin-top: var(--space-1);
 }
 
 .poster--compact .poster__meta {
