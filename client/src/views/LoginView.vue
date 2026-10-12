@@ -1,10 +1,19 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api.js';
 import { setCurrentUser } from '../auth.js';
 
+const route = useRoute();
 const router = useRouter();
+
+// Only same-site paths, so a crafted link cannot bounce people off-site after sign-in.
+const redirect = computed(() => {
+  const target = route.query.redirect;
+  return typeof target === 'string' && target.startsWith('/') && !target.startsWith('//')
+    ? target
+    : '/marketplace';
+});
 const mode = ref('login');
 const email = ref('');
 const password = ref('');
@@ -63,7 +72,7 @@ async function submit() {
 
     setCurrentUser(response.user);
     success.value = isRegistering.value ? 'Your account is ready.' : `Welcome back, ${response.user.displayName}.`;
-    setTimeout(() => router.push('/marketplace'), 500);
+    setTimeout(() => router.push(redirect.value), 500);
   } catch (err) {
     error.value = messageFor(err.body?.error ?? err.message);
   } finally {

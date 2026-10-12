@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
-import { api, LABELS } from '../api.js';
-import { useSavedListings } from '../market.js';
+import { api } from '../api.js';
+import { sectionLabel, useSavedListings } from '../market.js';
 import ListingCard from '../components/market/ListingCard.vue';
 
 const listings = ref([]);
@@ -10,6 +10,12 @@ const error = ref('');
 const search = ref('');
 const selectedDate = ref('');
 const selectedSection = ref('all');
+
+/** Sections are free text (Cat 3, Pen A, Stalls…), so offer the ones actually listed. */
+const sections = computed(() =>
+  [...new Set(listings.value.map((l) => l.section))]
+    .sort((a, b) => sectionLabel(a).localeCompare(sectionLabel(b), undefined, { numeric: true })),
+);
 const minPrice = ref(0);
 const maxPrice = ref(100000);
 const savedOnly = ref(false);
@@ -83,7 +89,7 @@ function resetFilters() {
             Seat section
             <select v-model="selectedSection">
               <option value="all">Any section</option>
-              <option v-for="(label, section) in LABELS.section" :key="section" :value="section">{{ label }}</option>
+              <option v-for="section in sections" :key="section" :value="section">{{ sectionLabel(section) }}</option>
             </select>
           </label>
           <label>
