@@ -20,7 +20,7 @@ const buyable = computed(() => listing.value?.status === 'open' && !ownListing.v
   <div class="container flow">
     <MarketPageHead
       title="Order details"
-      :fallback="{ name: 'listing', params: { id } }"
+      :fallback="{ name: 'ticket-detail', params: { id } }"
     />
     <CheckoutSteps :current="1" class="flow__steps" />
 
@@ -40,7 +40,7 @@ const buyable = computed(() => listing.value?.status === 'open' && !ownListing.v
       />
 
       <MarketNotice v-if="listing.status !== 'open'" title="This ticket has been sold" class="flow__notice">
-        <RouterLink :to="{ name: 'market' }">Find another listing</RouterLink>
+        <RouterLink :to="{ name: 'marketplace' }">Find another listing</RouterLink>
       </MarketNotice>
       <MarketNotice v-else-if="ownListing" title="This is your listing" class="flow__notice">
         You can’t buy a ticket you are selling.

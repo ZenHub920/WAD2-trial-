@@ -52,6 +52,9 @@ defineProps({
     <template v-else-if="name === 'chat'">
       <path d="M4 5.5h16v10.5H9.5L5 19.5V16H4z" />
     </template>
+    <template v-else-if="name === 'send'">
+      <path d="M21 3 10 14M21 3l-7 18-4-7-7-4z" />
+    </template>
     <template v-else-if="name === 'lock'">
       <rect x="5" y="10.5" width="14" height="10" rx="2" />
       <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />

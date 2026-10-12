@@ -78,6 +78,35 @@ export const api = {
       body: JSON.stringify({ payment_method: paymentMethod }),
     }),
   order: (id) => request(`/orders/${id}`),
+  createListing: (data) => request('/listings', { method: 'POST', body: JSON.stringify(data) }),
+  submitProof: (listingId, proofData) =>
+    request(`/me/listings/${listingId}/proof`, {
+      method: 'POST',
+      body: JSON.stringify({ proof_data: proofData }),
+    }),
+
+  verificationQueue: () => request('/admin/verifications'),
+  issuedTicketSummary: () => request('/admin/issued-tickets'),
+  /** CSV text, one `ticket_number[,category]` per line. */
+  importIssuedTickets: (concertId, csv) =>
+    request(`/admin/concerts/${concertId}/issued-tickets`, {
+      method: 'POST',
+      body: JSON.stringify({ csv }),
+    }),
+  reviewVerification: (listingId, decision, note = '') =>
+    request(`/admin/verifications/${listingId}`, {
+      method: 'POST',
+      body: JSON.stringify({ decision, note }),
+    }),
+
+  /** Open (or reopen) the signed-in buyer's chat with a listing's seller. */
+  startChat: (listingId) => request(`/listings/${listingId}/conversations`, { method: 'POST' }),
+  conversations: () => request('/conversations'),
+  /** With `after`, only messages newer than that timestamp — what polling uses. */
+  conversation: (id, after) =>
+    request(`/conversations/${id}${after ? `?after=${encodeURIComponent(after)}` : ''}`),
+  sendMessage: (id, body) =>
+    request(`/conversations/${id}/messages`, { method: 'POST', body: JSON.stringify({ body }) }),
 
   user: (id) => request(`/users/${id}`),
 };

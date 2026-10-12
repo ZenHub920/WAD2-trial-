@@ -89,10 +89,10 @@ async function pay() {
         class="checkout__error"
       >
         <p>{{ payError.message }}</p>
-        <RouterLink v-if="sold" :to="{ name: 'market' }">Find another listing</RouterLink>
+        <RouterLink v-if="sold" :to="{ name: 'marketplace' }">Find another listing</RouterLink>
       </MarketNotice>
       <MarketNotice v-else-if="sold" title="This ticket has been sold" class="checkout__error">
-        <RouterLink :to="{ name: 'market' }">Find another listing</RouterLink>
+        <RouterLink :to="{ name: 'marketplace' }">Find another listing</RouterLink>
       </MarketNotice>
 
       <button class="pay" type="submit" :disabled="paying || sold" :aria-busy="paying">

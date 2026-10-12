@@ -1,5 +1,6 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { publicUser } from './publicUser.js';
+import { isAdmin } from './adminController.js';
 
 export function createUserController(repos, sessions) {
   return {
@@ -20,7 +21,7 @@ export function createUserController(repos, sessions) {
           password_hash: hashPassword(req.body.password),
         });
         sessions.start(req, res, user.id);
-        res.status(201).json({ user: publicUser(user) });
+        res.status(201).json({ user: { ...publicUser(user), isAdmin: isAdmin(user) } });
       } catch (err) {
         res.status(409).json({ error: 'could_not_create_user', detail: err.message });
       }
@@ -36,11 +37,12 @@ export function createUserController(repos, sessions) {
         return res.status(401).json({ error: 'invalid_credentials' });
       }
       sessions.start(req, res, user.id);
-      res.json({ user: publicUser(repos.users.findById(user.id)) });
+      const signedIn = repos.users.findById(user.id);
+      res.json({ user: { ...publicUser(signedIn), isAdmin: isAdmin(signedIn) } });
     },
 
     current(req, res) {
-      res.json({ user: publicUser(req.user) });
+      res.json({ user: { ...publicUser(req.user), isAdmin: isAdmin(req.user) } });
     },
 
     logout(req, res) {
@@ -52,17 +54,6 @@ export function createUserController(repos, sessions) {
       const user = repos.users.findById(req.params.id);
       if (!user) return res.status(404).json({ error: 'user_not_found' });
       res.json({ user: publicUser(user) });
-    },
-
-    listings(req, res) {
-      res.json({ listings: repos.parties.forHost(req.user.id) });
-    },
-
-    deleteListing(req, res) {
-      if (!repos.parties.deleteOwned(req.params.id, req.user.id)) {
-        return res.status(404).json({ error: 'listing_not_found' });
-      }
-      res.status(204).end();
     },
   };
 }

@@ -215,11 +215,43 @@ CREATE TABLE IF NOT EXISTS ticket_listings (
   image_url       TEXT,
   verified        INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0,1)),
   status          TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open','sold','withdrawn')),
+  -- Verification: the seller uploads proof of purchase, an admin approves or rejects it.
+  -- `verified` is only ever set by an approval. NULL status means no proof submitted.
+  verification_status TEXT CHECK (verification_status IN ('pending','approved','rejected')),
+  proof_data      TEXT,                       -- data URL; never sent to anyone but admins
+  review_note     TEXT,                       -- why a proof was rejected, shown to the seller
+  verification_method TEXT,                   -- 'ticket_number' (matched the issued list) or 'proof' (admin review)
+  reviewed_by     TEXT REFERENCES users(id),
+  reviewed_at     TEXT,
   created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_listings_status ON ticket_listings(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_listings_concert ON ticket_listings(concert_id, status);
+-- idx_listings_verification is created in connection.js migrate(), after the column exists.
+
+-- The official ticket numbers issued for a concert, imported by an admin. A listing
+-- whose numbers are all on this list is verified without human review.
+CREATE TABLE IF NOT EXISTS issued_tickets (
+  concert_id     TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
+  ticket_number  TEXT NOT NULL,              -- normalised: trimmed, upper-case, spaces/dashes as one dash
+  category       TEXT,                       -- when given, the listing's category must match
+  imported_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (concert_id, ticket_number)
+);
+
+-- The ticket numbers a seller put on a listing. Never shown publicly (anyone could
+-- copy them); the seller sees them, and the buyer receives them after paying.
+-- A number may be on only one OPEN listing at a time — enforced in createListing's
+-- transaction — so a sold ticket can be resold by its new owner.
+CREATE TABLE IF NOT EXISTS listing_tickets (
+  listing_id     TEXT NOT NULL REFERENCES ticket_listings(id) ON DELETE CASCADE,
+  concert_id     TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
+  ticket_number  TEXT NOT NULL,
+  PRIMARY KEY (listing_id, ticket_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_listing_tickets_number ON listing_tickets(concert_id, ticket_number);
 
 -- Amounts are copied onto the order at purchase time, so a later price edit on the
 -- listing can never change what the buyer was charged.
@@ -237,6 +269,30 @@ CREATE TABLE IF NOT EXISTS ticket_orders (
 );
 
 CREATE INDEX IF NOT EXISTS idx_orders_buyer ON ticket_orders(buyer_user_id, created_at DESC);
+
+-- A conversation is one buyer asking one seller about one listing, so a second
+-- tap on Chat reopens the same thread instead of starting another.
+CREATE TABLE IF NOT EXISTS conversations (
+  id              TEXT PRIMARY KEY,
+  listing_id      TEXT NOT NULL REFERENCES ticket_listings(id) ON DELETE CASCADE,
+  buyer_user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  seller_user_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (listing_id, buyer_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversations_buyer ON conversations(buyer_user_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_seller ON conversations(seller_user_id);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id               TEXT PRIMARY KEY,
+  conversation_id  TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  sender_user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body             TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 2000),
+  created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at);
 
 -- ---------------------------------------------------------------------------
 -- Post-event feedback, which feeds reliability back into future preference lists

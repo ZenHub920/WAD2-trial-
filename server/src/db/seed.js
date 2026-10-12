@@ -33,7 +33,11 @@ const repos = createRepositories(db);
 const existing = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
 
 db.exec(`
+  DELETE FROM messages;
+  DELETE FROM conversations;
   DELETE FROM ticket_orders;
+  DELETE FROM listing_tickets;
+  DELETE FROM issued_tickets;
   DELETE FROM ticket_listings;
   DELETE FROM match_trace;
   DELETE FROM match_results;
@@ -333,14 +337,37 @@ const insert = db.transaction(() => {
 
   // Sellers are drawn from the synthetic population with a stride, so the market
   // does not show the same handful of people the matching pages lead with.
+  // Each concert's issued ticket list: 20 numbers per category the demo uses,
+  // e.g. SER-CAT3-0007. Verified demo listings hold real numbers from it; the rest
+  // stay free so a seller can list one and watch it verify automatically.
+  const issuedPool = new Map(); // `${concert}|${category}` -> unused numbers
+  for (const { concert_id, category } of LISTINGS) {
+    const key = `${concert_id}|${category}`;
+    if (issuedPool.has(key)) continue;
+    const prefix = concert_id.slice(2, 5).toUpperCase();
+    const code = category.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const numbers = Array.from({ length: 20 }, (_, i) => `${prefix}-${code}-${String(i + 1).padStart(4, '0')}`);
+    repos.issuedTickets.import(concert_id, numbers.map((number) => ({ number, category })));
+    issuedPool.set(key, numbers);
+  }
+
   LISTINGS.forEach((listing, index) => {
+    const pool = issuedPool.get(`${listing.concert_id}|${listing.category}`);
     repos.listings.create({
       ...listing,
+      ticket_numbers: listing.verified ? pool.splice(0, listing.quantity ?? 1) : [],
       seller_user_id: instance.users[(index * 11) % instance.users.length].id,
       created_at: minutesAgo(listing.minutes_ago),
     });
   });
+
+  spareTicketNumbers = [...issuedPool].slice(0, 3).map(([key, numbers]) => {
+    const [concertId, category] = key.split('|');
+    return { concertId, category, number: numbers.at(-1) };
+  });
 });
+
+let spareTicketNumbers = [];
 
 insert();
 
@@ -362,5 +389,9 @@ for (const row of repos.concerts.listWithCounts()) {
     `${String(row.open_slots).padStart(3)} slots / ` +
     `${String(row.open_seekers).padStart(3)} seekers`,
   );
+}
+console.log('\nTicket numbers you can list to see automatic verification:');
+for (const { concertId, category, number } of spareTicketNumbers) {
+  console.log(`  ${concertId.padEnd(14)} ${category.padEnd(8)} ${number}`);
 }
 console.log('\nRun a match round:  curl -X POST localhost:3000/api/concerts/c_seraphina/match');

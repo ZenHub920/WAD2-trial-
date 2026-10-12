@@ -66,6 +66,12 @@ const ADDED_COLUMNS = [
   ['match_rounds', 'stability_promise', 'TEXT'],
   ['match_rounds', 'relaxations_json', 'TEXT'],
   ['match_rounds', 'ledger_json', 'TEXT'],
+  ['ticket_listings', 'verification_status', 'TEXT'],
+  ['ticket_listings', 'proof_data', 'TEXT'],
+  ['ticket_listings', 'review_note', 'TEXT'],
+  ['ticket_listings', 'reviewed_by', 'TEXT'],
+  ['ticket_listings', 'reviewed_at', 'TEXT'],
+  ['ticket_listings', 'verification_method', 'TEXT'],
 ];
 
 function migrate(target) {
@@ -75,6 +81,7 @@ function migrate(target) {
     if (existing.some((c) => c.name === column)) continue;
     target.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
   }
+  target.exec('CREATE INDEX IF NOT EXISTS idx_listings_verification ON ticket_listings(verification_status)');
   target.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_concerts_source_event
     ON concerts(source, source_event_id)`);
 }

@@ -17,9 +17,13 @@ import VerifiedBadge from './VerifiedBadge.vue';
 const props = defineProps({
   listing: { type: Object, required: true },
   saved: { type: Boolean, default: false },
+  /** The viewer is the seller: offer managing the listing instead of Chat / Buy. */
+  own: { type: Boolean, default: false },
+  /** Disables the action buttons while the host is working (e.g. opening a chat). */
+  busy: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['buy', 'chat', 'toggle-save', 'add-to-cart', 'copy-link']);
+const emit = defineEmits(['buy', 'chat', 'toggle-save', 'add-to-cart', 'copy-link', 'remove', 'messages']);
 
 const price = computed(() => priceParts(props.listing.priceCents, props.listing.currency));
 const available = computed(() => props.listing.status === 'open');
@@ -143,10 +147,20 @@ function copyLink() {
 
     <div class="dcard__actions">
       <slot name="actions" :listing="listing" :available="available">
-        <button class="dcard__btn" @click="emit('chat', listing)">Chat</button>
-        <button class="dcard__btn" :disabled="!available" @click="emit('buy', listing)">
-          {{ available ? 'Buy' : 'Sold' }}
-        </button>
+        <template v-if="own">
+          <button class="dcard__btn dcard__btn--ghost" :disabled="busy" @click="emit('messages', listing)">
+            Messages
+          </button>
+          <button class="dcard__btn" :disabled="busy || !available" @click="emit('remove', listing)">
+            {{ available ? 'Remove listing' : 'Sold' }}
+          </button>
+        </template>
+        <template v-else>
+          <button class="dcard__btn" :disabled="busy" @click="emit('chat', listing)">Chat</button>
+          <button class="dcard__btn" :disabled="busy || !available" @click="emit('buy', listing)">
+            {{ available ? 'Buy' : 'Sold' }}
+          </button>
+        </template>
       </slot>
     </div>
   </article>
@@ -340,6 +354,16 @@ function copyLink() {
 
 .dcard__btn:hover:not(:disabled) {
   background: var(--accent-400);
+}
+
+.dcard__btn--ghost {
+  background: transparent;
+  border: 1px solid var(--accent-500);
+  color: var(--text-100);
+}
+
+.dcard__btn--ghost:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--accent-500) 14%, transparent);
 }
 
 .dcard__btn:active:not(:disabled) {
