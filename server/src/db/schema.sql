@@ -123,6 +123,75 @@ CREATE TABLE IF NOT EXISTS tickets (
 CREATE INDEX IF NOT EXISTS idx_tickets_status_created ON tickets(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tickets_seller ON tickets(seller_user_id, created_at DESC);
 
+-- Ticket verification lives on tickets as additive columns (see connection.js
+-- ADDED_COLUMNS): verified, verification_status ('pending'|'approved'|'rejected'),
+-- verification_method ('ticket_number'|'proof'), proof_data, review_note,
+-- reviewed_by, reviewed_at. `verified` is only ever set by the server.
+
+-- The official ticket numbers issued for a concert, imported by an operator. A ticket
+-- whose numbers are all on this list is verified without human review.
+CREATE TABLE IF NOT EXISTS issued_tickets (
+  concert_id     TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
+  ticket_number  TEXT NOT NULL,              -- normalised: trimmed, upper-case, spaces/dashes as one dash
+  category       TEXT,                       -- when given, the listing's section must match
+  imported_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (concert_id, ticket_number)
+);
+
+-- The ticket numbers a seller put on a listing. Never shown publicly (anyone could
+-- copy them); the seller sees them, and the buyer receives them after paying.
+-- A number may be on only one ACTIVE listing at a time (checked in the create
+-- transaction), so a sold ticket can be resold by its new owner.
+CREATE TABLE IF NOT EXISTS ticket_numbers (
+  ticket_id      TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+  concert_id     TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
+  ticket_number  TEXT NOT NULL,
+  PRIMARY KEY (ticket_id, ticket_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ticket_numbers_number ON ticket_numbers(concert_id, ticket_number);
+
+-- Amounts are copied onto the order at purchase time, so a later price edit on the
+-- listing can never change what the buyer was charged. Money is in integer cents.
+CREATE TABLE IF NOT EXISTS orders (
+  id                 TEXT    PRIMARY KEY,
+  ticket_id          TEXT    NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+  buyer_user_id      TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  subtotal_cents     INTEGER NOT NULL,
+  delivery_fee_cents INTEGER NOT NULL DEFAULT 0,
+  total_cents        INTEGER NOT NULL,
+  currency           TEXT    NOT NULL DEFAULT 'SGD',
+  payment_method     TEXT    NOT NULL CHECK (payment_method IN ('visa','mastercard','paypal','apple_pay')),
+  status             TEXT    NOT NULL DEFAULT 'paid' CHECK (status IN ('paid','refunded')),
+  created_at         TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_buyer ON orders(buyer_user_id, created_at DESC);
+
+-- A conversation is one buyer asking one seller about one ticket listing, so a
+-- second tap on Chat reopens the same thread instead of starting another.
+CREATE TABLE IF NOT EXISTS ticket_conversations (
+  id              TEXT PRIMARY KEY,
+  ticket_id       TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+  buyer_user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  seller_user_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (ticket_id, buyer_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ticket_conversations_buyer ON ticket_conversations(buyer_user_id);
+CREATE INDEX IF NOT EXISTS idx_ticket_conversations_seller ON ticket_conversations(seller_user_id);
+
+CREATE TABLE IF NOT EXISTS ticket_messages (
+  id               TEXT PRIMARY KEY,
+  conversation_id  TEXT NOT NULL REFERENCES ticket_conversations(id) ON DELETE CASCADE,
+  sender_user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body             TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 2000),
+  created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_ticket_messages_conversation ON ticket_messages(conversation_id, created_at);
+
 -- Kaki participation does not enroll a user in group matching.
 -- Keep withdrawn rows so a legacy open seeker/host cannot reappear in Kaki.
 CREATE TABLE IF NOT EXISTS concert_participants (

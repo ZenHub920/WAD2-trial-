@@ -49,6 +49,34 @@ export const api = {
   updateTicket: (id, data) => request(`/tickets/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) }),
   myTickets: () => request('/me/tickets'),
   deleteTicket: (id) => request(`/tickets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  submitProof: (id, proofData) =>
+    request(`/me/tickets/${encodeURIComponent(id)}/proof`, { method: 'POST', body: JSON.stringify({ proofData }) }),
+
+  /** The buyer is the session's user and the price comes from the listing; only the method is sent. */
+  buyTicket: (id, { paymentMethod }) =>
+    request(`/tickets/${encodeURIComponent(id)}/orders`, { method: 'POST', body: JSON.stringify({ paymentMethod }) }),
+  order: (id) => request(`/orders/${encodeURIComponent(id)}`),
+
+  /** Open (or reopen) the signed-in buyer's chat with a listing's seller. */
+  startChat: (ticketId) => request(`/tickets/${encodeURIComponent(ticketId)}/conversations`, { method: 'POST' }),
+  conversations: () => request('/conversations'),
+  /** With `after`, only messages newer than that timestamp — what polling uses. */
+  conversation: (id, after) =>
+    request(`/conversations/${encodeURIComponent(id)}${after ? `?after=${encodeURIComponent(after)}` : ''}`),
+  sendMessage: (id, body) =>
+    request(`/conversations/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify({ body }) }),
+
+  verificationQueue: () => request('/operator/verifications'),
+  reviewVerification: (id, decision, note = '') =>
+    request(`/operator/verifications/${encodeURIComponent(id)}`, {
+      method: 'POST', body: JSON.stringify({ decision, note }),
+    }),
+  issuedTicketSummary: () => request('/operator/issued-tickets'),
+  /** CSV text, one `ticket_number[,category]` per line. */
+  importIssuedTickets: (concertId, csv) =>
+    request(`/operator/concerts/${encodeURIComponent(concertId)}/issued-tickets`, {
+      method: 'POST', body: JSON.stringify({ csv }),
+    }),
 
   kakiPool: () => request('/kaki/pool'),
   kakiDecisions: () => request('/kaki/decisions'),

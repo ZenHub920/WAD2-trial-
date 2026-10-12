@@ -15,10 +15,15 @@ import MarketplaceView from './views/MarketplaceView.vue';
 import ListingView from './views/ListingView.vue';
 import MyListingsView from './views/MyListingsView.vue';
 import TicketDetailView from './views/TicketDetailView.vue';
+import OrderReviewView from './views/OrderReviewView.vue';
+import CheckoutView from './views/CheckoutView.vue';
+import OrderConfirmationView from './views/OrderConfirmationView.vue';
+import ChatView from './views/ChatView.vue';
+import ChatThreadView from './views/ChatThreadView.vue';
+import AdminVerificationsView from './views/AdminVerificationsView.vue';
 import KakiFinderView from './views/KakiFinderView.vue';
 import ProfileHistoryView from './views/ProfileHistoryView.vue';
 import ProfileView from './views/ProfileView.vue';
-import ComingSoonView from './views/ComingSoonView.vue';
 import NotFoundView from './views/NotFoundView.vue';
 
 const router = createRouter({
@@ -41,6 +46,16 @@ const router = createRouter({
     { path: '/list-ticket', name: 'list-ticket', component: ListingView, meta: { title: 'List a Ticket' } },
     { path: '/my-listings', name: 'my-listings', component: MyListingsView, meta: { title: 'My Listings' } },
     { path: '/tickets/:id', name: 'ticket-detail', component: TicketDetailView, props: true, meta: { title: 'Ticket Details' } },
+    // Buying: listing → order review → checkout → receipt.
+    { path: '/tickets/:id/order', name: 'order-review', component: OrderReviewView, props: true, meta: { title: 'Order details' } },
+    { path: '/tickets/:id/checkout', name: 'checkout', component: CheckoutView, props: true, meta: { title: 'Checkout' } },
+    { path: '/orders/:id', name: 'order', component: OrderConfirmationView, props: true, meta: { title: 'Order confirmed' } },
+    {
+      path: '/operator/verifications',
+      name: 'operator-verifications',
+      component: AdminVerificationsView,
+      meta: { title: 'Ticket verification' },
+    },
 
     { path: '/kaki', name: 'kaki', component: KakiFinderView, meta: { title: 'Kaki Finder' } },
     {
@@ -50,17 +65,8 @@ const router = createRouter({
       meta: { title: 'Profile History' },
     },
 
-    // Messaging is not implemented yet.
-    {
-      path: '/chat',
-      name: 'chat',
-      component: ComingSoonView,
-      props: {
-        title: 'Chat',
-        body: 'Messaging has not been built yet. Kaki likes and mutual matches are saved to your account, but chat is not available.',
-      },
-      meta: { title: 'Chat' },
-    },
+    { path: '/chat', name: 'chat', component: ChatView, meta: { title: 'Chat' } },
+    { path: '/chat/:id', name: 'chat-thread', component: ChatThreadView, props: true, meta: { title: 'Chat' } },
     { path: '/profile', name: 'profile', component: ProfileView, meta: { title: 'Profile' } },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView },
   ],

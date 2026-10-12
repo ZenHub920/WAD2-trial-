@@ -61,6 +61,7 @@ async function logOut() {
           <RouterLink to="/kaki" @click="menuOpen = false">KakiFinder</RouterLink>
           <RouterLink to="/chat" @click="menuOpen = false">Chat</RouterLink>
           <RouterLink to="/profile" @click="menuOpen = false">Profile</RouterLink>
+          <RouterLink v-if="currentUser?.isOperator" to="/operator/verifications" @click="menuOpen = false">Verify tickets</RouterLink>
           <RouterLink to="/my-listings" class="my-listings-btn" @click="menuOpen = false">My listings</RouterLink>
         </template>
         <template v-else>

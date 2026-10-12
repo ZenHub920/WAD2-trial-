@@ -414,33 +414,163 @@ function mapTicket(row) {
     description: row.description,
     imageUrl: row.image_path ? `/api/ticket-images/${row.image_path}` : null,
     status: row.status,
+    createdAt: row.created_at,
+    verified: Boolean(row.verified),
     image_path: row.image_path,
+    // Private to the seller and operators; the ticket controller strips it from public views.
+    verification: {
+      status: row.verification_status ?? 'none',
+      method: row.verification_method ?? null,
+      note: row.review_note ?? null,
+      reviewedAt: row.reviewed_at ?? null,
+      hasProof: Boolean(row.has_proof),
+    },
   };
 }
 
+/**
+ * Ticket numbers are compared trimmed and upper-cased, with any run of spaces or
+ * dashes read as one dash — so "ta 0001", "TA-0001" and "TA - 0001" are the same ticket.
+ */
+export function normalizeTicketNumber(value) {
+  return String(value).trim().toUpperCase().replace(/[\s-]+/g, '-');
+}
+
+/** An error the API layer can map to a status code without string-matching messages. */
+function marketError(code, detail) {
+  return Object.assign(new Error(code), { code, detail });
+}
+
 export function createTicketRepo(db) {
+  // Explicit columns so a proof-of-purchase upload is never dragged through list queries.
   const joined = `
-    SELECT t.*, c.artist, c.venue, c.city, c.event_date,
+    SELECT t.id, t.seller_user_id, t.concert_id, t.price_cents, t.quantity, t.section,
+           t.description, t.image_path, t.status, t.created_at, t.verified,
+           t.verification_status, t.verification_method, t.review_note, t.reviewed_at,
+           (t.proof_data IS NOT NULL) AS has_proof,
+           c.artist, c.venue, c.city, c.event_date,
            ${USER_COLUMNS('u', 'seller_')}
     FROM tickets t
     JOIN users u ON u.id = t.seller_user_id
     JOIN concerts c ON c.id = t.concert_id
   `;
   const get = db.prepare(`${joined} WHERE t.id = ? AND t.status <> 'deleted'`);
+
+  const numberOnActiveTicket = db.prepare(`
+    SELECT 1 FROM ticket_numbers n JOIN tickets t ON t.id = n.ticket_id
+    WHERE n.concert_id = ? AND n.ticket_number = ? AND t.status = 'active'
+  `);
+  const issuedCount = db.prepare('SELECT COUNT(*) AS n FROM issued_tickets WHERE concert_id = ?');
+  const issued = db.prepare('SELECT category FROM issued_tickets WHERE concert_id = ? AND ticket_number = ?');
+
+  /**
+   * Check a listing's ticket numbers; returns whether they matched the issued list,
+   * or throws a market error naming the offending number.
+   *  - every number must be distinct and not on another active listing (no double-selling);
+   *  - if the concert has an issued list, every number must be on it, in the same
+   *    section when the list records one — and then the ticket is verified outright.
+   */
+  function checkNumbers(concertId, section, numbers) {
+    const seen = new Set();
+    for (const number of numbers) {
+      if (seen.has(number)) throw marketError('duplicate_ticket_number', number);
+      seen.add(number);
+      if (numberOnActiveTicket.get(concertId, number)) throw marketError('ticket_number_already_listed', number);
+    }
+    if (!numbers.length || issuedCount.get(concertId).n === 0) return false;
+    for (const number of numbers) {
+      const row = issued.get(concertId, number);
+      if (!row) throw marketError('ticket_number_not_issued', number);
+      if (row.category && row.category.toLowerCase() !== section.trim().toLowerCase()) {
+        throw marketError('ticket_category_mismatch', number);
+      }
+    }
+    return true;
+  }
+
   return {
-    create({ seller_user_id, concert, priceCents, quantity, section, description, image_path }) {
+    /**
+     * List a ticket against an existing concert (`concertId`) or a new one (`concert`).
+     * Only an existing concert can have an issued list, so only it can auto-verify.
+     */
+    create({
+      seller_user_id, concert, concertId: existingConcertId, priceCents, quantity, section,
+      description, image_path, ticket_numbers = [], proof_data = null, verified: seededVerified = false,
+      created_at = null,
+    }) {
       const id = `t_${randomUUID()}`;
+      const numbers = ticket_numbers.map(normalizeTicketNumber);
       db.transaction(() => {
-        const concertId = `c_${randomUUID()}`;
-        db.prepare(`INSERT INTO concerts (id, artist, venue, city, event_date)
-                    VALUES (?, ?, ?, ?, ?)`)
-          .run(concertId, concert.artist, concert.venue, concert.city ?? 'Singapore', concert.event_date);
+        let concertId = existingConcertId;
+        if (!concertId) {
+          concertId = `c_${randomUUID()}`;
+          db.prepare(`INSERT INTO concerts (id, artist, venue, city, event_date)
+                      VALUES (?, ?, ?, ?, ?)`)
+            .run(concertId, concert.artist, concert.venue, concert.city ?? 'Singapore', concert.event_date);
+        }
+        const matched = checkNumbers(concertId, section, numbers);
+        const verified = matched || seededVerified;
         db.prepare(`INSERT INTO tickets
-                    (id, seller_user_id, concert_id, price_cents, quantity, section, description, image_path)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-          .run(id, seller_user_id, concertId, priceCents, quantity, section, description, image_path);
+                    (id, seller_user_id, concert_id, price_cents, quantity, section, description, image_path,
+                     verified, verification_status, verification_method, proof_data, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))`)
+          .run(id, seller_user_id, concertId, priceCents, quantity, section, description, image_path,
+            verified ? 1 : 0,
+            verified ? 'approved' : proof_data ? 'pending' : null,
+            matched ? 'ticket_number' : verified ? 'proof' : null,
+            proof_data, created_at);
+        const insertNumber = db.prepare(
+          'INSERT INTO ticket_numbers (ticket_id, concert_id, ticket_number) VALUES (?, ?, ?)',
+        );
+        for (const number of numbers) insertNumber.run(id, concertId, number);
       })();
       return this.findById(id);
+    },
+
+    ticketNumbers(ticketId) {
+      return db.prepare('SELECT ticket_number FROM ticket_numbers WHERE ticket_id = ? ORDER BY rowid')
+        .all(ticketId).map((r) => r.ticket_number);
+    },
+
+    /**
+     * Seller submits (or replaces) proof of purchase. Re-submitting after a rejection
+     * puts it back in the queue; an approved ticket cannot be re-opened this way.
+     */
+    submitProof(id, sellerId, proofData) {
+      return db.prepare(`
+        UPDATE tickets
+        SET proof_data = ?, verification_status = 'pending', review_note = NULL,
+            reviewed_by = NULL, reviewed_at = NULL
+        WHERE id = ? AND seller_user_id = ? AND status = 'active'
+          AND COALESCE(verification_status, '') != 'approved'
+      `).run(proofData, id, sellerId).changes === 1;
+    },
+
+    /** Pending proofs, oldest first, so review happens in submission order. */
+    pendingVerification() {
+      return db.prepare(`${joined} WHERE t.verification_status = 'pending' AND t.status = 'active'
+        ORDER BY t.created_at ASC`).all().map(mapTicket);
+    },
+
+    proofFor(id) {
+      return db.prepare('SELECT proof_data FROM tickets WHERE id = ?').get(id)?.proof_data ?? null;
+    },
+
+    /** Operator decision. Only a pending ticket can be decided, so two operators cannot both act. */
+    review(id, { approve, note, reviewerId }) {
+      return db.prepare(`
+        UPDATE tickets
+        SET verification_status = @status, verified = @verified, review_note = @note,
+            verification_method = CASE WHEN @verified = 1 THEN 'proof' ELSE NULL END,
+            reviewed_by = @reviewerId, reviewed_at = datetime('now')
+        WHERE id = @id AND verification_status = 'pending'
+      `).run({
+        id,
+        status: approve ? 'approved' : 'rejected',
+        verified: approve ? 1 : 0,
+        note: approve ? null : note,
+        reviewerId,
+      }).changes === 1;
     },
     findById(id) {
       return mapTicket(get.get(id));
@@ -914,6 +1044,129 @@ export function createKakiRepo(db) {
   };
 }
 
+export function createOrderRepo(db) {
+  const findById = (id) => db.prepare('SELECT * FROM orders WHERE id = ?').get(id) ?? null;
+
+  /**
+   * Buy a ticket listing. The status flip and the order insert share one transaction,
+   * and the UPDATE only succeeds while the listing is still active — so two buyers
+   * racing for the same ticket cannot both win. The price comes from the database,
+   * never the request.
+   */
+  const purchase = db.transaction(({ ticket_id, buyer_user_id, payment_method }) => {
+    const ticket = db.prepare("SELECT * FROM tickets WHERE id = ? AND status <> 'deleted'").get(ticket_id);
+    if (!ticket) throw marketError('listing_not_found');
+    if (ticket.seller_user_id === buyer_user_id) throw marketError('cannot_buy_own_listing');
+
+    const claimed = db.prepare("UPDATE tickets SET status = 'sold' WHERE id = ? AND status = 'active'")
+      .run(ticket_id);
+    if (claimed.changes !== 1) throw marketError('listing_unavailable');
+
+    const deliveryFee = 0;
+    const id = `o_${randomUUID().slice(0, 8)}`;
+    db.prepare(`
+      INSERT INTO orders (id, ticket_id, buyer_user_id, subtotal_cents, delivery_fee_cents,
+                          total_cents, payment_method)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, ticket_id, buyer_user_id, ticket.price_cents, deliveryFee,
+      ticket.price_cents + deliveryFee, payment_method);
+    return findById(id);
+  });
+
+  return { findById, purchase };
+}
+
+export function createIssuedTicketRepo(db) {
+  return {
+    /** Add numbers to a concert's issued list. Re-importing the same number is a no-op. */
+    import: db.transaction((concertId, rows) => {
+      const insert = db.prepare(`
+        INSERT OR IGNORE INTO issued_tickets (concert_id, ticket_number, category) VALUES (?, ?, ?)
+      `);
+      let added = 0;
+      for (const { number, category } of rows) {
+        added += insert.run(concertId, normalizeTicketNumber(number), category || null).changes;
+      }
+      return added;
+    }),
+
+    /** Every concert with its issued count and how many of those are on active listings. */
+    summary() {
+      return db.prepare(`
+        SELECT c.id, c.artist, c.venue, c.event_date,
+               (SELECT COUNT(*) FROM issued_tickets i WHERE i.concert_id = c.id) AS issued,
+               (SELECT COUNT(*) FROM ticket_numbers n JOIN tickets t ON t.id = n.ticket_id
+                 WHERE n.concert_id = c.id AND t.status = 'active'
+                   AND EXISTS (SELECT 1 FROM issued_tickets i
+                               WHERE i.concert_id = n.concert_id AND i.ticket_number = n.ticket_number)
+               ) AS listed
+        FROM concerts c
+        ORDER BY c.event_date
+      `).all();
+    },
+  };
+}
+
+export function createConversationRepo(db) {
+  const SUMMARY = `
+    SELECT cv.*,
+           c.artist AS concert_artist, t.section AS ticket_section,
+           t.price_cents AS ticket_price_cents, t.status AS ticket_status,
+           b.display_name AS buyer_name, s.display_name AS seller_name,
+           (SELECT body FROM ticket_messages m WHERE m.conversation_id = cv.id
+             ORDER BY m.created_at DESC, m.rowid DESC LIMIT 1) AS last_body,
+           (SELECT created_at FROM ticket_messages m WHERE m.conversation_id = cv.id
+             ORDER BY m.created_at DESC, m.rowid DESC LIMIT 1) AS last_at
+    FROM ticket_conversations cv
+    JOIN tickets t ON t.id = cv.ticket_id
+    JOIN concerts c ON c.id = t.concert_id
+    JOIN users b ON b.id = cv.buyer_user_id
+    JOIN users s ON s.id = cv.seller_user_id
+  `;
+
+  return {
+    /** Reopen the buyer's thread about this ticket, or start one. */
+    openFor({ ticket_id, buyer_user_id, seller_user_id }) {
+      db.prepare(`
+        INSERT OR IGNORE INTO ticket_conversations (id, ticket_id, buyer_user_id, seller_user_id)
+        VALUES (?, ?, ?, ?)
+      `).run(`cv_${randomUUID().slice(0, 8)}`, ticket_id, buyer_user_id, seller_user_id);
+      return db.prepare(`${SUMMARY} WHERE cv.ticket_id = ? AND cv.buyer_user_id = ?`)
+        .get(ticket_id, buyer_user_id);
+    },
+
+    findById(id) {
+      return db.prepare(`${SUMMARY} WHERE cv.id = ?`).get(id) ?? null;
+    },
+
+    /** The user's threads on either side, most recently active first. */
+    forUser(userId) {
+      return db.prepare(`
+        ${SUMMARY}
+        WHERE cv.buyer_user_id = @u OR cv.seller_user_id = @u
+        ORDER BY COALESCE(last_at, cv.created_at) DESC
+      `).all({ u: userId });
+    },
+
+    /** Messages after `after` (a created_at), so polling only fetches what is new. */
+    messages(conversationId, after = null) {
+      return db.prepare(`
+        SELECT * FROM ticket_messages
+        WHERE conversation_id = @c AND (@after IS NULL OR created_at > @after)
+        ORDER BY created_at, rowid
+        LIMIT 500
+      `).all({ c: conversationId, after });
+    },
+
+    addMessage(conversationId, senderUserId, body) {
+      const id = `m_${randomUUID().slice(0, 8)}`;
+      db.prepare('INSERT INTO ticket_messages (id, conversation_id, sender_user_id, body) VALUES (?, ?, ?, ?)')
+        .run(id, conversationId, senderUserId, body);
+      return db.prepare('SELECT * FROM ticket_messages WHERE id = ?').get(id);
+    },
+  };
+}
+
 export function createRepositories(db) {
   return {
     users: createUserRepo(db),
@@ -921,6 +1174,9 @@ export function createRepositories(db) {
     participation: createParticipationRepo(db),
     parties: createPartyRepo(db),
     tickets: createTicketRepo(db),
+    orders: createOrderRepo(db),
+    issuedTickets: createIssuedTicketRepo(db),
+    conversations: createConversationRepo(db),
     seekers: createSeekerRepo(db),
     rounds: createRoundRepo(db),
     sessions: createSessionRepo(db),

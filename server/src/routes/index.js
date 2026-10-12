@@ -7,6 +7,9 @@ import { createTicketController } from '../controllers/ticketController.js';
 import { createKakiController } from '../controllers/kakiController.js';
 import { createProfileController } from '../controllers/profileController.js';
 import { createParticipationController } from '../controllers/participationController.js';
+import { createOrderController } from '../controllers/orderController.js';
+import { createChatController } from '../controllers/chatController.js';
+import { createAdminController } from '../controllers/adminController.js';
 
 export function createRoutes({ repos, matching, sessions, images }) {
   const router = Router();
@@ -17,6 +20,9 @@ export function createRoutes({ repos, matching, sessions, images }) {
   const kaki = createKakiController(repos);
   const profile = createProfileController(repos);
   const participation = createParticipationController(repos);
+  const orders = createOrderController(repos);
+  const chat = createChatController(repos);
+  const admin = createAdminController(repos);
 
   router.use((req, res, next) => {
     req.user = sessions.current(req);
@@ -39,6 +45,21 @@ export function createRoutes({ repos, matching, sessions, images }) {
   router.patch('/tickets/:id', requireUser, tickets.update);
   router.delete('/tickets/:id', requireUser, tickets.delete);
   router.get('/me/tickets', requireUser, tickets.mine);
+  router.post('/me/tickets/:id/proof', requireUser, tickets.submitProof);
+
+  router.post('/tickets/:id/orders', requireUser, orders.buy);
+  router.get('/orders/:id', requireUser, orders.get);
+
+  router.post('/tickets/:id/conversations', requireUser, chat.start);
+  router.get('/conversations', requireUser, chat.list);
+  router.get('/conversations/:id', requireUser, chat.detail);
+  router.post('/conversations/:id/messages', requireUser, chat.send);
+
+  router.get('/operator/verifications', requireOperator, admin.queue);
+  router.post('/operator/verifications/:id', requireOperator, admin.review);
+  router.get('/operator/issued-tickets', requireOperator, admin.issuedSummary);
+  router.post('/operator/concerts/:id/issued-tickets', requireOperator, admin.importIssued);
+
   router.get('/me/profile', requireUser, profile.get);
   router.patch('/me/profile', requireUser, profile.update);
   router.get('/me/concerts', requireUser, participation.mine);
