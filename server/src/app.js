@@ -30,7 +30,18 @@ export function createApp({
 
   app.use('/api/ticket-images', express.static(imageDir));
   app.use('/api', createTicketmasterRoutes());
-  app.use('/api', createRoutes({ repos, matching, sessions, images }));
+   // Pass the existing SQLite connection to the route registry.
+  //
+  // Reuse the same database instance for matching,
+  // proposals, sessions and upcoming enhancements.
+
+  app.use('/api', createRoutes({
+    db,
+    repos,
+    matching,
+    sessions,
+    images
+  }));
 
   app.use((req, res) => res.status(404).json({ error: 'not_found', path: req.path }));
 

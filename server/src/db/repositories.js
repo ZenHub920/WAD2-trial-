@@ -9,6 +9,8 @@
  * That is this module's job.
  */
 
+import { createProposalRepo } from './proposalRepository.js';
+import { createEnhancementRepo } from './enhancementRepository.js';
 import { randomUUID } from 'node:crypto';
 
 // ---------------------------------------------------------------------------
@@ -232,9 +234,47 @@ export function createConcertRepo(db) {
           (SELECT COUNT(*) FROM parties p
             WHERE p.concert_id = c.id AND p.status = 'open'
               AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.source_party_id = p.id)) AS open_parties,
-          (SELECT COALESCE(SUM(p.capacity), 0) FROM parties p
-            WHERE p.concert_id = c.id AND p.status = 'open'
-              AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.source_party_id = p.id)) AS open_slots,
+          (          /*
+           * IMPROVEMENT #6:
+           *
+           * Available concert capacity must account for reservations
+           * created in previous matching rounds.
+           *
+           * Only proposed and confirmed proposals reserve seats.
+           *
+           * Declined, expired and cancelled offers do not.
+           */
+          (
+            SELECT COALESCE(
+              SUM(
+                p.capacity - (
+                  SELECT COUNT(*)
+
+                  FROM match_proposals mp
+
+                  WHERE mp.party_id = p.id
+
+                    AND mp.status IN (
+                      'proposed',
+                      'confirmed'
+                    )
+                )
+              ),
+              0
+            )
+
+            FROM parties p
+
+            WHERE p.concert_id = c.id
+              AND p.status = 'open'
+
+              AND NOT EXISTS (
+                SELECT 1
+                FROM tickets t
+                WHERE t.source_party_id = p.id
+              )
+
+          ) AS open_slots,
           (SELECT COUNT(*) FROM seeker_requests s
             WHERE s.concert_id = c.id AND s.status = 'open')            AS open_seekers
         FROM concerts c
@@ -332,43 +372,35 @@ export function createPartyRepo(db) {
       `).get(id);
       return mapParty(row);
     },
-
+  
     /** Hydrated open parties for one concert — the left side of the instance. */
     /** Hydrated open parties with their remaining available capacity. */
+/**
+ * PURPOSE:
+ * Only return groups with genuinely available slots.
+ *
+ * Previously the query counted every historical matched result.
+ * That would permanently reserve a slot even after a decline.
+ *
+ * Now only 'proposed' and 'confirmed' proposals reserve capacity.
+ */
+
 openForConcert(concertId) {
 
   const rows = db.prepare(`
-
-    WITH reserved AS (
-
-      SELECT
-        party_id,
-        COUNT(*) AS reserved_slots
-
-      FROM match_results
-
-      WHERE outcome = 'matched'
-        AND party_id IS NOT NULL
-
-      GROUP BY party_id
-
-    )
-
     SELECT
       p.*,
-
       ${USER_COLUMNS('u', 'host_')},
 
-      p.capacity - COALESCE(r.reserved_slots, 0)
-        AS remaining_capacity
+      p.capacity - (
+        SELECT COUNT(*)
+        FROM match_proposals mp
+        WHERE mp.party_id = p.id
+          AND mp.status IN ('proposed', 'confirmed')
+      ) AS remaining_capacity
 
     FROM parties p
-
-    JOIN users u
-      ON u.id = p.host_user_id
-
-    LEFT JOIN reserved r
-      ON r.party_id = p.id
+    JOIN users u ON u.id = p.host_user_id
 
     WHERE p.concert_id = ?
       AND p.status = 'open'
@@ -379,21 +411,41 @@ openForConcert(concertId) {
         WHERE t.source_party_id = p.id
       )
 
-      AND p.capacity > COALESCE(r.reserved_slots, 0)
+      AND p.capacity > (
+        SELECT COUNT(*)
+        FROM match_proposals mp
+        WHERE mp.party_id = p.id
+          AND mp.status IN ('proposed', 'confirmed')
+      )
 
     ORDER BY p.id
-
   `).all(concertId);
 
   return rows.map(mapParty);
+  }
+    ,
+  /**
+   * Update a hosted party's operational status.
+   *
+   * Used by matchingService.run() after creating
+   * proposals for a successful matching round.
+   *
+   * A fully reserved party becomes 'matched'.
+   *
+   * A party with available capacity remains 'open'.
+   */
 
-},
-    setStatus(id, status) {
-      db.prepare('UPDATE parties SET status = ? WHERE id = ?').run(status, id);
-    },
-  };
+  setStatus(id, status) {
+
+    db.prepare(`
+      UPDATE parties
+      SET status = ?
+      WHERE id = ?
+    `).run(status, id);
+
+  }
+};
 }
-
 // ---------------------------------------------------------------------------
 // Ticket inventory — intentionally separate from matchmaking parties
 // ---------------------------------------------------------------------------
@@ -675,6 +727,7 @@ export function createRoundRepo(db) {
       trace = [],
       algorithm = 'gale_shapley_hr',
       ledger = null,
+      batchKey = null,
     }) {
       const roundId = `r_${randomUUID().slice(0, 8)}`;
 
@@ -684,19 +737,50 @@ export function createRoundRepo(db) {
                                   matched_count, metrics_json, timings_json,
                                   preference_snapshot_json,
                                   solver_id, instance_class, stability_promise,
-                                  relaxations_json, ledger_json)
+                                  relaxations_json, ledger_json, batch_key)
         VALUES (@id, @concert_id, @algorithm, @is_stable, @blocking_pair_count,
                 @seeker_count, @party_count, @total_capacity, @feasible_pairs,
                 @matched_count, @metrics_json, @timings_json, @preference_snapshot_json,
                 @solver_id, @instance_class, @stability_promise,
-                @relaxations_json, @ledger_json)
+                @relaxations_json, @ledger_json, @batch_key)
       `);
 
+            // ============================================================
+      // IMPROVEMENT #12: HISTORICAL MATCH EXPLANATIONS
+      // ============================================================
+      //
+      // Save the compatibility-score components calculated
+      // during the matching round.
+      //
+      // User profiles may change later, so explanations
+      // must use this snapshot rather than recalculating.
+
       const insertResult = db.prepare(`
-        INSERT INTO match_results (id, round_id, seeker_request_id, party_id, seeker_rank,
-                                   party_rank, seeker_score, party_score, outcome)
-        VALUES (@id, @round_id, @seeker_request_id, @party_id, @seeker_rank,
-                @party_rank, @seeker_score, @party_score, @outcome)
+        INSERT INTO match_results (
+          id,
+          round_id,
+          seeker_request_id,
+          party_id,
+          seeker_rank,
+          party_rank,
+          seeker_score,
+          party_score,
+          outcome,
+          score_breakdown_json
+        )
+
+        VALUES (
+          @id,
+          @round_id,
+          @seeker_request_id,
+          @party_id,
+          @seeker_rank,
+          @party_rank,
+          @seeker_score,
+          @party_score,
+          @outcome,
+          @score_breakdown_json
+        )
       `);
 
       const insertTrace = db.prepare(`
@@ -710,6 +794,7 @@ export function createRoundRepo(db) {
         insertRound.run({
           id: roundId,
           concert_id: concertId,
+          batch_key : batchKey,
           algorithm,
           is_stable: metrics.stable ? 1 : 0,
           blocking_pair_count: metrics.blockingPairs,
@@ -750,6 +835,16 @@ export function createRoundRepo(db) {
             seeker_score: scored?.seekerToParty ?? null,
             party_score: scored?.partyToSeeker ?? null,
             outcome: partyId ? 'matched' : 'unmatched',
+                        // Preserve the exact compatibility calculation.
+            //
+            // This is the original scoring object from
+            // profile.pairScores.
+            //
+            // It must not depend on future profile edits.
+
+            score_breakdown_json: scored
+              ? JSON.stringify(scored)
+              : null,
           });
         }
 
@@ -770,6 +865,78 @@ export function createRoundRepo(db) {
       return roundId;
     },
 
+    /**
+     * ============================================================
+     * LEGACY MATCHING RECONCILIATION CHECK
+     * ============================================================
+     *
+     * PURPOSE:
+     *
+     * Detect assignments made before the proposal lifecycle
+     * was introduced.
+     *
+     * WHY?
+     *
+     * Old versions of Encore could mark seeker requests and
+     * parties as matched using historical match_results.
+     *
+     * The new implementation counts only active proposals.
+     *
+     * If an old confirmed arrangement has no corresponding
+     * proposal record, blindly switching accounting could
+     * accidentally release an occupied seat.
+     *
+     * This method therefore detects suspicious legacy states.
+     *
+     * It does not automatically modify the database.
+     */
+
+    hasUnreconciledLegacyAssignments(concertId) {
+
+      // Find matched seekers without active proposal records.
+
+      const oldSeekers = db.prepare(`
+        SELECT COUNT(*) AS n
+
+        FROM seeker_requests s
+
+        WHERE s.concert_id = ?
+          AND s.status = 'matched'
+
+          AND NOT EXISTS (
+            SELECT 1
+            FROM match_proposals mp
+
+            WHERE mp.seeker_request_id = s.id
+              AND mp.status IN ('proposed', 'confirmed')
+          )
+      `).get(concertId).n;
+
+      // Find matched parties without active proposal records.
+
+      const oldParties = db.prepare(`
+        SELECT COUNT(*) AS n
+
+        FROM parties p
+
+        WHERE p.concert_id = ?
+          AND p.status = 'matched'
+
+          AND NOT EXISTS (
+            SELECT 1
+            FROM match_proposals mp
+
+            WHERE mp.party_id = p.id
+              AND mp.status IN ('proposed', 'confirmed')
+          )
+      `).get(concertId).n;
+
+      // Require explicit reconciliation if legacy states exist.
+
+      return oldSeekers > 0 || oldParties > 0;
+    },
+
+
     findById(roundId) {
       const round = db.prepare('SELECT * FROM match_rounds WHERE id = ?').get(roundId);
       if (!round) return null;
@@ -779,6 +946,68 @@ export function createRoundRepo(db) {
         timings: JSON.parse(round.timings_json),
       };
     },
+    // ============================================================
+    // FIND MATCHING ROUND BY IDEMPOTENCY KEY
+    // Improvement #4 — NEW METHOD
+    // ============================================================
+
+    /**
+     * PURPOSE:
+     * Find a matching round that was previously executed
+     * using the same idempotency key.
+     *
+     * WHY IS THIS NECESSARY?
+     *
+     * Suppose an operator clicks "Run Matching".
+     *
+     * The backend successfully executes Gale-Shapley and
+     * saves Round 1, but the HTTP response is lost.
+     *
+     * The operator retries the same request.
+     *
+     * Without this method:
+     * The backend may execute another matching round.
+     *
+     * With this method:
+     * The backend finds Round 1 and returns its result
+     * without executing Gale-Shapley again.
+     *
+     * PARAMETERS:
+     * concertId = ID of the concert being matched.
+     * batchKey  = Unique identifier for the matching operation.
+     *
+     * RETURNS:
+     * - The previously saved matching round, if found.
+     * - null if this is a new matching operation.
+     */
+
+    findByBatch(concertId, batchKey) {
+
+      // STEP 1:
+      // Search the match_rounds table for a round
+      // with this concert ID and idempotency key.
+
+      const row = db.prepare(`
+        SELECT id
+        FROM match_rounds
+        WHERE concert_id = ?
+          AND batch_key = ?
+      `).get(concertId, batchKey);
+
+
+      // STEP 2:
+      // If a matching round exists, retrieve its
+      // full information using the existing findById().
+      //
+      // Otherwise return null.
+      //
+      // This avoids duplicating the JSON parsing logic
+      // already implemented in findById().
+
+      return row ? this.findById(row.id) : null;
+
+    },
+    
 
     latestForConcert(concertId) {
       const round = db.prepare(`
@@ -790,53 +1019,218 @@ export function createRoundRepo(db) {
         metrics: JSON.parse(round.metrics_json),
         timings: JSON.parse(round.timings_json),
       };
+      
     },
 
     /** Only the latest round can reveal a result; ownership is always the session user. */
+        /**
+     * ============================================================
+     * IMPROVEMENT #5: CURRENT OPERATIONAL MATCH RETRIEVAL
+     * ============================================================
+     *
+     * PURPOSE:
+     *
+     * Return the user's current matching state for a concert,
+     * regardless of which historical matching round created it.
+     *
+     * IMPORTANT:
+     *
+     * match_results = historical algorithm assignments.
+     *
+     * match_proposals = operational assignment status.
+     *
+     * Only proposals with status:
+     *   - proposed
+     *   - confirmed
+     *
+     * count as active assignments.
+     *
+     * This method preserves the existing /me/concerts/:id/result
+     * API for backward compatibility.
+     *
+     * The dedicated proposal APIs remain the preferred way to
+     * retrieve all current and historical proposal records.
+     */
+
     resultForUser(concertId, userId) {
-      const round = this.latestForConcert(concertId);
-      if (!round) return null;
-      const roundInfo = { id: round.id, ranAt: round.ran_at };
-      const seeker = db.prepare(`
-        SELECT mr.outcome, mr.party_id FROM match_results mr
-        JOIN seeker_requests s ON s.id = mr.seeker_request_id
-        WHERE mr.round_id = ? AND s.user_id = ?
-      `).get(round.id, userId);
-      if (seeker) {
-        if (seeker.outcome !== 'matched') {
-          return { role: 'seeker', outcome: 'unmatched', round: roundInfo };
-        }
-        const party = db.prepare('SELECT id, section, host_user_id FROM parties WHERE id = ?')
-          .get(seeker.party_id);
+
+      // ----------------------------------------------------------
+      // STEP 1: CHECK WHETHER THE USER IS AN ACTIVE SEEKER
+      // ----------------------------------------------------------
+      //
+      // Search operational proposals across ALL rounds.
+      //
+      // Do not restrict the search to the latest match_rounds
+      // record.
+      //
+      // The active-proposal unique index guarantees that one
+      // seeker request cannot hold multiple active offers.
+
+      const seekerProposal = db.prepare(`
+        SELECT
+          mp.id AS proposal_id,
+          mp.status AS proposal_status,
+
+          mp.round_id,
+          r.ran_at,
+
+          p.id AS party_id,
+          p.section,
+          p.host_user_id
+
+        FROM match_proposals mp
+
+        JOIN match_rounds r
+          ON r.id = mp.round_id
+
+        JOIN seeker_requests sr
+          ON sr.id = mp.seeker_request_id
+
+        JOIN parties p
+          ON p.id = mp.party_id
+
+        WHERE sr.user_id = ?
+          AND p.concert_id = ?
+
+          AND mp.status IN (
+            'proposed',
+            'confirmed'
+          )
+
+        ORDER BY
+          CASE mp.status
+            WHEN 'confirmed' THEN 0
+            ELSE 1
+          END,
+          mp.created_at DESC
+
+        LIMIT 1
+      `).get(userId, concertId);
+
+      // ----------------------------------------------------------
+      // STEP 2: RETURN THE SEEKER'S ACTIVE ASSIGNMENT
+      // ----------------------------------------------------------
+
+      if (seekerProposal) {
+
+        // Reuse the existing mapUser() function.
+        //
+        // This preserves the expected user object structure
+        // used by publicUser() in matchController.js.
+
+        const host = mapUser(
+          db.prepare(`
+            SELECT *
+            FROM users
+            WHERE id = ?
+          `).get(seekerProposal.host_user_id)
+        );
+
         return {
-          role: 'seeker', outcome: 'matched', round: roundInfo,
-          group: { id: party.id, section: party.section, host: mapUser(
-            db.prepare('SELECT * FROM users WHERE id = ?').get(party.host_user_id),
-          ) },
+          role: 'seeker',
+
+          // This may be 'proposed' or 'confirmed'.
+          // Neither should be incorrectly labelled as
+          // a final confirmed match.
+          outcome: seekerProposal.proposal_status,
+
+          proposalId: seekerProposal.proposal_id,
+
+          round: {
+            id: seekerProposal.round_id,
+            ranAt: seekerProposal.ran_at
+          },
+
+          group: {
+            id: seekerProposal.party_id,
+            section: seekerProposal.section,
+            host
+          }
         };
       }
 
+      // ----------------------------------------------------------
+      // STEP 3: CHECK WHETHER THE USER HOSTS A PARTY
+      // ----------------------------------------------------------
+
       const party = db.prepare(`
-        SELECT id, section FROM parties WHERE concert_id = ? AND host_user_id = ?
+        SELECT *
+        FROM parties
+        WHERE concert_id = ?
+          AND host_user_id = ?
       `).get(concertId, userId);
-      if (!party || !Object.hasOwn(JSON.parse(round.preference_snapshot_json ?? '{}').capacities ?? {}, party.id)) {
+
+      if (!party) {
         return null;
       }
+
+      // ----------------------------------------------------------
+      // STEP 4: RETRIEVE THE HOST'S ACTIVE MEMBERS
+      // ----------------------------------------------------------
+      //
+      // Unlike historical match_results, these members may
+      // come from different matching rounds.
+      //
+      // This query correctly combines them.
+
       const members = db.prepare(`
-        SELECT u.* FROM match_results mr
-        JOIN seeker_requests s ON s.id = mr.seeker_request_id
-        JOIN users u ON u.id = s.user_id
-        WHERE mr.round_id = ? AND mr.party_id = ? AND mr.outcome = 'matched'
-        ORDER BY mr.party_rank ASC
-      `).all(round.id, party.id).map(mapUser);
+        SELECT u.*
+
+        FROM match_proposals mp
+
+        JOIN seeker_requests sr
+          ON sr.id = mp.seeker_request_id
+
+        JOIN users u
+          ON u.id = sr.user_id
+
+        WHERE mp.party_id = ?
+
+          AND mp.status IN (
+            'proposed',
+            'confirmed'
+          )
+
+        ORDER BY
+          mp.created_at ASC,
+          mp.id ASC
+      `).all(party.id).map(mapUser);
+
+      // ----------------------------------------------------------
+      // STEP 5: RETURN THE HOST'S CURRENT GROUP
+      // ----------------------------------------------------------
+      //
+      // There is deliberately no single historical round here.
+      // Members can originate from multiple rounds.
+      //
+      // For the exact status and round of each member,
+      // use /me/concerts/:id/proposals or /matches.
+
       return {
-        role: 'host', outcome: members.length ? 'matched' : 'no_members', round: roundInfo,
-        group: { id: party.id, section: party.section,
-          host: mapUser(db.prepare('SELECT * FROM users WHERE id = ?').get(userId)) },
-        members,
+        role: 'host',
+
+        outcome: members.length > 0
+          ? 'matched'
+          : 'no_members',
+
+        round: null,
+
+        group: {
+          id: party.id,
+          section: party.section,
+
+          host: mapUser(
+            db.prepare(`
+              SELECT *
+              FROM users
+              WHERE id = ?
+            `).get(userId)
+          )
+        },
+
+        members
       };
     },
-
     /** Full results for a round, joined out to human-readable names. */
     resultsForRound(roundId) {
       return db.prepare(`
@@ -1181,5 +1575,7 @@ export function createRepositories(db) {
     rounds: createRoundRepo(db),
     sessions: createSessionRepo(db),
     kaki: createKakiRepo(db),
+    proposals: createProposalRepo(db),
+    extra: createEnhancementRepo(db),
   };
 }

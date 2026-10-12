@@ -377,7 +377,7 @@ CREATE TABLE IF NOT EXISTS match_proposals (
         REFERENCES parties(id)
 );
 
-CREATE UNIQUE INDEX idx_active_seeker_proposal
+CREATE UNIQUE INDEX IF NOT EXISTS idx_active_seeker_proposal
 ON match_proposals(seeker_request_id)
 WHERE status IN ('proposed', 'confirmed');
 
@@ -386,3 +386,341 @@ WHERE status IN ('proposed', 'confirmed');
 -- For example, suppose a seeker has already been offered a place in Group A.
 
 -- Until they accept, decline, or their proposal expires, the system should not reserve a second place for the same request in Group B.
+
+
+-- ============================================================
+-- INDEX: LOOK UP RESERVED SPACES BY PARTY
+-- Improvements #5 and #6
+-- ============================================================
+--
+-- PURPOSE:
+-- Speeds up queries that count a party's active proposals.
+--
+-- WHY:
+-- Every time Gale-Shapley runs, Encore must determine how
+-- many spaces remain in each party.
+--
+-- Only proposed and confirmed assignments occupy capacity.
+--
+-- NOTE:
+-- This is a normal (non-unique) index because one party
+-- can have multiple seekers occupying different slots.
+
+CREATE INDEX IF NOT EXISTS idx_proposals_party_status
+ON match_proposals(party_id, status);
+
+
+
+-- ============================================================
+-- TABLE: MATCH DECLINES
+-- Improvement #6 - Match acceptance and rejection
+-- ============================================================
+--
+-- PURPOSE:
+-- Remembers that a particular seeker declined a particular
+-- concert group.
+--
+-- EXAMPLE:
+-- Alex is offered Party A and declines.
+--
+-- A future Gale-Shapley round should not offer Alex the same
+-- party again unless your product explicitly allows resetting
+-- declined preferences.
+--
+-- WHY A SEPARATE TABLE?
+-- match_proposals stores the status of each historical offer.
+-- match_declines stores pairs that are no longer acceptable.
+--
+-- COMPOSITE PRIMARY KEY:
+-- The combination (seeker_request_id, party_id) is unique.
+-- Alex cannot record the same decline multiple times.
+
+CREATE TABLE IF NOT EXISTS match_declines (
+
+    seeker_request_id TEXT NOT NULL
+        REFERENCES seeker_requests(id)
+        ON DELETE CASCADE,
+
+    party_id TEXT NOT NULL
+        REFERENCES parties(id)
+        ON DELETE CASCADE,
+
+    declined_at TEXT NOT NULL
+        DEFAULT (datetime('now')),
+
+    PRIMARY KEY (seeker_request_id, party_id)
+
+);
+
+
+
+-- ============================================================
+-- TABLE: CONVERSATIONS
+-- Improvement #7 - Kaki Finder messaging
+-- ============================================================
+--
+-- PURPOSE:
+-- Represents a private conversation between two people
+-- who have mutually liked each other for the same concert.
+--
+-- EXAMPLE:
+-- Alex likes Jamie.
+-- Jamie likes Alex.
+-- Encore creates one conversation for that concert.
+--
+-- user_a_id and user_b_id are stored in sorted order
+-- (lexicographically smaller ID first).
+--
+-- This prevents Alex-Jamie and Jamie-Alex from becoming
+-- two separate conversations for the same concert.
+--
+-- IMPORTANT SECURITY RULE:
+-- Creating a conversation requires verifying mutual likes
+-- in the backend. The frontend cannot bypass this check.
+
+CREATE TABLE IF NOT EXISTS conversations (
+
+    id TEXT PRIMARY KEY,
+
+    concert_id TEXT NOT NULL
+        REFERENCES concerts(id)
+        ON DELETE CASCADE,
+
+    user_a_id TEXT NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    user_b_id TEXT NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    created_at TEXT NOT NULL
+        DEFAULT (datetime('now')),
+
+    UNIQUE (concert_id, user_a_id, user_b_id),
+
+    CHECK (user_a_id < user_b_id)
+
+);
+
+
+
+-- ============================================================
+-- TABLE: MESSAGES
+-- Improvement #7 - Kaki Finder messaging
+-- ============================================================
+--
+-- PURPOSE:
+-- Stores messages sent inside a Kaki conversation.
+--
+-- RELATIONSHIPS:
+-- Each message belongs to one conversation.
+-- Each message has one sending user.
+--
+-- SECURITY RULE:
+-- The backend must check that the sender belongs to the
+-- conversation before allowing a new message.
+--
+-- LIMIT:
+-- Each message must contain between 1 and 2000 characters.
+-- Additional input validation is still required in Express.
+
+CREATE TABLE IF NOT EXISTS messages (
+
+    id TEXT PRIMARY KEY,
+
+    conversation_id TEXT NOT NULL
+        REFERENCES conversations(id)
+        ON DELETE CASCADE,
+
+    sender_user_id TEXT NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    body TEXT NOT NULL
+        CHECK (length(body) BETWEEN 1 AND 2000),
+
+    created_at TEXT NOT NULL
+        DEFAULT (datetime('now'))
+
+);
+
+
+
+-- Speeds up retrieving messages from one conversation.
+-- The timestamp helps when displaying them chronologically.
+
+CREATE INDEX IF NOT EXISTS idx_messages_conversation
+ON messages(conversation_id, created_at);
+
+
+
+-- ============================================================
+-- TABLE: SAVED TICKETS
+-- Improvement #10 - Account-backed saved listings
+-- ============================================================
+--
+-- PURPOSE:
+-- Allows a logged-in user to save ticket listings.
+--
+-- CURRENT LIMITATION:
+-- Browser localStorage does not synchronize saved tickets
+-- across different devices.
+--
+-- IMPROVEMENT:
+-- Saved tickets are now associated with a database user ID.
+--
+-- COMPOSITE PRIMARY KEY:
+-- Prevents saving the same ticket twice for one user.
+--
+-- RELATIONSHIPS:
+-- One user can save many tickets.
+-- One ticket can be saved by many users.
+--
+-- This is a many-to-many relationship implemented
+-- using a junction table.
+
+CREATE TABLE IF NOT EXISTS saved_tickets (
+
+    user_id TEXT NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    ticket_id TEXT NOT NULL
+        REFERENCES tickets(id)
+        ON DELETE CASCADE,
+
+    saved_at TEXT NOT NULL
+        DEFAULT (datetime('now')),
+
+    PRIMARY KEY (user_id, ticket_id)
+
+);
+
+
+
+-- ============================================================
+-- TABLE: TICKET INQUIRIES
+-- Improvement #10 - Ticket Marketplace
+-- ============================================================
+--
+-- PURPOSE:
+-- Lets buyers contact sellers about ticket listings
+-- without implementing payment processing.
+--
+-- EXAMPLE:
+-- Alex sees Jamie's ticket listing.
+-- Alex submits an inquiry.
+-- Jamie sees the inquiry in their seller dashboard.
+--
+-- RULE:
+-- One buyer may have one inquiry record per listing.
+-- This can later be extended into a full conversation.
+--
+-- SECURITY:
+-- The buyer's identity must come from the authenticated
+-- session, not from a user ID submitted by the browser.
+
+CREATE TABLE IF NOT EXISTS ticket_inquiries (
+
+    id TEXT PRIMARY KEY,
+
+    ticket_id TEXT NOT NULL
+        REFERENCES tickets(id)
+        ON DELETE CASCADE,
+
+    buyer_user_id TEXT NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    body TEXT NOT NULL
+        CHECK (length(body) BETWEEN 1 AND 1000),
+
+    status TEXT NOT NULL DEFAULT 'open'
+        CHECK (status IN ('open', 'closed')),
+
+    created_at TEXT NOT NULL
+        DEFAULT (datetime('now')),
+
+    UNIQUE (ticket_id, buyer_user_id)
+
+);
+
+
+
+-- Helps the seller retrieve inquiries for a listing.
+
+CREATE INDEX IF NOT EXISTS idx_ticket_inquiries_ticket
+ON ticket_inquiries(ticket_id, created_at);
+
+
+
+-- ============================================================
+-- TABLE: REPORTS
+-- Improvement #15 - User reporting
+-- ============================================================
+--
+-- PURPOSE:
+-- Records concerns about user behaviour for operator review.
+--
+-- EXAMPLE:
+-- A user reports a misleading profile or inappropriate
+-- communication.
+--
+-- PRIVACY:
+-- Only the reporter and authorized operators should be able
+-- to access information permitted by the reporting workflow.
+--
+-- STATUS:
+-- open     = waiting for review
+-- reviewed = operator has examined the report
+-- closed   = review process has concluded
+--
+-- Reporting must not automatically be interpreted as proof
+-- that a user did anything wrong.
+
+CREATE TABLE IF NOT EXISTS reports (
+
+    id TEXT PRIMARY KEY,
+
+    reporter_user_id TEXT NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    reported_user_id TEXT NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    reason_category TEXT NOT NULL
+        CHECK (
+            reason_category IN (
+                'harassment',
+                'misleading_profile',
+                'spam',
+                'other'
+            )
+        ),
+
+    details TEXT NOT NULL
+        CHECK (length(details) BETWEEN 1 AND 1000),
+
+    status TEXT NOT NULL DEFAULT 'open'
+        CHECK (status IN (
+            'open',
+            'reviewed',
+            'closed'
+        )),
+
+    created_at TEXT NOT NULL
+        DEFAULT (datetime('now')),
+
+    CHECK (reporter_user_id <> reported_user_id)
+
+);
+
+
+
+-- Helps operators retrieve outstanding reports efficiently.
+
+CREATE INDEX IF NOT EXISTS idx_reports_status
+ON reports(status, created_at);

@@ -1,5 +1,12 @@
 /** Route declarations only; controllers own HTTP responses and validation. */
 import { Router } from 'express';
+
+// Improvements #5–15:
+// Dedicated APIs for proposals, messaging, dashboards,
+// marketplace enhancements, feedback and safety.
+import {
+  registerEnhancementRoutes
+} from './enhancements.js';
 import { createConcertController } from '../controllers/concertController.js';
 import { createMatchController } from '../controllers/matchController.js';
 import { createUserController } from '../controllers/userController.js';
@@ -11,7 +18,13 @@ import { createOrderController } from '../controllers/orderController.js';
 import { createChatController } from '../controllers/chatController.js';
 import { createAdminController } from '../controllers/adminController.js';
 
-export function createRoutes({ repos, matching, sessions, images }) {
+export function createRoutes({
+  db,
+  repos,
+  matching,
+  sessions,
+  images
+})  {
   const router = Router();
   const concerts = createConcertController(repos);
   const matches = createMatchController({ repos, matching });
@@ -96,6 +109,27 @@ export function createRoutes({ repos, matching, sessions, images }) {
   router.get('/auth/me', requireUser, users.current);
   router.post('/auth/logout', requireUser, users.logout);
   router.get('/users/:id', users.get);
+
+    // ============================================================
+  // REGISTER ENCORE ENHANCEMENT ENDPOINTS
+  // ============================================================
+  //
+  // These reuse the same session middleware and repositories
+  // as the existing API routes.
+  //
+  // Do not create a second Express application or a second
+  // authentication system.
+
+  registerEnhancementRoutes(
+    router,
+    {
+      db,
+      repos,
+      requireUser,
+      requireOperator
+    }
+  );
+
 
   return router;
 }
