@@ -1,39 +1,39 @@
 /**
- * Ticket verification review. Admins are configured, not stored: ADMIN_EMAILS in
- * server/.env is a comma-separated list, matched case-insensitively against the
- * signed-in user's email.
+ * Ticket verification for operators (granted with `npm run operator:grant -- <email>`):
+ * the proof-of-purchase review queue, and each concert's issued ticket list.
  */
-import { ownerListing } from './marketController.js';
-
-export function adminEmails(env = process.env) {
-  return new Set(
-    (env.ADMIN_EMAILS ?? '')
-      .split(',')
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean),
-  );
-}
-
-export function isAdmin(user, env = process.env) {
-  return Boolean(user?.email) && adminEmails(env).has(user.email.toLowerCase());
-}
-
-/** Route guard. Outsiders get 404, so the admin area is not advertised. */
-export function requireAdmin(req, res, next) {
-  if (!isAdmin(req.user)) return res.status(404).json({ error: 'not_found' });
-  next();
-}
+import { ownerListing, TICKET_NUMBER } from './ticketController.js';
 
 export function createAdminController(repos) {
   return {
     /** The review queue, each item with its proof attached. */
     queue(req, res) {
       res.json({
-        listings: repos.listings.pendingVerification().map((listing) => ({
+        listings: repos.tickets.pendingVerification().map((listing) => ({
           ...ownerListing(listing, repos),
-          proofData: repos.listings.proofFor(listing.id),
+          proofData: repos.tickets.proofFor(listing.id),
         })),
       });
+    },
+
+    review(req, res) {
+      const decision = req.body?.decision;
+      if (decision !== 'approve' && decision !== 'reject') {
+        return res.status(400).json({ error: 'decision_must_be_approve_or_reject' });
+      }
+      const note = typeof req.body?.note === 'string' ? req.body.note.trim().slice(0, 500) : '';
+      if (decision === 'reject' && !note) {
+        // The seller needs to know what to fix before they re-submit.
+        return res.status(400).json({ error: 'rejection_note_required' });
+      }
+
+      const done = repos.tickets.review(req.params.id, {
+        approve: decision === 'approve',
+        note,
+        reviewerId: req.user.id,
+      });
+      if (!done) return res.status(409).json({ error: 'not_pending' });
+      res.json({ listing: ownerListing(repos.tickets.findById(req.params.id), repos) });
     },
 
     issuedSummary(req, res) {
@@ -54,7 +54,7 @@ export function createAdminController(repos) {
       csv.split(/\r?\n/).forEach((line, index) => {
         const [number = '', category = ''] = line.split(',').map((cell) => cell.trim());
         if (!number || (index === 0 && /^ticket/i.test(number))) return;
-        if (!/^[A-Za-z0-9][A-Za-z0-9 -]{2,39}$/.test(number)) invalid.push(index + 1);
+        if (!TICKET_NUMBER.test(number)) invalid.push(index + 1);
         else rows.push({ number, category });
       });
       if (invalid.length) {
@@ -65,26 +65,6 @@ export function createAdminController(repos) {
 
       const added = repos.issuedTickets.import(req.params.id, rows);
       res.json({ added, skipped: rows.length - added });
-    },
-
-    review(req, res) {
-      const decision = req.body?.decision;
-      if (decision !== 'approve' && decision !== 'reject') {
-        return res.status(400).json({ error: 'decision_must_be_approve_or_reject' });
-      }
-      const note = typeof req.body?.note === 'string' ? req.body.note.trim().slice(0, 500) : '';
-      if (decision === 'reject' && !note) {
-        // The seller needs to know what to fix before they re-submit.
-        return res.status(400).json({ error: 'rejection_note_required' });
-      }
-
-      const done = repos.listings.review(req.params.id, {
-        approve: decision === 'approve',
-        note,
-        reviewerId: req.user.id,
-      });
-      if (!done) return res.status(409).json({ error: 'not_pending' });
-      res.json({ listing: ownerListing(repos.listings.findById(req.params.id), repos) });
     },
   };
 }

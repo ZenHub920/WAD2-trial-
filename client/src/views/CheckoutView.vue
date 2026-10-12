@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api.js';
-import { PAYMENT_METHODS, formatMoney, useListing } from '../market.js';
+import { PAYMENT_METHODS, formatMoney, useTicket } from '../market.js';
 import CheckoutSteps from '../components/market/CheckoutSteps.vue';
 import MarketIcon from '../components/market/MarketIcon.vue';
 import MarketPageHead from '../components/market/MarketPageHead.vue';
@@ -13,7 +13,7 @@ const props = defineProps({ id: { type: String, required: true } });
 
 const route = useRoute();
 const router = useRouter();
-const { listing, loading, error } = useListing(() => props.id);
+const { listing, loading, error } = useTicket(() => props.id);
 
 const method = ref(PAYMENT_METHODS[0].id);
 const paying = ref(false);
@@ -26,7 +26,7 @@ const PAY_ERRORS = {
 };
 
 const sold = computed(
-  () => listing.value?.status !== 'open' || payError.value?.code === 'listing_unavailable',
+  () => listing.value?.status !== 'active' || payError.value?.code === 'listing_unavailable',
 );
 
 async function pay() {
@@ -34,7 +34,7 @@ async function pay() {
   paying.value = true;
   payError.value = null;
   try {
-    const { order } = await api.buyListing(props.id, { paymentMethod: method.value });
+    const { order } = await api.buyTicket(props.id, { paymentMethod: method.value });
     // Replace, so Back from the receipt cannot land on a payable form again.
     router.replace({ name: 'order', params: { id: order.id } });
   } catch (err) {
@@ -64,7 +64,7 @@ async function pay() {
     </MarketNotice>
 
     <form v-else class="checkout" @submit.prevent="pay">
-      <OrderSummary :subtotal-cents="listing.priceCents" :currency="listing.currency" />
+      <OrderSummary :subtotal-cents="listing.priceCents" />
 
       <fieldset class="methods" :disabled="paying || sold">
         <legend>Payment method</legend>
@@ -91,14 +91,14 @@ async function pay() {
         <p>{{ payError.message }}</p>
         <RouterLink v-if="sold" :to="{ name: 'marketplace' }">Find another listing</RouterLink>
       </MarketNotice>
-      <MarketNotice v-else-if="sold" title="This ticket has been sold" class="checkout__error">
+      <MarketNotice v-else-if="sold" title="This ticket is no longer available" class="checkout__error">
         <RouterLink :to="{ name: 'marketplace' }">Find another listing</RouterLink>
       </MarketNotice>
 
       <button class="pay" type="submit" :disabled="paying || sold" :aria-busy="paying">
         <span v-if="paying" class="pay__spinner" aria-hidden="true" />
         <template v-if="paying">Processing payment…</template>
-        <template v-else>Pay {{ formatMoney(listing.priceCents, listing.currency, { withCode: true }) }}</template>
+        <template v-else>Pay {{ formatMoney(listing.priceCents, { withCode: true }) }}</template>
       </button>
       <p class="secure">
         <MarketIcon name="lock" :size="14" />

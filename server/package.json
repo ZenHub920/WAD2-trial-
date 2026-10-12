@@ -12,6 +12,7 @@
     "dev": "node --watch src/server.js",
     "test": "node --test",
     "seed": "node src/db/seed.js",
+    "operator:grant": "node src/db/grantOperator.js",
     "sync:concerts": "node src/db/syncTicketmaster.js",
     "bench": "node bench/evaluate.js",
     "bench:scale": "node bench/evaluate.js --scale"

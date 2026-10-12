@@ -1,18 +1,26 @@
 /** Route declarations only; controllers own HTTP responses and validation. */
 import { Router } from 'express';
-import { createAdminController, requireAdmin } from '../controllers/adminController.js';
-import { createChatController } from '../controllers/chatController.js';
 import { createConcertController } from '../controllers/concertController.js';
-import { createMarketController } from '../controllers/marketController.js';
 import { createMatchController } from '../controllers/matchController.js';
 import { createUserController } from '../controllers/userController.js';
+import { createTicketController } from '../controllers/ticketController.js';
+import { createKakiController } from '../controllers/kakiController.js';
+import { createProfileController } from '../controllers/profileController.js';
+import { createParticipationController } from '../controllers/participationController.js';
+import { createOrderController } from '../controllers/orderController.js';
+import { createChatController } from '../controllers/chatController.js';
+import { createAdminController } from '../controllers/adminController.js';
 
-export function createRoutes({ repos, matching, sessions }) {
+export function createRoutes({ repos, matching, sessions, images }) {
   const router = Router();
   const concerts = createConcertController(repos);
   const matches = createMatchController({ repos, matching });
   const users = createUserController(repos, sessions);
-  const market = createMarketController(repos);
+  const tickets = createTicketController(repos, images);
+  const kaki = createKakiController(repos);
+  const profile = createProfileController(repos);
+  const participation = createParticipationController(repos);
+  const orders = createOrderController(repos);
   const chat = createChatController(repos);
   const admin = createAdminController(repos);
 
@@ -25,6 +33,45 @@ export function createRoutes({ repos, matching, sessions }) {
     if (!req.user) return res.status(401).json({ error: 'authentication_required' });
     next();
   };
+  const requireOperator = (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'authentication_required' });
+    if (!req.user.is_operator) return res.status(403).json({ error: 'operator_required' });
+    next();
+  };
+
+  router.get('/tickets', tickets.list);
+  router.get('/tickets/:id', tickets.detail);
+  router.post('/tickets', requireUser, tickets.create);
+  router.patch('/tickets/:id', requireUser, tickets.update);
+  router.delete('/tickets/:id', requireUser, tickets.delete);
+  router.get('/me/tickets', requireUser, tickets.mine);
+  router.post('/me/tickets/:id/proof', requireUser, tickets.submitProof);
+
+  router.post('/tickets/:id/orders', requireUser, orders.buy);
+  router.get('/orders/:id', requireUser, orders.get);
+
+  router.post('/tickets/:id/conversations', requireUser, chat.start);
+  router.get('/conversations', requireUser, chat.list);
+  router.get('/conversations/:id', requireUser, chat.detail);
+  router.post('/conversations/:id/messages', requireUser, chat.send);
+
+  router.get('/operator/verifications', requireOperator, admin.queue);
+  router.post('/operator/verifications/:id', requireOperator, admin.review);
+  router.get('/operator/issued-tickets', requireOperator, admin.issuedSummary);
+  router.post('/operator/concerts/:id/issued-tickets', requireOperator, admin.importIssued);
+
+  router.get('/me/profile', requireUser, profile.get);
+  router.patch('/me/profile', requireUser, profile.update);
+  router.get('/me/concerts', requireUser, participation.mine);
+  router.get('/concerts/:id/participation', requireUser, participation.get);
+  router.post('/concerts/:id/participation', requireUser, participation.join);
+  router.delete('/concerts/:id/participation', requireUser, participation.leave);
+
+  router.get('/kaki/pool', requireUser, kaki.pool);
+  router.get('/kaki/decisions', requireUser, kaki.decisions);
+  router.put('/kaki/decisions/:concertId/:targetUserId', requireUser, kaki.setDecision);
+  router.delete('/kaki/decisions/:concertId/:targetUserId', requireUser, kaki.deleteDecision);
+  router.get('/kaki/matches', requireUser, kaki.matches);
 
   router.get('/concerts', concerts.list);
   router.post('/concerts', concerts.create);
@@ -35,37 +82,19 @@ export function createRoutes({ repos, matching, sessions }) {
   router.post('/concerts/:id/requests', requireUser, concerts.createRequest);
 
   router.get('/concerts/:id/match/preview', matches.preview);
-  router.post('/concerts/:id/match', requireUser, matches.run);
-  router.get('/rounds/:id', matches.round);
+  router.post('/concerts/:id/match', requireOperator, matches.run);
+  router.get('/me/concerts/:id/result', requireUser, matches.myResult);
+  router.get('/rounds/:id', requireOperator, matches.round);
   router.get('/solvers', matches.solvers);
-  router.get('/rounds/:id/trace', matches.trace);
-  router.get('/rounds/:id/parties/:partyId', matches.roster);
-  router.get('/rounds/:id/verify', matches.verify);
-  router.get('/concerts/:id/explain/:requestId', matches.explain);
-
-  router.get('/listings', market.list);
-  router.get('/listings/:id', market.detail);
-  router.post('/listings/:id/orders', requireUser, market.buy);
-  router.post('/listings', requireUser, market.create);
-  router.get('/orders/:id', requireUser, market.order);
-
-  router.post('/listings/:id/conversations', requireUser, chat.start);
-  router.get('/conversations', requireUser, chat.list);
-  router.get('/conversations/:id', requireUser, chat.detail);
-  router.post('/conversations/:id/messages', requireUser, chat.send);
+  router.get('/rounds/:id/trace', requireOperator, matches.trace);
+  router.get('/rounds/:id/parties/:partyId', requireOperator, matches.roster);
+  router.get('/rounds/:id/verify', requireOperator, matches.verify);
+  router.get('/concerts/:id/explain/:requestId', requireOperator, matches.explain);
 
   router.post('/auth/register', users.register);
   router.post('/auth/login', users.login);
   router.get('/auth/me', requireUser, users.current);
   router.post('/auth/logout', requireUser, users.logout);
-  router.get('/me/listings', requireUser, market.mine);
-  router.delete('/me/listings/:id', requireUser, market.withdraw);
-  router.post('/me/listings/:id/proof', requireUser, market.submitProof);
-
-  router.get('/admin/verifications', requireUser, requireAdmin, admin.queue);
-  router.post('/admin/verifications/:id', requireUser, requireAdmin, admin.review);
-  router.get('/admin/issued-tickets', requireUser, requireAdmin, admin.issuedSummary);
-  router.post('/admin/concerts/:id/issued-tickets', requireUser, requireAdmin, admin.importIssued);
   router.get('/users/:id', users.get);
 
   return router;

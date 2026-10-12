@@ -1,4 +1,5 @@
 <script setup>
+import { listingTitle } from '../../market.js';
 import TicketPoster from './TicketPoster.vue';
 import VerifiedBadge from './VerifiedBadge.vue';
 
@@ -14,7 +15,7 @@ defineProps({
       <TicketPoster :listing="listing" ratio="4 / 5" compact />
     </div>
     <div class="item__body">
-      <h2 class="item__title">{{ listing.title }}</h2>
+      <h2 class="item__title">{{ listingTitle(listing) }}</h2>
       <p class="item__seller">Seller: {{ listing.seller.displayName }}</p>
       <VerifiedBadge v-if="listing.verified" label="Verified" />
     </div>

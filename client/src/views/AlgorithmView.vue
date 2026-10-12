@@ -6,8 +6,9 @@
  * acceptance, rejection and eviction, in the order deferred acceptance produced
  * them. Nothing here is simulated — the events come from the solver.
  */
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ref, computed, onUnmounted, watch } from 'vue';
 import { api, LABELS } from '../api.js';
+import { currentUser, sessionReady } from '../auth.js';
 
 const props = defineProps({ id: { type: String, required: true } });
 
@@ -24,46 +25,59 @@ const step = ref(0);          // number of events applied
 const playing = ref(false);
 const speed = ref(6);          // events per second
 let timer = null;
+let loadRequest = 0;
 
 // ---------------------------------------------------------------------------
 // Load
 // ---------------------------------------------------------------------------
 
-onMounted(async () => {
-  try {
-    const [detail, partyData, requestData, run] = await Promise.all([
-      api.concert(props.id),
-      api.parties(props.id),
-      api.requests(props.id),
-      api.preview(props.id, { trace: true }),
-    ]);
-
-    concert.value = detail.concert;
-
-    if (run.empty) {
-      error.value = new Error('This concert has no open listings to match.');
+watch(
+  [() => props.id, sessionReady, () => currentUser.value?.isOperator],
+  async ([concertId, ready, isOperator]) => {
+    const requestId = ++loadRequest;
+    pause();
+    step.value = 0;
+    loading.value = !ready;
+    error.value = null;
+    if (!ready) return;
+    if (!isOperator) {
+      error.value = { status: currentUser.value ? 403 : 401 };
       return;
     }
-
-    trace.value = run.trace ?? [];
-    metrics.value = run.metrics;
-
-    capacities.value = new Map(partyData.parties.map((p) => [p.id, p.capacity]));
-    partyNames.value = new Map(
-      partyData.parties.map((p) => [
-        p.id,
-        { name: p.host.displayName, section: p.section, capacity: p.capacity },
-      ]),
-    );
-    seekerNames.value = new Map(
-      requestData.requests.map((r) => [r.id, { name: r.user.displayName, section: r.sectionPref }]),
-    );
-  } catch (err) {
-    error.value = err;
-  } finally {
-    loading.value = false;
-  }
-});
+    loading.value = true;
+    try {
+      const [detail, partyData, requestData, run] = await Promise.all([
+        api.concert(concertId),
+        api.parties(concertId),
+        api.requests(concertId),
+        api.preview(concertId, { trace: true }),
+      ]);
+      if (requestId !== loadRequest) return;
+      concert.value = detail.concert;
+      if (run.empty) {
+        error.value = new Error('This concert has no open listings to match.');
+        return;
+      }
+      trace.value = run.trace ?? [];
+      metrics.value = run.metrics;
+      capacities.value = new Map(partyData.parties.map((p) => [p.id, p.capacity]));
+      partyNames.value = new Map(
+        partyData.parties.map((p) => [
+          p.id,
+          { name: p.host.displayName, section: p.section, capacity: p.capacity },
+        ]),
+      );
+      seekerNames.value = new Map(
+        requestData.requests.map((r) => [r.id, { name: r.user.displayName, section: r.sectionPref }]),
+      );
+    } catch (err) {
+      if (requestId === loadRequest) error.value = err;
+    } finally {
+      if (requestId === loadRequest) loading.value = false;
+    }
+  },
+  { immediate: true },
+);
 
 onUnmounted(() => clearInterval(timer));
 
@@ -213,9 +227,16 @@ const sortedParties = computed(() =>
 
     <div v-if="loading" class="skeleton" />
 
-    <div v-else-if="error" class="notice notice--error">
-      <h3>Nothing to replay</h3>
-      <p>{{ error.message }}</p>
+    <div v-else-if="error" class="notice notice--error" role="alert">
+      <h3>{{ error.status === 403 ? 'Operator access required'
+        : error.status === 401 ? 'Sign in required' : 'Nothing to replay' }}</h3>
+      <p>{{ error.status === 403
+        ? 'The proposal trace is available only to operators. Your own result is on the concert page.'
+        : error.status === 401
+          ? 'Sign in with an operator account to watch the matching trace. You can still view the public forecast and your own result on the concert page.'
+          : error.message }}</p>
+      <RouterLink v-if="error.status === 401" to="/login" class="btn btn--primary">Sign in</RouterLink>
+      <RouterLink :to="`/concerts/${id}`" class="btn btn--ghost">Concert and your result</RouterLink>
     </div>
 
     <template v-else>

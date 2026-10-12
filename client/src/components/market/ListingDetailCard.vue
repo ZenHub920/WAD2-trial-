@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted } from 'vue';
 import { formatShortDate } from '../../api.js';
-import { priceParts } from '../../market.js';
+import { listingTitle, priceParts, sectionLabel } from '../../market.js';
 import MarketIcon from './MarketIcon.vue';
 import TicketPoster from './TicketPoster.vue';
 import VerifiedBadge from './VerifiedBadge.vue';
@@ -23,20 +23,17 @@ const props = defineProps({
   busy: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['buy', 'chat', 'toggle-save', 'add-to-cart', 'copy-link', 'remove', 'messages']);
+const emit = defineEmits(['buy', 'chat', 'toggle-save', 'add-to-cart', 'copy-link', 'remove', 'edit']);
 
-const price = computed(() => priceParts(props.listing.priceCents, props.listing.currency));
-const available = computed(() => props.listing.status === 'open');
+const price = computed(() => priceParts(props.listing.priceCents));
+const available = computed(() => props.listing.status === 'active');
 
 const facts = computed(() => {
   const l = props.listing;
-  const seat = [l.seatRow && `Row ${l.seatRow}`, l.seatNumbers && `Seat ${l.seatNumbers}`]
-    .filter(Boolean)
-    .join(' · ');
   return [
-    l.category,
-    l.showDate && formatShortDate(l.showDate),
-    seat,
+    sectionLabel(l.section),
+    formatShortDate(l.concert.event_date),
+    l.concert.venue,
     `${l.quantity} ticket${l.quantity === 1 ? '' : 's'}`,
   ].filter(Boolean);
 });
@@ -89,7 +86,7 @@ function copyLink() {
 
     <TicketPoster :listing="listing" ratio="2 / 1" />
 
-    <h2 :id="`listing-${listing.id}-title`" class="dcard__title">{{ listing.title }}</h2>
+    <h2 :id="`listing-${listing.id}-title`" class="dcard__title">{{ listingTitle(listing) }}</h2>
 
     <div class="dcard__row">
       <VerifiedBadge v-if="listing.verified" />
@@ -148,8 +145,8 @@ function copyLink() {
     <div class="dcard__actions">
       <slot name="actions" :listing="listing" :available="available">
         <template v-if="own">
-          <button class="dcard__btn dcard__btn--ghost" :disabled="busy" @click="emit('messages', listing)">
-            Messages
+          <button class="dcard__btn dcard__btn--ghost" :disabled="busy || !available" @click="emit('edit', listing)">
+            Edit listing
           </button>
           <button class="dcard__btn" :disabled="busy || !available" @click="emit('remove', listing)">
             {{ available ? 'Remove listing' : 'Sold' }}

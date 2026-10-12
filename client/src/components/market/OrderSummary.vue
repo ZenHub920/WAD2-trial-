@@ -9,12 +9,11 @@ import { formatMoney } from '../../market.js';
 const props = defineProps({
   subtotalCents: { type: Number, required: true },
   deliveryFeeCents: { type: Number, default: 0 },
-  currency: { type: String, default: 'SGD' },
   heading: { type: String, default: '' },
 });
 
 const total = computed(() => props.subtotalCents + props.deliveryFeeCents);
-const money = (cents) => formatMoney(cents, props.currency, { withCode: true });
+const money = (cents) => formatMoney(cents, { withCode: true });
 </script>
 
 <template>

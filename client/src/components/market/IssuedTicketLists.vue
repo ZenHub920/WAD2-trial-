@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue';
 import { api, formatDate } from '../../api.js';
 
 /**
- * Admin: the official issued-ticket list for each concert. A seller's ticket
+ * Operator: the official issued-ticket list for each concert. A seller's ticket
  * numbers are verified automatically against these, so a concert needs a list
  * before its listings can verify without proof review.
  */

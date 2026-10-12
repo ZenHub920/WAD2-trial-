@@ -7,10 +7,11 @@
  */
 
 import Database from 'better-sqlite3';
+import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-
+import { createTicketImages, decodeTicketImage } from '../services/ticketImages.js';
 const here = dirname(fileURLToPath(import.meta.url));
 
 let db = null;
@@ -31,15 +32,8 @@ export function getDb() {
   if (!userColumns.some((column) => column.name === 'password_hash')) {
     db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT');
   }
-  const partyColumns = db.prepare('PRAGMA table_info(parties)').all();
-  if (!partyColumns.some((column) => column.name === 'price_cents')) {
-    db.exec('ALTER TABLE parties ADD COLUMN price_cents INTEGER');
-  }
-  if (!partyColumns.some((column) => column.name === 'image_data')) {
-    db.exec('ALTER TABLE parties ADD COLUMN image_data TEXT');
-  }
   migrate(db);
-
+  migrateLegacyTickets(db);
   return db;
 }
 
@@ -51,10 +45,11 @@ export function getDb() {
  * never applied. Without this, anyone with a database from before the guarantee
  * ledger lands gets "no such column" on their next round instead of a migration.
  *
- * Deliberately minimal: additive, nullable columns only. Anything needing a
- * table rewrite belongs in a real migration tool, not here.
+ * Additive migrations only. Columns with defaults preserve existing rows
+ * without rebuilding their tables.
  */
 const ADDED_COLUMNS = [
+  ['users', 'is_operator', 'INTEGER NOT NULL DEFAULT 0 CHECK (is_operator IN (0,1))'],
   ['concerts', 'source', 'TEXT'],
   ['concerts', 'source_event_id', 'TEXT'],
   ['concerts', 'official_url', 'TEXT'],
@@ -66,12 +61,13 @@ const ADDED_COLUMNS = [
   ['match_rounds', 'stability_promise', 'TEXT'],
   ['match_rounds', 'relaxations_json', 'TEXT'],
   ['match_rounds', 'ledger_json', 'TEXT'],
-  ['ticket_listings', 'verification_status', 'TEXT'],
-  ['ticket_listings', 'proof_data', 'TEXT'],
-  ['ticket_listings', 'review_note', 'TEXT'],
-  ['ticket_listings', 'reviewed_by', 'TEXT'],
-  ['ticket_listings', 'reviewed_at', 'TEXT'],
-  ['ticket_listings', 'verification_method', 'TEXT'],
+  ['tickets', 'verified', 'INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0,1))'],
+  ['tickets', 'verification_status', 'TEXT'],
+  ['tickets', 'verification_method', 'TEXT'],
+  ['tickets', 'proof_data', 'TEXT'],
+  ['tickets', 'review_note', 'TEXT'],
+  ['tickets', 'reviewed_by', 'TEXT'],
+  ['tickets', 'reviewed_at', 'TEXT'],
 ];
 
 function migrate(target) {
@@ -81,9 +77,55 @@ function migrate(target) {
     if (existing.some((c) => c.name === column)) continue;
     target.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
   }
-  target.exec('CREATE INDEX IF NOT EXISTS idx_listings_verification ON ticket_listings(verification_status)');
+  target.exec('CREATE INDEX IF NOT EXISTS idx_tickets_verification ON tickets(verification_status)');
   target.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_concerts_source_event
     ON concerts(source, source_event_id)`);
+}
+
+/** Preserve historical parties (and their match-result foreign keys) while
+ * moving sale inventory into its own table. The unique source id makes this
+ * safe to repeat after a process restart. */
+export function migrateLegacyTickets(target, imageDir = process.env.ENCORE_TICKET_IMAGE_DIR ?? join(here, '../../data/ticket-images')) {
+  const columns = target.prepare('PRAGMA table_info(parties)').all();
+  if (!columns.some((column) => column.name === 'price_cents')) return;
+  const images = createTicketImages(imageDir);
+  const hasImage = columns.some((column) => column.name === 'image_data');
+  const rows = target.prepare(`
+    SELECT p.*, t.id AS ticket_id FROM parties p
+    LEFT JOIN tickets t ON t.source_party_id = p.id
+    WHERE p.price_cents IS NOT NULL AND (t.id IS NULL OR p.status = 'open')
+  `).all();
+  for (const row of rows) {
+    let imagePath = null;
+    if (!row.ticket_id && hasImage && row.image_data) {
+      try {
+        decodeTicketImage(row.image_data);
+        imagePath = images.save(row.image_data);
+      } catch (err) {
+        if (err.message !== 'invalid_image') throw err;
+        // Old unvalidated uploads remain on their historical party rows.
+      }
+    }
+    try {
+      target.transaction(() => {
+        if (!row.ticket_id) target.prepare(`
+          INSERT INTO tickets
+            (id, seller_user_id, concert_id, price_cents, quantity, section,
+             description, image_path, status, source_party_id, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(`t_${randomUUID()}`, row.host_user_id, row.concert_id, row.price_cents,
+          row.capacity, row.section, row.notes ?? '', imagePath,
+          row.status === 'open' ? 'active' : row.status === 'matched' ? 'sold' : 'cancelled',
+          row.id, row.created_at);
+        if (row.status === 'open') {
+          target.prepare("UPDATE parties SET status = 'cancelled' WHERE id = ?").run(row.id);
+        }
+      })();
+    } catch (err) {
+      images.remove(imagePath);
+      throw err;
+    }
+  }
 }
 
 /** For tests: an isolated in-memory database with the schema applied. */
@@ -92,6 +134,7 @@ export function createTestDb() {
   testDb.pragma('foreign_keys = ON');
   testDb.exec(readFileSync(join(here, 'schema.sql'), 'utf8'));
   migrate(testDb);
+  migrateLegacyTickets(testDb);
   return testDb;
 }
 

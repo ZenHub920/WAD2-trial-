@@ -1,18 +1,7 @@
 <script setup>
 /**
- * Kaki Finder.
- *
- * Four stages, matching the hi-fi prototype:
- *
- *   filters -> ready (+ optional tutorial) -> deck -> match
- *
- * The stage is explicit state rather than separate routes, because the back
- * arrow in the prototype steps BACKWARDS THROUGH THE STAGES, not through
- * browser history — leaving the deck should return you to your filters with
- * them still set, which a route change would throw away.
- *
- * Swipes are recorded locally. See kaki.js for why there is no server call
- * here, and what a "match" does and does not mean without one.
+ * Finder stages preserve filters while a frozen deck keeps each cursor stable.
+ * A swipe advances only after the server has stored its decision.
  */
 import { ref, computed, onMounted } from 'vue';
 import { RouterLink } from 'vue-router';
@@ -24,6 +13,7 @@ import {
   EMPTY_FILTERS,
   applyFilters,
   avatarFor,
+  clearDecision,
   loadPool,
   readDecisions,
   writeDecision,
@@ -33,7 +23,8 @@ const stage = ref('filters'); // filters | ready | tutorial | deck | matched
 
 const loading = ref(true);
 const error = ref(null);
-const concerts = ref([]);
+const swipeError = ref(null);
+const swipePending = ref(false);
 const people = ref([]);
 const decisions = ref({});
 
@@ -42,14 +33,15 @@ const applied = ref({ ...EMPTY_FILTERS });
 
 /** The person on the match screen. */
 const matchedWith = ref(null);
+const matchedDecision = ref(null);
 const tutorialStep = ref(0);
 
 onMounted(async () => {
   try {
-    const pool = await loadPool();
-    concerts.value = pool.concerts;
+    const [pool, saved] = await Promise.all([loadPool(), readDecisions()]);
+    // Eligibility and concert context are already joined in the server pool.
     people.value = pool.people;
-    decisions.value = readDecisions();
+    decisions.value = saved;
   } catch (err) {
     error.value = err;
   } finally {
@@ -133,18 +125,29 @@ const agePercent = computed(() => ({
 
 /* ---- Deck outcomes ------------------------------------------------------ */
 
-function onMatch(person) {
-  decisions.value = writeDecision(person.id, 'match');
+async function recordSwipe(person, direction) {
+  swipeError.value = null;
+  const saved = await writeDecision(person, direction === 'right' ? 'like' : 'skip');
+  decisions.value = { ...decisions.value, [person.id]: saved };
+  return saved;
+}
+
+async function undoSwipe(person) {
+  swipeError.value = null;
+  await clearDecision(person);
+  const next = { ...decisions.value };
+  delete next[person.id];
+  decisions.value = next;
+}
+
+function onLike(person) {
   matchedWith.value = person;
+  matchedDecision.value = decisions.value[person.id];
   stage.value = 'matched';
 }
 
-function onSkip(person) {
-  decisions.value = writeDecision(person.id, 'skip');
-}
-
 function backToDeck() {
-  matchedWith.value = null;
+  matchedDecision.value = null;
   // The deck unmounted when the match screen took over, so SwipeDeck's cursor
   // restarts at zero. Rebuilding here drops everyone already decided, which is
   // safe to do precisely because no live cursor is pointing into the old list.
@@ -159,7 +162,7 @@ function backToDeck() {
 const TUTORIAL = [
   { title: 'View profile history here', hint: 'Everyone you skipped, with an undo.' },
   { title: 'View filters here', hint: 'Change artist, date, section or age at any time.' },
-  { title: 'Swipe card left or right', hint: 'Left to skip, right to match.' },
+  { title: 'Swipe card left or right', hint: 'Left to skip, right to like. A match needs both people to like each other.' },
 ];
 
 function nextTutorial() {
@@ -189,13 +192,17 @@ const matchAvatars = computed(() => {
         v-if="stage !== 'filters'"
         class="kaki__back"
         aria-label="Back"
-        @click="stage = stage === 'matched' ? 'deck' : 'filters'"
+        :disabled="swipePending"
+        @click="stage === 'matched' ? backToDeck() : stage = 'filters'"
       >
         ←
       </button>
       <h1 class="kaki__title">Kaki Finder</h1>
       <div class="kaki__actions">
-        <RouterLink to="/kaki/history" class="kaki__icon-btn" aria-label="Profile history">
+        <RouterLink
+          to="/kaki/history" class="kaki__icon-btn" aria-label="Profile history"
+          :aria-disabled="swipePending" @click="swipePending && $event.preventDefault()"
+        >
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" />
             <path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
@@ -204,6 +211,7 @@ const matchAvatars = computed(() => {
         <button
           class="kaki__icon-btn"
           aria-label="Filters"
+          :disabled="swipePending"
           @click="stage = 'filters'"
         >
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -216,10 +224,10 @@ const matchAvatars = computed(() => {
     <div v-if="loading" class="kaki__state">Loading people…</div>
 
     <div v-else-if="error" class="notice notice--error">
-      <h3>Could not load the finder</h3>
-      <p class="mono">{{ error.message }}</p>
+      <h3>{{ error.status === 401 ? 'Sign in to find a Kaki' : 'Could not load the finder' }}</h3>
+      <p v-if="error.status !== 401" class="mono">{{ error.message }}</p>
+      <RouterLink v-if="error.status === 401" to="/login" class="btn btn--primary">Sign in</RouterLink>
     </div>
-
     <!-- --------------------------------------------------------- Filters -->
     <section v-else-if="stage === 'filters'" class="kaki__panel">
       <h2 class="kaki__h2">Select filters to find Kaki</h2>
@@ -338,6 +346,11 @@ const matchAvatars = computed(() => {
 
     <!-- ------------------------------------------------------------ Deck -->
     <section v-else-if="stage === 'deck'" class="kaki__panel">
+      <div v-if="swipeError" class="notice notice--error" role="alert">
+        <p>Could not save this change. The deck has not moved; please try again.</p>
+        <RouterLink v-if="swipeError.status === 401" to="/login">Sign in</RouterLink>
+        <p v-else class="mono">{{ swipeError.message }}</p>
+      </div>
       <p v-if="deck.length === 0" class="kaki__state">
         No one left under these filters.
         <button class="btn btn--text" @click="stage = 'filters'">Change filters</button>
@@ -347,15 +360,21 @@ const matchAvatars = computed(() => {
         :items="deck"
         noun-singular="profile"
         noun-plural="profiles"
-        yes-label="Match"
+        yes-label="Like"
         no-label="Skip"
-        yes-past="Matched with"
+        yes-past="Liked"
         no-past="Skipped"
-        @shortlist="onMatch"
-        @pass="onSkip"
+        :commit-item="recordSwipe"
+        :undo-item="undoSwipe"
+        @pending-change="swipePending = $event"
+        @commit-error="swipeError = $event"
+        @shortlist="onLike"
       >
         <template #card="{ item }">
           <KakiCard :person="item" :viewer="viewer" />
+        </template>
+        <template #empty>
+          <p>All decisions are saved. A like becomes a match when they like you back.</p>
         </template>
       </SwipeDeck>
     </section>
@@ -375,7 +394,8 @@ const matchAvatars = computed(() => {
       </div>
 
       <h2 class="kaki__h2 kaki__h2--centre">
-        You have matched with {{ matchedWith.user.displayName.split(' ')[0] }}!
+        {{ matchedDecision?.mutual ? 'You matched with' : 'You liked' }}
+        {{ matchedWith.user.displayName.split(' ')[0] }}{{ matchedDecision?.mutual ? '!' : '.' }}
       </h2>
 
       <div class="match__avatars">
@@ -388,10 +408,11 @@ const matchAvatars = computed(() => {
       </div>
 
       <p class="match__note">
-        Saved on this device. Messaging arrives with the Chat section.
+        {{ matchedDecision?.mutual
+          ? 'You both liked each other. Messaging arrives with the Chat section.'
+          : 'Your like is saved. It becomes a match only if they like you back.' }}
       </p>
 
-      <button class="btn btn--primary btn--block" disabled>Send message</button>
       <button class="btn btn--text" @click="backToDeck">Keep swiping</button>
     </section>
   </div>

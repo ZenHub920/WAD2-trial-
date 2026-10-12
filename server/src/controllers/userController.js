@@ -1,6 +1,5 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { publicUser } from './publicUser.js';
-import { isAdmin } from './adminController.js';
 
 export function createUserController(repos, sessions) {
   return {
@@ -21,7 +20,7 @@ export function createUserController(repos, sessions) {
           password_hash: hashPassword(req.body.password),
         });
         sessions.start(req, res, user.id);
-        res.status(201).json({ user: { ...publicUser(user), isAdmin: isAdmin(user) } });
+        res.status(201).json({ user: ownUser(user) });
       } catch (err) {
         res.status(409).json({ error: 'could_not_create_user', detail: err.message });
       }
@@ -37,12 +36,11 @@ export function createUserController(repos, sessions) {
         return res.status(401).json({ error: 'invalid_credentials' });
       }
       sessions.start(req, res, user.id);
-      const signedIn = repos.users.findById(user.id);
-      res.json({ user: { ...publicUser(signedIn), isAdmin: isAdmin(signedIn) } });
+      res.json({ user: ownUser(repos.users.findById(user.id)) });
     },
 
     current(req, res) {
-      res.json({ user: { ...publicUser(req.user), isAdmin: isAdmin(req.user) } });
+      res.json({ user: ownUser(req.user) });
     },
 
     logout(req, res) {
@@ -55,7 +53,12 @@ export function createUserController(repos, sessions) {
       if (!user) return res.status(404).json({ error: 'user_not_found' });
       res.json({ user: publicUser(user) });
     },
+
   };
+}
+
+function ownUser(user) {
+  return { ...publicUser(user), isOperator: Boolean(user.is_operator) };
 }
 
 function validateRegistration(body = {}) {

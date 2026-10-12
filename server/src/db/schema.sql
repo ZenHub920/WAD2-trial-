@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS users (
   vibe_json              TEXT    NOT NULL,
   reliability            REAL    NOT NULL DEFAULT 0.75 CHECK (reliability BETWEEN 0 AND 1),
   verified               INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0,1)),
+  is_operator            INTEGER NOT NULL DEFAULT 0 CHECK (is_operator IN (0,1)),
   created_at             TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -86,8 +87,6 @@ CREATE TABLE IF NOT EXISTS parties (
   capacity          INTEGER NOT NULL CHECK (capacity >= 1),
   section           TEXT    NOT NULL CHECK (section IN ('pit','ga_standing','lower_bowl','upper_bowl','seated_any')),
   spend_band        INTEGER NOT NULL CHECK (spend_band BETWEEN 1 AND 4),
-  price_cents       INTEGER CHECK (price_cents IS NULL OR price_cents >= 0),
-  image_data        TEXT,
   arrival_plan      TEXT    NOT NULL CHECK (arrival_plan IN ('early_queue','mid','doors')),
   plans_json        TEXT    NOT NULL DEFAULT '{}',
   strict_age_policy INTEGER NOT NULL DEFAULT 0 CHECK (strict_age_policy IN (0,1)),
@@ -105,6 +104,106 @@ CREATE TABLE IF NOT EXISTS parties (
 );
 
 CREATE INDEX IF NOT EXISTS idx_parties_concert ON parties(concert_id, status);
+
+-- Ticket inventory is independent from the matchmaking party/host instance.
+CREATE TABLE IF NOT EXISTS tickets (
+  id             TEXT PRIMARY KEY,
+  seller_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  concert_id     TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
+  price_cents    INTEGER NOT NULL CHECK (price_cents >= 0),
+  quantity       INTEGER NOT NULL CHECK (quantity > 0),
+  section        TEXT NOT NULL,
+  description    TEXT NOT NULL DEFAULT '',
+  image_path     TEXT,
+  status         TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','sold','cancelled','deleted')),
+  source_party_id TEXT UNIQUE REFERENCES parties(id) ON DELETE SET NULL,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_tickets_status_created ON tickets(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tickets_seller ON tickets(seller_user_id, created_at DESC);
+
+-- Ticket verification lives on tickets as additive columns (see connection.js
+-- ADDED_COLUMNS): verified, verification_status ('pending'|'approved'|'rejected'),
+-- verification_method ('ticket_number'|'proof'), proof_data, review_note,
+-- reviewed_by, reviewed_at. `verified` is only ever set by the server.
+
+-- The official ticket numbers issued for a concert, imported by an operator. A ticket
+-- whose numbers are all on this list is verified without human review.
+CREATE TABLE IF NOT EXISTS issued_tickets (
+  concert_id     TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
+  ticket_number  TEXT NOT NULL,              -- normalised: trimmed, upper-case, spaces/dashes as one dash
+  category       TEXT,                       -- when given, the listing's section must match
+  imported_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (concert_id, ticket_number)
+);
+
+-- The ticket numbers a seller put on a listing. Never shown publicly (anyone could
+-- copy them); the seller sees them, and the buyer receives them after paying.
+-- A number may be on only one ACTIVE listing at a time (checked in the create
+-- transaction), so a sold ticket can be resold by its new owner.
+CREATE TABLE IF NOT EXISTS ticket_numbers (
+  ticket_id      TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+  concert_id     TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
+  ticket_number  TEXT NOT NULL,
+  PRIMARY KEY (ticket_id, ticket_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ticket_numbers_number ON ticket_numbers(concert_id, ticket_number);
+
+-- Amounts are copied onto the order at purchase time, so a later price edit on the
+-- listing can never change what the buyer was charged. Money is in integer cents.
+CREATE TABLE IF NOT EXISTS orders (
+  id                 TEXT    PRIMARY KEY,
+  ticket_id          TEXT    NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+  buyer_user_id      TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  subtotal_cents     INTEGER NOT NULL,
+  delivery_fee_cents INTEGER NOT NULL DEFAULT 0,
+  total_cents        INTEGER NOT NULL,
+  currency           TEXT    NOT NULL DEFAULT 'SGD',
+  payment_method     TEXT    NOT NULL CHECK (payment_method IN ('visa','mastercard','paypal','apple_pay')),
+  status             TEXT    NOT NULL DEFAULT 'paid' CHECK (status IN ('paid','refunded')),
+  created_at         TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_buyer ON orders(buyer_user_id, created_at DESC);
+
+-- A conversation is one buyer asking one seller about one ticket listing, so a
+-- second tap on Chat reopens the same thread instead of starting another.
+CREATE TABLE IF NOT EXISTS ticket_conversations (
+  id              TEXT PRIMARY KEY,
+  ticket_id       TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+  buyer_user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  seller_user_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (ticket_id, buyer_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ticket_conversations_buyer ON ticket_conversations(buyer_user_id);
+CREATE INDEX IF NOT EXISTS idx_ticket_conversations_seller ON ticket_conversations(seller_user_id);
+
+CREATE TABLE IF NOT EXISTS ticket_messages (
+  id               TEXT PRIMARY KEY,
+  conversation_id  TEXT NOT NULL REFERENCES ticket_conversations(id) ON DELETE CASCADE,
+  sender_user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body             TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 2000),
+  created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_ticket_messages_conversation ON ticket_messages(conversation_id, created_at);
+
+-- Kaki participation does not enroll a user in group matching.
+-- Keep withdrawn rows so a legacy open seeker/host cannot reappear in Kaki.
+CREATE TABLE IF NOT EXISTS concert_participants (
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  concert_id   TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
+  section_pref TEXT NOT NULL CHECK (section_pref IN ('pit','ga_standing','lower_bowl','upper_bowl','seated_any')),
+  arrival_pref TEXT NOT NULL CHECK (arrival_pref IN ('early_queue','mid','doors')),
+  status       TEXT NOT NULL DEFAULT 'joined' CHECK (status IN ('joined','withdrawn')),
+  joined_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, concert_id)
+);
+CREATE INDEX IF NOT EXISTS idx_participants_concert ON concert_participants(concert_id, status);
 
 CREATE TABLE IF NOT EXISTS seeker_requests (
   id                TEXT    PRIMARY KEY,
@@ -130,6 +229,19 @@ CREATE TABLE IF NOT EXISTS seeker_requests (
 );
 
 CREATE INDEX IF NOT EXISTS idx_seekers_concert ON seeker_requests(concert_id, status);
+
+-- Kaki decisions are keyed by concert and person, not by a request's lifecycle.
+CREATE TABLE IF NOT EXISTS kaki_decisions (
+  concert_id    TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
+  actor_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  target_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  decision      TEXT NOT NULL CHECK (decision IN ('like','skip')),
+  decided_at    INTEGER NOT NULL,
+  PRIMARY KEY (concert_id, actor_user_id, target_user_id),
+  CHECK (actor_user_id <> target_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_kaki_decisions_target
+  ON kaki_decisions (concert_id, target_user_id, actor_user_id);
 
 -- ---------------------------------------------------------------------------
 -- Match rounds — immutable results with their own stability proof
@@ -192,107 +304,6 @@ CREATE TABLE IF NOT EXISTS match_trace (
   evicted_seeker_id TEXT,
   PRIMARY KEY (round_id, step)
 );
-
--- ---------------------------------------------------------------------------
--- Ticket market — resale listings and the orders that buy them
--- ---------------------------------------------------------------------------
-
--- One listing is one lot: `quantity` tickets sold together at `price_cents` for the lot.
--- Money is stored in integer cents so totals never pick up floating-point drift.
-CREATE TABLE IF NOT EXISTS ticket_listings (
-  id              TEXT    PRIMARY KEY,
-  seller_user_id  TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  concert_id      TEXT    NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
-  title           TEXT    NOT NULL,
-  category        TEXT    NOT NULL,           -- e.g. 'Cat 3', 'VIP 1'
-  show_date       TEXT,                       -- the night, for multi-night runs
-  seat_row        TEXT,
-  seat_numbers    TEXT,
-  quantity        INTEGER NOT NULL DEFAULT 1 CHECK (quantity >= 1),
-  price_cents     INTEGER NOT NULL CHECK (price_cents > 0),
-  currency        TEXT    NOT NULL DEFAULT 'SGD',
-  description     TEXT,
-  image_url       TEXT,
-  verified        INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0,1)),
-  status          TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open','sold','withdrawn')),
-  -- Verification: the seller uploads proof of purchase, an admin approves or rejects it.
-  -- `verified` is only ever set by an approval. NULL status means no proof submitted.
-  verification_status TEXT CHECK (verification_status IN ('pending','approved','rejected')),
-  proof_data      TEXT,                       -- data URL; never sent to anyone but admins
-  review_note     TEXT,                       -- why a proof was rejected, shown to the seller
-  verification_method TEXT,                   -- 'ticket_number' (matched the issued list) or 'proof' (admin review)
-  reviewed_by     TEXT REFERENCES users(id),
-  reviewed_at     TEXT,
-  created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_listings_status ON ticket_listings(status, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_listings_concert ON ticket_listings(concert_id, status);
--- idx_listings_verification is created in connection.js migrate(), after the column exists.
-
--- The official ticket numbers issued for a concert, imported by an admin. A listing
--- whose numbers are all on this list is verified without human review.
-CREATE TABLE IF NOT EXISTS issued_tickets (
-  concert_id     TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
-  ticket_number  TEXT NOT NULL,              -- normalised: trimmed, upper-case, spaces/dashes as one dash
-  category       TEXT,                       -- when given, the listing's category must match
-  imported_at    TEXT NOT NULL DEFAULT (datetime('now')),
-  PRIMARY KEY (concert_id, ticket_number)
-);
-
--- The ticket numbers a seller put on a listing. Never shown publicly (anyone could
--- copy them); the seller sees them, and the buyer receives them after paying.
--- A number may be on only one OPEN listing at a time — enforced in createListing's
--- transaction — so a sold ticket can be resold by its new owner.
-CREATE TABLE IF NOT EXISTS listing_tickets (
-  listing_id     TEXT NOT NULL REFERENCES ticket_listings(id) ON DELETE CASCADE,
-  concert_id     TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
-  ticket_number  TEXT NOT NULL,
-  PRIMARY KEY (listing_id, ticket_number)
-);
-
-CREATE INDEX IF NOT EXISTS idx_listing_tickets_number ON listing_tickets(concert_id, ticket_number);
-
--- Amounts are copied onto the order at purchase time, so a later price edit on the
--- listing can never change what the buyer was charged.
-CREATE TABLE IF NOT EXISTS ticket_orders (
-  id                 TEXT    PRIMARY KEY,
-  listing_id         TEXT    NOT NULL REFERENCES ticket_listings(id) ON DELETE CASCADE,
-  buyer_user_id      TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  subtotal_cents     INTEGER NOT NULL,
-  delivery_fee_cents INTEGER NOT NULL DEFAULT 0,
-  total_cents        INTEGER NOT NULL,
-  currency           TEXT    NOT NULL DEFAULT 'SGD',
-  payment_method     TEXT    NOT NULL CHECK (payment_method IN ('visa','mastercard','paypal','apple_pay')),
-  status             TEXT    NOT NULL DEFAULT 'paid' CHECK (status IN ('paid','refunded')),
-  created_at         TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_orders_buyer ON ticket_orders(buyer_user_id, created_at DESC);
-
--- A conversation is one buyer asking one seller about one listing, so a second
--- tap on Chat reopens the same thread instead of starting another.
-CREATE TABLE IF NOT EXISTS conversations (
-  id              TEXT PRIMARY KEY,
-  listing_id      TEXT NOT NULL REFERENCES ticket_listings(id) ON DELETE CASCADE,
-  buyer_user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  seller_user_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE (listing_id, buyer_user_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_conversations_buyer ON conversations(buyer_user_id);
-CREATE INDEX IF NOT EXISTS idx_conversations_seller ON conversations(seller_user_id);
-
-CREATE TABLE IF NOT EXISTS messages (
-  id               TEXT PRIMARY KEY,
-  conversation_id  TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-  sender_user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  body             TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 2000),
-  created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at);
 
 -- ---------------------------------------------------------------------------
 -- Post-event feedback, which feeds reliability back into future preference lists

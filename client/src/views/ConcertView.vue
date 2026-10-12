@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api, LABELS, formatDate } from '../api.js';
+import { currentUser, sessionReady } from '../auth.js';
 import VibeChart from '../components/VibeChart.vue';
 import SwipeDeck from '../components/SwipeDeck.vue';
 import PartyCard from '../components/PartyCard.vue';
@@ -17,11 +18,126 @@ const preview = ref(null);
 const loading = ref(true);
 const running = ref(false);
 const error = ref(null);
+const runError = ref('');
 const tab = ref('parties');
+const participation = ref(null);
+const participationLoading = ref(false);
+const participationBusy = ref(false);
+const participationError = ref('');
+const participationLoadError = ref(false);
+const participationRetry = ref(0);
+const participationNeedsSignIn = ref(false);
+const sectionPref = ref('seated_any');
+const arrivalPref = ref('doors');
+let participationRequest = 0;
+const myResult = ref(null);
+const resultLoading = ref(false);
+const resultError = ref(null);
+const resultRetry = ref(0);
+let resultRequest = 0;
+
+watch(
+  [() => props.id, () => currentUser.value?.id, sessionReady, resultRetry],
+  async ([concertId, userId, ready]) => {
+    const requestId = ++resultRequest;
+    myResult.value = null;
+    resultError.value = null;
+    resultLoading.value = Boolean(ready && userId);
+    if (!ready || !userId) return;
+    try {
+      const { result } = await api.myConcertResult(concertId);
+      if (requestId === resultRequest) myResult.value = result;
+    } catch (err) {
+      if (requestId === resultRequest) resultError.value = err;
+    } finally {
+      if (requestId === resultRequest) resultLoading.value = false;
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  [() => props.id, () => currentUser.value?.id, () => participationRetry.value],
+  async ([concertId, userId]) => {
+    const requestId = ++participationRequest;
+    participationBusy.value = false;
+    participation.value = null;
+    participationError.value = '';
+    participationLoadError.value = false;
+    participationNeedsSignIn.value = false;
+    sectionPref.value = 'seated_any';
+    arrivalPref.value = 'doors';
+    participationLoading.value = Boolean(userId);
+    if (!userId) return;
+    try {
+      const result = await api.participation(concertId);
+      if (requestId !== participationRequest) return;
+      participation.value = result.participation;
+      if (result.participation) {
+        sectionPref.value = result.participation.sectionPref;
+        arrivalPref.value = result.participation.arrivalPref;
+      }
+    } catch (err) {
+      if (requestId !== participationRequest) return;
+      participationNeedsSignIn.value = err.status === 401;
+      participationLoadError.value = err.status !== 401;
+      participationError.value = err.status === 401
+        ? 'Your session has expired. Sign in to join.'
+        : `Could not load your Kaki participation: ${err.message}`;
+    } finally {
+      if (requestId === participationRequest) participationLoading.value = false;
+    }
+  },
+  { immediate: true },
+);
+
+async function saveParticipation() {
+  if (participationBusy.value || participationLoading.value) return;
+  const requestId = participationRequest;
+  participationBusy.value = true;
+  participationError.value = '';
+  try {
+    const result = await api.joinConcert(props.id, {
+      sectionPref: sectionPref.value,
+      arrivalPref: arrivalPref.value,
+    });
+    if (requestId === participationRequest) participation.value = result.participation;
+  } catch (err) {
+    if (requestId === participationRequest) {
+      participationNeedsSignIn.value = err.status === 401;
+      participationError.value = err.status === 401
+        ? 'Your session has expired. Sign in to join.'
+        : `Could not save your Kaki participation: ${err.message}`;
+    }
+  } finally {
+    if (requestId === participationRequest) participationBusy.value = false;
+  }
+}
+
+async function leaveParticipation() {
+  if (participationBusy.value || participationLoading.value || !participation.value) return;
+  const requestId = participationRequest;
+  participationBusy.value = true;
+  participationError.value = '';
+  try {
+    await api.leaveConcert(props.id);
+    if (requestId === participationRequest) participation.value = null;
+  } catch (err) {
+    if (requestId === participationRequest) {
+      participationNeedsSignIn.value = err.status === 401;
+      participationError.value = err.status === 401
+        ? 'Your session has expired. Sign in to leave.'
+        : `Could not leave Kaki: ${err.message}`;
+    }
+  } finally {
+    if (requestId === participationRequest) participationBusy.value = false;
+  }
+}
 
 async function load() {
   loading.value = true;
   error.value = null;
+  runError.value = '';
   try {
     const [detail, partyData, requestData] = await Promise.all([
       api.concert(props.id),
@@ -50,12 +166,18 @@ onMounted(load);
 watch(() => props.id, load);
 
 async function runRound() {
+  if (!canRun.value) return;
+  runError.value = '';
   running.value = true;
   try {
     const outcome = await api.runMatch(props.id);
-    router.push(`/rounds/${outcome.roundId}`);
+    router.push({ path: `/rounds/${outcome.roundId}`, query: { concertId: props.id } });
   } catch (err) {
-    error.value = err;
+    runError.value = err.status === 403
+      ? 'Only an operator can run matching rounds.'
+      : err.status === 401
+        ? 'Your session has expired. Sign in as an operator to run a round.'
+        : `Could not run this round: ${err.message}`;
   } finally {
     running.value = false;
   }
@@ -64,7 +186,8 @@ async function runRound() {
 const totalSlots = computed(() => parties.value.reduce((a, p) => a + p.capacity, 0));
 
 const canRun = computed(
-  () => parties.value.length > 0 && requests.value.length > 0 && !running.value,
+  () => sessionReady.value && currentUser.value?.isOperator === true
+    && parties.value.length > 0 && requests.value.length > 0 && !running.value,
 );
 
 /* ---- Judging mode -------------------------------------------------------
@@ -205,7 +328,7 @@ const forecastFirstChoice = useCountUp(
             </p>
           </div>
 
-          <div class="head__actions">
+          <div v-if="sessionReady && currentUser?.isOperator" class="head__actions">
             <button class="btn btn--primary" :disabled="!canRun" @click="runRound">
               {{ running ? 'Running…' : 'Run matching round' }}
             </button>
@@ -213,10 +336,11 @@ const forecastFirstChoice = useCountUp(
               Watch it run
             </RouterLink>
           </div>
+          <p v-if="runError" class="kaki-join__error" role="alert">{{ runError }}</p>
 
           <RouterLink
-            v-if="concert.latestRound"
-            :to="`/rounds/${concert.latestRound.id}`"
+            v-if="concert.latestRound && sessionReady && currentUser?.isOperator"
+            :to="{ path: `/rounds/${concert.latestRound.id}`, query: { concertId: id } }"
             class="head__previous"
           >
             Last round: {{ concert.latestRound.matched }} matched
@@ -224,8 +348,95 @@ const forecastFirstChoice = useCountUp(
               {{ concert.latestRound.isStable ? '· verified stable' : '· UNSTABLE' }}
             </span>
           </RouterLink>
+          <p v-else-if="concert.latestRound" class="head__previous">
+            Last round: {{ concert.latestRound.matched }} matched
+          </p>
         </aside>
       </header>
+      <section class="my-result card" aria-labelledby="my-result-title">
+        <h2 id="my-result-title">Your matching result</h2>
+        <p v-if="!sessionReady || resultLoading" role="status">Loading your result…</p>
+        <p v-else-if="!currentUser">
+          <RouterLink to="/login">Sign in</RouterLink> to see your own result from the latest round.
+        </p>
+        <div v-else-if="resultError" role="alert">
+          <p>{{ resultError.status === 401
+            ? 'Your session has expired. Sign in again to see your result.'
+            : `Could not load your result: ${resultError.message}` }}</p>
+          <RouterLink v-if="resultError.status === 401" to="/login">Sign in</RouterLink>
+          <button v-if="resultError.status !== 401" type="button" class="btn btn--ghost" @click="resultRetry++">Retry loading result</button>
+        </div>
+        <p v-else-if="!myResult">
+          {{ concert.latestRound
+            ? 'You did not participate in the latest matching round. Joining Kaki is separate from group matching.'
+            : 'No matching round has run for this concert yet.' }}
+        </p>
+        <template v-else>
+          <p class="my-result__round">Latest round · {{ formatDate(myResult.round.ranAt) }}</p>
+          <template v-if="myResult.role === 'seeker'">
+            <p v-if="myResult.outcome === 'matched' && myResult.group">
+              You matched with {{ myResult.group.host.displayName }}'s group
+              <template v-if="myResult.group.section"> in {{ LABELS.section[myResult.group.section] ?? myResult.group.section }}</template>.
+            </p>
+            <p v-else>You were not matched with a group in this round.</p>
+          </template>
+          <template v-else>
+            <p v-if="myResult.outcome === 'no_members' || !myResult.members?.length">
+              No seekers were assigned to your group in this round.
+            </p>
+            <template v-else>
+              <p>{{ myResult.members.length }} {{ myResult.members.length === 1 ? 'seeker was' : 'seekers were' }} assigned to your group:</p>
+              <ul class="my-result__members">
+                <li v-for="member in myResult.members" :key="member.id">{{ member.displayName }}</li>
+              </ul>
+            </template>
+          </template>
+        </template>
+      </section>
+
+      <section class="kaki-join card" aria-labelledby="kaki-join-title">
+        <div class="kaki-join__intro">
+          <h2 id="kaki-join-title">Find a concert Kaki</h2>
+          <p>Joining Kaki lets you discover other concertgoers. It does not enroll you in the stable group matching round or submit a group request.</p>
+        </div>
+        <p v-if="!currentUser" class="kaki-join__state">
+          <RouterLink to="/login" class="btn btn--primary">Sign in to join Kaki</RouterLink>
+        </p>
+        <p v-else-if="participationLoading" class="kaki-join__state" role="status">Loading your participation…</p>
+        <div v-else-if="participationNeedsSignIn" class="kaki-join__state">
+          <p role="alert">{{ participationError }}</p>
+          <RouterLink to="/login" class="btn btn--primary">Sign in</RouterLink>
+        </div>
+        <div v-else-if="participationLoadError" class="kaki-join__state">
+          <p class="kaki-join__error" role="alert">{{ participationError }}</p>
+          <button class="btn btn--ghost" type="button" @click="participationRetry++">Retry loading participation</button>
+        </div>
+        <form v-else class="kaki-join__form" @submit.prevent="saveParticipation">
+          <p v-if="participation" class="kaki-join__joined">You have joined Kaki for this concert.</p>
+          <div class="kaki-join__fields">
+            <label>
+              Preferred section
+              <select v-model="sectionPref" :disabled="participationBusy" required>
+                <option v-for="(label, value) in LABELS.section" :key="value" :value="value">{{ label }}</option>
+              </select>
+            </label>
+            <label>
+              Arrival plan
+              <select v-model="arrivalPref" :disabled="participationBusy" required>
+                <option v-for="(label, value) in LABELS.arrival" :key="value" :value="value">{{ label }}</option>
+              </select>
+            </label>
+          </div>
+          <p v-if="participationError" class="kaki-join__error" role="alert">{{ participationError }}</p>
+          <div class="kaki-join__actions">
+            <RouterLink v-if="participation" to="/kaki" class="btn btn--ghost">Explore Kaki Finder</RouterLink>
+            <button type="submit" class="btn btn--primary" :disabled="participationBusy">
+              {{ participationBusy ? 'Working…' : participation ? 'Save preferences' : 'Join Kaki' }}
+            </button>
+            <button v-if="participation" type="button" class="btn btn--ghost" :disabled="participationBusy" @click="leaveParticipation">Leave Kaki</button>
+          </div>
+        </form>
+      </section>
 
       <!-- ------------------------------------------------------------ Tabs -->
       <div class="tabs" role="tablist">
@@ -435,6 +646,23 @@ const forecastFirstChoice = useCountUp(
 </template>
 
 <style scoped>
+.my-result { display: grid; gap: var(--space-3); margin-bottom: var(--space-6); padding: var(--space-5); }
+.my-result h2 { font-size: var(--step-1); }
+.my-result p { margin: 0; color: var(--text-300); }
+.my-result__round { font-size: var(--step--1); }
+.my-result__members { margin: 0; padding-left: var(--space-5); }
+.kaki-join { display: grid; gap: var(--space-4); margin-bottom: var(--space-6); padding: var(--space-5); }
+.kaki-join__intro h2 { font-size: var(--step-1); }
+.kaki-join__intro p { margin-top: var(--space-2); color: var(--text-300); }
+.kaki-join__form { display: grid; gap: var(--space-4); }
+.kaki-join__joined { color: var(--mint-400); }
+.kaki-join__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.kaki-join__fields label { display: grid; gap: var(--space-2); color: var(--text-300); font-size: var(--step--1); }
+.kaki-join__fields select { min-width: 0; width: 100%; padding: var(--space-3); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-700); }
+.kaki-join__actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.kaki-join__error { color: var(--rose-400); }
+@media (max-width: 600px) { .kaki-join__fields { grid-template-columns: 1fr; } }
+
 /* ---- Browse: mode switch ------------------------------------------------ */
 
 .browse {
