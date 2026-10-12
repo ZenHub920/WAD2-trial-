@@ -1,34 +1,23 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
-import { api, formatDate, LABELS } from '../api.js';
+import { api } from '../api.js';
+import { useSavedListings } from '../market.js';
+import ListingCard from '../components/market/ListingCard.vue';
 
-const concerts = ref([]);
 const listings = ref([]);
 const loading = ref(true);
 const error = ref('');
 const search = ref('');
 const selectedDate = ref('');
-const selectedSection = ref('all');
+const selectedCategory = ref('all');
 const minPrice = ref(0);
 const maxPrice = ref(100000);
 
-const priceLabels = {
-  1: '$',
-  2: '$$',
-  3: '$$$',
-  4: '$$$$',
-};
+const { isSaved, toggle } = useSavedListings();
 
 onMounted(async () => {
   try {
-    concerts.value = (await api.concerts()).concerts;
-    const results = await Promise.all(
-      concerts.value.map(async (concert) => {
-        const { parties } = await api.parties(concert.id);
-        return parties.map((party) => ({ ...party, concert }));
-      }),
-    );
-    listings.value = results.flat();
+    listings.value = (await api.listings()).listings;
   } catch (err) {
     error.value = err.message;
   } finally {
@@ -36,29 +25,36 @@ onMounted(async () => {
   }
 });
 
+/** Categories differ per venue (Cat 3, Pen A, Stalls…), so offer the ones actually listed. */
+const categories = computed(() =>
+  [...new Set(listings.value.map((l) => l.category))].sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true }),
+  ),
+);
+
 const filteredListings = computed(() => {
   const query = search.value.trim().toLowerCase();
   return listings.value.filter((listing) => {
     const matchesSearch =
       !query ||
-      listing.concert.artist.toLowerCase().includes(query) ||
-      listing.concert.venue.toLowerCase().includes(query) ||
-      listing.host.displayName.toLowerCase().includes(query);
-    const matchesDate = !selectedDate.value || listing.concert.event_date.slice(0, 10) === selectedDate.value;
-    const matchesSection = selectedSection.value === 'all' || listing.section === selectedSection.value;
-    const listingPrice = listing.priceCents != null ? listing.priceCents / 100 : listing.spendBand * 250;
-    const matchesPrice = listingPrice >= minPrice.value && listingPrice <= maxPrice.value;
-    return matchesSearch && matchesDate && matchesSection && matchesPrice;
+      [listing.title, listing.concert.artist, listing.concert.venue, listing.seller.displayName]
+        .some((text) => text?.toLowerCase().includes(query));
+    const date = (listing.showDate ?? listing.concert.eventDate).slice(0, 10);
+    const matchesDate = !selectedDate.value || date === selectedDate.value;
+    const matchesCategory =
+      selectedCategory.value === 'all' || listing.category === selectedCategory.value;
+    const price = listing.priceCents / 100;
+    const matchesPrice = price >= minPrice.value && price <= maxPrice.value;
+    return matchesSearch && matchesDate && matchesCategory && matchesPrice;
   });
 });
 
 function resetFilters() {
   selectedDate.value = '';
-  selectedSection.value = 'all';
+  selectedCategory.value = 'all';
   minPrice.value = 0;
   maxPrice.value = 100000;
 }
-
 </script>
 
 <template>
@@ -88,10 +84,10 @@ function resetFilters() {
             <input v-model="selectedDate" type="date" lang="en-GB" />
           </label>
           <label>
-            Seat section
-            <select v-model="selectedSection">
-              <option value="all">Any section</option>
-              <option v-for="(label, section) in LABELS.section" :key="section" :value="section">{{ label }}</option>
+            Category
+            <select v-model="selectedCategory">
+              <option value="all">Any category</option>
+              <option v-for="category in categories" :key="category" :value="category">{{ category }}</option>
             </select>
           </label>
           <label>
@@ -125,30 +121,13 @@ function resetFilters() {
             <button class="btn btn--ghost" @click="resetFilters">Clear filters</button>
           </div>
           <div v-else class="ticket-grid">
-            <RouterLink
+            <ListingCard
               v-for="listing in filteredListings"
               :key="listing.id"
-              :to="{ name: 'ticket-detail', params: { id: listing.id } }"
-              class="ticket-card"
-            >
-          <img v-if="listing.imageData" class="ticket-card__image" :src="listing.imageData" alt="Ticket listing" />
-          <div class="ticket-card__body">
-            <div class="ticket-card__seller">
-              <span class="seller-avatar">{{ listing.host.displayName.slice(0, 1) }}</span>
-              <span>{{ listing.host.displayName }}</span>
-              <small>verified fan</small>
-            </div>
-            <h2>{{ listing.concert.artist }}</h2>
-            <p class="ticket-card__tour">{{ listing.concert.tour_name || 'Live concert' }}</p>
-            <p class="ticket-card__date">{{ formatDate(listing.concert.event_date) }} · {{ listing.concert.venue }}</p>
-            <div class="ticket-card__meta">
-              <span>{{ LABELS.section[listing.section] }}</span>
-              <span>{{ listing.capacity }} {{ listing.capacity === 1 ? 'ticket' : 'tickets' }}</span>
-              <strong>{{ listing.priceCents != null ? `$${(listing.priceCents / 100).toFixed(2)}` : priceLabels[listing.spendBand] }}</strong>
-            </div>
-          </div>
-              <button class="save-button" aria-label="Save ticket" @click.prevent>♡</button>
-            </RouterLink>
+              :listing="listing"
+              :saved="isSaved(listing.id)"
+              @toggle-save="toggle"
+            />
           </div>
         </main>
       </div>
@@ -218,31 +197,7 @@ function resetFilters() {
 .text-button:hover { color: var(--text-100); }
 .filter-count { color: var(--text-400); font-size: var(--step--2); }
 
-.ticket-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-5); }
-.ticket-card__image { display: block; width: 100%; height: 180px; object-fit: cover; }
-.ticket-card {
-  position: relative;
-  overflow: hidden;
-  border: var(--border-soft);
-  border-radius: var(--radius-lg);
-  background: var(--ink-850);
-  color: inherit;
-  text-decoration: none;
-  transition: transform var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out);
-}
-.ticket-card:hover { transform: translateY(-4px); border-color: var(--accent-400); }
-.ticket-card__body { padding: var(--space-4); }
-.ticket-card__seller { display: flex; align-items: center; gap: var(--space-2); color: var(--text-300); font-size: var(--step--2); }
-.seller-avatar { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent-500); color: white; }
-.ticket-card__seller small { margin-left: auto; color: var(--mint-400); }
-.ticket-card h2 { margin-top: var(--space-3); font-size: var(--step-1); }
-.ticket-card__tour, .ticket-card__date { color: var(--text-300); font-size: var(--step--1); }
-.ticket-card__date { margin-top: var(--space-2); color: var(--text-400); }
-.ticket-card__meta { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-4); font-size: var(--step--2); }
-.ticket-card__meta span { padding: 3px 7px; border-radius: var(--radius-pill); background: var(--ink-700); }
-.ticket-card__meta strong { margin-left: auto; color: var(--accent-300); }
-.save-button { position: absolute; top: var(--space-3); right: var(--space-3); color: white; font-size: 1.5rem; }
-.save-button:hover { color: var(--accent-300); }
+.ticket-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--space-4); }
 
 .marketplace__empty { padding: var(--space-9) var(--space-4); text-align: center; }
 .marketplace__empty > span { color: var(--accent-300); font-size: 3rem; }
@@ -259,6 +214,7 @@ function resetFilters() {
   .ticket-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 540px) {
-  .filter-grid, .ticket-grid { grid-template-columns: 1fr; }
+  .filter-grid { grid-template-columns: 1fr; }
+  .ticket-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 }
 </style>

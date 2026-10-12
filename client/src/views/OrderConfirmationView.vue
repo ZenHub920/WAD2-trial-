@@ -47,7 +47,7 @@ function methodLabel(id) {
     </MarketNotice>
 
     <MarketNotice v-else-if="error?.status === 404" title="Order not found">
-      <RouterLink :to="{ name: 'market' }">Back to the market</RouterLink>
+      <RouterLink :to="{ name: 'marketplace' }">Back to the market</RouterLink>
     </MarketNotice>
 
     <MarketNotice v-else-if="error" tone="error" title="Could not load this order">
@@ -68,6 +68,10 @@ function methodLabel(id) {
         <div><dt>Order number</dt><dd class="mono">{{ order.id }}</dd></div>
         <div><dt>Paid with</dt><dd>{{ methodLabel(order.paymentMethod) }}</dd></div>
         <div><dt>Date</dt><dd>{{ formatDateTime(order.createdAt) }}</dd></div>
+        <div v-if="order.ticketNumbers?.length">
+          <dt>Ticket {{ order.ticketNumbers.length === 1 ? 'number' : 'numbers' }}</dt>
+          <dd class="mono">{{ order.ticketNumbers.join(', ') }}</dd>
+        </div>
       </dl>
 
       <OrderItem v-if="order.listing" :listing="order.listing" class="flow__item" />
@@ -80,10 +84,10 @@ function methodLabel(id) {
       />
 
       <div class="actions">
-        <RouterLink :to="{ name: 'market' }" class="btn btn--primary">Back to market</RouterLink>
+        <RouterLink :to="{ name: 'marketplace' }" class="btn btn--primary">Back to market</RouterLink>
         <RouterLink
           v-if="order.listing"
-          :to="{ name: 'listing', params: { id: order.listing.id } }"
+          :to="{ name: 'ticket-detail', params: { id: order.listing.id } }"
           class="btn btn--ghost"
         >
           View listing

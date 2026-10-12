@@ -32,7 +32,7 @@ defineEmits(['toggle-save']);
     <TicketPoster :listing="listing" ratio="3 / 2" compact />
 
     <h3 class="lcard__title">
-      <RouterLink :to="{ name: 'listing', params: { id: listing.id } }" class="lcard__link">
+      <RouterLink :to="{ name: 'ticket-detail', params: { id: listing.id } }" class="lcard__link">
         {{ listing.title }}
       </RouterLink>
     </h3>

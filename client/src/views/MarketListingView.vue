@@ -1,6 +1,8 @@
 <script setup>
-import { ref, onUnmounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, computed, onUnmounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { api } from '../api.js';
+import { currentUser } from '../auth.js';
 import { useListing, useSavedListings } from '../market.js';
 import ListingDetailCard from '../components/market/ListingDetailCard.vue';
 import MarketPageHead from '../components/market/MarketPageHead.vue';
@@ -8,8 +10,12 @@ import MarketNotice from '../components/market/MarketNotice.vue';
 
 const props = defineProps({ id: { type: String, required: true } });
 
+const route = useRoute();
 const router = useRouter();
 const { listing, loading, error } = useListing(() => props.id);
+
+const own = computed(() => Boolean(currentUser.value) && listing.value?.seller.id === currentUser.value.id);
+const busy = ref(false);
 const { isSaved, toggle } = useSavedListings();
 
 // One polite status line for actions that do not navigate.
@@ -24,6 +30,38 @@ onUnmounted(() => clearTimeout(clear));
 
 function buy() {
   router.push({ name: 'order-review', params: { id: props.id } });
+}
+
+function signInFirst() {
+  router.push({ name: 'login', query: { redirect: route.fullPath } });
+}
+
+/** Open (or reopen) this buyer's conversation with the seller about this listing. */
+async function chat() {
+  // No up-front sign-in check: the session may still be loading, so let the API decide.
+  busy.value = true;
+  try {
+    const { conversation } = await api.startChat(props.id);
+    router.push({ name: 'chat-thread', params: { id: conversation.id } });
+  } catch (err) {
+    if (err.status === 401) return signInFirst();
+    announce('Could not open the chat. Please try again.');
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function remove() {
+  if (!window.confirm('Remove this listing from the market?')) return;
+  busy.value = true;
+  try {
+    await api.deleteListing(props.id);
+    router.push({ name: 'my-listings' });
+  } catch {
+    announce('Could not remove the listing.');
+  } finally {
+    busy.value = false;
+  }
 }
 
 async function copyLink() {
@@ -43,7 +81,7 @@ async function copyLink() {
     <div v-if="loading" class="skeleton" aria-busy="true" />
 
     <MarketNotice v-else-if="error?.status === 404" title="Listing not found">
-      It may have been removed. <RouterLink :to="{ name: 'market' }">Back to the market</RouterLink>
+      It may have been removed. <RouterLink :to="{ name: 'marketplace' }">Back to the market</RouterLink>
     </MarketNotice>
 
     <MarketNotice v-else-if="error" tone="error" title="Could not load this listing">
@@ -54,9 +92,13 @@ async function copyLink() {
       v-else
       :listing="listing"
       :saved="isSaved(listing.id)"
+      :own="own"
+      :busy="busy"
       @toggle-save="toggle"
       @buy="buy"
-      @chat="announce(`Chat with ${listing.seller.displayName} isn’t available yet.`)"
+      @chat="chat"
+      @messages="router.push({ name: 'chat' })"
+      @remove="remove"
       @add-to-cart="announce('The cart isn’t available yet — use Buy to check out now.')"
       @copy-link="copyLink"
     />

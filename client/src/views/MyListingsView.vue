@@ -1,6 +1,9 @@
 <script setup>
 import { onMounted, ref } from 'vue';
-import { api, formatDate, LABELS } from '../api.js';
+import { api, formatDate } from '../api.js';
+import { formatMoney } from '../market.js';
+import TicketPoster from '../components/market/TicketPoster.vue';
+import ProofUpload from '../components/market/ProofUpload.vue';
 
 const listings = ref([]);
 const loading = ref(true);
@@ -18,7 +21,7 @@ async function loadListings() {
 }
 
 async function removeListing(listing) {
-  if (!window.confirm(`Remove your listing for ${listing.concert.artist}?`)) return;
+  if (!window.confirm(`Remove your listing for ${listing.title}?`)) return;
   removing.value = listing.id;
   error.value = '';
   try {
@@ -28,6 +31,35 @@ async function removeListing(listing) {
     error.value = err.body?.error ?? err.message;
   } finally {
     removing.value = '';
+  }
+}
+
+// Proof being attached per listing, keyed by listing id.
+const proofs = ref({});
+const submitting = ref('');
+
+const VERIFICATION_COPY = {
+  none: 'Not verified',
+  pending: 'Verification pending review',
+  approved: 'Verified by review',
+  rejected: 'Verification rejected',
+};
+
+/** Proof can be sent for open listings that are unverified or were rejected. */
+const canSubmitProof = (listing) =>
+  listing.status === 'open' && ['none', 'rejected'].includes(listing.verification.status);
+
+async function submitProof(listing) {
+  submitting.value = listing.id;
+  error.value = '';
+  try {
+    const { listing: updated } = await api.submitProof(listing.id, proofs.value[listing.id]);
+    listings.value = listings.value.map((item) => (item.id === updated.id ? updated : item));
+    delete proofs.value[listing.id];
+  } catch (err) {
+    error.value = err.body?.error ?? err.message;
+  } finally {
+    submitting.value = '';
   }
 }
 
@@ -57,19 +89,50 @@ onMounted(loadListings);
       </div>
       <div v-else class="listing-grid">
         <article v-for="listing in listings" :key="listing.id" class="listing-card">
-          <img v-if="listing.image_data" class="listing-card__image" :src="listing.image_data" alt="Ticket listing" />
+          <TicketPoster :listing="listing" ratio="16 / 9" />
           <div class="listing-card__body">
-            <p class="listing-card__status">{{ listing.status }}</p>
-            <h2>{{ listing.concert.artist }}</h2>
+            <p class="listing-card__status" :data-status="listing.status">{{ listing.status }}</p>
+            <h2>
+              <RouterLink :to="{ name: 'ticket-detail', params: { id: listing.id } }">{{ listing.title }}</RouterLink>
+            </h2>
             <p class="listing-card__details">
-              {{ formatDate(listing.concert.event_date) }} · {{ listing.concert.venue }}
+              {{ formatDate(listing.showDate ?? listing.concert.eventDate) }} · {{ listing.concert.venue }}
             </p>
             <div class="listing-card__meta">
-              <span>{{ LABELS.section[listing.section] }}</span>
-              <span>{{ listing.capacity }} {{ listing.capacity === 1 ? 'ticket' : 'tickets' }}</span>
-              <strong>${{ ((listing.price_cents ?? 0) / 100).toFixed(2) }}</strong>
+              <span>{{ listing.category }}</span>
+              <span>{{ listing.quantity }} {{ listing.quantity === 1 ? 'ticket' : 'tickets' }}</span>
+              <strong>{{ formatMoney(listing.priceCents, listing.currency) }}</strong>
+            </div>
+
+            <div class="verify" :data-state="listing.verification.status">
+              <p class="verify__status">
+                {{ listing.verification.status === 'approved' && listing.verification.method === 'ticket_number'
+                  ? 'Verified — ticket number matched the issued list'
+                  : VERIFICATION_COPY[listing.verification.status] }}
+              </p>
+              <p v-if="listing.ticketNumbers?.length" class="verify__numbers">
+                Ticket {{ listing.ticketNumbers.length === 1 ? 'number' : 'numbers' }}:
+                <span class="mono">{{ listing.ticketNumbers.join(', ') }}</span>
+              </p>
+              <p v-if="listing.verification.status === 'rejected' && listing.verification.note" class="verify__note">
+                Reviewer: “{{ listing.verification.note }}”
+              </p>
+              <template v-if="canSubmitProof(listing)">
+                <ProofUpload v-model="proofs[listing.id]" />
+                <button
+                  v-if="proofs[listing.id]"
+                  class="verify__send"
+                  type="button"
+                  :disabled="submitting === listing.id"
+                  @click="submitProof(listing)"
+                >
+                  {{ submitting === listing.id ? 'Sending…'
+                    : listing.verification.status === 'rejected' ? 'Re-submit for review' : 'Submit for review' }}
+                </button>
+              </template>
             </div>
             <button
+              v-if="listing.status === 'open'"
               class="remove-button"
               type="button"
               :disabled="removing === listing.id"
@@ -101,14 +164,25 @@ onMounted(loadListings);
 .my-listings-page__header p:last-child { margin-top: var(--space-3); color: var(--text-300); }
 .listing-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-5); }
 .listing-card { overflow: hidden; border: var(--border-soft); border-radius: var(--radius-lg); background: var(--ink-850); }
-.listing-card__image { display: block; width: 100%; height: 180px; object-fit: cover; }
 .listing-card__body { padding: var(--space-5); }
 .listing-card__status { color: var(--mint-400); font-size: var(--step--2); text-transform: capitalize; }
-.listing-card h2 { margin-top: var(--space-2); }
+.listing-card h2 { margin-top: var(--space-2); font-size: var(--step-1); }
+.listing-card h2 a { color: var(--text-100); text-decoration: none; }
+.listing-card h2 a:hover { color: var(--accent-300); }
+.listing-card__status[data-status='sold'] { color: var(--amber-400); }
 .listing-card__details { margin-top: var(--space-2); color: var(--text-300); font-size: var(--step--1); }
 .listing-card__meta { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-4); font-size: var(--step--2); }
 .listing-card__meta span { padding: 3px 7px; border-radius: var(--radius-pill); background: var(--ink-700); }
 .listing-card__meta strong { margin-left: auto; color: var(--accent-300); }
+.verify { display: grid; gap: var(--space-2); margin-top: var(--space-4); padding: var(--space-3); border-radius: var(--radius-md); background: var(--ink-750); }
+.verify__status { font-size: var(--step--1); font-weight: 600; color: var(--text-300); }
+.verify[data-state='pending'] .verify__status { color: var(--amber-400); }
+.verify[data-state='approved'] .verify__status { color: var(--mint-400); }
+.verify[data-state='rejected'] .verify__status { color: var(--rose-400); }
+.verify__note { font-size: var(--step--1); color: var(--text-200); }
+.verify__numbers { font-size: var(--step--2); color: var(--text-300); }
+.verify__send { justify-self: start; padding: var(--space-2) var(--space-4); border-radius: var(--radius-md); background: var(--accent-500); color: #fff; font-size: var(--step--1); }
+.verify__send:disabled { opacity: .6; }
 .remove-button { width: 100%; margin-top: var(--space-5); padding: var(--space-3); border: 1px solid var(--rose-400); border-radius: var(--radius-md); color: var(--rose-400); }
 .remove-button:hover { background: color-mix(in oklab, var(--rose-400) 12%, transparent); }
 .remove-button:disabled { opacity: .6; }
