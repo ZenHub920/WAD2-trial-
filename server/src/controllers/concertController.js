@@ -45,7 +45,16 @@ export function createConcertController(repos) {
       res.json({
         concert,
         openParties: parties.length,
-        openSlots: parties.reduce((a, p) => a + p.capacity, 0),
+        // Count genuinely available slots, not original capacity.
+        //
+        // openForConcert() already subtracts active proposals
+        // and exposes remaining_capacity.
+
+        openSlots: parties.reduce(
+          (total, party) =>
+            total + party.remaining_capacity,
+          0
+        ),
         openSeekers: seekers.length,
         latestRound: latestRound
           ? {
@@ -64,7 +73,12 @@ export function createConcertController(repos) {
       res.json({
         parties: parties.map((p) => ({
           id: p.id,
-          capacity: p.capacity,
+                    // The public party-card capacity represents slots
+          // currently available to new seekers.
+          //
+          // The original capacity remains unchanged in SQLite.
+
+          capacity: p.remaining_capacity,
           section: p.section,
           spendBand: p.spend_band,
           arrivalPlan: p.arrival_plan,

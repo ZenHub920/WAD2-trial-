@@ -67,6 +67,22 @@ export function buildPreferences(seekers, parties, options = {}) {
     for (const party of candidateParties) {
       evaluatedPairs += 1;
 
+// NEW:
+        // If this seeker has already declined this party,
+        // don't evaluate it or include it in preferences.
+        //
+        // The key uniquely identifies the request and party.
+
+        const declinedKey =
+            `${seeker.id}|${party.id}`;
+
+        if (options.declinedPairs?.has(declinedKey)) {
+
+            // Skip to the next candidate party.
+            continue;
+
+        }
+
       const verdict = checkFeasibility(seeker, party, options);
       if (!verdict.feasible) {
         const count = rejectionReasons.get(verdict.reason) ?? 0;

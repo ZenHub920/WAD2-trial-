@@ -71,13 +71,96 @@ export function createMatchController({ repos, matching }) {
       } });
     },
 
+        // ============================================================
+    // IMPROVEMENT #4: IDEMPOTENT MATCHING ENDPOINT
+    // ============================================================
+    //
+    // PURPOSE:
+    // Allow matching operations to be retried safely.
+    //
+    // The frontend sends an Idempotency-Key HTTP header.
+    //
+    // The controller validates the key and forwards it
+    // to matchingService.run().
+    //
+    // HTTP responses:
+    //
+    // 201 = New matching round created.
+    // 200 = Previous matching round returned.
+    // 400 = Missing or invalid idempotency key.
+    // 409 = No eligible participants or legacy reconciliation needed.
+    // 500 = Unexpected matching failure.
+
     run(req, res) {
       try {
-        const outcome = matching.run(req.params.id, { trace: true });
-        if (outcome.empty) return res.status(409).json({ error: 'nothing_to_match', ...outcome });
-        res.status(201).json(outcome);
+
+        // STEP 1:
+        // Retrieve the idempotency key supplied by Vue.
+        const batchKey = req.get('Idempotency-Key');
+
+        // STEP 2:
+        // Validate UUID version 4 format.
+        //
+        // crypto.randomUUID() on the frontend generates
+        // a UUID suitable for this validation.
+
+        const validUUID =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+        if (!batchKey || !validUUID.test(batchKey)) {
+          return res.status(400).json({
+            error: 'invalid_idempotency_key'
+          });
+        }
+
+        // STEP 3:
+        // Forward the key to the existing matching service.
+        //
+        // The service handles idempotency and transactions.
+
+        const outcome = matching.run(req.params.id, {
+          trace: true,
+          batchKey
+        });
+
+        // STEP 4:
+        // Do not create empty matching rounds.
+
+        if (outcome.empty) {
+          return res.status(409).json({
+            error: 'nothing_to_match',
+            ...outcome
+          });
+        }
+
+        // STEP 5:
+        // Distinguish a replay from a newly committed round.
+
+        return res.status(outcome.replayed ? 200 : 201)
+          .json(outcome);
+
       } catch (err) {
-        res.status(500).json({ error: 'match_failed', detail: err.message });
+
+        // An old database might contain matched statuses
+        // without corresponding active proposal records.
+        //
+        // We must not silently release those historical slots.
+
+        if (err.message === 'legacy_matches_require_reconciliation') {
+          return res.status(409).json({
+            error: err.message
+          });
+        }
+
+        // Avoid exposing internal implementation details
+        // in production HTTP responses.
+
+        return res.status(500).json({
+          error: 'match_failed',
+          ...(process.env.NODE_ENV === 'production'
+            ? {}
+            : { detail: err.message })
+        });
       }
     },
 

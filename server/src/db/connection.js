@@ -68,6 +68,42 @@ const ADDED_COLUMNS = [
   ['tickets', 'review_note', 'TEXT'],
   ['tickets', 'reviewed_by', 'TEXT'],
   ['tickets', 'reviewed_at', 'TEXT'],
+  
+  // #4: A committed matching round can be identified by its batch key.
+  ['match_rounds', 'batch_key', 'TEXT'],
+
+  // ============================================================
+// PROFILE ONBOARDING - Improvement #11
+// ============================================================
+//
+// Records when the user completed their initial preference
+// setup.
+//
+// NULL means the user has not yet completed onboarding.
+//
+// We store an explicit timestamp instead of inferring
+// completion from preference scores because a zero score
+// can be a valid user preference.
+
+  ['users', 'onboarding_completed_at', 'TEXT'],
+// ============================================================
+// HISTORICAL MATCH EXPLANATIONS - Improvement #12
+// ============================================================
+//
+// Stores the compatibility components used when the original
+// Gale-Shapley matching round was executed.
+//
+// WHY STORE THEM?
+// User profiles can change after matching.
+//
+// Without preserving the original values, an explanation
+// recalculated next week could show different scores from
+// those actually used during the matching round.
+//
+// JSON is stored as TEXT because SQLite does not require
+// a separate native JSON column type.
+
+  ['match_results', 'score_breakdown_json', 'TEXT'],
 ];
 
 function migrate(target) {
@@ -80,6 +116,31 @@ function migrate(target) {
   target.exec('CREATE INDEX IF NOT EXISTS idx_tickets_verification ON tickets(verification_status)');
   target.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_concerts_source_event
     ON concerts(source, source_event_id)`);
+  // ============================================================
+  // IMPROVEMENT #4: IDEMPOTENCY INDEX
+  // ============================================================
+  //
+  // PURPOSE:
+  // Prevent two matching rounds from being committed with
+  // the same idempotency key for the same concert.
+  //
+  // WHY IS THIS NECESSARY?
+  //
+  // The service already checks for an existing batchKey.
+  // However, we also want SQLite itself to enforce this rule.
+  //
+  // This creates a database-level guarantee even if application
+  // logic changes in the future.
+  //
+  // IMPORTANT:
+  // This index must be created AFTER the migration loop above.
+  // Otherwise, an older database without batch_key would fail.
+
+  target.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_rounds_batch
+    ON match_rounds(concert_id, batch_key)
+    WHERE batch_key IS NOT NULL
+  `);
 }
 
 /** Preserve historical parties (and their match-result foreign keys) while
