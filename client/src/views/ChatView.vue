@@ -53,7 +53,7 @@ onMounted(async () => {
             </div>
             <p class="thread__listing">
               {{ c.role === 'buyer' ? 'Buying' : 'Selling' }} · {{ c.listing.title }}
-              · {{ formatMoney(c.listing.priceCents, c.listing.currency) }}
+              · {{ formatMoney(c.listing.priceCents) }}
             </p>
             <p class="thread__preview">{{ c.lastMessage?.body ?? 'No messages yet' }}</p>
           </div>

@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { api } from '../api.js';
-import { useSavedListings } from '../market.js';
+import { sectionLabel, useSavedListings } from '../market.js';
 import ListingCard from '../components/market/ListingCard.vue';
 
 const listings = ref([]);
@@ -9,52 +9,54 @@ const loading = ref(true);
 const error = ref('');
 const search = ref('');
 const selectedDate = ref('');
-const selectedCategory = ref('all');
+const selectedSection = ref('all');
+
+/** Sections are free text (Cat 3, Pen A, Stalls…), so offer the ones actually listed. */
+const sections = computed(() =>
+  [...new Set(listings.value.map((l) => l.section))]
+    .sort((a, b) => sectionLabel(a).localeCompare(sectionLabel(b), undefined, { numeric: true })),
+);
 const minPrice = ref(0);
 const maxPrice = ref(100000);
-
+const savedOnly = ref(false);
 const { isSaved, toggle } = useSavedListings();
 
 onMounted(async () => {
   try {
-    listings.value = (await api.listings()).listings;
+    listings.value = (await api.tickets()).listings;
   } catch (err) {
-    error.value = err.message;
+    error.value = err.body?.error ?? err.message;
   } finally {
     loading.value = false;
   }
 });
 
-/** Categories differ per venue (Cat 3, Pen A, Stalls…), so offer the ones actually listed. */
-const categories = computed(() =>
-  [...new Set(listings.value.map((l) => l.category))].sort((a, b) =>
-    a.localeCompare(b, undefined, { numeric: true }),
-  ),
-);
-
 const filteredListings = computed(() => {
   const query = search.value.trim().toLowerCase();
   return listings.value.filter((listing) => {
+    if (savedOnly.value && !isSaved(listing.id)) return false;
     const matchesSearch =
       !query ||
-      [listing.title, listing.concert.artist, listing.concert.venue, listing.seller.displayName]
-        .some((text) => text?.toLowerCase().includes(query));
-    const date = (listing.showDate ?? listing.concert.eventDate).slice(0, 10);
-    const matchesDate = !selectedDate.value || date === selectedDate.value;
-    const matchesCategory =
-      selectedCategory.value === 'all' || listing.category === selectedCategory.value;
-    const price = listing.priceCents / 100;
-    const matchesPrice = price >= minPrice.value && price <= maxPrice.value;
-    return matchesSearch && matchesDate && matchesCategory && matchesPrice;
+      listing.concert.artist.toLowerCase().includes(query) ||
+      listing.concert.venue.toLowerCase().includes(query) ||
+      listing.seller.displayName.toLowerCase().includes(query);
+    const matchesDate = !selectedDate.value || listing.concert.event_date.slice(0, 10) === selectedDate.value;
+    const matchesSection = selectedSection.value === 'all' || listing.section === selectedSection.value;
+    const listingPrice = listing.priceCents / 100;
+    const matchesPrice = listingPrice >= minPrice.value && listingPrice <= maxPrice.value;
+    return matchesSearch && matchesDate && matchesSection && matchesPrice;
   });
 });
 
 function resetFilters() {
+  search.value = '';
   selectedDate.value = '';
-  selectedCategory.value = 'all';
+  selectedSection.value = 'all';
   minPrice.value = 0;
   maxPrice.value = 100000;
+  savedOnly.value = false;
 }
+
 </script>
 
 <template>
@@ -68,7 +70,7 @@ function resetFilters() {
         <aside class="filter-panel" aria-label="Search and filter tickets">
           <label class="marketplace__search">
             <span aria-hidden="true">⌕</span>
-            <input v-model="search" type="search" placeholder="Search tickets" />
+            <input v-model="search" type="search" aria-label="Search tickets" placeholder="Search tickets" />
           </label>
 
         <div class="filter-panel__heading">
@@ -84,10 +86,10 @@ function resetFilters() {
             <input v-model="selectedDate" type="date" lang="en-GB" />
           </label>
           <label>
-            Category
-            <select v-model="selectedCategory">
-              <option value="all">Any category</option>
-              <option v-for="category in categories" :key="category" :value="category">{{ category }}</option>
+            Seat section
+            <select v-model="selectedSection">
+              <option value="all">Any section</option>
+              <option v-for="section in sections" :key="section" :value="section">{{ sectionLabel(section) }}</option>
             </select>
           </label>
           <label>
@@ -100,8 +102,9 @@ function resetFilters() {
           </label>
         </div>
 
+        <button type="button" class="saved-filter" :aria-pressed="savedOnly" @click="savedOnly = !savedOnly">Saved only</button>
         <div class="filter-panel__footer">
-          <button class="text-button" @click="resetFilters">Reset filters</button>
+          <button type="button" class="text-button" @click="resetFilters">Reset filters</button>
           <span class="filter-count">{{ filteredListings.length }} tickets</span>
         </div>
         </aside>
@@ -154,7 +157,7 @@ function resetFilters() {
 }
 
 .marketplace__title {
-  color: #000;
+  color: var(--text-100);
   font-family: var(--font-display);
   font-size: var(--step-3);
   font-weight: 700;
@@ -193,11 +196,22 @@ function resetFilters() {
   border-color: var(--accent-400);
   outline: none;
 }
-.text-button { color: var(--accent-300); }
+.saved-filter {
+  width: 100%;
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--ink-700);
+  color: var(--text-200);
+  text-align: left;
+}
+.saved-filter[aria-pressed='true'] { border-color: var(--accent-500); color: var(--text-100); }
+.text-button { color: var(--text-200); }
 .text-button:hover { color: var(--text-100); }
 .filter-count { color: var(--text-400); font-size: var(--step--2); }
 
-.ticket-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--space-4); }
+.ticket-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-5); }
 
 .marketplace__empty { padding: var(--space-9) var(--space-4); text-align: center; }
 .marketplace__empty > span { color: var(--accent-300); font-size: 3rem; }
@@ -214,7 +228,6 @@ function resetFilters() {
   .ticket-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 540px) {
-  .filter-grid { grid-template-columns: 1fr; }
-  .ticket-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+  .filter-grid, .ticket-grid { grid-template-columns: 1fr; }
 }
 </style>

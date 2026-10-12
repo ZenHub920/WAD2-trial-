@@ -1,5 +1,5 @@
 /**
- * Buyer–seller chat. A conversation belongs to one listing and its two people;
+ * Buyer–seller chat. A conversation belongs to one ticket listing and its two people;
  * nobody else can read or post in it, and an outsider gets 404 rather than 403
  * so conversation ids cannot be probed.
  */
@@ -14,15 +14,15 @@ export function createChatController(repos) {
   return {
     /** Chat button on a listing: open (or reopen) the thread with its seller. */
     start(req, res) {
-      const listing = repos.listings.findById(req.params.id);
-      if (!listing) return res.status(404).json({ error: 'listing_not_found' });
-      if (listing.seller_user_id === req.user.id) {
+      const ticket = repos.tickets.findById(req.params.id);
+      if (!ticket) return res.status(404).json({ error: 'listing_not_found' });
+      if (ticket.seller_user_id === req.user.id) {
         return res.status(409).json({ error: 'cannot_chat_with_yourself' });
       }
       const conversation = repos.conversations.openFor({
-        listing_id: listing.id,
+        ticket_id: ticket.id,
         buyer_user_id: req.user.id,
-        seller_user_id: listing.seller_user_id,
+        seller_user_id: ticket.seller_user_id,
       });
       res.status(201).json({ conversation: publicConversation(conversation, req.user.id) });
     },
@@ -72,11 +72,10 @@ function publicConversation(c, viewerId) {
       displayName: viewerIsBuyer ? c.seller_name : c.buyer_name,
     },
     listing: {
-      id: c.listing_id,
-      title: c.listing_title,
-      priceCents: c.listing_price_cents,
-      currency: c.listing_currency,
-      status: c.listing_status,
+      id: c.ticket_id,
+      title: `${c.concert_artist} · ${c.ticket_section}`,
+      priceCents: c.ticket_price_cents,
+      status: c.ticket_status,
     },
     lastMessage: c.last_body ? { body: c.last_body, createdAt: c.last_at } : null,
     createdAt: c.created_at,

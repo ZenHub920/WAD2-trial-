@@ -33,12 +33,15 @@ const repos = createRepositories(db);
 const existing = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
 
 db.exec(`
-  DELETE FROM messages;
-  DELETE FROM conversations;
-  DELETE FROM ticket_orders;
-  DELETE FROM listing_tickets;
+  DELETE FROM kaki_decisions;
+  DELETE FROM concert_participants;
+  DELETE FROM ticket_messages;
+  DELETE FROM ticket_conversations;
+  DELETE FROM orders;
+  DELETE FROM ticket_numbers;
   DELETE FROM issued_tickets;
-  DELETE FROM ticket_listings;
+  DELETE FROM tickets;
+  DELETE FROM sessions;
   DELETE FROM match_trace;
   DELETE FROM match_results;
   DELETE FROM match_rounds;
@@ -128,12 +131,14 @@ const LAST_NAMES = [
   'Menon', 'Ng', 'Hassan', 'Teo', 'Raj', 'Koh', 'Abdullah', 'Lee', 'Pillai',
 ];
 
-/** Resale listings for the ticket market. Prices are per lot, in cents. */
+/**
+ * Example tickets for the market, so the cards have something to show.
+ * Prices are per lot, in cents. `section` is the category printed on the ticket.
+ */
 const LISTINGS = [
   {
     concert_id: 'c_seraphina',
-    title: 'Seraphina Vale Glasshouse Tour Singapore 14 Nov Cat 3',
-    category: 'Cat 3', show_date: '2026-11-14', seat_row: 'Z', seat_numbers: '24',
+    section: 'Cat 3',
     price_cents: 31000, verified: true, minutes_ago: 60,
     description:
       'Selling 1x ticket for 14 Nov. Bought directly from the official site, can transfer ' +
@@ -142,8 +147,7 @@ const LISTINGS = [
   },
   {
     concert_id: 'c_seraphina',
-    title: 'Seraphina Vale Glasshouse Tour Singapore VIP 1',
-    category: 'VIP 1', show_date: '2026-11-14', seat_row: 'B', seat_numbers: '11, 12',
+    section: 'VIP 1',
     quantity: 2, price_cents: 124000, verified: true, minutes_ago: 75,
     description:
       'Pair of VIP 1 seats, side by side. Includes the soundcheck pass and the tote. ' +
@@ -151,15 +155,13 @@ const LISTINGS = [
   },
   {
     concert_id: 'c_kiyoko',
-    title: 'KIYOKO Neon Prefecture Singapore Cat 10',
-    category: 'Cat 10', show_date: '2026-12-06', seat_row: 'K', seat_numbers: '7',
+    section: 'Cat 10',
     price_cents: 12000, verified: false, minutes_ago: 58,
     description: 'Balcony seat, great view of the horn section. Will transfer once paid.',
   },
   {
     concert_id: 'c_meridian',
-    title: 'Meridian Youth Afterglow Asia Standing Pen A',
-    category: 'Pen A', show_date: '2027-01-17',
+    section: 'Pen A',
     price_cents: 36000, verified: true, minutes_ago: 60 * 24,
     description:
       'Standing pen A, early entry number in the 200s. Selling because I got a better queue ' +
@@ -167,50 +169,43 @@ const LISTINGS = [
   },
   {
     concert_id: 'c_seraphina',
-    title: 'Seraphina Vale Glasshouse Tour Singapore 15 Nov Cat 4',
-    category: 'Cat 4', show_date: '2026-11-15', seat_row: 'P', seat_numbers: '3',
+    section: 'Cat 4',
     price_cents: 33000, verified: true, minutes_ago: 11,
     description: 'Cat 4 for the Sunday show. Aisle seat, easy in and out.',
   },
   {
     concert_id: 'c_northbound',
-    title: 'Northbound Atlas Signal Fade Stalls Row F',
-    category: 'Stalls', show_date: '2026-10-25', seat_row: 'F', seat_numbers: '18, 19',
+    section: 'Stalls',
     quantity: 2, price_cents: 26000, verified: false, minutes_ago: 15,
     description: 'Two stalls seats together. Lovely acoustics this close.',
   },
   {
     concert_id: 'c_halcyon',
-    title: 'Halcyon Drift Low Tide Capitol Theatre Circle',
-    category: 'Circle', show_date: '2026-11-02', seat_row: 'C', seat_numbers: '9',
+    section: 'Circle',
     price_cents: 9800, verified: true, minutes_ago: 60 * 3,
     description: 'Single circle seat. Small room, every seat is a good seat.',
   },
   {
     concert_id: 'c_kiyoko',
-    title: 'KIYOKO Neon Prefecture Singapore Cat 1',
-    category: 'Cat 1', show_date: '2026-12-06', seat_row: 'A', seat_numbers: '30',
+    section: 'Cat 1',
     price_cents: 28800, verified: true, minutes_ago: 60 * 5,
     description: 'Front row of Cat 1. Selling because of a work trip.',
   },
   {
     concert_id: 'c_meridian',
-    title: 'Meridian Youth Afterglow Asia Standing Pen B',
-    category: 'Pen B', show_date: '2027-01-17',
+    section: 'Pen B',
     price_cents: 21000, verified: false, minutes_ago: 60 * 30,
     description: 'Pen B standing. Can meet at the venue to hand over if you prefer.',
   },
   {
     concert_id: 'c_northbound',
-    title: 'Northbound Atlas Signal Fade Grand Circle',
-    category: 'Grand Circle', show_date: '2026-10-25', seat_row: 'M', seat_numbers: '2',
+    section: 'Grand Circle',
     price_cents: 8800, verified: true, minutes_ago: 60 * 48,
     description: 'Up high but centred. Bring earplugs.',
   },
   {
     concert_id: 'c_seraphina',
-    title: 'Seraphina Vale Glasshouse Tour Singapore 15 Nov Cat 1',
-    category: 'Cat 1', show_date: '2026-11-15', seat_row: 'D', seat_numbers: '14, 15, 16',
+    section: 'Cat 1',
     quantity: 3, price_cents: 87000, verified: true, minutes_ago: 4,
     description:
       'Three Cat 1 seats together for the Sunday show. Our group shrank, so selling all three ' +
@@ -218,22 +213,19 @@ const LISTINGS = [
   },
   {
     concert_id: 'c_kiyoko',
-    title: 'KIYOKO Neon Prefecture Singapore Stalls Pit',
-    category: 'Pit', show_date: '2026-12-06',
+    section: 'Pit',
     price_cents: 19800, verified: true, minutes_ago: 27,
     description: 'Pit standing. Bring your voice — it is a singalong from the first song.',
   },
   {
     concert_id: 'c_halcyon',
-    title: 'Halcyon Drift Low Tide Capitol Theatre Stalls Row B',
-    category: 'Stalls', show_date: '2026-11-02', seat_row: 'B', seat_numbers: '5, 6',
+    section: 'Stalls',
     quantity: 2, price_cents: 23600, verified: false, minutes_ago: 60 * 2,
     description: 'Two seats, second row. Will transfer as soon as payment clears.',
   },
   {
     concert_id: 'c_meridian',
-    title: 'Meridian Youth Afterglow Asia VIP Soundcheck',
-    category: 'VIP', show_date: '2027-01-17',
+    section: 'VIP',
     price_cents: 48000, verified: true, minutes_ago: 60 * 6,
     description:
       'VIP package: soundcheck entry, early merch access and a signed poster. Selling because ' +
@@ -241,29 +233,25 @@ const LISTINGS = [
   },
   {
     concert_id: 'c_northbound',
-    title: 'Northbound Atlas Signal Fade Dress Circle',
-    category: 'Dress Circle', show_date: '2026-10-25', seat_row: 'H', seat_numbers: '21',
+    section: 'Dress Circle',
     price_cents: 15500, verified: true, minutes_ago: 60 * 9,
     description: 'Single dress circle seat, centre block. Great sightline to the light rig.',
   },
   {
     concert_id: 'c_seraphina',
-    title: 'Seraphina Vale Glasshouse Tour Singapore 14 Nov Cat 6',
-    category: 'Cat 6', show_date: '2026-11-14', seat_row: 'FF', seat_numbers: '40',
+    section: 'Cat 6',
     price_cents: 14800, verified: false, minutes_ago: 60 * 20,
     description: 'Upper tier but full stage view. Selling below what I paid.',
   },
   {
     concert_id: 'c_kiyoko',
-    title: 'KIYOKO Neon Prefecture Singapore Balcony Box',
-    category: 'Box', show_date: '2026-12-06', seat_row: 'Box 3', seat_numbers: '1–4',
+    section: 'Box',
     quantity: 4, price_cents: 96000, verified: true, minutes_ago: 60 * 36,
     description: 'Private balcony box for four. Best seats in the hall for actually listening.',
   },
   {
     concert_id: 'c_meridian',
-    title: 'Meridian Youth Afterglow Asia Standing Pen C',
-    category: 'Pen C', show_date: '2027-01-17',
+    section: 'Pen C',
     price_cents: 16500, verified: true, minutes_ago: 60 * 72,
     description: 'Pen C, late entry. Fine if you just want to be in the room.',
   },
@@ -335,35 +323,39 @@ const insert = db.transaction(() => {
     });
   }
 
-  // Sellers are drawn from the synthetic population with a stride, so the market
-  // does not show the same handful of people the matching pages lead with.
-  // Each concert's issued ticket list: 20 numbers per category the demo uses,
-  // e.g. SER-CAT3-0007. Verified demo listings hold real numbers from it; the rest
-  // stay free so a seller can list one and watch it verify automatically.
-  const issuedPool = new Map(); // `${concert}|${category}` -> unused numbers
-  for (const { concert_id, category } of LISTINGS) {
-    const key = `${concert_id}|${category}`;
+  // Each concert's issued ticket list: 20 numbers per section the examples use,
+  // e.g. SER-CAT3-0007. Verified examples hold real numbers from it; the rest stay
+  // free so a seller can list one and watch it verify automatically.
+  const issuedPool = new Map(); // `${concert}|${section}` -> unused numbers
+  for (const { concert_id, section } of LISTINGS) {
+    const key = `${concert_id}|${section}`;
     if (issuedPool.has(key)) continue;
     const prefix = concert_id.slice(2, 5).toUpperCase();
-    const code = category.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const code = section.toUpperCase().replace(/[^A-Z0-9]/g, '');
     const numbers = Array.from({ length: 20 }, (_, i) => `${prefix}-${code}-${String(i + 1).padStart(4, '0')}`);
-    repos.issuedTickets.import(concert_id, numbers.map((number) => ({ number, category })));
+    repos.issuedTickets.import(concert_id, numbers.map((number) => ({ number, category: section })));
     issuedPool.set(key, numbers);
   }
 
   LISTINGS.forEach((listing, index) => {
-    const pool = issuedPool.get(`${listing.concert_id}|${listing.category}`);
-    repos.listings.create({
-      ...listing,
-      ticket_numbers: listing.verified ? pool.splice(0, listing.quantity ?? 1) : [],
+    const pool = issuedPool.get(`${listing.concert_id}|${listing.section}`);
+    const quantity = listing.quantity ?? 1;
+    repos.tickets.create({
       seller_user_id: instance.users[(index * 11) % instance.users.length].id,
+      concertId: listing.concert_id,
+      priceCents: listing.price_cents,
+      quantity,
+      section: listing.section,
+      description: listing.description,
+      image_path: null,
+      ticket_numbers: listing.verified ? pool.splice(0, quantity) : [],
       created_at: minutesAgo(listing.minutes_ago),
     });
   });
 
   spareTicketNumbers = [...issuedPool].slice(0, 3).map(([key, numbers]) => {
-    const [concertId, category] = key.split('|');
-    return { concertId, category, number: numbers.at(-1) };
+    const [concertId, section] = key.split('|');
+    return { concertId, section, number: numbers.at(-1) };
   });
 });
 
@@ -377,7 +369,7 @@ const counts = db.prepare(`
     (SELECT COUNT(*) FROM concerts)        AS concerts,
     (SELECT COUNT(*) FROM parties)         AS parties,
     (SELECT COUNT(*) FROM seeker_requests) AS seekers,
-    (SELECT COUNT(*) FROM ticket_listings) AS listings
+    (SELECT COUNT(*) FROM tickets)         AS tickets
 `).get();
 
 console.log('Seeded:', counts);
@@ -391,7 +383,8 @@ for (const row of repos.concerts.listWithCounts()) {
   );
 }
 console.log('\nTicket numbers you can list to see automatic verification:');
-for (const { concertId, category, number } of spareTicketNumbers) {
-  console.log(`  ${concertId.padEnd(14)} ${category.padEnd(8)} ${number}`);
+for (const { concertId, section, number } of spareTicketNumbers) {
+  console.log(`  ${concertId.padEnd(14)} ${section.padEnd(8)} ${number}`);
 }
-console.log('\nRun a match round:  curl -X POST localhost:3000/api/concerts/c_seraphina/match');
+console.log('\nPublic match preview:  curl localhost:3000/api/concerts/c_seraphina/match/preview');
+console.log('To run a round, register a real account, grant it with npm run operator:grant -- <existing-email>, then POST with its session cookie.');

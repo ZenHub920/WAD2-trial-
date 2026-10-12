@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import { currentUser } from '../auth.js';
-import { useListing } from '../market.js';
+import { useTicket } from '../market.js';
 import CheckoutSteps from '../components/market/CheckoutSteps.vue';
 import MarketPageHead from '../components/market/MarketPageHead.vue';
 import MarketNotice from '../components/market/MarketNotice.vue';
@@ -10,10 +10,10 @@ import OrderSummary from '../components/market/OrderSummary.vue';
 
 const props = defineProps({ id: { type: String, required: true } });
 
-const { listing, loading, error } = useListing(() => props.id);
+const { listing, loading, error } = useTicket(() => props.id);
 
 const ownListing = computed(() => Boolean(currentUser.value) && listing.value?.seller.id === currentUser.value.id);
-const buyable = computed(() => listing.value?.status === 'open' && !ownListing.value);
+const buyable = computed(() => listing.value?.status === 'active' && !ownListing.value);
 </script>
 
 <template>
@@ -36,10 +36,9 @@ const buyable = computed(() => listing.value?.status === 'open' && !ownListing.v
       <OrderSummary
         heading="Order Payment Details"
         :subtotal-cents="listing.priceCents"
-        :currency="listing.currency"
       />
 
-      <MarketNotice v-if="listing.status !== 'open'" title="This ticket has been sold" class="flow__notice">
+      <MarketNotice v-if="listing.status !== 'active'" title="This ticket is no longer available" class="flow__notice">
         <RouterLink :to="{ name: 'marketplace' }">Find another listing</RouterLink>
       </MarketNotice>
       <MarketNotice v-else-if="ownListing" title="This is your listing" class="flow__notice">

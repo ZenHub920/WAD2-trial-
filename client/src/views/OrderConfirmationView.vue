@@ -79,7 +79,6 @@ function methodLabel(id) {
       <OrderSummary
         :subtotal-cents="order.subtotalCents"
         :delivery-fee-cents="order.deliveryFeeCents"
-        :currency="order.currency"
         class="flow__summary"
       />
 

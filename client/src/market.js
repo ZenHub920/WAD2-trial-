@@ -1,13 +1,44 @@
-/**
- * Ticket market helpers shared by the market components and views.
- */
-
+/** Display, checkout and saved-ticket helpers for the ticket inventory. */
 import { ref, watch, toValue } from 'vue';
-import { api } from './api.js';
+import { api, LABELS } from './api.js';
+
+const money = new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' });
+
+/** `$310.00`, or `SGD $310.00` with `withCode`. */
+export function formatMoney(cents, { withCode = false } = {}) {
+  const amount = money.format(cents / 100);
+  return withCode ? `SGD ${amount}` : amount;
+}
+
+/** Split a price for the large display: `{ symbol: '$', whole: '310', fraction: '' }`. */
+export function priceParts(cents) {
+  const parts = new Intl.NumberFormat('en-SG', {
+    style: 'currency',
+    currency: 'SGD',
+    currencyDisplay: 'narrowSymbol',
+    minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
+  }).formatToParts(cents / 100);
+  const pick = (...types) =>
+    parts.filter((p) => types.includes(p.type)).map((p) => p.value).join('');
+  return { symbol: pick('currency'), whole: pick('integer', 'group'), fraction: pick('decimal', 'fraction') };
+}
+
+/** Sections are free text ("Cat 3"); older listings may hold a matching-section key. */
+export function sectionLabel(section) {
+  return LABELS.section[section] ?? section;
+}
+
+/** A listing has no title of its own: it is the concert plus the section, e.g. "KIYOKO · Cat 1". */
+export function listingTitle(listing) {
+  return `${listing.concert.artist} · ${sectionLabel(listing.section)}`;
+}
+
+/** Common categories offered as suggestions; sellers can type any section printed on their ticket. */
+export const SECTION_SUGGESTIONS = ['Cat 1', 'Cat 2', 'Cat 3', 'Cat 4', 'Cat 5', 'Cat 6', 'VIP', 'Pen A', 'Pen B', 'Standing'];
 
 /**
- * The demo buyer's saved payment methods. Only a display mask lives here — the
- * API receives the method id, never card details.
+ * Checkout is simulated: these are a demo buyer's saved methods. Only a display
+ * mask lives here — the API receives the method id, never card details.
  */
 export const PAYMENT_METHODS = [
   { id: 'visa', label: 'Visa', mask: '2109' },
@@ -20,55 +51,21 @@ export function paymentMethod(id) {
   return PAYMENT_METHODS.find((m) => m.id === id) ?? null;
 }
 
-/** `$310`, or `SGD $310` with `withCode`. Whole amounts drop the cents. */
-export function formatMoney(cents, currency = 'SGD', { withCode = false } = {}) {
-  const amount = new Intl.NumberFormat('en-SG', {
-    style: 'currency',
-    currency,
-    currencyDisplay: 'narrowSymbol',
-    minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
-  }).format(cents / 100);
-  return withCode ? `${currency} ${amount}` : amount;
-}
-
-/** Split a price for the large display: `{ symbol: '$', whole: '310', fraction: '' }`. */
-export function priceParts(cents, currency = 'SGD') {
-  const parts = new Intl.NumberFormat('en-SG', {
-    style: 'currency',
-    currency,
-    currencyDisplay: 'narrowSymbol',
-    minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
-  }).formatToParts(cents / 100);
-  const pick = (...types) =>
-    parts.filter((p) => types.includes(p.type)).map((p) => p.value).join('');
-  return {
-    symbol: pick('currency'),
-    whole: pick('integer', 'group'),
-    fraction: pick('decimal', 'fraction'),
-  };
-}
-
 /** SQLite's `datetime('now')` is UTC without a zone marker; parse it as such. */
 function parseDbTime(value) {
   if (!value) return null;
-  const iso = value.includes('T') ? value : `${value.replace(' ', 'T')}Z`;
-  const date = new Date(iso);
+  const date = new Date(value.includes('T') ? value : `${value.replace(' ', 'T')}Z`);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
 const relative = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
-const UNITS = [
-  ['day', 86_400],
-  ['hour', 3_600],
-  ['minute', 60],
-];
 
 /** "11 minutes ago", "1 hour ago", "yesterday". */
 export function formatRelative(value, now = Date.now()) {
   const date = parseDbTime(value);
   if (!date) return '';
   const seconds = Math.round((date.getTime() - now) / 1000);
-  for (const [unit, size] of UNITS) {
+  for (const [unit, size] of [['day', 86_400], ['hour', 3_600], ['minute', 60]]) {
     if (Math.abs(seconds) >= size) return relative.format(Math.round(seconds / size), unit);
   }
   return 'just now';
@@ -82,19 +79,11 @@ export function formatDateTime(value) {
   });
 }
 
-/** A stable hue per id, so a seller's avatar or a concert's poster never changes colour. */
-export function hueFor(id = '') {
-  let hash = 0;
-  for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
-  return hash % 360;
-}
-
 /**
- * Load one listing, reloading when the id changes. Each checkout step fetches it
- * afresh rather than passing it along in memory, so every step survives a refresh
- * and always shows the listing's current status.
+ * Load one ticket listing, reloading when the id changes. Each checkout step
+ * fetches it afresh, so every step survives a refresh and shows current status.
  */
-export function useListing(id) {
+export function useTicket(id) {
   const listing = ref(null);
   const loading = ref(true);
   const error = ref(null);
@@ -105,7 +94,7 @@ export function useListing(id) {
     loading.value = true;
     error.value = null;
     try {
-      const body = await api.listing(toValue(id));
+      const body = await api.ticket(toValue(id));
       if (request === latest) listing.value = body.listing;
     } catch (err) {
       if (request === latest) error.value = err;
@@ -118,9 +107,14 @@ export function useListing(id) {
   return { listing, loading, error, reload: load };
 }
 
-// ---------------------------------------------------------------------------
-// Saved listings — a per-browser convenience, so localStorage is enough.
-// ---------------------------------------------------------------------------
+/** Keep the fallback poster and seller avatar colours stable across visits. */
+export function hueFor(id = '') {
+  let hash = 0;
+  for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return hash % 360;
+}
+
+// Saved listings are a convenience for this browser, not an account-level feature.
 
 const SAVED_KEY = 'encore-saved-listings';
 

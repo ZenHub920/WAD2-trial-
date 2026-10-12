@@ -1,14 +1,5 @@
 <script setup>
-/**
- * Profile History — everyone you skipped, with an undo.
- *
- * The prototype frames this as "a chance to rewind", so skipped profiles are
- * the default list. Matches are shown too, under their own heading: a history
- * screen that hid half your decisions would be a strange thing to call history.
- *
- * Undo and rematch both go through a confirmation, as in the prototype, because
- * both put a card back into a deck you have already worked through.
- */
+/** Profile History — server-backed skipped profiles, likes and mutual matches. */
 import { ref, computed, onMounted } from 'vue';
 import { RouterLink } from 'vue-router';
 import { avatarFor, clearDecision, loadPool, readDecisions, relativeTime } from '../kaki.js';
@@ -19,13 +10,15 @@ const error = ref(null);
 const people = ref([]);
 const decisions = ref({});
 const query = ref('');
-const confirming = ref(null); // the person awaiting confirmation
+const confirming = ref(null);
+const undoing = ref(false);
+const undoError = ref(null);
 
 onMounted(async () => {
   try {
-    const pool = await loadPool();
+    const [pool, saved] = await Promise.all([loadPool(), readDecisions()]);
     people.value = pool.people;
-    decisions.value = readDecisions();
+    decisions.value = saved;
   } catch (err) {
     error.value = err;
   } finally {
@@ -38,8 +31,7 @@ const decided = computed(() => {
   const byId = new Map(people.value.map((p) => [p.id, p]));
   return Object.entries(decisions.value)
     .map(([id, record]) => ({ person: byId.get(id), ...record }))
-    // A decision can outlive its request — the seed may have been re-run, or
-    // the person withdrew. Those rows are dropped rather than rendered blank.
+    // Decisions for ineligible or withdrawn people cannot be acted on here.
     .filter((row) => row.person)
     .sort((a, b) => b.at - a.at);
 });
@@ -57,21 +49,34 @@ const skipped = computed(() =>
   ),
 );
 
-const matched = computed(() =>
+const liked = computed(() =>
   decided.value.filter(
     (row) =>
-      row.decision === 'match' &&
+      row.decision === 'like' &&
       matches(`${row.person.user.displayName} ${row.person.artist}`),
   ),
 );
 
 function confirm(row) {
+  undoError.value = null;
   confirming.value = row;
 }
 
-function undo() {
-  decisions.value = clearDecision(confirming.value.person.id);
-  confirming.value = null;
+async function undo() {
+  if (undoing.value) return;
+  undoing.value = true;
+  undoError.value = null;
+  try {
+    await clearDecision(confirming.value.person);
+    const next = { ...decisions.value };
+    delete next[confirming.value.person.id];
+    decisions.value = next;
+    confirming.value = null;
+  } catch (err) {
+    undoError.value = err;
+  } finally {
+    undoing.value = false;
+  }
 }
 </script>
 
@@ -83,7 +88,7 @@ function undo() {
       <span />
     </header>
 
-    <p class="hist__lede">Profiles you skipped — a chance to rewind!</p>
+    <p class="hist__lede">Your skips, likes and mutual matches — undo any decision.</p>
 
     <label class="hist__search">
       <span class="sr-only">Search by name or concert</span>
@@ -93,13 +98,13 @@ function undo() {
     <p v-if="loading" class="hist__state">Loading…</p>
 
     <div v-else-if="error" class="notice notice--error">
-      <h3>Could not load history</h3>
-      <p class="mono">{{ error.message }}</p>
+      <h3>{{ error.status === 401 ? 'Sign in to view your history' : 'Could not load history' }}</h3>
+      <p v-if="error.status !== 401" class="mono">{{ error.message }}</p>
+      <RouterLink v-if="error.status === 401" to="/login" class="btn btn--primary">Sign in</RouterLink>
     </div>
-
     <template v-else>
-      <p v-if="skipped.length === 0 && matched.length === 0" class="hist__state">
-        Nothing yet. Skipped and matched profiles show up here.
+      <p v-if="skipped.length === 0 && liked.length === 0" class="hist__state">
+        Nothing yet. Skipped and liked profiles show up here.
       </p>
 
       <section v-if="skipped.length" class="hist__section">
@@ -128,10 +133,10 @@ function undo() {
         </ul>
       </section>
 
-      <section v-if="matched.length" class="hist__section">
-        <h2 class="hist__h2">Matched</h2>
+      <section v-if="liked.length" class="hist__section">
+        <h2 class="hist__h2">Likes and matches</h2>
         <ul class="hist__list">
-          <li v-for="row in matched" :key="row.person.id" class="hist__row">
+          <li v-for="row in liked" :key="row.person.id" class="hist__row">
             <span
               class="hist__avatar"
               :style="{
@@ -147,6 +152,9 @@ function undo() {
                 {{ row.person.artist }} ({{ formatShortDate(row.person.eventDate) }})
               </span>
               <span class="hist__time">{{ relativeTime(row.at) }}</span>
+              <span class="hist__time">
+                {{ row.mutual ? 'Matched — mutual like' : 'Liked — waiting for their like' }}
+              </span>
             </span>
 
             <button class="hist__undo" @click="confirm(row)">↺ Undo</button>
@@ -155,16 +163,27 @@ function undo() {
       </section>
     </template>
 
-    <!-- Confirmation, as in the prototype's rematch dialog. -->
+    <!-- Undo always removes the saved server decision. -->
     <div v-if="confirming" class="sheet" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
       <div class="sheet__card">
         <p id="confirm-title" class="sheet__title">
           Put {{ confirming.person.user.displayName }} back in the deck?
         </p>
-        <p class="sheet__body">They will appear again next time you swipe.</p>
+        <p class="sheet__body">
+          {{ confirming.decision === 'like' && confirming.mutual
+            ? 'This will remove the mutual match and put this profile back in your deck.'
+            : 'They will appear again next time you swipe.' }}
+        </p>
+        <p v-if="undoError" class="notice notice--error" role="alert">
+          Could not undo. Your decision is unchanged.
+          <RouterLink v-if="undoError.status === 401" to="/login">Sign in</RouterLink>
+          <span v-else class="mono">{{ undoError.message }}</span>
+        </p>
         <div class="sheet__buttons">
-          <button class="btn btn--ghost" @click="confirming = null">Cancel</button>
-          <button class="btn btn--primary" @click="undo">Confirm</button>
+          <button class="btn btn--ghost" :disabled="undoing" @click="confirming = null">Cancel</button>
+          <button class="btn btn--primary" :disabled="undoing" @click="undo">
+            {{ undoing ? 'Saving…' : 'Confirm' }}
+          </button>
         </div>
       </div>
     </div>

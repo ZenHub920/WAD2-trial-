@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api, formatDate } from '../api.js';
-import { currentUser } from '../auth.js';
+import { SECTION_SUGGESTIONS } from '../market.js';
 import ProofUpload from '../components/market/ProofUpload.vue';
 
 const router = useRouter();
@@ -13,10 +13,20 @@ const imageInput = ref(null);
 const proof = ref('');
 
 // Listing against an existing concert is what lets ticket numbers be checked
-// against that concert's issued list; a new concert has no list yet.
+// against that concert's issued list; a newly added concert has no list yet.
 const concerts = ref([]);
 const concertId = ref('');
 const addingConcert = ref(false);
+const selectedConcert = computed(() => concerts.value.find((c) => c.id === concertId.value) ?? null);
+
+onMounted(async () => {
+  try {
+    concerts.value = (await api.concerts()).concerts;
+    if (!concerts.value.length) addingConcert.value = true;
+  } catch {
+    addingConcert.value = true; // still lets the seller list by adding the concert
+  }
+});
 
 const listing = ref({
   title: '',
@@ -24,30 +34,28 @@ const listing = ref({
   eventDate: '',
   price: '',
   description: '',
-  capacity: 1,
-  category: '',
+  quantity: 1,
+  section: '',
 });
 
+// One ticket-number box per ticket, keeping whatever was already typed.
 const ticketNumbers = ref(['']);
 const badNumber = ref('');
-
-const CATEGORY_SUGGESTIONS = ['Cat 1', 'Cat 2', 'Cat 3', 'Cat 4', 'Cat 5', 'Cat 6', 'VIP', 'Pen A', 'Pen B', 'Standing'];
-
-// One box per ticket, keeping whatever was already typed.
-watch(() => listing.value.capacity, (count) => {
+watch(() => listing.value.quantity, (count) => {
   const n = Math.min(Math.max(Number(count) || 1, 1), 10);
   ticketNumbers.value = Array.from({ length: n }, (_, i) => ticketNumbers.value[i] ?? '');
 });
 
-const selectedConcert = computed(() => concerts.value.find((c) => c.id === concertId.value) ?? null);
+const normalise = (n) => n.trim().toUpperCase().replace(/[\s-]+/g, '-');
 
-onMounted(async () => {
-  try {
-    concerts.value = (await api.concerts()).concerts;
-  } catch {
-    addingConcert.value = true; // still lets the seller list by adding the concert
-  }
-});
+const ERROR_COPY = {
+  ticket_number_not_issued: (n) => `${n} isn’t on this concert’s issued ticket list. Check it against your ticket.`,
+  ticket_category_mismatch: (n) => `${n} was issued for a different section. Check the section matches your ticket.`,
+  ticket_number_already_listed: (n) => `${n} is already listed for sale.`,
+  duplicate_ticket_number: (n) => `${n} is entered more than once.`,
+  invalid_ticket_number: () => 'Ticket numbers use letters, digits, spaces and dashes (3–40 characters).',
+  one_ticket_number_per_ticket: () => 'Enter a ticket number for every ticket, or leave them all blank.',
+};
 
 function chooseImage() {
   imageInput.value?.click();
@@ -56,61 +64,47 @@ function chooseImage() {
 function previewImage(event) {
   const [file] = event.target.files;
   if (!file) return;
+  error.value = '';
   const reader = new FileReader();
   reader.onload = () => {
     imagePreview.value = String(reader.result);
   };
+  reader.onerror = () => { error.value = 'Could not read the selected image.'; };
   reader.readAsDataURL(file);
 }
 
-const ERROR_COPY = {
-  ticket_number_not_issued: (n) => `${n} isn’t on this concert’s issued ticket list. Check it against your ticket.`,
-  ticket_category_mismatch: (n) => `${n} was issued for a different category. Check the category matches your ticket.`,
-  ticket_number_already_listed: (n) => `${n} is already listed for sale.`,
-  duplicate_ticket_number: (n) => `${n} is entered more than once.`,
-  invalid_ticket_number: () => 'Ticket numbers use letters, digits, spaces and dashes (3–40 characters).',
-};
-
 async function submitListing() {
-  if (!currentUser.value) {
-    router.push({ name: 'login', query: { redirect: '/list-ticket' } });
-    return;
-  }
-
   creating.value = true;
   error.value = '';
   badNumber.value = '';
+  const numbers = ticketNumbers.value.map((n) => n.trim());
   try {
-    let concert = selectedConcert.value;
-    if (addingConcert.value) {
-      concert = (await api.createConcert({
-        artist: listing.value.title.trim(),
-        venue: listing.value.venue.trim(),
-        event_date: listing.value.eventDate,
-      })).concert;
-    }
-    const numbers = ticketNumbers.value.map((n) => n.trim());
-    const category = listing.value.category.trim();
-    // A sale listing, not a matching party. The seller is taken from the session.
-    const { listing: created } = await api.createListing({
-      concert_id: concert.id,
-      title: `${concert.artist} ${category}`,
-      category,
-      show_date: (concert.event_date ?? listing.value.eventDate).slice(0, 10),
-      quantity: Number(listing.value.capacity),
-      price_cents: Math.round(Number(listing.value.price) * 100),
-      description: listing.value.description || null,
-      image_url: imagePreview.value || null,
+    const { listing: created } = await api.createTicket({
+      ...(addingConcert.value
+        ? {
+          concert: {
+            artist: listing.value.title.trim(),
+            venue: listing.value.venue.trim(),
+            event_date: listing.value.eventDate,
+          },
+        }
+        : { concertId: selectedConcert.value.id }),
+      priceCents: Math.round(Number(listing.value.price) * 100),
+      quantity: Number(listing.value.quantity),
+      section: listing.value.section,
+      description: listing.value.description,
+      ...(imagePreview.value ? { imageData: imagePreview.value } : {}),
       // Numbers are optional, but all-or-none: one per ticket when given.
-      ticket_numbers: numbers.some(Boolean) ? numbers : undefined,
-      proof_data: proof.value || null,
+      ...(numbers.some(Boolean) ? { ticketNumbers: numbers } : {}),
+      ...(proof.value ? { proofData: proof.value } : {}),
     });
     await router.push({ name: 'ticket-detail', params: { id: created.id } });
   } catch (err) {
     const code = err.body?.error ?? err.message;
     badNumber.value = err.body?.ticketNumber ?? '';
-    error.value = ERROR_COPY[code]?.(badNumber.value)
-      ?? (code === 'one_ticket_number_per_ticket' ? 'Enter a ticket number for every ticket, or leave them all blank.' : code);
+    error.value = err.status === 401
+      ? 'Please sign in before listing a ticket.'
+      : (ERROR_COPY[code]?.(badNumber.value) ?? code);
   } finally {
     creating.value = false;
   }
@@ -138,7 +132,7 @@ async function submitListing() {
               <span v-else aria-hidden="true">+</span>
               <small>{{ imagePreview ? 'Change image' : 'Add an image' }}</small>
             </button>
-            <input ref="imageInput" type="file" accept="image/*" hidden @change="previewImage" />
+            <input ref="imageInput" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden @change="previewImage" />
           </label>
 
           <label v-if="!addingConcert" class="listing-form__field listing-form__field--wide">
@@ -177,7 +171,7 @@ async function submitListing() {
 
           <label class="listing-form__field">
             Ticket price
-            <input v-model.number="listing.price" type="number" min="0.01" step="0.01" required placeholder="0.00" />
+            <input v-model.number="listing.price" type="number" min="0" step="0.01" required placeholder="0.00" />
           </label>
 
           <label class="listing-form__field listing-form__field--wide">
@@ -187,35 +181,29 @@ async function submitListing() {
 
           <label class="listing-form__field">
             Number of tickets
-            <input v-model.number="listing.capacity" type="number" min="1" max="10" required />
+            <input v-model.number="listing.quantity" type="number" min="1" max="10" required />
           </label>
           <label class="listing-form__field">
-            Category
-            <input v-model.trim="listing.category" list="category-suggestions" required placeholder="e.g. Cat 3" />
-            <datalist id="category-suggestions">
-              <option v-for="c in CATEGORY_SUGGESTIONS" :key="c" :value="c" />
+            Section
+            <input v-model.trim="listing.section" list="section-suggestions" required maxlength="120" placeholder="As printed on the ticket, e.g. Cat 3" />
+            <datalist id="section-suggestions">
+              <option v-for="s in SECTION_SUGGESTIONS" :key="s" :value="s" />
             </datalist>
           </label>
         </section>
 
         <section class="listing-form__section">
           <h2>Get the Verified badge <small class="listing-form__optional">optional</small></h2>
-          <div class="listing-form__field listing-form__field--wide">
-            <p class="listing-form__hint">
-              Enter the ticket number printed on each ticket. If they’re on the concert’s official
-              issued list, your listing is verified straight away. Numbers are only shown to you and,
-              after payment, to your buyer.
-            </p>
-          </div>
-          <label
-            v-for="(_, index) in ticketNumbers"
-            :key="index"
-            class="listing-form__field"
-          >
+          <p class="listing-form__field listing-form__field--wide listing-form__hint">
+            Enter the ticket number printed on each ticket. If they’re on the concert’s official
+            issued list, your listing is verified straight away. Numbers are only shown to you and,
+            after payment, to your buyer.
+          </p>
+          <label v-for="(_, index) in ticketNumbers" :key="index" class="listing-form__field">
             Ticket {{ index + 1 }} number
             <input
               v-model="ticketNumbers[index]"
-              :class="{ 'listing-form__input--bad': badNumber && ticketNumbers[index].trim().toUpperCase().replace(/[\s-]+/g, '-') === badNumber }"
+              :class="{ 'listing-form__input--bad': badNumber && normalise(ticketNumbers[index]) === badNumber }"
               placeholder="e.g. SER-CAT3-0020"
               autocomplete="off"
               spellcheck="false"
@@ -223,7 +211,7 @@ async function submitListing() {
             />
           </label>
           <div class="listing-form__field listing-form__field--wide">
-            <p class="listing-form__hint">No ticket number, or the concert has no issued list? Upload proof for an admin to review instead.</p>
+            <p class="listing-form__hint">No ticket number, or the concert has no issued list? Upload proof for an operator to review instead.</p>
             <ProofUpload v-model="proof" />
           </div>
         </section>
@@ -264,8 +252,8 @@ async function submitListing() {
 .listing-form__error { color: var(--rose-400); }
 .listing-form__hint { color: var(--text-400); font-size: var(--step--2); }
 .listing-form__link { justify-self: start; padding: 0; color: var(--accent-300); font-size: var(--step--2); text-decoration: underline; }
-.listing-form__input--bad { border-color: var(--rose-400) !important; }
 .listing-form__optional { margin-left: var(--space-2); color: var(--text-400); font-family: var(--font-body); font-size: var(--step--2); font-weight: 400; }
+.listing-form__input--bad { border-color: var(--rose-400) !important; }
 .listing-form__actions { display: flex; justify-content: flex-end; gap: var(--space-3); }
 @media (max-width: 600px) {
   .listing-form__section { grid-template-columns: 1fr; }

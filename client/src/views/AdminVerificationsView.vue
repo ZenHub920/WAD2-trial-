@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { api, formatDate } from '../api.js';
-import { formatMoney, formatRelative } from '../market.js';
+import { formatMoney, formatRelative, listingTitle, sectionLabel } from '../market.js';
 import IssuedTicketLists from '../components/market/IssuedTicketLists.vue';
 import MarketNotice from '../components/market/MarketNotice.vue';
 
@@ -61,7 +61,7 @@ onMounted(load);
   <div class="container admin">
     <header class="admin__head">
       <div>
-        <p class="eyebrow">Admin</p>
+        <p class="eyebrow">Operator</p>
         <h1>Ticket verification</h1>
       </div>
       <button class="btn btn--ghost" type="button" :disabled="loading" @click="load">Refresh</button>
@@ -69,9 +69,9 @@ onMounted(load);
 
     <div v-if="loading" class="skeleton" aria-busy="true" />
 
-    <!-- The API answers 404 to non-admins so the page is not advertised. -->
-    <MarketNotice v-else-if="error?.status === 401 || error?.status === 404" title="Admins only">
-      This page is for ticket reviewers.
+    <MarketNotice v-else-if="error?.status === 401 || error?.status === 403" title="Operators only">
+      This page is for ticket reviewers. An operator account is granted with
+      <code>npm run operator:grant -- &lt;email&gt;</code>.
       <RouterLink :to="{ name: 'marketplace' }">Back to the market</RouterLink>
     </MarketNotice>
 
@@ -94,26 +94,26 @@ onMounted(load);
           <iframe
             v-if="isPdf(listing.proofData)"
             :src="listing.proofData"
-            :title="`Proof for ${listing.title}`"
+            :title="`Proof for ${listingTitle(listing)}`"
           />
           <a v-else :href="listing.proofData" target="_blank" rel="noopener">
-            <img :src="listing.proofData" :alt="`Proof of purchase for ${listing.title}`" />
+            <img :src="listing.proofData" :alt="`Proof of purchase for ${listingTitle(listing)}`" />
           </a>
         </div>
 
         <div class="item__body">
           <h2>
-            <RouterLink :to="{ name: 'ticket-detail', params: { id: listing.id } }">{{ listing.title }}</RouterLink>
+            <RouterLink :to="{ name: 'ticket-detail', params: { id: listing.id } }">{{ listingTitle(listing) }}</RouterLink>
           </h2>
           <dl class="item__facts">
             <div><dt>Seller</dt><dd>{{ listing.seller.displayName }}</dd></div>
-            <div><dt>Event</dt><dd>{{ listing.concert.artist }} · {{ formatDate(listing.showDate ?? listing.concert.eventDate) }}</dd></div>
+            <div><dt>Event</dt><dd>{{ listing.concert.artist }} · {{ formatDate(listing.concert.event_date) }}</dd></div>
             <div><dt>Venue</dt><dd>{{ listing.concert.venue }}</dd></div>
-            <div><dt>Ticket</dt><dd>{{ listing.category }} · {{ listing.quantity }} × · {{ formatMoney(listing.priceCents, listing.currency) }}</dd></div>
+            <div><dt>Ticket</dt><dd>{{ sectionLabel(listing.section) }} · {{ listing.quantity }} × · {{ formatMoney(listing.priceCents) }}</dd></div>
             <div><dt>Listed</dt><dd>{{ formatRelative(listing.createdAt) }}</dd></div>
           </dl>
           <p class="item__check">
-            Check the proof shows this event and date, a matching category and quantity, and an order number.
+            Check the proof shows this event and date, a matching section and quantity, and an order number.
           </p>
 
           <label class="item__note">

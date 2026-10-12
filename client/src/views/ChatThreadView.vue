@@ -131,9 +131,9 @@ function timeOf(value) {
         <span class="about__label">{{ conversation.role === 'buyer' ? 'Buying' : 'Selling' }}</span>
         <span class="about__title">{{ conversation.listing.title }}</span>
         <span class="about__price tabular">
-          {{ formatMoney(conversation.listing.priceCents, conversation.listing.currency) }}
+          {{ formatMoney(conversation.listing.priceCents) }}
         </span>
-        <span v-if="conversation.listing.status !== 'open'" class="tag tag--rose">
+        <span v-if="conversation.listing.status !== 'active'" class="tag tag--rose">
           {{ conversation.listing.status }}
         </span>
       </RouterLink>
