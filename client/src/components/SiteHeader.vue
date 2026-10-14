@@ -58,6 +58,7 @@ async function logOut() {
         <template v-if="isLoggedIn">
           <RouterLink to="/list-ticket" class="list-ticket-btn" @click="menuOpen = false">+ List a ticket</RouterLink>
           <RouterLink to="/marketplace" @click="menuOpen = false">Ticket Market</RouterLink>
+          <RouterLink to="/concerts" @click="menuOpen = false">Concerts</RouterLink>
           <RouterLink to="/kaki" @click="menuOpen = false">KakiFinder</RouterLink>
           <RouterLink to="/chat" @click="menuOpen = false">Chat</RouterLink>
           <RouterLink to="/profile" @click="menuOpen = false">Profile</RouterLink>
