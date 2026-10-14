@@ -154,7 +154,6 @@
      to on a large screen so the product keeps its proportions instead of
      stretching a 390px design across a desktop monitor. */
   --app-width: 430px;
-  --tabbar-height: 64px;
 }
 
 /**

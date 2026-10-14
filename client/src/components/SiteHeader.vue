@@ -66,6 +66,7 @@ async function logOut() {
         </template>
         <template v-else>
           <RouterLink to="/marketplace" @click="menuOpen = false">Ticket Market</RouterLink>
+          <RouterLink to="/kaki" @click="menuOpen = false">KakiFinder</RouterLink>
           <RouterLink to="/concerts" @click="menuOpen = false">Concerts</RouterLink>
           <RouterLink to="/method" @click="menuOpen = false">How it works</RouterLink>
           <RouterLink to="/login" @click="menuOpen = false">Sign in</RouterLink>
