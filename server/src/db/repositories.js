@@ -10,7 +10,6 @@
  */
 
 import { createProposalRepo } from './proposalRepository.js';
-import { createEnhancementRepo } from './enhancementRepository.js';
 import { randomUUID } from 'node:crypto';
 
 // ---------------------------------------------------------------------------
@@ -234,7 +233,7 @@ export function createConcertRepo(db) {
           (SELECT COUNT(*) FROM parties p
             WHERE p.concert_id = c.id AND p.status = 'open'
               AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.source_party_id = p.id)) AS open_parties,
-          (          /*
+          /*
            * IMPROVEMENT #6:
            *
            * Available concert capacity must account for reservations
@@ -1576,6 +1575,5 @@ export function createRepositories(db) {
     sessions: createSessionRepo(db),
     kaki: createKakiRepo(db),
     proposals: createProposalRepo(db),
-    extra: createEnhancementRepo(db),
   };
 }

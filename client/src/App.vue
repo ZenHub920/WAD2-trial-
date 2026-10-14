@@ -3,7 +3,6 @@ import { computed, ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import SiteHeader from './components/SiteHeader.vue';
 import SiteFooter from './components/SiteFooter.vue';
-import TabBar from './components/TabBar.vue';
 import { refreshSession } from './auth.js';
 
 // Concert Kaki is a light product; dark is the opt-in now, not the default.
@@ -38,16 +37,9 @@ function toggleTheme() {
     </RouterView>
   </main>
   <SiteFooter />
-  <TabBar />
 </template>
 
 <style>
-/* The tab bar is fixed, so the document needs to end above it or the footer
-   and the last control on every page sit underneath. */
-body {
-  padding-bottom: calc(var(--tabbar-height) + env(safe-area-inset-bottom, 0px));
-}
-
 .page-enter-active,
 .page-leave-active {
   transition:
