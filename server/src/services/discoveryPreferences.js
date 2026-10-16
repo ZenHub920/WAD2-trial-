@@ -133,10 +133,18 @@ export function validateAnswers(input) {
           status: 400,
         });
       const explicit = typeof entry === "object" ? entry.conceptId : null;
+      const keepCustom = typeof entry === "object" && entry.custom === true;
+      if (keepCustom && explicit)
+        throw Object.assign(new Error("choose_concept_or_custom"), {
+          status: 400,
+        });
       if (explicit && !CONCEPTS.some((c) => c.id === explicit))
         throw Object.assign(new Error("unknown_concept"), { status: 400 });
-      const key =
-        explicit || aliases.get(normalize(text)) || `custom:${normalize(text)}`;
+      const key = keepCustom
+        ? `custom:${normalize(text)}`
+        : explicit ||
+          aliases.get(normalize(text)) ||
+          `custom:${normalize(text)}`;
       if (!seen.has(key)) {
         output[intent].push({
           key,
