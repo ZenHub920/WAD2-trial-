@@ -33,6 +33,7 @@ import GroupExplorerView from './views/GroupExplorerView.vue';
 import GroupConnectionsView from './views/GroupConnectionsView.vue';
 import GroupMembershipView from './views/GroupMembershipView.vue';
 import NotificationsView from './views/NotificationsView.vue';
+import MeetupView from './views/MeetupView.vue';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -71,6 +72,8 @@ const router = createRouter({
     { path:'/groups/invite/:token',component:GroupMembershipView,props:true,meta:{title:'Join your friends',requiresAuth:true} },
     { path:'/groups/:id/members',component:GroupMembershipView,props:true,meta:{title:'Group members',requiresAuth:true} },
     { path:'/notifications',component:NotificationsView,meta:{title:'Notifications',requiresAuth:true} },
+    { path:'/meetups',component:MeetupView,meta:{title:'Meetup planning',requiresAuth:true} },
+    { path:'/meetups/:id',component:MeetupView,props:true,meta:{title:'Meetup planning',requiresAuth:true} },
     {
       path: '/kaki/history',
       name: 'kaki-history',

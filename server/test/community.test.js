@@ -4,6 +4,7 @@ import { createTestDb } from '../src/db/connection.js';
 import { createRepositories } from '../src/db/repositories.js';
 import { makeUser,makeParty,makeSeeker } from './helpers.js';
 import { validateAnswers,aggregateAnswers,compareProfiles } from '../src/services/discoveryPreferences.js';
+import { createMeetupWeather } from '../src/services/meetupWeather.js';
 let db,repos;
 beforeEach(()=>{
   db=createTestDb();repos=createRepositories(db);
@@ -92,4 +93,41 @@ test('join request notifications and business writes share transaction rollback'
  assert.throws(operation,/rollback/);
  assert.equal(repos.notifications.unread('h1'),0);
  repos.recommendations.requestJoin('seeker','p1');assert.equal(repos.notifications.unread('h1'),1);
+});
+const windowInput={title:'Meet before show',partyId:'p1',startsAt:'2030-01-01T10:00:00+08:00',endsAt:'2030-01-01T12:00:00+08:00'};
+test('meetup availability and private locations produce real-place recommendations with versioned approval',()=>{
+ repos.membership.configure('h1','p1',{expectedFriends:1});const link=repos.membership.invite('h1','p1');repos.membership.acceptInvite('friend',link.token);
+ const {id}=repos.meetups.create('h1',windowInput);
+ repos.meetups.availability('h1',id,[{startsAt:windowInput.startsAt,endsAt:windowInput.endsAt,latitude:1.3,longitude:103.8}]);
+ repos.meetups.availability('friend',id,[{startsAt:windowInput.startsAt,endsAt:'2030-01-01T11:00:00+08:00',latitude:1.31,longitude:103.81}]);
+ const place=repos.meetups.place('friend',id,{label:'MRT entrance',latitude:1.305,longitude:103.805,sheltered:true});
+ const detail=repos.meetups.detail('h1',id);assert.equal(detail.suggestions[0].availableCount,2);
+ assert.equal(detail.availability.length,1);assert.ok(detail.availability.every(a=>a.user_id==='h1'));
+ assert.throws(()=>repos.meetups.detail('outsider',id),/not_found/);
+ const proposed=repos.meetups.propose('friend',id,{version:detail.version,placeId:place.id,startsAt:windowInput.startsAt});
+ assert.throws(()=>repos.meetups.approve('friend',id,proposed.version),/approver_required/);
+ assert.equal(repos.meetups.approve('h1',id,proposed.version).confirmed,true);
+ repos.meetups.comment('friend',id,'Can we meet by the lift?');
+ assert.equal(repos.meetups.detail('h1',id).comments.length,1);
+ repos.meetups.vote('friend',id,place.id);
+ assert.throws(()=>repos.meetups.approve('h1',id,proposed.version),/stale/);
+ repos.membership.leave('friend','p1');assert.throws(()=>repos.meetups.detail('friend',id),/not_found/);
+});
+test('connected groups require both hosts to approve and never expose locations to unrelated users',()=>{
+ const c=repos.groups.invite('h1','p1','p2');repos.groups.respond('h2',c.id,'accept');
+ const {id}=repos.meetups.create('h1',{...windowInput,partyId:undefined,connectionId:c.id});
+ const place=repos.meetups.place('h1',id,{label:'Cafe',latitude:1.3,longitude:103.8});
+ const m=repos.meetups.detail('h1',id);const p=repos.meetups.propose('h1',id,{version:m.version,placeId:place.id,startsAt:windowInput.startsAt});
+ assert.equal(repos.meetups.approve('h1',id,p.version).confirmed,false);
+ assert.equal(repos.meetups.approve('h2',id,p.version).confirmed,true);
+ repos.users.block('h1','h2');assert.throws(()=>repos.meetups.detail('h2',id),/not_found/);
+});
+test('weather warns only for the covered time and degrades safely on errors',async()=>{
+ const now=Date.parse('2030-01-01T10:00:00+08:00');let calls=0;
+ const weather=createMeetupWeather({now:()=>now,fetchImpl:async()=>{calls++;return {ok:true,json:async()=>({code:0,data:{area_metadata:[{name:'City',label_location:{latitude:1.3,longitude:103.8}}],items:[{valid_period:{start:'2030-01-01T10:00:00+08:00',end:'2030-01-01T12:00:00+08:00'},forecasts:[{area:'City',forecast:'Thundery Showers'}]}]}})}}});
+ assert.equal((await weather.forecast({latitude:1.3,longitude:103.8,startsAt:now})).rainWarning,true);
+ await weather.forecast({latitude:1.3,longitude:103.8,startsAt:now});assert.equal(calls,1);
+ assert.equal((await weather.forecast({latitude:1.3,longitude:103.8,startsAt:now+86400000})).status,'unavailable');
+ const offline=createMeetupWeather({now:()=>now,fetchImpl:async()=>{throw new Error('offline');}});
+ assert.equal((await offline.forecast({latitude:1.3,longitude:103.8,startsAt:now})).status,'unavailable');
 });
