@@ -12,6 +12,7 @@ import ListingCard from '../components/market/ListingCard.vue';
 import ConcertSpotlightCard from '../components/market/ConcertSpotlightCard.vue';
 import DateField from '../components/market/DateField.vue';
 import MarketIcon from '../components/market/MarketIcon.vue';
+import PriceRange from '../components/market/PriceRange.vue';
 
 const listings = ref([]);
 const concerts = ref([]);
@@ -102,6 +103,28 @@ const sections = computed(() => {
 
 const priceNarrowed = computed(() =>
   filters.value.min !== DEFAULTS.min || filters.value.max !== DEFAULTS.max);
+
+/**
+ * The slider's track is scaled to what is actually for sale. On a fixed
+ * 0–100,000 scale every real ticket would sit in the first half-percent of it,
+ * and dragging would be hopeless.
+ */
+const priceBounds = computed(() => {
+  const prices = listings.value.map((l) => l.priceCents / 100);
+  if (!prices.length) return { floor: 0, ceil: 500 };
+  const low = Math.max(0, Math.floor(Math.min(...prices) / 10) * 10);
+  const high = Math.ceil(Math.max(...prices) / 10) * 10;
+  return { floor: low, ceil: high > low ? high : low + 10 };
+});
+
+/** One object for the range control, writing back to the two filter fields. */
+const priceRange = computed({
+  get: () => ({ min: filters.value.min, max: filters.value.max }),
+  set: ({ min, max }) => {
+    filters.value.min = min;
+    filters.value.max = max;
+  },
+});
 
 /**
  * The active filters, as removable chips. Shown in the collapsed bar so
@@ -331,29 +354,35 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                   </option>
                 </select>
               </label>
-              <label>
-                Minimum price
-                <input v-model.number="filters.min" type="number" min="0" :max="normalised.max" step="1" placeholder="No minimum" />
-              </label>
-              <label>
-                Maximum price
-                <input v-model.number="filters.max" type="number" :min="normalised.min" max="100000" step="1" placeholder="No maximum" />
-              </label>
+              <div class="panel__field panel__field--wide">
+                <span id="market-price-label">Price range</span>
+                <PriceRange
+                  v-model="priceRange"
+                  :floor="priceBounds.floor"
+                  :ceil="priceBounds.ceil"
+                  aria-labelledby="market-price-label"
+                />
+              </div>
               <label>
                 Sort tickets by
                 <select v-model="filters.sort">
                   <option v-for="option in SORTS" :key="option.id" :value="option.id">{{ option.label }}</option>
                 </select>
               </label>
-              <div class="panel__switch">
+              <!-- Carries a label like its neighbours so it sits on their line;
+                   aligning a bare button to the row's edge drifts once the row
+                   grows taller than one input. -->
+              <div class="panel__field">
+                <span id="market-saved-label">Saved tickets</span>
                 <button
                   type="button"
                   class="switch"
                   :aria-pressed="filters.savedOnly"
+                  aria-labelledby="market-saved-label"
                   @click="filters.savedOnly = !filters.savedOnly"
                 >
                   <MarketIcon :name="filters.savedOnly ? 'bookmark-filled' : 'bookmark'" :size="17" />
-                  Saved tickets only
+                  Saved only
                 </button>
               </div>
             </div>
@@ -695,7 +724,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
-.panel__switch { display: grid; align-items: end; }
+/* The slider needs a usable track, so it takes two columns where there are two. */
+.panel__field--wide { grid-column: span 2; }
 
 .switch {
   display: inline-flex;
