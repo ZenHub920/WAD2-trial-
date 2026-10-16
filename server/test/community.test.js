@@ -75,3 +75,21 @@ test('seeker chooses once and receiving host approves atomically without a secon
  assert.throws(()=>repos.recommendations.requestJoin('seeker','p2'),/already_in_concert_group/);
  assert.deepEqual(db.pragma('foreign_key_check'),[]);
 });
+test('notification hooks are persistent, recipient scoped, deduplicated and obey preferences',()=>{
+ repos.notifications.chatMessage({messageId:'m1',conversationPath:'/groups/p1/members',senderId:'h1',recipientIds:['h1','friend','friend']});
+ repos.notifications.chatMessage({messageId:'m1',conversationPath:'/groups/p1/members',senderId:'h1',recipientIds:['friend']});
+ assert.equal(repos.notifications.unread('friend'),1);assert.equal(repos.notifications.unread('h1'),0);
+ const n=repos.notifications.list('friend')[0];
+ assert.throws(()=>repos.notifications.read('outsider',n.id),/not_found/);
+ repos.notifications.read('friend',n.id);assert.equal(repos.notifications.unread('friend'),0);
+ repos.notifications.setSettings('friend',{chat:false});
+ repos.notifications.chatMessage({messageId:'m2',conversationPath:'/groups/p1/members',senderId:'h1',recipientIds:['friend']});
+ assert.equal(repos.notifications.list('friend').length,1);
+ assert.throws(()=>repos.notifications.setSettings('friend',{chat:'yes'}),/invalid/);
+});
+test('join request notifications and business writes share transaction rollback',()=>{
+ const operation=db.transaction(()=>{repos.recommendations.requestJoin('seeker','p1');throw new Error('rollback');});
+ assert.throws(operation,/rollback/);
+ assert.equal(repos.notifications.unread('h1'),0);
+ repos.recommendations.requestJoin('seeker','p1');assert.equal(repos.notifications.unread('h1'),1);
+});

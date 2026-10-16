@@ -18,5 +18,11 @@ export function registerCommunityRoutes(router,{repos,requireUser}) {
   route('post','/groups/:id/join-requests','request',r=>repos.recommendations.requestJoin(r.user.id,r.params.id));
   route('get','/me/group-join-requests','requests',r=>repos.recommendations.requests(r.user.id));
   route('post','/group-join-requests/:id/respond','request',r=>repos.recommendations.respond(r.user.id,r.params.id,r.body?.action));
+  route('get','/me/notifications','notifications',r=>repos.notifications.list(r.user.id,r.query));
+  route('get','/me/notifications/unread','unread',r=>repos.notifications.unread(r.user.id));
+  route('post','/me/notifications/read-all','result',r=>repos.notifications.readAll(r.user.id));
+  route('post','/me/notifications/:id/read','result',r=>repos.notifications.read(r.user.id,r.params.id));
+  route('get','/me/notification-preferences','preferences',r=>repos.notifications.settings(r.user.id));
+  route('put','/me/notification-preferences','result',r=>repos.notifications.setSettings(r.user.id,r.body));
   return route;
 }
