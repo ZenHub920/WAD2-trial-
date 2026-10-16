@@ -104,6 +104,22 @@ const ADDED_COLUMNS = [
 // a separate native JSON column type.
 
   ['match_results', 'score_breakdown_json', 'TEXT'],
+
+  // ============================================================
+  // KAKI CHAT — reply, edit, soft delete, and report evidence
+  // ============================================================
+  // Added to `messages` and `reports` after both tables shipped, so existing
+  // databases need them applied here as well as in schema.sql.
+  //
+  // SQLite cannot add a column with a REFERENCES clause via ALTER TABLE, so
+  // these arrive untyped by foreign key on an existing database. Fresh
+  // databases get the full constraints from schema.sql. The application
+  // enforces the same rules either way.
+  ['messages', 'reply_to_message_id', 'TEXT'],
+  ['messages', 'edited_at', 'TEXT'],
+  ['messages', 'deleted_at', 'TEXT'],
+  ['reports', 'conversation_id', 'TEXT'],
+  ['reports', 'message_id', 'TEXT'],
 ];
 
 function migrate(target) {

@@ -8,7 +8,13 @@ import { refreshSession } from './auth.js';
 // Concert Kaki is a light product; dark is the opt-in now, not the default.
 const theme = ref('light');
 const route = useRoute();
-const hasFixedHeader = computed(() => ['marketplace', 'list-ticket', 'my-listings', 'ticket-detail'].includes(route.name));
+// The chat thread sizes itself to the remaining viewport and scrolls
+// internally, so it needs the header out of flow — otherwise the page scrolls
+// as well and the thread's own bar slides under the navbar.
+const hasFixedHeader = computed(() => [
+  'marketplace', 'list-ticket', 'my-listings', 'ticket-detail',
+  'kaki-chat', 'kaki-chat-thread',
+].includes(route.name));
 refreshSession().catch((error) => console.error('Could not load session', error));
 
 onMounted(() => {

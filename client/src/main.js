@@ -22,6 +22,8 @@ import ChatView from './views/ChatView.vue';
 import ChatThreadView from './views/ChatThreadView.vue';
 import AdminVerificationsView from './views/AdminVerificationsView.vue';
 import KakiFinderView from './views/KakiFinderView.vue';
+import KakiChatListView from './views/KakiChatListView.vue';
+import KakiChatView from './views/KakiChatView.vue';
 import ProfileHistoryView from './views/ProfileHistoryView.vue';
 import ProfileView from './views/ProfileView.vue';
 import NotFoundView from './views/NotFoundView.vue';
@@ -63,6 +65,22 @@ const router = createRouter({
       name: 'kaki-history',
       component: ProfileHistoryView,
       meta: { title: 'Profile History' },
+    },
+
+    // Kaki messaging. Separate from /chat, which is the buyer–seller thread on
+    // a ticket listing — different tables, different rules about who may talk.
+    {
+      path: '/kaki/chat',
+      name: 'kaki-chat',
+      component: KakiChatListView,
+      meta: { title: 'Messages' },
+    },
+    {
+      path: '/kaki/chat/:id',
+      name: 'kaki-chat-thread',
+      component: KakiChatView,
+      props: true,
+      meta: { title: 'Messages' },
     },
 
     { path: '/chat', name: 'chat', component: ChatView, meta: { title: 'Chat' } },

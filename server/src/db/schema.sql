@@ -541,7 +541,56 @@ CREATE TABLE IF NOT EXISTS messages (
         CHECK (length(body) BETWEEN 1 AND 2000),
 
     created_at TEXT NOT NULL
-        DEFAULT (datetime('now'))
+        DEFAULT (datetime('now')),
+
+    -- Quoted reply. ON DELETE SET NULL rather than CASCADE: deleting the
+    -- quoted message must not take the reply with it, or one person could
+    -- erase another person's messages by deleting their own.
+    reply_to_message_id TEXT
+        REFERENCES messages(id)
+        ON DELETE SET NULL,
+
+    -- Set the first time the sender edits. Its presence is what the interface
+    -- shows as "edited"; the original text is deliberately not kept, matching
+    -- what mainstream chat apps do.
+    edited_at TEXT,
+
+    -- SOFT delete. The row and its body stay, but the API returns a tombstone
+    -- instead of the text. Two reasons it is not a real DELETE:
+    --   1. A harassing message must survive the sender deleting it, or
+    --      "send abuse, delete, deny" defeats the report system entirely.
+    --   2. Replies that quote it keep something to point at.
+    -- Only operators reviewing a report ever see the retained body.
+    deleted_at TEXT
+
+);
+
+
+-- ============================================================
+-- TABLE: CONVERSATION SETTINGS
+-- Per-viewer chat appearance
+-- ============================================================
+--
+-- Deliberately keyed by (conversation, user) rather than stored on the
+-- conversation itself: a chat background is a personal preference, so one
+-- person restyling the thread must not change what the other person sees.
+
+CREATE TABLE IF NOT EXISTS conversation_settings (
+
+    conversation_id TEXT NOT NULL
+        REFERENCES conversations(id)
+        ON DELETE CASCADE,
+
+    user_id TEXT NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    background TEXT NOT NULL DEFAULT 'default',
+
+    updated_at TEXT NOT NULL
+        DEFAULT (datetime('now')),
+
+    PRIMARY KEY (conversation_id, user_id)
 
 );
 
@@ -713,6 +762,18 @@ CREATE TABLE IF NOT EXISTS reports (
 
     created_at TEXT NOT NULL
         DEFAULT (datetime('now')),
+
+    -- What the report is about, when it came from a chat. Both nullable so a
+    -- profile can still be reported from outside a conversation. ON DELETE
+    -- SET NULL keeps the report alive even if the thread is removed — losing
+    -- the report along with the evidence would be the wrong way round.
+    conversation_id TEXT
+        REFERENCES conversations(id)
+        ON DELETE SET NULL,
+
+    message_id TEXT
+        REFERENCES messages(id)
+        ON DELETE SET NULL,
 
     CHECK (reporter_user_id <> reported_user_id)
 
