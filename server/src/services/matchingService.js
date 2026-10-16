@@ -507,7 +507,9 @@ function loadInstance(repos, concertId) {
 
   return {
 
-    seekers: repos.seekers.openForConcert(concertId),
+    seekers: repos.seekers.openForConcert(concertId).filter(s=>{
+      try{repos.membership.ensureFree(s.user_id,concertId,'');return true;}catch{return false;}
+    }),
 
     parties: availableParties,
 
