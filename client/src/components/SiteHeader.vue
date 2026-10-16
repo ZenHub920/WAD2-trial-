@@ -5,6 +5,7 @@ import { currentUser, signOut } from '../auth.js';
 import { unreadTotal } from '../chatLive.js';
 import { introActive } from '../intro.js';
 import UserAvatar from './UserAvatar.vue';
+import NotificationsLink from './NotificationsLink.vue';
 
 defineProps({ theme: { type: String, default: 'dark' } });
 defineEmits(['toggle-theme']);
@@ -73,6 +74,7 @@ async function logOut() {
           <RouterLink to="/kaki" @click="menuOpen = false">Find a Kaki</RouterLink>
           <RouterLink to="/groups" @click="menuOpen = false">Find a Group</RouterLink>
           <RouterLink to="/groups/connect" @click="menuOpen = false">Connect Groups</RouterLink>
+          <NotificationsLink @click="menuOpen = false" />
           <!-- Kaki messages. The dot is the only thing competing for attention
                in the navbar, so it is reserved for genuinely new activity and
                carries a count rather than a bare mark. -->
