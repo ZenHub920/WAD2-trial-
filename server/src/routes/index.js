@@ -1,5 +1,7 @@
 /** Route declarations only; controllers own HTTP responses and validation. */
 import { Router } from 'express';
+import { registerGroupDiscoveryRoutes } from './groupDiscovery.js';
+import { registerCommunityRoutes } from './community.js';
 
 // Improvements #5–15:
 // Dedicated APIs for proposals, messaging, dashboards,
@@ -187,5 +189,7 @@ export function createRoutes({
   );
 
 
+  registerGroupDiscoveryRoutes(router, { repos, requireUser });
+  registerCommunityRoutes(router, { repos, requireUser,requireOperator,db });
   return router;
 }

@@ -1,0 +1,98 @@
+<script setup>
+import { onMounted, ref } from "vue";
+import { api } from "../api.js";
+import "../assets/groups.css";
+const opportunities = ref([]),
+  history = ref([]),
+  error = ref(""),
+  busy = ref(false),
+  forms = ref({});
+async function load() {
+  const [a, b] = await Promise.all([
+    api.feedbackOpportunities(),
+    api.myFeedback(),
+  ]);
+  opportunities.value = a.opportunities;
+  history.value = b.feedback;
+  for (const item of opportunities.value)
+    forms.value[`${item.partyId}:${item.ratedUserId}`] ??= {
+      showedUp: true,
+      rating: 4,
+      comment: "",
+    };
+}
+onMounted(async () => {
+  try {
+    await load();
+  } catch (e) {
+    error.value = e.message;
+  }
+});
+async function submit(item) {
+  busy.value = true;
+  error.value = "";
+  try {
+    await api.leaveFeedback({
+      partyId: item.partyId,
+      ratedUserId: item.ratedUserId,
+      ...forms.value[`${item.partyId}:${item.ratedUserId}`],
+    });
+    await load();
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    busy.value = false;
+  }
+}
+</script>
+<template>
+  <main class="container groups-page">
+    <h1>Post-concert feedback</h1>
+    <p>
+      Feedback is available after the concert day ends in Singapore, only for
+      people in your confirmed attendance group before that event.
+    </p>
+    <p v-if="error" role="alert">{{ error }}</p>
+    <p v-if="!opportunities.length">
+      No feedback opportunities currently available.
+    </p>
+    <form
+      v-for="item in opportunities"
+      :key="`${item.partyId}:${item.ratedUserId}`"
+      class="card group-panel"
+      @submit.prevent="submit(item)"
+    >
+      <h2>{{ item.name }} · {{ item.artist }}</h2>
+      <label class="group-check"
+        ><input
+          v-model="forms[`${item.partyId}:${item.ratedUserId}`].showedUp"
+          type="checkbox"
+        />Attended</label
+      ><label
+        >Communication rating<select
+          v-model.number="forms[`${item.partyId}:${item.ratedUserId}`].rating"
+        >
+          <option v-for="n in 5" :key="n" :value="n">{{ n }}</option>
+        </select></label
+      ><label
+        >Comment<textarea
+          v-model="forms[`${item.partyId}:${item.ratedUserId}`].comment"
+          maxlength="500"
+        /></label
+      ><button class="btn btn--primary" :disabled="busy">
+        Submit feedback
+      </button>
+    </form>
+    <section class="card group-panel">
+      <h2>Your feedback history</h2>
+      <article v-for="item in history" :key="item.id">
+        <p>
+          {{ item.rating }}/5 ·
+          {{ item.showedUp ? "Attended" : "Did not attend" }} ·
+          {{ item.createdAt }}
+        </p>
+        <p>{{ item.comment }}</p>
+      </article>
+    </section>
+  </main>
+</template>

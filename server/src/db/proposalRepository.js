@@ -1,5 +1,6 @@
 
 import { randomUUID } from 'node:crypto';
+import { reservedPlacesSql,availableCapacitySql } from './capacity.js';
 
 /**
  * ============================================================
@@ -111,12 +112,8 @@ export function createProposalRepo(db) {
   // HELPER: COUNT RESERVED PARTY CAPACITY
   // ============================================================
 
-  const reserved = db.prepare(`
-    SELECT COUNT(*) AS n
-    FROM match_proposals
-    WHERE party_id = ?
-      AND status IN ${ACTIVE}
-  `);
+  const reservedQuery = db.prepare(`SELECT ${reservedPlacesSql('@id')} AS n`);
+  const reserved = { get: id => reservedQuery.get({id}) };
 
   // ============================================================
   // HELPER: REOPEN SEEKER AND PARTY AFTER CAPACITY RELEASE
@@ -274,6 +271,10 @@ export function createProposalRepo(db) {
       `);
 
       for (const match of matches) {
+        const party = db.prepare(`SELECT ${availableCapacitySql()} capacity,p.status FROM parties p WHERE p.id = ?`).get(match.party_id);
+        if (!party || party.status === 'cancelled' || reserved.get(match.party_id).n >= party.capacity) {
+          throw new Error('party_capacity_exceeded');
+        }
 
         const proposalId = `mp_${randomUUID()}`;
 
@@ -509,6 +510,13 @@ export function createProposalRepo(db) {
       const nextStatus = decision === 'accept'
         ? 'confirmed'
         : 'declined';
+      if(nextStatus==='confirmed') {
+        const other=db.prepare("SELECT 1 FROM group_memberships WHERE user_id=? AND concert_id=? AND status='active' AND party_id<>?").get(userId,proposal.concert_id,proposal.party_id);
+        const hosted=db.prepare("SELECT 1 FROM parties WHERE host_user_id=? AND concert_id=? AND status<>'cancelled' AND id<>?").get(userId,proposal.concert_id,proposal.party_id);
+        if(other||hosted)return {error:'already_in_concert_group',status:409};
+        db.prepare(`INSERT INTO group_memberships(party_id,user_id,concert_id,source) VALUES(?,?,?,'proposal')
+          ON CONFLICT(party_id,user_id) DO UPDATE SET status='active',source='proposal',left_at=NULL`).run(proposal.party_id,userId,proposal.concert_id);
+      }
 
       // STEP 7: Persist the response.
 

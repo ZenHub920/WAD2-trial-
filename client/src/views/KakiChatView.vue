@@ -343,6 +343,7 @@ watch(() => props.id, () => load());
         </div>
       </div>
       <div v-else class="bar__who"><span class="bar__name">Conversation</span></div>
+      <RouterLink v-if="conversation" :to="{path:'/meetups',query:{kakiConversationId:id}}">Plan meetup</RouterLink>
 
       <button
         class="bar__menu"

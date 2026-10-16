@@ -10,6 +10,13 @@
  */
 
 import { createProposalRepo } from './proposalRepository.js';
+import { createGroupDiscoveryRepo } from './groupDiscoveryRepository.js';
+import { createMembershipRepo } from './membershipRepository.js';
+import { reservedPlacesSql,availableCapacitySql } from './capacity.js';
+import { createRecommendationRepo } from './recommendationRepository.js';
+import { createNotificationRepo } from './notificationRepository.js';
+import { createMeetupRepo } from './meetupRepository.js';
+import { createFeedbackRepo } from './feedbackRepository.js';
 import { createKakiChatRepo } from './kakiChatRepository.js';
 import { randomUUID } from 'node:crypto';
 
@@ -242,6 +249,8 @@ export function createConcertRepo(db) {
           c.*,
           (SELECT COUNT(*) FROM parties p
             WHERE p.concert_id = c.id AND p.status = 'open'
+              AND ${availableCapacitySql()} > ${reservedPlacesSql('p.id')}
+              AND NOT EXISTS(SELECT 1 FROM group_settings gs WHERE gs.party_id=p.id AND gs.published=0)
               AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.source_party_id = p.id)) AS open_parties,
           /*
            * IMPROVEMENT #6:
@@ -256,18 +265,7 @@ export function createConcertRepo(db) {
           (
             SELECT COALESCE(
               SUM(
-                p.capacity - (
-                  SELECT COUNT(*)
-
-                  FROM match_proposals mp
-
-                  WHERE mp.party_id = p.id
-
-                    AND mp.status IN (
-                      'proposed',
-                      'confirmed'
-                    )
-                )
+                ${availableCapacitySql()} - ${reservedPlacesSql('p.id')}
               ),
               0
             )
@@ -276,6 +274,7 @@ export function createConcertRepo(db) {
 
             WHERE p.concert_id = c.id
               AND p.status = 'open'
+              AND NOT EXISTS(SELECT 1 FROM group_settings gs WHERE gs.party_id=p.id AND gs.published=0)
 
               AND NOT EXISTS (
                 SELECT 1
@@ -375,10 +374,11 @@ export function createPartyRepo(db) {
 
     findById(id) {
       const row = db.prepare(`
-        SELECT p.*, ${USER_COLUMNS('u', 'host_')}
+        SELECT p.*, ${availableCapacitySql()} AS capacity, ${USER_COLUMNS('u', 'host_')}
         FROM parties p JOIN users u ON u.id = p.host_user_id
         WHERE p.id = ?
       `).get(id);
+      if (row) row.remaining_capacity = Math.max(0, row.capacity - db.prepare(`SELECT ${reservedPlacesSql('@id')} AS n`).get({id}).n);
       return mapParty(row);
     },
   
@@ -398,15 +398,10 @@ openForConcert(concertId) {
 
   const rows = db.prepare(`
     SELECT
-      p.*,
+      p.*, ${availableCapacitySql()} AS capacity,
       ${USER_COLUMNS('u', 'host_')},
 
-      p.capacity - (
-        SELECT COUNT(*)
-        FROM match_proposals mp
-        WHERE mp.party_id = p.id
-          AND mp.status IN ('proposed', 'confirmed')
-      ) AS remaining_capacity
+      ${availableCapacitySql()} - ${reservedPlacesSql('p.id')} AS remaining_capacity
 
     FROM parties p
     JOIN users u ON u.id = p.host_user_id
@@ -420,12 +415,8 @@ openForConcert(concertId) {
         WHERE t.source_party_id = p.id
       )
 
-      AND p.capacity > (
-        SELECT COUNT(*)
-        FROM match_proposals mp
-        WHERE mp.party_id = p.id
-          AND mp.status IN ('proposed', 'confirmed')
-      )
+      AND ${availableCapacitySql()} > ${reservedPlacesSql('p.id')}
+      AND NOT EXISTS(SELECT 1 FROM group_settings gs WHERE gs.party_id=p.id AND gs.published=0)
 
     ORDER BY p.id
   `).all(concertId);
@@ -1571,7 +1562,7 @@ export function createConversationRepo(db) {
 }
 
 export function createRepositories(db) {
-  return {
+  const repos = {
     users: createUserRepo(db),
     concerts: createConcertRepo(db),
     participation: createParticipationRepo(db),
@@ -1589,4 +1580,11 @@ export function createRepositories(db) {
     kakiChat: createKakiChatRepo(db),
     proposals: createProposalRepo(db),
   };
+  repos.groups = createGroupDiscoveryRepo(db, repos);
+  repos.membership = createMembershipRepo(db, repos);
+  repos.recommendations = createRecommendationRepo(db, repos);
+  repos.notifications = createNotificationRepo(db);
+  repos.meetups = createMeetupRepo(db,repos);
+  repos.feedback = createFeedbackRepo(db,repos);
+  return repos;
 }

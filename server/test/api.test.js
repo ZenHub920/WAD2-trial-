@@ -8,6 +8,7 @@
 
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 
 import { createTestDb } from '../src/db/connection.js';
 import { createApp } from '../src/app.js';
@@ -21,7 +22,9 @@ const publicPreview = (body) => JSON.stringify(body);
 const api = async (path, init) => {
   const res = await fetch(`${baseUrl}${path}`, {
     ...init,
-    headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
+    headers: { 'content-type': 'application/json',
+      ...(init?.method === 'POST' && path.endsWith('/match') ? { 'Idempotency-Key': randomUUID() } : {}),
+      ...(init?.headers ?? {}) },
   });
   const body = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
   return { status: res.status, body, cookie: res.headers.get('set-cookie')?.split(';')[0] };
@@ -262,7 +265,7 @@ describe('Matching over HTTP', () => {
       { headers: { cookie: cookies.seek_a } });
     assert.equal(seeker.status, 200);
     assert.equal(seeker.body.result.role, 'seeker');
-    assert.equal(seeker.body.result.outcome, 'matched');
+    assert.equal(seeker.body.result.outcome, 'proposed');
     assert.deepEqual(Object.keys(seeker.body.result.round).sort(), ['id', 'ranAt']);
     assert.equal(seeker.body.result.round.id, roundId);
     assert.ok(['p_a', 'p_b'].includes(seeker.body.result.group.id));
@@ -380,8 +383,8 @@ describe('Empty instances', () => {
   });
 });
 
-describe('Latest-round result isolation', () => {
-  test('matched, unmatched, no_members, unrelated account, and a later round', async () => {
+describe('Operational result isolation', () => {
+  test('active proposals survive later rounds without exposing unrelated accounts or historical assignments', async () => {
     db.prepare(`INSERT INTO concerts (id, artist, venue, city, event_date)
       VALUES ('c_private', 'Private Act', 'Venue', 'Singapore', '2027-02-01'),
              ('c_no_round', 'Future Act', 'Venue', 'Singapore', '2027-03-01')`).run();
@@ -408,17 +411,17 @@ describe('Latest-round result isolation', () => {
       VALUES (?, ?, ?, ?, ?)`);
     insertResult.run('mr_private_a', 'r_private_first', 's_private_a', 'p_private_a', 'matched');
     insertResult.run('mr_private_b', 'r_private_first', 's_private_b', null, 'unmatched');
+    db.prepare(`INSERT INTO match_proposals
+      (id, round_id, match_result_id, seeker_request_id, party_id, status, expires_at)
+      VALUES ('mp_private', 'r_private_first', 'mr_private_a', 's_private_a', 'p_private_a', 'confirmed', ?)`)
+      .run(Date.now() + 48 * 60 * 60 * 1000);
 
     const mine = (concert, cookie, query = '') =>
       api(`/api/me/concerts/${concert}/result${query}`, { headers: { cookie } });
     assert.deepEqual((await mine('c_no_round', cookies.seek_a)).body, { result: null });
     assert.deepEqual((await mine('c_private', cookies.seek_c)).body, { result: null });
     assert.equal((await mine('c_private', cookies.seek_a)).body.result.group.host.id, ids.host_a);
-    assert.deepEqual((await mine('c_private', cookies.seek_b, `?userId=${ids.seek_a}`)).body.result,
-      { role: 'seeker', outcome: 'unmatched', round: {
-        id: 'r_private_first', ranAt: db.prepare('SELECT ran_at FROM match_rounds WHERE id = ?')
-          .get('r_private_first').ran_at,
-      } });
+    assert.deepEqual((await mine('c_private', cookies.seek_b, `?userId=${ids.seek_a}`)).body.result, null);
     const hostA = (await mine('c_private', cookies.host_a)).body.result;
     assert.deepEqual(hostA.members.map((u) => u.id), [ids.seek_a]);
     assert.equal(hostA.group.host.id, ids.host_a);
@@ -432,10 +435,10 @@ describe('Latest-round result isolation', () => {
     insertRound.run('r_private_second', 1, 1, 1, 0,
       JSON.stringify({ capacities: { p_private_b: 1 } }));
     insertResult.run('mr_private_c', 'r_private_second', 's_private_c', null, 'unmatched');
-    assert.deepEqual((await mine('c_private', cookies.seek_a)).body, { result: null });
+    assert.equal((await mine('c_private', cookies.seek_a)).body.result.outcome, 'confirmed');
     assert.deepEqual((await mine('c_private', cookies.seek_b)).body, { result: null });
-    assert.deepEqual((await mine('c_private', cookies.host_a)).body, { result: null });
-    assert.equal((await mine('c_private', cookies.seek_c)).body.result.outcome, 'unmatched');
+    assert.deepEqual((await mine('c_private', cookies.host_a)).body.result.members.map(u => u.id), [ids.seek_a]);
+    assert.deepEqual((await mine('c_private', cookies.seek_c)).body, { result: null });
     assert.equal((await mine('c_private', cookies.host_b)).body.result.outcome, 'no_members');
   });
 });
