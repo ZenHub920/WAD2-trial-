@@ -31,6 +31,10 @@ function mapUser(row) {
         vibe: JSON.parse(row.vibe_json),
         reliability: row.reliability,
         verified: row.verified,
+        // Carried through explicitly: this mapper enumerates columns rather
+        // than spreading the row, so anything omitted here is invisible to
+        // every caller even though it is stored.
+        avatar_path: row.avatar_path ?? null,
         ...(Object.hasOwn(row, 'is_operator') ? { is_operator: Boolean(row.is_operator) } : {}),
         created_at: row.created_at,
     };
@@ -145,6 +149,11 @@ export function createUserRepo(db) {
 
         findByEmail(email) {
             return db.prepare('SELECT * FROM users WHERE lower(email) = lower(?)').get(email);
+        },
+
+        /** Stores the filename only; pass null to fall back to the silhouette. */
+        setAvatar(id, filename) {
+            db.prepare('UPDATE users SET avatar_path = ? WHERE id = ?').run(filename ?? null, id);
         },
 
         list(limit = 100) {

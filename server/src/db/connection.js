@@ -120,6 +120,10 @@ const ADDED_COLUMNS = [
   ['messages', 'deleted_at', 'TEXT'],
   ['reports', 'conversation_id', 'TEXT'],
   ['reports', 'message_id', 'TEXT'],
+
+  // Optional profile picture. Existing accounts keep NULL, which the UI shows
+  // as a grey silhouette, so nobody is forced to upload one.
+  ['users', 'avatar_path', 'TEXT'],
 ];
 
 function migrate(target) {

@@ -1,11 +1,26 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { publicUser } from './publicUser.js';
 
-export function createUserController(repos, sessions) {
+export function createUserController(repos, sessions, images = null) {
   return {
     register(req, res) {
       const error = validateRegistration(req.body);
       if (error) return res.status(400).json({ error });
+
+      // A picture is optional at sign-up. Validate it BEFORE creating the
+      // account, so a bad image fails the request outright instead of leaving
+      // a half-set-up user behind.
+      let avatar = null;
+      if (images && typeof req.body.avatar === 'string' && req.body.avatar) {
+        try {
+          avatar = images.save(req.body.avatar);
+        } catch (err) {
+          if (err.message === 'invalid_image') {
+            return res.status(400).json({ error: 'invalid_image' });
+          }
+          throw err;
+        }
+      }
 
       try {
         const user = repos.users.create({
@@ -19,9 +34,12 @@ export function createUserController(repos, sessions) {
           email: req.body.email.trim().toLowerCase(),
           password_hash: hashPassword(req.body.password),
         });
+        if (avatar) repos.users.setAvatar(user.id, avatar);
         sessions.start(req, res, user.id);
-        res.status(201).json({ user: ownUser(user) });
+        res.status(201).json({ user: ownUser(repos.users.findById(user.id)) });
       } catch (err) {
+        // The account was not created, so the saved image is now an orphan.
+        if (avatar) images?.remove(avatar);
         res.status(409).json({ error: 'could_not_create_user', detail: err.message });
       }
     },

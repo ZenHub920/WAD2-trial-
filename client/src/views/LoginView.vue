@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api.js';
 import { setCurrentUser } from '../auth.js';
+import AvatarPicker from '../components/AvatarPicker.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -18,6 +19,9 @@ const mode = ref('login');
 const email = ref('');
 const password = ref('');
 const displayName = ref('');
+// Optional at sign-up. Held as a data URL and sent with the registration;
+// skipping it is a normal outcome, not an incomplete form.
+const avatar = ref(null);
 const loading = ref(false);
 const error = ref('');
 const success = ref('');
@@ -60,10 +64,11 @@ async function submit() {
     // Registration persists the account; sign-in verifies the existing account.
     const response = isRegistering.value
       //If on register page, call the register function, else call the login function 
-      ? await api.register({ 
-        display_name: displayName.value.trim(), 
-        email: email.value, 
-        password: password.value 
+      ? await api.register({
+        display_name: displayName.value.trim(),
+        email: email.value,
+        password: password.value,
+        ...(avatar.value ? { avatar: avatar.value } : {}),
       })
       : await api.login({ 
         email: email.value, 
@@ -108,6 +113,17 @@ async function submit() {
           Display name
           <input id="display-name" v-model="displayName" required autocomplete="name" placeholder="How people will know you" />
         </label>
+        <!-- Optional, and placed after the name so the required fields stay
+             the obvious path through the form. -->
+        <div v-if="isRegistering" class="auth__avatar">
+          <AvatarPicker
+            :src="avatar"
+            :name="displayName"
+            :size="72"
+            @select="avatar = $event"
+            @remove="avatar = null"
+          />
+        </div>
         <label for="email">
           Email
           <input id="email" v-model="email" required type="email" autocomplete="email" placeholder="you@example.com" />

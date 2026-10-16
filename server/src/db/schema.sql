@@ -29,6 +29,11 @@ CREATE TABLE IF NOT EXISTS users (
   reliability            REAL    NOT NULL DEFAULT 0.75 CHECK (reliability BETWEEN 0 AND 1),
   verified               INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0,1)),
   is_operator            INTEGER NOT NULL DEFAULT 0 CHECK (is_operator IN (0,1)),
+  -- Optional profile picture: the stored filename under the avatars directory,
+  -- never a URL or a path. NULL means no picture, which the interface renders
+  -- as a grey silhouette rather than an initial, so a user who declines one is
+  -- not made to look incomplete.
+  avatar_path            TEXT,
   created_at             TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -574,6 +579,46 @@ CREATE TABLE IF NOT EXISTS messages (
 -- Deliberately keyed by (conversation, user) rather than stored on the
 -- conversation itself: a chat background is a personal preference, so one
 -- person restyling the thread must not change what the other person sees.
+
+-- ============================================================
+-- TABLE: CONVERSATION READS
+-- Unread badges and read receipts
+-- ============================================================
+--
+-- One row per (conversation, participant), holding how far that person has
+-- read.
+--
+-- WHY A ROWID AND NOT A TIMESTAMP
+-- created_at is datetime('now'), which has one-second granularity, so a burst
+-- of messages shares a timestamp and "read up to time T" cannot say which of
+-- them were included. messages.rowid is monotonic in insertion order, so
+-- "read up to rowid N" is exact. Same reasoning as the ORDER BY in
+-- kakiChatRepository.js.
+--
+-- Unread  = messages in the conversation with rowid > last_read_rowid
+--           that this person did not send.
+-- Read    = my message is read when the OTHER person's last_read_rowid has
+--           reached its rowid. That is what drives the second tick.
+
+CREATE TABLE IF NOT EXISTS conversation_reads (
+
+    conversation_id TEXT NOT NULL
+        REFERENCES conversations(id)
+        ON DELETE CASCADE,
+
+    user_id TEXT NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    last_read_rowid INTEGER NOT NULL DEFAULT 0,
+
+    updated_at TEXT NOT NULL
+        DEFAULT (datetime('now')),
+
+    PRIMARY KEY (conversation_id, user_id)
+
+);
+
 
 CREATE TABLE IF NOT EXISTS conversation_settings (
 

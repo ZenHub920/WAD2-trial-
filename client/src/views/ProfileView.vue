@@ -1,7 +1,40 @@
 <script setup>
 import { onMounted, ref } from 'vue';
 import { api, LABELS } from '../api.js';
-import { currentUser, refreshSession } from '../auth.js';
+import { currentUser, refreshSession, setCurrentUser } from '../auth.js';
+import AvatarPicker from '../components/AvatarPicker.vue';
+
+const avatarBusy = ref(false);
+const avatarError = ref('');
+
+/** Applies immediately; the header picture updates with it. */
+async function applyAvatar(dataUrl) {
+  avatarBusy.value = true;
+  avatarError.value = '';
+  try {
+    const { user } = await api.setAvatar(dataUrl);
+    setCurrentUser({ ...currentUser.value, ...user });
+  } catch (err) {
+    avatarError.value = err.message === 'invalid_image'
+      ? 'That file is not a readable image.'
+      : `Could not save the picture: ${err.message}`;
+  } finally {
+    avatarBusy.value = false;
+  }
+}
+
+async function removeAvatar() {
+  avatarBusy.value = true;
+  avatarError.value = '';
+  try {
+    const { user } = await api.clearAvatar();
+    setCurrentUser({ ...currentUser.value, ...user });
+  } catch (err) {
+    avatarError.value = `Could not remove the picture: ${err.message}`;
+  } finally {
+    avatarBusy.value = false;
+  }
+}
 
 const ageBands = ['18-20', '21-24', '25-29', '30-34', '35+'];
 const regions = { north: 'North', north_east: 'North East', east: 'East', west: 'West', central: 'Central' };
@@ -100,6 +133,20 @@ async function save() {
       <button v-else class="btn btn--ghost" type="button" @click="loadProfile">Retry</button>
     </div>
     <form v-else-if="form" class="profile__form" @submit.prevent="save">
+      <!-- Outside the save flow on purpose: a picture applies the moment it is
+           chosen, so nobody picks one, forgets to press Save, and loses it. -->
+      <section class="profile__card" aria-labelledby="profile-picture">
+        <h2 id="profile-picture">Profile picture</h2>
+        <AvatarPicker
+          :src="currentUser?.avatarUrl"
+          :name="currentUser?.displayName"
+          :busy="avatarBusy"
+          @select="applyAvatar"
+          @remove="removeAvatar"
+        />
+        <p v-if="avatarError" class="profile__error" role="alert">{{ avatarError }}</p>
+      </section>
+
       <section class="profile__card" aria-labelledby="profile-about">
         <h2 id="profile-about">About you</h2>
         <div class="profile__fields">

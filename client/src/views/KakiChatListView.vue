@@ -8,9 +8,11 @@
  * is something to return to, and mixing them buries the former.
  */
 
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api.js';
+import { onChatEvent, refreshUnread } from '../chatLive.js';
+import UserAvatar from '../components/UserAvatar.vue';
 
 const router = useRouter();
 
@@ -88,10 +90,21 @@ function when(iso) {
   return d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short' });
 }
 
+let stopListening = null;
+
 onMounted(async () => {
   await load();
   await loadBlocked();
+  // A new message, an edit or a read receipt can all change what this list
+  // shows (preview text, ordering, unread count), and none of them are worth
+  // reasoning about individually — reload the list, which is one small query.
+  stopListening = onChatEvent(() => {
+    load();
+    refreshUnread();
+  });
 });
+
+onUnmounted(() => stopListening?.());
 </script>
 
 <template>
@@ -133,9 +146,12 @@ onMounted(async () => {
         <ul class="fresh__row">
           <li v-for="match in unstarted" :key="`${match.concertId}-${match.user.id}`">
             <button type="button" class="fresh__item" @click="openWith(match)">
-              <span class="fresh__avatar" aria-hidden="true">
-                {{ match.user.displayName.slice(0, 1).toUpperCase() }}
-              </span>
+              <UserAvatar
+                :src="match.user.avatarUrl"
+                :name="match.user.displayName"
+                :size="56"
+                ring
+              />
               <span class="fresh__name">{{ match.user.displayName }}</span>
             </button>
           </li>
@@ -146,9 +162,7 @@ onMounted(async () => {
       <ul v-if="conversations.length" class="threads">
         <li v-for="c in conversations" :key="c.id">
           <RouterLink :to="`/kaki/chat/${c.id}`" class="thread">
-            <span class="thread__avatar" aria-hidden="true">
-              {{ c.other.displayName.slice(0, 1).toUpperCase() }}
-            </span>
+            <UserAvatar :src="c.other.avatarUrl" :name="c.other.displayName" :size="48" />
             <span class="thread__text">
               <span class="thread__top">
                 <span class="thread__name">{{ c.other.displayName }}</span>
@@ -158,6 +172,13 @@ onMounted(async () => {
                 {{ preview(c) }}
               </span>
               <span class="thread__concert">{{ c.concert.artist }}</span>
+            </span>
+            <span
+              v-if="c.unread > 0"
+              class="thread__unread"
+              :aria-label="`${c.unread} unread`"
+            >{{ c.unread > 9 ? '9+' : c.unread }}</span>
+            <span v-else class="thread__spacer" aria-hidden="true">
             </span>
           </RouterLink>
         </li>
@@ -303,4 +324,27 @@ onMounted(async () => {
   border-radius: var(--radius-lg);
   background: var(--ink-850);
 }
+</style>
+
+<style scoped>
+/* Unread badge on a thread row. Mirrors the navbar dot so the two read as the
+   same signal at different scales. */
+.thread__unread {
+  display: grid;
+  place-items: center;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  padding: 0 0.35em;
+  border-radius: var(--radius-pill);
+  background: var(--accent-500);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* Keeps the row's right edge stable whether or not a badge is present, so
+   rows do not shift sideways as threads are read. */
+.thread__spacer { width: 1.35rem; flex-shrink: 0; }
 </style>
