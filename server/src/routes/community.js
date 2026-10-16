@@ -35,6 +35,9 @@ export function registerCommunityRoutes(router,{repos,requireUser}) {
   route('post','/meetups/:id/comments','comment',r=>repos.meetups.comment(r.user.id,r.params.id,r.body?.body));
   route('post','/meetups/:id/propose','proposal',r=>repos.meetups.propose(r.user.id,r.params.id,r.body));
   route('post','/meetups/:id/approve','approval',r=>repos.meetups.approve(r.user.id,r.params.id,r.body?.version));
+  route('post','/feedback','feedback',r=>repos.feedback.submit(r.user.id,r.body));
+  route('get','/me/feedback-opportunities','opportunities',r=>repos.feedback.opportunities(r.user.id));
+  route('get','/me/feedback','feedback',r=>repos.feedback.mine(r.user.id));
   router.get('/meetups/:id/weather',requireUser,async(req,res,next)=>{
     try{const m=repos.meetups.detail(req.user.id,req.params.id);const place=m.places.find(p=>p.id===m.selected_place_id);
       if(!place)return res.json({weather:{status:'unavailable',reason:'choose_a_meeting_place_and_time_first'}});
