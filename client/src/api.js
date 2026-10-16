@@ -44,6 +44,8 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  feedbackOpportunities: ()=>request('/me/feedback-opportunities'),
+  myFeedback: ()=>request('/me/feedback'),
   meetups: ()=>request('/me/meetups'),
   createMeetup: data=>request('/meetups',{method:'POST',body:JSON.stringify(data)}),
   meetup: id=>request(`/meetups/${encodeURIComponent(id)}`),
