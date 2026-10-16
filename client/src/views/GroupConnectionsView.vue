@@ -6,15 +6,17 @@ import { filterGroups } from '../groupFilters.js';
 import GroupFilters from '../components/GroupFilters.vue';
 import GroupListingCard from '../components/GroupListingCard.vue';
 import '../assets/groups.css';
+import { currentUser } from '../auth.js';
 
 const route = useRoute(), router = useRouter();
 const hosted = ref([]), candidates = ref([]), connections = ref([]);
+const joins=ref([]);
 const allConcerts = ref([]), hostConcertId = ref('');
 const hostForm = reactive({ capacity: 2, section: 'ga_standing', spend_band: 2, arrival_plan: 'mid', plans: {}, notes: '' });
 const concertId = ref(typeof route.query.concertId === 'string' ? route.query.concertId : '');
 const sourceId = ref(''), loading = ref(false), busy = ref(false), error = ref(''), message = ref('');
 let generation = 0, alive = true;
-const filters = reactive({ query: '', section: '', minCapacity: 0, spendBand: '', arrival: '', activity: '', vibe: '', sort: 'host' });
+const filters = reactive({ query: '', section: '', minCapacity: 0, spendBand: '', arrival: '', activity: '', vibe: '', sort: 'compatibility' });
 const concerts = computed(() => [...new Map(hosted.value.map(g => [g.concertId, { id: g.concertId, artist: g.artist, date: g.eventDate }])).values()]);
 const sources = computed(() => hosted.value.filter(g => g.concertId === concertId.value && g.status !== 'cancelled'));
 const visible = computed(() => filterGroups(candidates.value, filters));
@@ -35,9 +37,10 @@ async function loadCandidates() {
   finally { if (alive && current === generation) loading.value = false; }
 }
 async function refresh() {
-  const [groups, inbox] = await Promise.all([api.hostedGroups(), api.groupConnections()]);
+  const [groups, inbox,requests] = await Promise.all([api.hostedGroups(), api.groupConnections(),api.groupJoinRequests()]);
   if (!alive) return;
   hosted.value = groups.groups; connections.value = inbox.connections;
+  joins.value=requests.requests.filter(j=>j.hostId===currentUser.value?.id);
   if (!concertId.value && concerts.value.length) concertId.value = concerts.value[0].id;
   if (!sources.value.some(g => g.id === sourceId.value)) sourceId.value = sources.value[0]?.id ?? '';
   else await loadCandidates();
@@ -77,6 +80,8 @@ async function host() {
     concertId.value = id;
     await refresh();
     sourceId.value = result.party.id;
+    await api.configureGroup(result.party.id,{expectedFriends:0});
+    await router.push(`/groups/${encodeURIComponent(result.party.id)}/members`);
   });
 }
 </script>
@@ -93,6 +98,8 @@ async function host() {
       <p v-if="!sources.length">No active hosted groups for this concert. Open the concert page to host one.</p>
     </section>
     <p v-else>Host a concert group to start sending invitations.</p>
+    <RouterLink v-if="sourceId" :to="`/groups/${sourceId}/members`" class="btn btn--ghost">Manage members, friend links &amp; shared preferences</RouterLink>
+    <section v-if="joins.length" class="card group-panel"><h2>Seeker join requests</h2><article v-for="j in joins" :key="j.id"><p>{{j.seekerName}} · {{j.artist}} · {{j.status}}</p><div v-if="j.status==='pending'" class="group-actions"><button class="btn btn--primary" :disabled="busy" @click="act(()=>api.respondGroupJoin(j.id,'accept'))">Approve seeker</button><button class="btn btn--ghost" :disabled="busy" @click="act(()=>api.respondGroupJoin(j.id,'reject'))">Reject</button></div></article></section>
     <details class="card group-panel"><summary>Host a new group</summary>
       <form class="group-panel" @submit.prevent="host">
         <div class="group-controls">

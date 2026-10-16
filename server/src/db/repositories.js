@@ -12,7 +12,8 @@
 import { createProposalRepo } from './proposalRepository.js';
 import { createGroupDiscoveryRepo } from './groupDiscoveryRepository.js';
 import { createMembershipRepo } from './membershipRepository.js';
-import { activeReservationSql } from './capacity.js';
+import { activeReservationSql, reservedPlacesSql } from './capacity.js';
+import { createRecommendationRepo } from './recommendationRepository.js';
 import { createKakiChatRepo } from './kakiChatRepository.js';
 import { randomUUID } from 'node:crypto';
 
@@ -379,8 +380,7 @@ export function createPartyRepo(db) {
         FROM parties p JOIN users u ON u.id = p.host_user_id
         WHERE p.id = ?
       `).get(id);
-      if (row) row.remaining_capacity = Math.max(0, row.capacity - db.prepare(`SELECT COUNT(*) AS n FROM match_proposals mp
-        WHERE mp.party_id = ? AND ${activeReservationSql()}`).get(id).n);
+      if (row) row.remaining_capacity = Math.max(0, row.capacity - db.prepare(`SELECT ${reservedPlacesSql('@id')} AS n`).get({id}).n);
       return mapParty(row);
     },
   
@@ -403,12 +403,7 @@ openForConcert(concertId) {
       p.*,
       ${USER_COLUMNS('u', 'host_')},
 
-      p.capacity - (
-        SELECT COUNT(*)
-        FROM match_proposals mp
-        WHERE mp.party_id = p.id
-          AND ${activeReservationSql()}
-      ) AS remaining_capacity
+      p.capacity - ${reservedPlacesSql('p.id')} AS remaining_capacity
 
     FROM parties p
     JOIN users u ON u.id = p.host_user_id
@@ -422,12 +417,8 @@ openForConcert(concertId) {
         WHERE t.source_party_id = p.id
       )
 
-      AND p.capacity > (
-        SELECT COUNT(*)
-        FROM match_proposals mp
-        WHERE mp.party_id = p.id
-          AND ${activeReservationSql()}
-      )
+      AND p.capacity > ${reservedPlacesSql('p.id')}
+      AND NOT EXISTS(SELECT 1 FROM group_settings gs WHERE gs.party_id=p.id AND gs.published=0)
 
     ORDER BY p.id
   `).all(concertId);
@@ -1593,5 +1584,6 @@ export function createRepositories(db) {
   };
   repos.groups = createGroupDiscoveryRepo(db, repos);
   repos.membership = createMembershipRepo(db, repos);
+  repos.recommendations = createRecommendationRepo(db, repos);
   return repos;
 }
