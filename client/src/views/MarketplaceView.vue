@@ -10,6 +10,7 @@ import {
 } from '../market.js';
 import ListingCard from '../components/market/ListingCard.vue';
 import ConcertSpotlightCard from '../components/market/ConcertSpotlightCard.vue';
+import DateField from '../components/market/DateField.vue';
 import MarketIcon from '../components/market/MarketIcon.vue';
 
 const listings = ref([]);
@@ -315,10 +316,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
         <div class="bar__drawer" :class="{ 'bar__drawer--open': panelOpen }">
           <div id="market-filters" class="panel" :inert="panelOpen ? undefined : true">
             <div class="panel__grid">
-              <label>
-                Event date
-                <input v-model="filters.date" type="date" />
-              </label>
+              <!-- A group of three inputs, so it is named by a <span>, not wrapped
+                   in a <label> that could only point at one of them. -->
+              <div class="panel__field">
+                <span id="market-date-label">Event date</span>
+                <DateField v-model="filters.date" labelled-by="market-date-label" />
+              </div>
               <label>
                 Seat section
                 <select v-model="filters.section">
@@ -659,7 +662,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   border-top: var(--border-hairline);
 }
 
-.panel__grid label {
+.panel__grid label,
+.panel__field {
   display: grid;
   gap: var(--space-2);
   align-content: start;
