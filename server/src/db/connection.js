@@ -15,6 +15,7 @@ import { createTicketImages, decodeTicketImage } from '../services/ticketImages.
 import { migrateGroups } from './groupMigrations.js';
 import { migrateCommunity } from './communityMigrations.js';
 import { migrateNotifications } from './notificationRepository.js';
+import { migrateMeetups } from './meetupRepository.js';
 const here = dirname(fileURLToPath(import.meta.url));
 
 let db = null;
@@ -40,6 +41,7 @@ export function getDb() {
   migrateLegacyTickets(db);
   migrateCommunity(db);
   migrateNotifications(db);
+  migrateMeetups(db);
   return db;
 }
 
@@ -225,6 +227,7 @@ export function createTestDb() {
   migrateLegacyTickets(testDb);
   migrateCommunity(testDb);
   migrateNotifications(testDb);
+  migrateMeetups(testDb);
   return testDb;
 }
 
