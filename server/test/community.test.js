@@ -113,6 +113,25 @@ test("custom terms keep originals, aliases deduplicate and unknown terms never b
     /unknown_concept/,
   );
 });
+test("explicit custom choices retain their meaning decision without forced alias mapping", () => {
+  const mapped = validateAnswers({
+    about: [{ text: "Late-night makan", conceptId: "post_supper" }],
+  });
+  assert.equal(mapped.about[0].key, "post_supper");
+  assert.equal(mapped.about[0].text, "Late-night makan");
+  const custom = validateAnswers({
+    about: [{ text: "Late-night makan", custom: true }],
+  });
+  assert.equal(custom.about[0].key, "custom:late night makan");
+  assert.equal(custom.about[0].recognized, false);
+  assert.throws(
+    () =>
+      validateAnswers({
+        about: [{ text: "supper", conceptId: "post_supper", custom: true }],
+      }),
+    /choose_concept_or_custom/,
+  );
+});
 test("recommendations use member answers, preserve opposite intent, and publish only completed groups", () => {
   repos.membership.configure("h1", "p1", { expectedFriends: 0 });
   repos.membership.saveAnswers("h1", "p1", answers);
