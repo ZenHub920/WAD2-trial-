@@ -90,12 +90,12 @@ async function host() {
 
 <template>
   <main class="container groups-page">
-    <h1>Connect Groups</h1><p>Meet another hosted group for the same concert. Invitations connect groups socially; memberships, matching proposals, tickets and capacity stay separate.</p>
+    <h1>Connect Groups</h1><p>Find another group going to the same concert and arrange to meet. Each group stays together.</p>
     <nav class="group-actions"><RouterLink to="/groups">Find a Group</RouterLink><RouterLink to="/kaki">Find a Kaki</RouterLink><RouterLink :to="concertId ? `/concerts/${encodeURIComponent(concertId)}` : '/concerts'">Host a group</RouterLink></nav>
     <p v-if="error" class="group-error" role="alert">{{ error }} <button class="btn btn--ghost" :disabled="busy" @click="retry">Retry</button></p>
     <p v-if="message" class="group-success" role="status">{{ message }}</p>
     <section v-if="hosted.length" class="card group-panel">
-      <h2>Your sending group</h2>
+      <h2>Your group</h2>
       <div class="group-controls"><label>Concert<select v-model="concertId" :disabled="busy"><option value="">Choose concert</option><option v-for="c in concerts" :key="c.id" :value="c.id">{{ c.artist }} · {{ c.date }}</option></select></label><label>Hosted group<select v-model="sourceId" :disabled="busy"><option value="">Choose group</option><option v-for="g in sources" :key="g.id" :value="g.id">{{ g.hostName }} · {{ g.section }} · {{ g.id }}</option></select></label></div>
       <p v-if="!sources.length">No active hosted groups for this concert. Open the concert page to host one.</p>
     </section>
