@@ -70,7 +70,9 @@ async function logOut() {
           <RouterLink to="/list-ticket" class="list-ticket-btn" @click="menuOpen = false">+ List a ticket</RouterLink>
           <RouterLink to="/marketplace" @click="menuOpen = false">Ticket Market</RouterLink>
           <RouterLink to="/concerts" @click="menuOpen = false">Concerts</RouterLink>
-          <RouterLink to="/kaki" @click="menuOpen = false">KakiFinder</RouterLink>
+          <RouterLink to="/kaki" @click="menuOpen = false">Find a Kaki</RouterLink>
+          <RouterLink to="/groups" @click="menuOpen = false">Find a Group</RouterLink>
+          <RouterLink to="/groups/connect" @click="menuOpen = false">Connect Groups</RouterLink>
           <!-- Kaki messages. The dot is the only thing competing for attention
                in the navbar, so it is reserved for genuinely new activity and
                carries a count rather than a bare mark. -->
@@ -95,7 +97,8 @@ async function logOut() {
         </template>
         <template v-else>
           <RouterLink to="/marketplace" @click="menuOpen = false">Ticket Market</RouterLink>
-          <RouterLink to="/kaki" @click="menuOpen = false">KakiFinder</RouterLink>
+          <RouterLink to="/kaki" @click="menuOpen = false">Find a Kaki</RouterLink>
+          <RouterLink to="/groups/connect" @click="menuOpen = false">Connect Groups</RouterLink>
           <RouterLink to="/concerts" @click="menuOpen = false">Concerts</RouterLink>
           <RouterLink to="/method" @click="menuOpen = false">How it works</RouterLink>
           <RouterLink to="/login" @click="menuOpen = false">Sign in</RouterLink>
@@ -104,7 +107,7 @@ async function logOut() {
           <span aria-hidden="true">{{ theme === 'dark' ? '☾' : '☀' }}</span>
           <span class="sr-only">Switch to {{ theme === 'dark' ? 'light' : 'dark' }} theme</span>
         </button>
-        <RouterLink v-if="!isLoggedIn" to="/concerts" class="btn btn--primary nav__cta" @click="menuOpen = false">
+        <RouterLink v-if="!isLoggedIn" to="/groups" class="btn btn--primary nav__cta" @click="menuOpen = false">
           Find a group
         </RouterLink>
       </nav>
@@ -323,13 +326,15 @@ async function logOut() {
 .header__toggle span.open::before { transform: rotate(45deg); }
 .header__toggle span.open::after { transform: rotate(-45deg); }
 
-@media (max-width: 820px) {
+@media (max-width: 1480px) {
   .header__toggle {
     display: grid;
   }
 
   .nav {
     position: fixed;
+    max-height: calc(100dvh - var(--header-height));
+    overflow-y: auto;
     inset: var(--header-height) 0 auto 0;
     flex-direction: column;
     align-items: stretch;

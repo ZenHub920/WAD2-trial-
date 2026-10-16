@@ -6,6 +6,10 @@ import { currentUser, sessionReady } from '../auth.js';
 import VibeChart from '../components/VibeChart.vue';
 import SwipeDeck from '../components/SwipeDeck.vue';
 import PartyCard from '../components/PartyCard.vue';
+// Improvement #5 and #6:
+// Displays operational match proposals and confirmation actions.
+
+import MatchProposalCard from '../components/MatchProposalCard.vue';
 import { useCountUp } from '../composables/useCountUp.js';
 
 const props = defineProps({ id: { type: String, required: true } });
@@ -30,30 +34,117 @@ const participationNeedsSignIn = ref(false);
 const sectionPref = ref('seated_any');
 const arrivalPref = ref('doors');
 let participationRequest = 0;
-const myResult = ref(null);
+// ============================================================
+// IMPROVEMENT #5: CURRENT MATCH PROPOSALS
+// ============================================================
+//
+// The previous implementation retrieved a result from the
+// latest historical round.
+//
+// That was incorrect when a user confirmed an earlier match
+// and newer rounds subsequently ran.
+//
+// We now retrieve operational proposals across all rounds.
+
+const myProposals = ref([]);
+
 const resultLoading = ref(false);
 const resultError = ref(null);
 const resultRetry = ref(0);
+
+// Used to prevent an older HTTP response from overwriting
+// a newer request's results.
 let resultRequest = 0;
 
+// ============================================================
+// REFRESH PROPOSALS
+// ============================================================
+//
+// Called after acceptance or declining.
+//
+// Incrementing resultRetry triggers the watcher below,
+// which fetches the latest SQLite state.
+
+function refreshMyProposals() {
+  resultRetry.value++;
+}
+
+// ============================================================
+// WATCH CONCERT / USER / RETRY STATE
+// ============================================================
+
 watch(
-  [() => props.id, () => currentUser.value?.id, sessionReady, resultRetry],
+  [
+    () => props.id,
+    () => currentUser.value?.id,
+    sessionReady,
+    resultRetry
+  ],
+
   async ([concertId, userId, ready]) => {
+
+    // Give each request a sequence number.
+    //
+    // If the user changes concerts before the response
+    // arrives, the older response is ignored.
+
     const requestId = ++resultRequest;
-    myResult.value = null;
+
+    myProposals.value = [];
     resultError.value = null;
-    resultLoading.value = Boolean(ready && userId);
-    if (!ready || !userId) return;
+
+    resultLoading.value = Boolean(
+      ready && userId
+    );
+
+    // Do not request private proposal data
+    // until the user's session is available.
+
+    if (!ready || !userId) {
+      return;
+    }
+
     try {
-      const { result } = await api.myConcertResult(concertId);
-      if (requestId === resultRequest) myResult.value = result;
+
+      // Fetch operational proposal records.
+      //
+      // This endpoint includes proposals from all rounds.
+
+      const response = await api.myProposals();
+
+      // Only update Vue if this is still
+      // the latest request.
+
+      if (requestId === resultRequest) {
+
+        // Display only proposals for the concert
+        // currently being viewed.
+
+        myProposals.value = response.proposals.filter(
+          proposal =>
+            proposal.concertId === concertId
+        );
+
+      }
+
     } catch (err) {
-      if (requestId === resultRequest) resultError.value = err;
+
+      if (requestId === resultRequest) {
+        resultError.value = err;
+      }
+
     } finally {
-      if (requestId === resultRequest) resultLoading.value = false;
+
+      if (requestId === resultRequest) {
+        resultLoading.value = false;
+      }
+
     }
   },
-  { immediate: true },
+
+  {
+    immediate: true
+  }
 );
 
 watch(
@@ -148,13 +239,16 @@ async function load() {
     parties.value = partyData.parties;
     requests.value = requestData.requests;
 
-    // A dry run so the page can show what a round would produce, without
-    // committing anything.
-    try {
-      preview.value = await api.preview(props.id, { baselines: true });
-    } catch {
-      preview.value = null;
-    }
+        // ============================================================
+    // IMPROVEMENT #16: MANUAL MATCHING PREVIEW
+    // ============================================================
+    //
+    // Do not automatically run Gale-Shapley or baseline
+    // comparisons whenever the concert page loads.
+    //
+    // The operator can request a preview explicitly.
+
+    preview.value = null;
   } catch (err) {
     error.value = err;
   } finally {
@@ -165,21 +259,172 @@ async function load() {
 onMounted(load);
 watch(() => props.id, load);
 
+// ============================================================
+// IMPROVEMENT #4: IDEMPOTENT MATCHING FROM VUE
+// ============================================================
+//
+// Same key = retry the same intended operation.
+//
+// New key = intentionally run another matching batch.
+//
+// sessionStorage preserves the key during page refreshes
+// within the same browser tab.
+
 async function runRound() {
-  if (!canRun.value) return;
+
+  if (!canRun.value) {
+    return;
+  }
+
   runError.value = '';
   running.value = true;
+
   try {
-    const outcome = await api.runMatch(props.id);
-    router.push({ path: `/rounds/${outcome.roundId}`, query: { concertId: props.id } });
+
+    // STEP 1:
+    // Each concert gets a separate stored batch key.
+
+    const storageKey =
+      `encore-batch:${props.id}`;
+
+    // STEP 2:
+    // Check whether an existing matching operation
+    // already has a key.
+
+    let batchKey =
+      sessionStorage.getItem(storageKey);
+
+    // STEP 3:
+    // Generate a new UUID only if this concert does
+    // not yet have a batch key.
+    //
+    // This guarantees retries reuse the old key.
+
+    if (!batchKey) {
+
+      batchKey = crypto.randomUUID();
+
+      sessionStorage.setItem(
+        storageKey,
+        batchKey
+      );
+
+    }
+
+    // STEP 4:
+    // Send the request with the idempotency key.
+    //
+    // The matching controller validates this key.
+
+    const outcome = await api.runMatch(
+      props.id,
+      batchKey
+    );
+
+    // STEP 5:
+    // Navigate to the matching round.
+    //
+    // This works for both:
+    // 201 = newly created round
+    // 200 = previously committed round replayed
+
+    await router.push({
+      path: `/rounds/${outcome.roundId}`,
+
+      query: {
+        concertId: props.id
+      }
+    });
+
   } catch (err) {
+
     runError.value = err.status === 403
       ? 'Only an operator can run matching rounds.'
+
       : err.status === 401
-        ? 'Your session has expired. Sign in as an operator to run a round.'
-        : `Could not run this round: ${err.message}`;
+        ? 'Your session has expired. Sign in as an operator.'
+
+        : err.status === 409
+          ? 'Matching cannot run yet. Check eligibility or legacy assignments.'
+
+          : `Could not run this round: ${err.message}`;
+
   } finally {
+
     running.value = false;
+
+  }
+}
+
+// ============================================================
+// PREPARE A DELIBERATELY NEW MATCHING ROUND
+// ============================================================
+//
+// Use this only when the operator intentionally wants
+// to execute a new matching operation.
+//
+// Do not automatically generate a new key after
+// a network error.
+//
+// A network error may happen AFTER the server has
+// successfully committed the original operation.
+
+function newMatchingBatch() {
+
+  const storageKey =
+    `encore-batch:${props.id}`;
+
+  // A new UUID represents a new intended operation.
+
+  const newKey = crypto.randomUUID();
+
+  sessionStorage.setItem(
+    storageKey,
+    newKey
+  );
+
+  runError.value =
+    'New matching batch prepared. You can run matching now.';
+}
+
+// ============================================================
+// IMPROVEMENT #16: MANUAL PREVIEW
+// ============================================================
+
+const previewLoading = ref(false);
+
+async function loadPreview() {
+
+  // Prevent duplicate preview requests.
+  if (previewLoading.value) {
+    return;
+  }
+
+  previewLoading.value = true;
+  runError.value = '';
+
+  try {
+
+    // This calls the existing preview endpoint.
+    //
+    // No matching round is persisted.
+    //
+    // Baseline comparisons are disabled by default.
+
+    preview.value = await api.preview(props.id, {
+      baselines: false,
+      trace: false
+    });
+
+  } catch (err) {
+
+    runError.value =
+      `Could not calculate preview: ${err.message}`;
+
+  } finally {
+
+    previewLoading.value = false;
+
   }
 }
 
@@ -328,13 +573,81 @@ const forecastFirstChoice = useCountUp(
             </p>
           </div>
 
-          <div v-if="sessionReady && currentUser?.isOperator" class="head__actions">
-            <button class="btn btn--primary" :disabled="!canRun" @click="runRound">
-              {{ running ? 'Running…' : 'Run matching round' }}
+                    <!-- =================================================
+               OPERATOR MATCHING CONTROLS
+               =================================================
+
+               Preview:
+                 Calculates without saving.
+
+               Prepare new batch:
+                 Generates a new idempotency key.
+
+               Run matching:
+                 Executes the operation using the current key.
+          -->
+
+          <div
+            v-if="sessionReady && currentUser?.isOperator"
+            class="head__actions"
+          >
+
+            <!-- Manual matching preview -->
+            <button
+              type="button"
+              class="btn btn--ghost"
+
+              :disabled="previewLoading || running"
+
+              @click="loadPreview"
+            >
+
+              {{
+                previewLoading
+                  ? 'Calculating…'
+                  : 'Preview matching'
+              }}
+
             </button>
-            <RouterLink :to="`/concerts/${id}/algorithm`" class="btn btn--ghost">
+
+            <!-- Explicitly start a new matching operation -->
+            <button
+              type="button"
+              class="btn btn--ghost"
+
+              :disabled="running"
+
+              @click="newMatchingBatch"
+            >
+              Prepare new batch
+            </button>
+
+            <!-- Commit official matching round -->
+            <button
+              type="button"
+              class="btn btn--primary"
+
+              :disabled="!canRun"
+
+              @click="runRound"
+            >
+
+              {{
+                running
+                  ? 'Running…'
+                  : 'Run matching round'
+              }}
+
+            </button>
+
+            <!-- Existing algorithm visualization -->
+            <RouterLink
+              :to="`/concerts/${id}/algorithm`"
+              class="btn btn--ghost"
+            >
               Watch it run
             </RouterLink>
+
           </div>
           <p v-if="runError" class="kaki-join__error" role="alert">{{ runError }}</p>
 
@@ -353,47 +666,109 @@ const forecastFirstChoice = useCountUp(
           </p>
         </aside>
       </header>
-      <section class="my-result card" aria-labelledby="my-result-title">
-        <h2 id="my-result-title">Your matching result</h2>
-        <p v-if="!sessionReady || resultLoading" role="status">Loading your result…</p>
+            <!-- =====================================================
+           IMPROVEMENT #5: OPERATIONAL MATCH PROPOSALS
+           =====================================================
+
+           Display the user's current proposal records.
+
+           These may originate from several historical
+           matching rounds.
+
+           Do not use the latest round as the source
+           of current confirmed assignments.
+      -->
+
+      <section
+        class="my-result card"
+        aria-labelledby="my-result-title"
+      >
+
+        <h2 id="my-result-title">
+          Your current match proposals
+        </h2>
+
+        <!-- Wait for session initialization and loading. -->
+        <p
+          v-if="!sessionReady || resultLoading"
+          role="status"
+        >
+          Loading your proposals…
+        </p>
+
+        <!-- The proposal APIs require authentication. -->
         <p v-else-if="!currentUser">
-          <RouterLink to="/login">Sign in</RouterLink> to see your own result from the latest round.
+
+          <RouterLink to="/login">
+            Sign in
+          </RouterLink>
+
+          to see your matching offers.
+
         </p>
-        <div v-else-if="resultError" role="alert">
-          <p>{{ resultError.status === 401
-            ? 'Your session has expired. Sign in again to see your result.'
-            : `Could not load your result: ${resultError.message}` }}</p>
-          <RouterLink v-if="resultError.status === 401" to="/login">Sign in</RouterLink>
-          <button v-if="resultError.status !== 401" type="button" class="btn btn--ghost" @click="resultRetry++">Retry loading result</button>
+
+        <!-- Display network or authorization errors. -->
+        <div
+          v-else-if="resultError"
+          role="alert"
+        >
+
+          <p>
+            Could not load your current match information:
+            {{ resultError.message }}
+          </p>
+
+          <button
+            type="button"
+            class="btn btn--ghost"
+            @click="refreshMyProposals"
+          >
+            Try again
+          </button>
+
         </div>
-        <p v-else-if="!myResult">
-          {{ concert.latestRound
-            ? 'You did not participate in the latest matching round. Joining Kaki is separate from group matching.'
-            : 'No matching round has run for this concert yet.' }}
+
+        <!-- Empty state. -->
+        <p v-else-if="!myProposals.length">
+          No proposals for this concert yet.
         </p>
+
+        <!-- =================================================
+             PROPOSAL CARDS
+             =================================================
+
+             Each card receives one proposal.
+
+             It handles its own Accept / Decline buttons.
+
+             After successfully changing a proposal,
+             it emits 'updated'.
+
+             The parent then reloads the current
+             operational state from the backend.
+        -->
+
         <template v-else>
-          <p class="my-result__round">Latest round · {{ formatDate(myResult.round.ranAt) }}</p>
-          <template v-if="myResult.role === 'seeker'">
-            <p v-if="myResult.outcome === 'matched' && myResult.group">
-              You matched with {{ myResult.group.host.displayName }}'s group
-              <template v-if="myResult.group.section"> in {{ LABELS.section[myResult.group.section] ?? myResult.group.section }}</template>.
-            </p>
-            <p v-else>You were not matched with a group in this round.</p>
-          </template>
-          <template v-else>
-            <p v-if="myResult.outcome === 'no_members' || !myResult.members?.length">
-              No seekers were assigned to your group in this round.
-            </p>
-            <template v-else>
-              <p>{{ myResult.members.length }} {{ myResult.members.length === 1 ? 'seeker was' : 'seekers were' }} assigned to your group:</p>
-              <ul class="my-result__members">
-                <li v-for="member in myResult.members" :key="member.id">{{ member.displayName }}</li>
-              </ul>
-            </template>
-          </template>
+
+          <MatchProposalCard
+            v-for="proposal in myProposals"
+
+            :key="proposal.id"
+
+            :proposal="proposal"
+
+            @updated="refreshMyProposals"
+          />
+
         </template>
+
       </section>
 
+      <nav class="group-actions" aria-label="Find concert companions" style="margin-bottom: var(--space-5)">
+        <RouterLink :to="{ path: '/kaki', query: { concertId: id } }" class="btn btn--ghost">Find a Kaki</RouterLink>
+        <RouterLink :to="{ path: '/groups', query: { concertId: id } }" class="btn btn--primary">Find a Group</RouterLink>
+        <RouterLink :to="{ path: '/groups/connect', query: { concertId: id } }" class="btn btn--ghost">Connect Groups</RouterLink>
+      </nav>
       <section class="kaki-join card" aria-labelledby="kaki-join-title">
         <div class="kaki-join__intro">
           <h2 id="kaki-join-title">Find a concert Kaki</h2>

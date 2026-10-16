@@ -6,6 +6,7 @@ const ARRIVALS = ['early_queue', 'mid', 'doors'];
 export function createConcertController(repos) {
   return {
     list(req, res) {
+      repos.proposals.expire();
       res.json({ concerts: repos.concerts.listWithCounts() });
     },
 
@@ -35,6 +36,7 @@ export function createConcertController(repos) {
     },
 
     detail(req, res) {
+      repos.proposals.expire();
       const concert = repos.concerts.findById(req.params.id);
       if (!concert) return res.status(404).json({ error: 'concert_not_found' });
 
@@ -69,6 +71,7 @@ export function createConcertController(repos) {
     },
 
     parties(req, res) {
+      repos.proposals.expire();
       const parties = repos.parties.openForConcert(req.params.id);
       res.json({
         parties: parties.map((p) => ({

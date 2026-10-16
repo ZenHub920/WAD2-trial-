@@ -8,10 +8,26 @@
 const BASE = '/api';
 
 async function request(path, options = {}) {
+  // Preserve default JSON headers while allowing API methods
+  // to supply additional headers such as Idempotency-Key.
+  //
+  // We remove headers from options before spreading
+  // the remaining fetch configuration.
+
+  const {
+    headers: extraHeaders = {},
+    ...fetchOptions
+  } = options;
+
   const res = await fetch(`${BASE}${path}`, {
     credentials: 'same-origin',
-    headers: { 'content-type': 'application/json', ...(options.headers ?? {}) },
-    ...options,
+
+    ...fetchOptions,
+
+    headers: {
+      'content-type': 'application/json',
+      ...extraHeaders
+    }
   });
 
   const isJson = res.headers.get('content-type')?.includes('application/json');
@@ -140,6 +156,7 @@ export const api = {
   concert: (id) => request(`/concerts/${id}`),
 
   parties: (concertId) => request(`/concerts/${concertId}/parties`),
+  createParty: (concertId, data) => request(`/concerts/${encodeURIComponent(concertId)}/parties`, { method: 'POST', body: JSON.stringify(data) }),
 
   requests: (concertId) => request(`/concerts/${concertId}/requests`),
   createRequest: (concertId, data) =>
@@ -154,7 +171,21 @@ export const api = {
     return request(`/concerts/${concertId}/match/preview${qs ? `?${qs}` : ''}`);
   },
 
-  runMatch: (concertId) => request(`/concerts/${concertId}/match`, { method: 'POST' }),
+  runMatch: (concertId, batchKey) => request(`/concerts/${concertId}/match`, {
+    method: 'POST', headers: { 'Idempotency-Key': batchKey },
+  }),
+
+  discoverGroups: (id) => request(`/groups/discover/${encodeURIComponent(id)}`),
+  seekerRequest: (id) => request(`/me/seeker-request/${encodeURIComponent(id)}`),
+  reopenSeekerRequest: (id) => request(`/me/seeker-request/${encodeURIComponent(id)}/reopen`, { method: 'POST' }),
+  groupPreferences: (id) => request(`/me/group-preferences/${encodeURIComponent(id)}`),
+  preferGroup: (id) => request(`/group-preferences/${encodeURIComponent(id)}`, { method: 'PUT' }),
+  removeGroupPreference: (id) => request(`/group-preferences/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  hostedGroups: () => request('/me/hosted-groups'),
+  connectionCandidates: (id, fromPartyId) => request(`/group-connections/candidates/${encodeURIComponent(id)}?fromPartyId=${encodeURIComponent(fromPartyId)}`),
+  groupConnections: () => request('/me/group-connections'),
+  inviteGroup: (fromPartyId, toPartyId) => request('/group-connections', { method: 'POST', body: JSON.stringify({ fromPartyId, toPartyId }) }),
+  respondToGroup: (id, action) => request(`/group-connections/${encodeURIComponent(id)}/respond`, { method: 'POST', body: JSON.stringify({ action }) }),
 
   round: (roundId) => request(`/rounds/${roundId}`),
   roundTrace: (roundId, limit = 2000) => request(`/rounds/${roundId}/trace?limit=${limit}`),
@@ -162,9 +193,65 @@ export const api = {
   partyRoster: (roundId, partyId) => request(`/rounds/${roundId}/parties/${partyId}`),
 
   explain: (concertId, requestId) => request(`/concerts/${concertId}/explain/${requestId}`),
+  // ============================================================
+  // IMPROVEMENTS #5 AND #6: OPERATIONAL MATCH PROPOSALS
+  // ============================================================
 
+  // All proposals visible to the logged-in user.
+  myProposals: () =>
+    request('/me/proposals'),
+
+  // Pending proposals for a particular concert.
+  concertProposals: (concertId) =>
+    request(
+      `/me/concerts/${encodeURIComponent(concertId)}/proposals`
+    ),
+
+  // Confirmed matches for a particular concert.
+  concertMatches: (concertId) =>
+    request(
+      `/me/concerts/${encodeURIComponent(concertId)}/matches`
+    ),
+
+  // Accept a pending proposal.
+  acceptProposal: (proposalId) =>
+    request(
+      `/proposals/${encodeURIComponent(proposalId)}/accept`,
+      {
+        method: 'POST'
+      }
+    ),
+
+  // Decline a pending proposal.
+  declineProposal: (proposalId) =>
+    request(
+      `/proposals/${encodeURIComponent(proposalId)}/decline`,
+      {
+        method: 'POST'
+      }
+    ),
+
+  // Retrieve historical compatibility-score explanation.
+  proposalExplanation: (proposalId) =>
+
+    request(
+      `/me/proposals/${encodeURIComponent(proposalId)}/explanation`
+    ),
+  // Improvement #14:
+  // Submit feedback for an authorized confirmed participant.
+  //
+  // Eligibility must be checked by Express and SQLite,
+  // never trusted solely from Vue.
+
+  leaveFeedback: (data) =>
+    request('/feedback', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
   user: (id) => request(`/users/${id}`),
 };
+
+
 
 /** Human labels for the enum values the API speaks in. */
 export const LABELS = {

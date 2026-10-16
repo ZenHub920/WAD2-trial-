@@ -62,6 +62,7 @@ export function createMatchController({ repos, matching }) {
     },
 
     myResult(req, res) {
+      repos.proposals.expire();
       const result = repos.rounds.resultForUser(req.params.id, req.user.id);
       if (!result) return res.json({ result: null });
       res.json({ result: {
