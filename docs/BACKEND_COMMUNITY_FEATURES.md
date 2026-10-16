@@ -18,6 +18,7 @@ Feature branches:
 | `feature/meetup-coordination` | Availability boards, proposed locations, discussion, approvals and weather |
 | `feature/attendance-feedback` | Post-event feedback, authorization and reliability projection |
 | `feature/integration-hardening` | Cross-feature capacity/security fixes, additional HTTP tests, documentation and review formatting |
+| `feature/preference-suggestion-integration` | Inline recognized-meaning suggestions, explicit custom opt-out and preservation of the user's original wording |
 
 All are assembled through merge commits into `review/encore-backend-integration`. Each feature branch builds on the already integrated foundation so its prerequisites are available. Cross-feature corrections are in the final hardening branch and review integration result. `main` is not the destination of any feature commit, merge or push.
 
@@ -81,7 +82,7 @@ An explicit recognized concept ID must exist in the catalog. Suggestions use kno
 
 There is no embedding service, LLM call, paid preference API or external processing of members' free text. Semantic suggestions could be added later without changing the concept-based scoring contract.
 
-The endpoint `GET /api/preference-concepts?q=...` supports suggestions. The current client provides standard checkboxes and custom text per intent. It does not yet provide a richer inline suggestion/confirmation widget while typing; API support for that integration exists.
+The endpoint `GET /api/preference-concepts?q=...` supports suggestions. The client provides standard checkboxes, an input that suggests meanings while typing, and an explicit choice between “Use meaning” and keeping the wording as an unmapped custom preference. Confirming a concept retains the original wording alongside its concept ID. Choosing `{text, custom: true}` explicitly bypasses automatic alias mapping; it cannot be combined with a concept ID. Custom entries can be reviewed/edited one per line before saving. Suggestions are debounced and stale responses cannot overwrite a newer query.
 
 ### How the group profile is calculated
 
@@ -367,7 +368,7 @@ Use `npm.cmd` on this machine because its PowerShell policy blocks `npm.ps1`. `N
 ### Explicit limits
 
 - Browser interaction/mobile-layout acceptance has not been completed; passing Vite compilation and HTTP tests is not a browser QA claim.
-- Unknown custom phrases do not receive arbitrary AI semantic interpretation. Known aliases and normalized exact custom matches work; richer suggestions remain an optional integration improvement.
+- Unknown custom phrases do not receive arbitrary AI semantic interpretation. Known aliases, lexical suggestions, explicit meaning confirmation and normalized exact custom matches work. Embedding-based semantic suggestions remain optional future work.
 - New member-managed groups use host approval; the legacy automatic-placement workflow is preserved separately.
 - Notifications are in-app polling, not email/mobile push or a distributed event broker. The teammate's future group-chat implementation still needs its own routes, authorization and UI.
 - Meetup place entry uses coordinates and nominated real places, not automatic nearby-place search or transit routing. The availability grid supports 30-minute slots, a maximum seven-day board window, and at most 96 submitted windows per person.
@@ -382,8 +383,8 @@ Final executed verification on 17 October 2026:
 | Check | Result |
 | --- | --- |
 | Pre-expansion baseline: `npm.cmd test` | 181 passed, 0 failed, 0 skipped |
-| New repository/migration and authenticated API tests: `node --test test/community.test.js test/communityApi.test.js` | 24 passed, 0 failed; 18 repository/service tests and 6 HTTP integration tests |
-| Full final regression: `npm.cmd test` | **205 passed, 0 failed, 0 skipped** |
+| New repository/migration and authenticated API tests: `node --test test/community.test.js test/communityApi.test.js` | 25 passed, 0 failed; 19 repository/service tests and 6 HTTP integration tests |
+| Full final regression: `npm.cmd test` | **206 passed, 0 failed, 0 skipped** |
 | Production frontend: `npm.cmd run build` | Passed; 149 modules transformed |
 | `node --check` on changed JavaScript files | 23 passed |
 | Production `getDb()` bootstrap against explicitly isolated `:memory:` storage | Passed; 46 tables; zero foreign-key violations |
