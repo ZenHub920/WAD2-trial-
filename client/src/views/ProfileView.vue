@@ -213,6 +213,7 @@ async function save() {
         <RouterLink to="/kaki" class="btn btn--ghost">Explore Kaki Finder</RouterLink>
         <RouterLink to="/groups" class="btn btn--ghost">Group preferences</RouterLink>
         <RouterLink to="/groups/connect" class="btn btn--ghost">Invitations &amp; connections</RouterLink>
+        <RouterLink to="/meetups" class="btn btn--ghost">Meetup planning</RouterLink>
         <button type="submit" class="btn btn--primary" :disabled="saving">{{ saving ? 'Saving…' : 'Save profile' }}</button>
       </div>
     </form>

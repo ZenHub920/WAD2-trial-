@@ -99,6 +99,7 @@ async function host() {
     </section>
     <p v-else>Host a concert group to start sending invitations.</p>
     <RouterLink v-if="sourceId" :to="`/groups/${sourceId}/members`" class="btn btn--ghost">Manage members, friend links &amp; shared preferences</RouterLink>
+    <RouterLink v-if="sourceId" :to="{path:'/meetups',query:{partyId:sourceId}}" class="btn btn--ghost">Plan your group meetup</RouterLink>
     <section v-if="joins.length" class="card group-panel"><h2>Seeker join requests</h2><article v-for="j in joins" :key="j.id"><p>{{j.seekerName}} · {{j.artist}} · {{j.status}}</p><div v-if="j.status==='pending'" class="group-actions"><button class="btn btn--primary" :disabled="busy" @click="act(()=>api.respondGroupJoin(j.id,'accept'))">Approve seeker</button><button class="btn btn--ghost" :disabled="busy" @click="act(()=>api.respondGroupJoin(j.id,'reject'))">Reject</button></div></article></section>
     <details class="card group-panel"><summary>Host a new group</summary>
       <form class="group-panel" @submit.prevent="host">
@@ -124,5 +125,6 @@ async function host() {
     <section class="card group-panel"><h2>Outgoing invitations</h2><p v-if="!outgoing.length">No pending invitations.</p><p v-for="c in outgoing" :key="c.id">{{ describe(c) }} · Pending</p></section>
     <section class="card group-panel"><h2>Accepted connections</h2><p v-if="!accepted.length">No accepted connections yet.</p><article v-for="c in accepted" :key="c.id" class="group-panel"><p>{{ describe(c) }}</p><p class="group-notes">{{ c.partyA.notes }} {{ c.partyB.notes }}</p><p>Connected · {{ c.respondedAt }}</p></article></section>
     <section v-if="declined.length" class="card group-panel"><h2>Declined invitations</h2><p v-for="c in declined" :key="c.id">{{ describe(c) }} · Declined</p></section>
+    <nav v-for="c in accepted" :key="`plan-${c.id}`"><RouterLink :to="{path:'/meetups',query:{connectionId:c.id}}">Plan meetup for {{describe(c)}}</RouterLink></nav>
   </main>
 </template>
