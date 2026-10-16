@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
+import IntroCurtain from './components/IntroCurtain.vue';
 import SiteHeader from './components/SiteHeader.vue';
 import SiteFooter from './components/SiteFooter.vue';
 import { refreshSession } from './auth.js';
@@ -33,6 +34,7 @@ function toggleTheme() {
 </script>
 
 <template>
+  <IntroCurtain />
   <a class="skip-link" href="#main">Skip to content</a>
   <SiteHeader :theme="theme" @toggle-theme="toggleTheme" />
   <main id="main" :class="{ 'main--with-fixed-header': hasFixedHeader }">

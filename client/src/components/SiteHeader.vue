@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { currentUser, signOut } from '../auth.js';
 import { unreadTotal } from '../chatLive.js';
+import { introActive } from '../intro.js';
 import UserAvatar from './UserAvatar.vue';
 
 defineProps({ theme: { type: String, default: 'dark' } });
@@ -40,7 +41,15 @@ async function logOut() {
 <template>
   <header class="header" :class="{ 'header--scrolled': scrolled, 'header--fixed': hasFixedHeader }">
     <div class="header__inner container container--wide">
-      <RouterLink :to="homeLink" class="brand" @click="menuOpen = false">
+      <!-- data-brand-target is where the opening title flies to; the logo
+           waits out the flight so the two are never on screen together. -->
+      <RouterLink
+        :to="homeLink"
+        class="brand"
+        :class="{ 'brand--waiting': introActive }"
+        data-brand-target
+        @click="menuOpen = false"
+      >
         <span class="brand__mark" aria-hidden="true">
           <span class="brand__bar" v-for="n in 4" :key="n" :style="{ '--i': n }" />
         </span>
@@ -144,6 +153,16 @@ async function logOut() {
   gap: var(--space-3);
   text-decoration: none;
   color: var(--text-100);
+}
+
+/* Hidden, not removed: it must keep its place so the title has somewhere to land. */
+.brand--waiting {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.brand {
+  transition: opacity var(--dur-base) var(--ease-out);
 }
 
 .brand__mark {
