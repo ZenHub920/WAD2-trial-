@@ -55,6 +55,22 @@ defineProps({
     <template v-else-if="name === 'send'">
       <path d="M21 3 10 14M21 3l-7 18-4-7-7-4z" />
     </template>
+    <template v-else-if="name === 'chevron'">
+      <path d="m6 9.5 6 6 6-6" />
+    </template>
+    <template v-else-if="name === 'filters'">
+      <path d="M4 7h16M7 12h10M10 17h4" />
+    </template>
+    <template v-else-if="name === 'close'">
+      <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />
+    </template>
+    <template v-else-if="name === 'flame'">
+      <path d="M12.6 2.6c.4 2.7 2.1 3.5 3.3 5.2 1.7 2.4 1 5.8-1.4 7.4a5.7 5.7 0 0 1-6.8-.5c-2.4-2.2-1.4-6 1-8 .3 1.1.9 1.7 1.7 1.9.5-2.4.9-4.4 2.2-6Z" />
+    </template>
+    <template v-else-if="name === 'ticket'">
+      <path d="M3 8.6V6.4h18v2.2a2.3 2.3 0 0 0 0 4.6v4.4H3v-4.4a2.3 2.3 0 0 0 0-4.6Z" />
+      <path d="M13.5 6.4v11.2" stroke-dasharray="2 2.6" />
+    </template>
     <template v-else-if="name === 'lock'">
       <rect x="5" y="10.5" width="14" height="10" rx="2" />
       <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
