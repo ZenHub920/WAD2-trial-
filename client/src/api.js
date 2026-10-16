@@ -44,6 +44,11 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  notifications: ()=>request('/me/notifications'),
+  notificationUnread: ()=>request('/me/notifications/unread'),
+  readNotification: id=>request(`/me/notifications/${encodeURIComponent(id)}/read`,{method:'POST'}),
+  notificationSettings: ()=>request('/me/notification-preferences'),
+  saveNotificationSettings: data=>request('/me/notification-preferences',{method:'PUT',body:JSON.stringify(data)}),
   preferenceConcepts: (q='') => request(`/preference-concepts?q=${encodeURIComponent(q)}`),
   groupMembership: id=>request(`/groups/${encodeURIComponent(id)}/membership`),
   configureGroup: (id,data)=>request(`/groups/${encodeURIComponent(id)}/settings`,{method:'PUT',body:JSON.stringify(data)}),
