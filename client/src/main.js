@@ -29,6 +29,8 @@ import KakiChatView from './views/KakiChatView.vue';
 import ProfileHistoryView from './views/ProfileHistoryView.vue';
 import ProfileView from './views/ProfileView.vue';
 import NotFoundView from './views/NotFoundView.vue';
+import GroupExplorerView from './views/GroupExplorerView.vue';
+import GroupConnectionsView from './views/GroupConnectionsView.vue';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -62,6 +64,8 @@ const router = createRouter({
     },
 
     { path: '/kaki', name: 'kaki', component: KakiFinderView, meta: { title: 'Kaki Finder' } },
+    { path: '/groups', name: 'groups', component: GroupExplorerView, meta: { title: 'Find a Group', requiresAuth: true } },
+    { path: '/groups/connect', name: 'group-connections', component: GroupConnectionsView, meta: { title: 'Connect Groups', requiresAuth: true } },
     {
       path: '/kaki/history',
       name: 'kaki-history',

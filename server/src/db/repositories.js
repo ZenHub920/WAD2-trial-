@@ -10,6 +10,8 @@
  */
 
 import { createProposalRepo } from './proposalRepository.js';
+import { createGroupDiscoveryRepo } from './groupDiscoveryRepository.js';
+import { activeReservationSql } from './capacity.js';
 import { createKakiChatRepo } from './kakiChatRepository.js';
 import { randomUUID } from 'node:crypto';
 
@@ -263,10 +265,7 @@ export function createConcertRepo(db) {
 
                   WHERE mp.party_id = p.id
 
-                    AND mp.status IN (
-                      'proposed',
-                      'confirmed'
-                    )
+                    AND ${activeReservationSql()}
                 )
               ),
               0
@@ -379,6 +378,8 @@ export function createPartyRepo(db) {
         FROM parties p JOIN users u ON u.id = p.host_user_id
         WHERE p.id = ?
       `).get(id);
+      if (row) row.remaining_capacity = Math.max(0, row.capacity - db.prepare(`SELECT COUNT(*) AS n FROM match_proposals mp
+        WHERE mp.party_id = ? AND ${activeReservationSql()}`).get(id).n);
       return mapParty(row);
     },
   
@@ -405,7 +406,7 @@ openForConcert(concertId) {
         SELECT COUNT(*)
         FROM match_proposals mp
         WHERE mp.party_id = p.id
-          AND mp.status IN ('proposed', 'confirmed')
+          AND ${activeReservationSql()}
       ) AS remaining_capacity
 
     FROM parties p
@@ -424,7 +425,7 @@ openForConcert(concertId) {
         SELECT COUNT(*)
         FROM match_proposals mp
         WHERE mp.party_id = p.id
-          AND mp.status IN ('proposed', 'confirmed')
+          AND ${activeReservationSql()}
       )
 
     ORDER BY p.id
@@ -1571,7 +1572,7 @@ export function createConversationRepo(db) {
 }
 
 export function createRepositories(db) {
-  return {
+  const repos = {
     users: createUserRepo(db),
     concerts: createConcertRepo(db),
     participation: createParticipationRepo(db),
@@ -1589,4 +1590,6 @@ export function createRepositories(db) {
     kakiChat: createKakiChatRepo(db),
     proposals: createProposalRepo(db),
   };
+  repos.groups = createGroupDiscoveryRepo(db, repos);
+  return repos;
 }

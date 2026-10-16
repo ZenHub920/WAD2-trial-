@@ -45,7 +45,8 @@ export function createMatchingService({ db, repos }) {
       }
 
       const t0 = performance.now();
-      const profile = buildPreferences(seekers, parties, { blocklist });
+      const profile = buildPreferences(seekers, parties, { blocklist, declinedPairs,
+        preferredPairs: repos.groups.preferredPairs(concertId) });
       const t1 = performance.now();
 
       // Classification, solver selection and verification all happen here. The
@@ -451,7 +452,9 @@ run(concertId, { trace = true, batchKey } = {}) {
      */
     explain(concertId, seekerRequestId) {
       const { seekers, parties, blocklist } = loadInstance(repos, concertId);
-      const profile = buildPreferences(seekers, parties, { blocklist });
+      const profile = buildPreferences(seekers, parties, { blocklist,
+        declinedPairs: repos.proposals.declinedPairsForConcert(concertId),
+        preferredPairs: repos.groups.preferredPairs(concertId) });
       const result = galeShapley(profile, { trace: true });
 
       const list = profile.seekerPrefs.get(seekerRequestId) ?? [];
@@ -488,6 +491,7 @@ run(concertId, { trace = true, batchKey } = {}) {
 }
 
 function loadInstance(repos, concertId) {
+  repos.proposals.expire();
 
   const parties = repos.parties.openForConcert(concertId);
 

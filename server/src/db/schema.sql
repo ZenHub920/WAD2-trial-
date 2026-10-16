@@ -104,7 +104,6 @@ CREATE TABLE IF NOT EXISTS parties (
   notes             TEXT,
   status            TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open','matched','cancelled')),
   created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
-  UNIQUE (host_user_id, concert_id),
   CHECK (min_size IS NULL OR min_size <= capacity)
 );
 
