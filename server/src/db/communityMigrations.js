@@ -41,6 +41,13 @@ export function migrateCommunity(db) {
         UNIQUE(party_id,user_id)
       );
       CREATE INDEX IF NOT EXISTS idx_join_requests_user ON group_join_requests(user_id,status);
+      CREATE TABLE IF NOT EXISTS group_join_request_events(
+        id INTEGER PRIMARY KEY,request_id TEXT NOT NULL REFERENCES group_join_requests(id),status TEXT NOT NULL,
+        occurred_at TEXT NOT NULL DEFAULT(datetime('now')));
+      CREATE TRIGGER IF NOT EXISTS audit_join_request_created AFTER INSERT ON group_join_requests BEGIN
+        INSERT INTO group_join_request_events(request_id,status) VALUES(NEW.id,NEW.status); END;
+      CREATE TRIGGER IF NOT EXISTS audit_join_request_changed AFTER UPDATE OF status ON group_join_requests WHEN NEW.status<>OLD.status BEGIN
+        INSERT INTO group_join_request_events(request_id,status) VALUES(NEW.id,NEW.status); END;
       CREATE TRIGGER IF NOT EXISTS one_host_group_insert BEFORE INSERT ON parties WHEN NEW.status <> 'cancelled'
       BEGIN
         SELECT RAISE(ABORT,'already_in_concert_group') WHERE EXISTS(
@@ -57,18 +64,70 @@ export function migrateCommunity(db) {
           OR EXISTS(SELECT 1 FROM group_memberships WHERE party_id<>NEW.id AND user_id=NEW.host_user_id AND concert_id=NEW.concert_id AND status='active');
       END;
     `);
+    if (
+      !db
+        .prepare("PRAGMA table_info(group_settings)")
+        .all()
+        .some((c) => c.name === "stranger_slots")
+    )
+      db.exec(
+        "ALTER TABLE group_settings ADD COLUMN stranger_slots INTEGER CHECK(stranger_slots>=0)",
+      );
+    if (
+      !db
+        .prepare("PRAGMA table_info(group_settings)")
+        .all()
+        .some((c) => c.name === "version")
+    )
+      db.exec(
+        "ALTER TABLE group_settings ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
+      );
+    if (
+      !db
+        .prepare("PRAGMA table_info(group_join_requests)")
+        .all()
+        .some((c) => c.name === "group_version")
+    )
+      db.exec(
+        "ALTER TABLE group_join_requests ADD COLUMN group_version INTEGER",
+      );
+    db.exec(`CREATE TRIGGER IF NOT EXISTS membership_host_guard BEFORE INSERT ON group_memberships WHEN NEW.status='active'
+      BEGIN SELECT RAISE(ABORT,'already_in_concert_group') WHERE EXISTS(SELECT 1 FROM parties WHERE host_user_id=NEW.user_id
+        AND concert_id=NEW.concert_id AND status<>'cancelled' AND id<>NEW.party_id); END;
+      CREATE TRIGGER IF NOT EXISTS membership_concert_update_guard BEFORE UPDATE OF party_id,concert_id,user_id,status ON group_memberships BEGIN
+        SELECT RAISE(ABORT,'membership_concert_mismatch') WHERE NOT EXISTS(SELECT 1 FROM parties WHERE id=NEW.party_id AND concert_id=NEW.concert_id);
+        SELECT RAISE(ABORT,'already_in_concert_group') WHERE NEW.status='active' AND EXISTS(SELECT 1 FROM parties WHERE host_user_id=NEW.user_id
+        AND concert_id=NEW.concert_id AND status<>'cancelled' AND id<>NEW.party_id); END;`);
     // Do not silently discard duplicate legacy groups or assign a person twice.
-    const add = db.prepare(`INSERT OR IGNORE INTO group_memberships(party_id,user_id,concert_id,source) VALUES(?,?,?,?)`);
-    const conflict = db.prepare('INSERT OR IGNORE INTO membership_conflicts VALUES(?,?,?)');
-    const rows = db.prepare(`SELECT p.id AS party_id,p.host_user_id AS user_id,p.concert_id,'host' AS source FROM parties p
+    const add = db.prepare(
+      `INSERT OR IGNORE INTO group_memberships(party_id,user_id,concert_id,source) VALUES(?,?,?,?)`,
+    );
+    const conflict = db.prepare(
+      "INSERT OR IGNORE INTO membership_conflicts VALUES(?,?,?)",
+    );
+    const rows = db
+      .prepare(
+        `SELECT p.id AS party_id,p.host_user_id AS user_id,p.concert_id,'host' AS source FROM parties p
       WHERE p.status<>'cancelled' AND NOT EXISTS(SELECT 1 FROM tickets WHERE source_party_id=p.id)
       UNION ALL SELECT mp.party_id,s.user_id,p.concert_id,'proposal' FROM match_proposals mp
       JOIN seeker_requests s ON s.id=mp.seeker_request_id JOIN parties p ON p.id=mp.party_id
-      WHERE mp.status='confirmed' AND p.status<>'cancelled'`).all();
+      WHERE mp.status='confirmed' AND p.status<>'cancelled'`,
+      )
+      .all();
     for (const r of rows) {
-      const existing = db.prepare("SELECT party_id FROM group_memberships WHERE user_id=? AND concert_id=? AND status='active'").get(r.user_id,r.concert_id);
-      if (existing && existing.party_id !== r.party_id) conflict.run(r.party_id,r.user_id,'multiple_legacy_groups');
-      else add.run(r.party_id,r.user_id,r.concert_id,r.source);
+      const existing = db
+        .prepare(
+          "SELECT party_id FROM group_memberships WHERE user_id=? AND concert_id=? AND status='active'",
+        )
+        .get(r.user_id, r.concert_id);
+      const hostedElsewhere = db
+        .prepare(
+          "SELECT 1 FROM parties WHERE host_user_id=? AND concert_id=? AND status<>'cancelled' AND id<>?",
+        )
+        .get(r.user_id, r.concert_id, r.party_id);
+      if ((existing && existing.party_id !== r.party_id) || hostedElsewhere)
+        conflict.run(r.party_id, r.user_id, "multiple_legacy_groups");
+      else add.run(r.party_id, r.user_id, r.concert_id, r.source);
     }
   }).immediate();
 }
