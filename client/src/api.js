@@ -44,6 +44,16 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  meetups: ()=>request('/me/meetups'),
+  createMeetup: data=>request('/meetups',{method:'POST',body:JSON.stringify(data)}),
+  meetup: id=>request(`/meetups/${encodeURIComponent(id)}`),
+  meetupAvailability: (id,windows)=>request(`/meetups/${encodeURIComponent(id)}/availability`,{method:'PUT',body:JSON.stringify({windows})}),
+  proposeMeetupPlace: (id,data)=>request(`/meetups/${encodeURIComponent(id)}/places`,{method:'POST',body:JSON.stringify(data)}),
+  voteMeetupPlace: (id,placeId)=>request(`/meetups/${encodeURIComponent(id)}/vote`,{method:'PUT',body:JSON.stringify({placeId})}),
+  meetupComment: (id,body)=>request(`/meetups/${encodeURIComponent(id)}/comments`,{method:'POST',body:JSON.stringify({body})}),
+  proposeMeetupPlan: (id,data)=>request(`/meetups/${encodeURIComponent(id)}/propose`,{method:'POST',body:JSON.stringify(data)}),
+  approveMeetup: (id,version)=>request(`/meetups/${encodeURIComponent(id)}/approve`,{method:'POST',body:JSON.stringify({version})}),
+  meetupWeather: id=>request(`/meetups/${encodeURIComponent(id)}/weather`),
   notifications: ()=>request('/me/notifications'),
   notificationUnread: ()=>request('/me/notifications/unread'),
   readNotification: id=>request(`/me/notifications/${encodeURIComponent(id)}/read`,{method:'POST'}),
