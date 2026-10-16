@@ -94,7 +94,8 @@ export function buildPreferences(seekers, parties, options = {}) {
       feasiblePairs += 1;
 
       pairScores.set(pairKey(seeker.id, party.id), scored);
-      seekerCandidates.get(seeker.id).push({ id: party.id, score: scored.seekerToParty });
+      seekerCandidates.get(seeker.id).push({ id: party.id, score: scored.seekerToParty,
+        preferred: options.preferredPairs?.has(pairKey(seeker.id, party.id)) ? 1 : 0 });
       partyCandidates.get(party.id).push({ id: seeker.id, score: scored.partyToSeeker });
     }
   }
@@ -135,7 +136,7 @@ export function buildPreferences(seekers, parties, options = {}) {
  */
 function sortCandidates(candidates) {
   return candidates
-    .sort((a, b) => (b.score - a.score) || compareIds(a.id, b.id))
+    .sort((a, b) => ((b.preferred ?? 0) - (a.preferred ?? 0)) || (b.score - a.score) || compareIds(a.id, b.id))
     .map((c) => c.id);
 }
 

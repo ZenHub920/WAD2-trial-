@@ -12,6 +12,11 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTicketImages, decodeTicketImage } from '../services/ticketImages.js';
+import { migrateGroups } from './groupMigrations.js';
+import { migrateCommunity } from './communityMigrations.js';
+import { migrateNotifications } from './notificationRepository.js';
+import { migrateMeetups } from './meetupRepository.js';
+import { migrateFeedback } from './feedbackRepository.js';
 const here = dirname(fileURLToPath(import.meta.url));
 
 let db = null;
@@ -33,7 +38,12 @@ export function getDb() {
     db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT');
   }
   migrate(db);
+  migrateGroups(db);
   migrateLegacyTickets(db);
+  migrateCommunity(db);
+  migrateNotifications(db);
+  migrateMeetups(db);
+  migrateFeedback(db);
   return db;
 }
 
@@ -215,7 +225,12 @@ export function createTestDb() {
   testDb.pragma('foreign_keys = ON');
   testDb.exec(readFileSync(join(here, 'schema.sql'), 'utf8'));
   migrate(testDb);
+  migrateGroups(testDb);
   migrateLegacyTickets(testDb);
+  migrateCommunity(testDb);
+  migrateNotifications(testDb);
+  migrateMeetups(testDb);
+  migrateFeedback(testDb);
   return testDb;
 }
 

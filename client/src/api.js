@@ -8,10 +8,26 @@
 const BASE = '/api';
 
 async function request(path, options = {}) {
+  // Preserve default JSON headers while allowing API methods
+  // to supply additional headers such as Idempotency-Key.
+  //
+  // We remove headers from options before spreading
+  // the remaining fetch configuration.
+
+  const {
+    headers: extraHeaders = {},
+    ...fetchOptions
+  } = options;
+
   const res = await fetch(`${BASE}${path}`, {
     credentials: 'same-origin',
-    headers: { 'content-type': 'application/json', ...(options.headers ?? {}) },
-    ...options,
+
+    ...fetchOptions,
+
+    headers: {
+      'content-type': 'application/json',
+      ...extraHeaders
+    }
   });
 
   const isJson = res.headers.get('content-type')?.includes('application/json');
@@ -28,6 +44,38 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  feedbackOpportunities: ()=>request('/me/feedback-opportunities'),
+  myFeedback: ()=>request('/me/feedback'),
+  meetups: ()=>request('/me/meetups'),
+  createMeetup: data=>request('/meetups',{method:'POST',body:JSON.stringify(data)}),
+  meetup: id=>request(`/meetups/${encodeURIComponent(id)}`),
+  meetupAvailability: (id,windows)=>request(`/meetups/${encodeURIComponent(id)}/availability`,{method:'PUT',body:JSON.stringify({windows})}),
+  proposeMeetupPlace: (id,data)=>request(`/meetups/${encodeURIComponent(id)}/places`,{method:'POST',body:JSON.stringify(data)}),
+  voteMeetupPlace: (id,placeId)=>request(`/meetups/${encodeURIComponent(id)}/vote`,{method:'PUT',body:JSON.stringify({placeId})}),
+  meetupComment: (id,body)=>request(`/meetups/${encodeURIComponent(id)}/comments`,{method:'POST',body:JSON.stringify({body})}),
+  proposeMeetupPlan: (id,data)=>request(`/meetups/${encodeURIComponent(id)}/propose`,{method:'POST',body:JSON.stringify(data)}),
+  approveMeetup: (id,version)=>request(`/meetups/${encodeURIComponent(id)}/approve`,{method:'POST',body:JSON.stringify({version})}),
+  cancelMeetup: (id,version)=>request(`/meetups/${encodeURIComponent(id)}/cancel`,{method:'POST',body:JSON.stringify({version})}),
+  meetupWeather: id=>request(`/meetups/${encodeURIComponent(id)}/weather`),
+  notifications: ()=>request('/me/notifications'),
+  notificationUnread: ()=>request('/me/notifications/unread'),
+  readNotification: id=>request(`/me/notifications/${encodeURIComponent(id)}/read`,{method:'POST'}),
+  notificationSettings: ()=>request('/me/notification-preferences'),
+  saveNotificationSettings: data=>request('/me/notification-preferences',{method:'PUT',body:JSON.stringify(data)}),
+  preferenceConcepts: (q='') => request(`/preference-concepts?q=${encodeURIComponent(q)}`),
+  groupMembership: id=>request(`/groups/${encodeURIComponent(id)}/membership`),
+  configureGroup: (id,data)=>request(`/groups/${encodeURIComponent(id)}/settings`,{method:'PUT',body:JSON.stringify(data)}),
+  saveMemberPreferences: (id,data)=>request(`/groups/${encodeURIComponent(id)}/member-preferences`,{method:'PUT',body:JSON.stringify(data)}),
+  publishGroup: (id,data)=>request(`/groups/${encodeURIComponent(id)}/publish`,{method:'POST',body:JSON.stringify(data)}),
+  friendInvite: id=>request(`/groups/${encodeURIComponent(id)}/friend-invites`,{method:'POST'}),
+  acceptFriendInvite: token=>request(`/group-friend-invites/${encodeURIComponent(token)}/accept`,{method:'POST'}),
+  leaveGroup: id=>request(`/groups/${encodeURIComponent(id)}/leave`,{method:'POST'}),
+  cancelGroup: id=>request(`/groups/${encodeURIComponent(id)}/cancel`,{method:'POST'}),
+  saveDiscoveryPreferences: (id,data)=>request(`/me/discovery-preferences/${encodeURIComponent(id)}`,{method:'PUT',body:JSON.stringify(data)}),
+  discoveryPreferences: id=>request(`/me/discovery-preferences/${encodeURIComponent(id)}`),
+  requestGroupJoin: id=>request(`/groups/${encodeURIComponent(id)}/join-requests`,{method:'POST'}),
+  groupJoinRequests: ()=>request('/me/group-join-requests'),
+  respondGroupJoin: (id,action)=>request(`/group-join-requests/${encodeURIComponent(id)}/respond`,{method:'POST',body:JSON.stringify({action})}),
   login: (data) => request('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   register: (data) => request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   me: () => request('/auth/me'),
@@ -140,6 +188,7 @@ export const api = {
   concert: (id) => request(`/concerts/${id}`),
 
   parties: (concertId) => request(`/concerts/${concertId}/parties`),
+  createParty: (concertId, data) => request(`/concerts/${encodeURIComponent(concertId)}/parties`, { method: 'POST', body: JSON.stringify(data) }),
 
   requests: (concertId) => request(`/concerts/${concertId}/requests`),
   createRequest: (concertId, data) =>
@@ -154,7 +203,21 @@ export const api = {
     return request(`/concerts/${concertId}/match/preview${qs ? `?${qs}` : ''}`);
   },
 
-  runMatch: (concertId) => request(`/concerts/${concertId}/match`, { method: 'POST' }),
+  runMatch: (concertId, batchKey) => request(`/concerts/${concertId}/match`, {
+    method: 'POST', headers: { 'Idempotency-Key': batchKey },
+  }),
+
+  discoverGroups: (id,params={}) => request(`/groups/discover/${encodeURIComponent(id)}?${new URLSearchParams(params)}`),
+  seekerRequest: (id) => request(`/me/seeker-request/${encodeURIComponent(id)}`),
+  reopenSeekerRequest: (id) => request(`/me/seeker-request/${encodeURIComponent(id)}/reopen`, { method: 'POST' }),
+  groupPreferences: (id) => request(`/me/group-preferences/${encodeURIComponent(id)}`),
+  preferGroup: (id) => request(`/group-preferences/${encodeURIComponent(id)}`, { method: 'PUT' }),
+  removeGroupPreference: (id) => request(`/group-preferences/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  hostedGroups: () => request('/me/hosted-groups'),
+  connectionCandidates: (id, fromPartyId,params={}) => request(`/group-connections/candidates/${encodeURIComponent(id)}?${new URLSearchParams({...params,fromPartyId})}`),
+  groupConnections: () => request('/me/group-connections'),
+  inviteGroup: (fromPartyId, toPartyId) => request('/group-connections', { method: 'POST', body: JSON.stringify({ fromPartyId, toPartyId }) }),
+  respondToGroup: (id, action) => request(`/group-connections/${encodeURIComponent(id)}/respond`, { method: 'POST', body: JSON.stringify({ action }) }),
 
   round: (roundId) => request(`/rounds/${roundId}`),
   roundTrace: (roundId, limit = 2000) => request(`/rounds/${roundId}/trace?limit=${limit}`),
@@ -162,9 +225,65 @@ export const api = {
   partyRoster: (roundId, partyId) => request(`/rounds/${roundId}/parties/${partyId}`),
 
   explain: (concertId, requestId) => request(`/concerts/${concertId}/explain/${requestId}`),
+  // ============================================================
+  // IMPROVEMENTS #5 AND #6: OPERATIONAL MATCH PROPOSALS
+  // ============================================================
 
+  // All proposals visible to the logged-in user.
+  myProposals: () =>
+    request('/me/proposals'),
+
+  // Pending proposals for a particular concert.
+  concertProposals: (concertId) =>
+    request(
+      `/me/concerts/${encodeURIComponent(concertId)}/proposals`
+    ),
+
+  // Confirmed matches for a particular concert.
+  concertMatches: (concertId) =>
+    request(
+      `/me/concerts/${encodeURIComponent(concertId)}/matches`
+    ),
+
+  // Accept a pending proposal.
+  acceptProposal: (proposalId) =>
+    request(
+      `/proposals/${encodeURIComponent(proposalId)}/accept`,
+      {
+        method: 'POST'
+      }
+    ),
+
+  // Decline a pending proposal.
+  declineProposal: (proposalId) =>
+    request(
+      `/proposals/${encodeURIComponent(proposalId)}/decline`,
+      {
+        method: 'POST'
+      }
+    ),
+
+  // Retrieve historical compatibility-score explanation.
+  proposalExplanation: (proposalId) =>
+
+    request(
+      `/me/proposals/${encodeURIComponent(proposalId)}/explanation`
+    ),
+  // Improvement #14:
+  // Submit feedback for an authorized confirmed participant.
+  //
+  // Eligibility must be checked by Express and SQLite,
+  // never trusted solely from Vue.
+
+  leaveFeedback: (data) =>
+    request('/feedback', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
   user: (id) => request(`/users/${id}`),
 };
+
+
 
 /** Human labels for the enum values the API speaks in. */
 export const LABELS = {
