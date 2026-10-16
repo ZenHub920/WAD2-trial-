@@ -107,6 +107,115 @@ export function useTicket(id) {
   return { listing, loading, error, reload: load };
 }
 
+/* ---------------------------------------------------------------------------
+ * Demand ranking — what the market shows before anyone has searched
+ * ------------------------------------------------------------------------ */
+
+/** Whole days from `now` until a `YYYY-MM-DD` event date; negative once it has passed. */
+export function daysUntil(eventDate, now = Date.now()) {
+  if (!eventDate) return null;
+  const date = new Date(`${String(eventDate).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  return Math.round((date.getTime() - now) / 86_400_000);
+}
+
+/**
+ * How contested one concert is.
+ *
+ * The market's stock is seller-supplied, so on a quiet day there is genuinely
+ * nothing listed — and a grid answering "no results" to someone who has not
+ * searched for anything yet is a dead end. The page therefore opens on the
+ * concerts people are actually competing over, ranked by the three things that
+ * decide whether a ticket is hard to get:
+ *
+ *   interest  how many people are involved at all: seekers looking for company,
+ *             spare seats offered inside groups, and tickets on resale. Resale
+ *             counts double — a listed ticket is a committed transaction, not
+ *             an intention.
+ *   scarcity  seekers per available place. Above 1 means more people want in
+ *             than there are places, which is what makes a concert hot rather
+ *             than merely large.
+ *   urgency   how near the date is, taken to zero at four months out. The same
+ *             show moves faster next week than it does next year.
+ *
+ *   score = interest × (1 + scarcity) × (1 + ½ urgency)
+ *
+ * Multiplying rather than adding is the point: scarcity and urgency modify
+ * interest that already exists. A concert nobody has joined has interest 0 and
+ * stays bottom however extreme its ratio — otherwise an empty concert with one
+ * seeker and no slots (scarcity 1.0) would outrank a busy, well-supplied one.
+ */
+export function concertHeat(concert, { listings = 0, now = Date.now() } = {}) {
+  const seekers = concert.open_seekers ?? 0;
+  const slots = concert.open_slots ?? 0;
+  const places = slots + listings;
+
+  const interest = seekers + slots + listings * 2;
+  // +1 keeps a concert with no places at all from dividing by zero.
+  const scarcity = seekers / (places + 1);
+  const days = daysUntil(concert.event_date, now);
+  const urgency = days === null ? 0 : Math.max(0, Math.min(1, 1 - days / 120));
+
+  return {
+    score: interest * (1 + scarcity) * (1 + urgency * 0.5),
+    interest,
+    scarcity,
+    urgency,
+    days,
+    seekers,
+    slots,
+    listings,
+  };
+}
+
+/**
+ * Scarcity turned into a label. Ordered loosest-last so the first match wins,
+ * and keyed by id so a card can colour itself from the same decision.
+ */
+export const HEAT_TIERS = [
+  { id: 'surging', label: 'Selling out', min: 1.2 },
+  { id: 'hot', label: 'High demand', min: 0.8 },
+  { id: 'steady', label: 'Filling up', min: 0.35 },
+  { id: 'open', label: 'Places going spare', min: 0 },
+];
+
+export function heatTier(scarcity) {
+  return HEAT_TIERS.find((tier) => scarcity >= tier.min) ?? HEAT_TIERS.at(-1);
+}
+
+/**
+ * Concerts in demand order, each carrying its resale summary, so the market can
+ * recommend a concert whether or not anybody has listed a ticket for it yet.
+ * Concerts already past are dropped: they cannot be a recommendation.
+ */
+export function rankConcerts(concerts = [], listings = [], { now = Date.now() } = {}) {
+  const resale = new Map();
+  for (const listing of listings) {
+    const id = listing.concert?.id;
+    if (!id) continue;
+    const entry = resale.get(id) ?? { count: 0, fromCents: Infinity };
+    entry.count += 1;
+    entry.fromCents = Math.min(entry.fromCents, listing.priceCents);
+    resale.set(id, entry);
+  }
+
+  return concerts
+    .filter((concert) => (daysUntil(concert.event_date, now) ?? -1) >= 0)
+    .map((concert) => {
+      const sale = resale.get(concert.id) ?? { count: 0, fromCents: Infinity };
+      const heat = concertHeat(concert, { listings: sale.count, now });
+      return {
+        concert,
+        heat,
+        tier: heatTier(heat.scarcity),
+        onSale: sale.count,
+        fromCents: Number.isFinite(sale.fromCents) ? sale.fromCents : null,
+      };
+    })
+    .sort((a, b) => b.heat.score - a.heat.score || (a.heat.days ?? 0) - (b.heat.days ?? 0))
+    .map((row, index) => ({ ...row, rank: index + 1 }));
+}
+
 /** Keep the fallback poster and seller avatar colours stable across visits. */
 export function hueFor(id = '') {
   let hash = 0;
