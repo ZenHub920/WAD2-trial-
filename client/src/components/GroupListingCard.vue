@@ -10,7 +10,8 @@ defineProps({ group: { type: Object, required: true } });
     <p>{{ formatDate(group.eventDate) }} · {{ LABELS.section[group.section] }}</p>
     <p>{{ group.remainingCapacity }} available / {{ group.capacity }} places · {{ LABELS.spendBand[group.spendBand] }}</p>
     <p>{{ LABELS.arrival[group.arrivalPlan] }}</p>
-    <p v-if="group.compatibility != null">{{ Math.round(group.compatibility * 100) }}% compatibility</p>
+    <p v-if="group.compatibility != null">{{ group.compatibility>=0.75?'Strong fit':group.compatibility>=0.5?'Potential fit':'Explore this group' }}<span v-if="group.confidence==='limited'"> · Limited preference information</span></p>
+    <ul v-if="group.reasons?.length"><li v-for="r in group.reasons" :key="r.concept">{{ r.label }} · {{ r.support }}% support in the compared preferences</li></ul>
     <ul class="group-tags" aria-label="Group activities"><template v-for="(name, id) in LABELS.plans" :key="id"><li v-if="group.plans?.[id]">{{ name }}</li></template></ul>
     <ul class="group-tags" aria-label="Concert vibe"><template v-for="(name, id) in LABELS.vibe" :key="id"><li v-if="group.vibe?.[id]">{{ name }} {{ group.vibe[id] }}/4</li></template></ul>
     <p v-if="group.notes" class="group-notes">{{ group.notes }}</p>

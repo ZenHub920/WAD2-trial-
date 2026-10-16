@@ -164,8 +164,7 @@ test('invitations require source ownership, same concert, distinct hosts and ava
   assert.equal((await invite(null)).status, 401);
   assert.equal((await invite('other')).status, 403);
   assert.equal((await invite('hostA', 'pA', 'pA')).status, 400);
-  repos.parties.create(makeParty('pA2', makeUser(cookies.hostAId)));
-  assert.equal((await invite('hostA', 'pA', 'pA2')).status, 400);
+  assert.throws(()=>repos.parties.create(makeParty('pA2', makeUser(cookies.hostAId))),/already_in_concert_group/);
   repos.parties.create(makeParty('pC', makeUser(cookies.hostBId), { concert_id: 'c2' }));
   assert.equal((await invite('hostA', 'pA', 'pC')).status, 400);
   repos.users.block(cookies.hostBId, cookies.hostAId);
@@ -197,12 +196,14 @@ test('only receiving hosts respond, accepted connections appear for both and do 
   for (const host of ['hostA', 'hostB']) assert.equal((await call('/me/group-connections', host)).body.connections[0].status, 'accepted');
   assert.deepEqual(state(), snapshot);
 });
-test('multiple hosted groups have independent invitation state and declined invitations stay final', async () => {
-  repos.parties.create(makeParty('pA2', makeUser(cookies.hostAId)));
-  assert.equal((await call('/me/hosted-groups', 'hostA')).body.groups.length, 2);
+test('one active hosted group is enforced, history remains, and declined invitations stay final', async () => {
+  assert.throws(()=>repos.parties.create(makeParty('pA2', makeUser(cookies.hostAId))),/already_in_concert_group/);
   const first = (await invite()).body.connection.id;
   assert.equal((await call(`/group-connections/${first}/respond`, 'hostB', 'POST', { action: 'decline' })).status, 200);
   assert.equal((await invite()).status, 409);
+  repos.parties.setStatus('pA','cancelled');
+  repos.parties.create(makeParty('pA2', makeUser(cookies.hostAId)));
+  assert.equal((await call('/me/hosted-groups', 'hostA')).body.groups.length, 2);
   const candidates = await call('/group-connections/candidates/c1?fromPartyId=pA2', 'hostA');
   assert.equal(candidates.body.groups[0].invitation, null);
   assert.equal((await invite('hostA', 'pA2', 'pB')).status, 201);
