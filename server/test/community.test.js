@@ -1,0 +1,53 @@
+import { test,beforeEach,afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { createTestDb } from '../src/db/connection.js';
+import { createRepositories } from '../src/db/repositories.js';
+import { makeUser,makeParty,makeSeeker } from './helpers.js';
+import { validateAnswers,aggregateAnswers,compareProfiles } from '../src/services/discoveryPreferences.js';
+let db,repos;
+beforeEach(()=>{
+  db=createTestDb();repos=createRepositories(db);
+  for(const id of ['h1','h2','friend','seeker','outsider'])repos.users.create(makeUser(id));
+  repos.concerts.create({id:'c1',artist:'Act',venue:'Venue',city:'Singapore',event_date:'2020-01-01'});
+  repos.parties.create(makeParty('p1',makeUser('h1'),{capacity:2}));
+  repos.parties.create(makeParty('p2',makeUser('h2'),{capacity:2}));
+  repos.seekers.create(makeSeeker('s1',makeUser('seeker')));
+});
+afterEach(()=>db.close());
+const answers={about:['supper','singalong'],wants:['post concert food'],avoid:[]};
+test('one host per concert and one active membership are enforced without removing history',()=>{
+  assert.throws(()=>repos.parties.create(makeParty('duplicate',makeUser('h1'))),/already_in_concert_group/);
+  repos.membership.configure('h1','p1',{expectedFriends:1});
+  const invite=repos.membership.invite('h1','p1');
+  repos.membership.acceptInvite('friend',invite.token);
+  assert.throws(()=>repos.membership.configure('friend','p2'),/host_required/);
+  assert.throws(()=>repos.parties.create(makeParty('friendHosted',makeUser('friend'))),/already_in_concert_group/);
+  assert.equal(repos.membership.detail('friend','p1').members.length,2);
+  repos.membership.leave('friend','p1');
+  assert.equal(db.prepare("SELECT status FROM group_memberships WHERE user_id='friend'").get().status,'left');
+});
+test('friend links are single use, expiring and hashed; publication waits for all responses',()=>{
+  repos.membership.configure('h1','p1',{expectedFriends:1});
+  const invite=repos.membership.invite('h1','p1');
+  assert.notEqual(db.prepare('SELECT token_hash FROM group_friend_invites').get().token_hash,invite.token);
+  assert.throws(()=>repos.membership.publish('h1','p1'),/incomplete/);
+  repos.membership.acceptInvite('friend',invite.token);
+  assert.throws(()=>repos.membership.acceptInvite('outsider',invite.token),/used/);
+  repos.membership.saveAnswers('h1','p1',answers);
+  repos.membership.saveAnswers('friend','p1',{about:['quiet'],wants:['supper'],avoid:[]});
+  assert.equal(repos.membership.publish('h1','p1',{connectOpen:true}).published,1);
+  const profile=repos.membership.profile('p1');
+  assert.equal(profile.about.post_supper,0.5);
+  assert.equal(profile.wants.post_supper,1);
+  assert.throws(()=>repos.membership.saveAnswers('outsider','p1',answers),/member_required/);
+});
+test('custom terms keep originals, aliases deduplicate and unknown terms never become hard constraints',()=>{
+  const parsed=validateAnswers({about:['supper','late-night makan','Rare custom interest'],wants:['supper'],avoid:[]});
+  assert.equal(parsed.about.length,2);
+  assert.equal(parsed.about[0].key,'post_supper');
+  assert.equal(parsed.about[1].recognized,false);
+  const result=compareProfiles(aggregateAnswers([parsed]),aggregateAnswers([parsed]));
+  assert.equal(result.score,1);
+  assert.ok(result.reasons.some(r=>r.concept==='post_supper'));
+  assert.throws(()=>validateAnswers({about:[{text:'x',conceptId:'invented'}]}),/unknown_concept/);
+});
