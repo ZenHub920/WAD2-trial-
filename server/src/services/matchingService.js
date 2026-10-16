@@ -493,7 +493,8 @@ run(concertId, { trace = true, batchKey } = {}) {
 function loadInstance(repos, concertId) {
   repos.proposals.expire();
 
-  const parties = repos.parties.openForConcert(concertId);
+  // Member-managed groups use explicit seeker choice and host approval only.
+  const parties = repos.parties.openForConcert(concertId).filter(p=>!repos.membership.settings(p.id));
 
   const availableParties = parties.map(party => ({
 

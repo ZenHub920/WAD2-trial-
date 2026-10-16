@@ -1,5 +1,7 @@
 # Encore group discovery and connections — implementation report
 
+> Historical report for the initial implementation. The revised member-led membership, host-approved admission, notifications, feedback and meetup design is documented in [BACKEND_COMMUNITY_FEATURES.md](BACKEND_COMMUNITY_FEATURES.md). That document takes precedence where behavior differs, including the one-active-group rule.
+
 Date: 16 October 2026 (Singapore).
 
 ## Repository and audit

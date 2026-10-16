@@ -11,7 +11,11 @@ export function registerGroupDiscoveryRoutes(router, { repos, requireUser }) {
     const q=typeof req.query.q==='string'?req.query.q.trim().toLowerCase():'';
     const filtered=groups.filter(g=>(!q||[g.hostName,g.artist,g.notes,...(g.reasons??[]).map(r=>r.label)].join(' ').toLowerCase().includes(q))
       &&(!req.query.section||g.section===req.query.section)&&(!req.query.arrival||g.arrivalPlan===req.query.arrival)
-      &&(!req.query.spendBand||g.spendBand===Number(req.query.spendBand))&&(!req.query.minCapacity||g.remainingCapacity>=Number(req.query.minCapacity)));
+      &&(!req.query.spendBand||g.spendBand===Number(req.query.spendBand))&&(!req.query.minCapacity||g.remainingCapacity>=Number(req.query.minCapacity))
+      &&(!req.query.activity||g.plans?.[req.query.activity])&&(!req.query.vibe||g.vibe?.[req.query.vibe]>0)
+      &&(req.query.preferredOnly!=='true'||g.preferred));
+    if(req.query.sort==='capacity')filtered.sort((a,b)=>b.remainingCapacity-a.remainingCapacity||a.id.localeCompare(b.id));
+    if(req.query.sort==='host')filtered.sort((a,b)=>a.hostName.localeCompare(b.hostName)||a.id.localeCompare(b.id));
     return res.json({groups:filtered.slice(offset,offset+limit),total:filtered.length,limit,offset});
   };
   router.get('/groups/discover/:concertId', requireUser, concertExists, (req, res,next) => {

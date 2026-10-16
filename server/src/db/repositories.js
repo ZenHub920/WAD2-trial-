@@ -12,7 +12,7 @@
 import { createProposalRepo } from './proposalRepository.js';
 import { createGroupDiscoveryRepo } from './groupDiscoveryRepository.js';
 import { createMembershipRepo } from './membershipRepository.js';
-import { activeReservationSql, reservedPlacesSql } from './capacity.js';
+import { reservedPlacesSql,availableCapacitySql } from './capacity.js';
 import { createRecommendationRepo } from './recommendationRepository.js';
 import { createNotificationRepo } from './notificationRepository.js';
 import { createMeetupRepo } from './meetupRepository.js';
@@ -249,6 +249,8 @@ export function createConcertRepo(db) {
           c.*,
           (SELECT COUNT(*) FROM parties p
             WHERE p.concert_id = c.id AND p.status = 'open'
+              AND ${availableCapacitySql()} > ${reservedPlacesSql('p.id')}
+              AND NOT EXISTS(SELECT 1 FROM group_settings gs WHERE gs.party_id=p.id AND gs.published=0)
               AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.source_party_id = p.id)) AS open_parties,
           /*
            * IMPROVEMENT #6:
@@ -263,15 +265,7 @@ export function createConcertRepo(db) {
           (
             SELECT COALESCE(
               SUM(
-                p.capacity - (
-                  SELECT COUNT(*)
-
-                  FROM match_proposals mp
-
-                  WHERE mp.party_id = p.id
-
-                    AND ${activeReservationSql()}
-                )
+                ${availableCapacitySql()} - ${reservedPlacesSql('p.id')}
               ),
               0
             )
@@ -280,6 +274,7 @@ export function createConcertRepo(db) {
 
             WHERE p.concert_id = c.id
               AND p.status = 'open'
+              AND NOT EXISTS(SELECT 1 FROM group_settings gs WHERE gs.party_id=p.id AND gs.published=0)
 
               AND NOT EXISTS (
                 SELECT 1
@@ -379,7 +374,7 @@ export function createPartyRepo(db) {
 
     findById(id) {
       const row = db.prepare(`
-        SELECT p.*, ${USER_COLUMNS('u', 'host_')}
+        SELECT p.*, ${availableCapacitySql()} AS capacity, ${USER_COLUMNS('u', 'host_')}
         FROM parties p JOIN users u ON u.id = p.host_user_id
         WHERE p.id = ?
       `).get(id);
@@ -403,10 +398,10 @@ openForConcert(concertId) {
 
   const rows = db.prepare(`
     SELECT
-      p.*,
+      p.*, ${availableCapacitySql()} AS capacity,
       ${USER_COLUMNS('u', 'host_')},
 
-      p.capacity - ${reservedPlacesSql('p.id')} AS remaining_capacity
+      ${availableCapacitySql()} - ${reservedPlacesSql('p.id')} AS remaining_capacity
 
     FROM parties p
     JOIN users u ON u.id = p.host_user_id
@@ -420,7 +415,7 @@ openForConcert(concertId) {
         WHERE t.source_party_id = p.id
       )
 
-      AND p.capacity > ${reservedPlacesSql('p.id')}
+      AND ${availableCapacitySql()} > ${reservedPlacesSql('p.id')}
       AND NOT EXISTS(SELECT 1 FROM group_settings gs WHERE gs.party_id=p.id AND gs.published=0)
 
     ORDER BY p.id

@@ -190,6 +190,6 @@ export function createRoutes({
 
 
   registerGroupDiscoveryRoutes(router, { repos, requireUser });
-  registerCommunityRoutes(router, { repos, requireUser });
+  registerCommunityRoutes(router, { repos, requireUser,requireOperator,db });
   return router;
 }

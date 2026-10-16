@@ -1,6 +1,6 @@
 
 import { randomUUID } from 'node:crypto';
-import { reservedPlacesSql } from './capacity.js';
+import { reservedPlacesSql,availableCapacitySql } from './capacity.js';
 
 /**
  * ============================================================
@@ -271,7 +271,7 @@ export function createProposalRepo(db) {
       `);
 
       for (const match of matches) {
-        const party = db.prepare('SELECT capacity, status FROM parties WHERE id = ?').get(match.party_id);
+        const party = db.prepare(`SELECT ${availableCapacitySql()} capacity,p.status FROM parties p WHERE p.id = ?`).get(match.party_id);
         if (!party || party.status === 'cancelled' || reserved.get(match.party_id).n >= party.capacity) {
           throw new Error('party_capacity_exceeded');
         }

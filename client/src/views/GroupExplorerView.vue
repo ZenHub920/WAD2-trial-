@@ -26,7 +26,7 @@ async function load() {
   if (!id) { loading.value = false; return; }
   loading.value = true;
   try {
-    const [listing, preferences, request,custom,requests] = await Promise.all([api.discoverGroups(id,{offset:offset.value,q:filters.query,section:filters.section,arrival:filters.arrival,spendBand:filters.spendBand,minCapacity:filters.minCapacity}), api.groupPreferences(id), api.seekerRequest(id),api.discoveryPreferences(id),api.groupJoinRequests()]);
+    const [listing, preferences, request,custom,requests] = await Promise.all([api.discoverGroups(id,{offset:offset.value,q:filters.query,section:filters.section,arrival:filters.arrival,spendBand:filters.spendBand,minCapacity:filters.minCapacity,activity:filters.activity,vibe:filters.vibe,preferredOnly:filters.preferredOnly,sort:filters.sort}), api.groupPreferences(id), api.seekerRequest(id),api.discoveryPreferences(id),api.groupJoinRequests()]);
     if (alive && current === generation) { groups.value = listing.groups;total.value=listing.total; saved.value = preferences.preferences; seeker.value = request.request;answers.value=custom.preferences;joins.value=requests.requests; }
   } catch (e) { if (alive && current === generation) error.value = e.message; }
   finally { if (alive && current === generation) loading.value = false; }
@@ -38,7 +38,7 @@ watch(concertId, id => {
   load();
 });
 let filterTimer;
-watch(()=>[filters.query,filters.section,filters.arrival,filters.spendBand,filters.minCapacity],()=>{clearTimeout(filterTimer);filterTimer=setTimeout(()=>{offset.value=0;load();},250);});
+watch(()=>Object.values(filters),()=>{clearTimeout(filterTimer);filterTimer=setTimeout(()=>{offset.value=0;load();},250);});
 watch(() => route.query.concertId, id => {
   const next = typeof id === 'string' ? id : '';
   if (next !== concertId.value) concertId.value = next;
@@ -54,6 +54,7 @@ onMounted(async () => {
 onUnmounted(() => { alive = false; generation++;clearTimeout(filterTimer); });
 async function saveAnswers(value){busy.value=true;try{await api.saveDiscoveryPreferences(concertId.value,value);await load();message.value='Preferences saved.';}catch(e){error.value=e.message;}finally{busy.value=false;}}
 async function join(id){busy.value=true;try{await api.requestGroupJoin(id);await load();message.value='Join request sent. The host will review it; no place is reserved yet.';}catch(e){await load();error.value=e.message;}finally{busy.value=false;}}
+async function withdrawJoin(id){busy.value=true;try{await api.respondGroupJoin(id,'withdraw');await load();}catch(e){error.value=e.message;}finally{busy.value=false;}}
 async function enroll(reopen = false) {
   if (busy.value) return;
   busy.value = true; error.value = ''; message.value = '';
@@ -103,9 +104,9 @@ async function preference(id, remove) {
       <section class="card group-panel"><h2>Search groups</h2><GroupFilters :filters="filters" preferences /></section>
       <details v-if="answers" class="card group-panel"><summary>Your discovery preferences</summary><PreferenceEditor :key="concertId" :initial="answers" :busy="busy" @save="saveAnswers"/></details>
       <p>{{ visible.length }} eligible group(s). <span v-if="!seeker">Create a request to see compatibility and save preferences.</span></p>
-      <div class="group-grid"><GroupListingCard v-for="g in visible" :key="g.id" :group="g"><button class="btn btn--primary" :disabled="busy||!canPrefer||joins.some(j=>j.partyId===g.id&&j.status==='pending')" @click="join(g.id)">Request to join</button><details><summary>Optional automatic-placement preference</summary><p>Saving this only guides a separately run Gale–Shapley round.</p><button class="btn btn--ghost" :disabled="busy||(!g.preferred&&!canPrefer)" @click="preference(g.id,g.preferred)">{{g.preferred?'Remove Preference':'Prefer Group'}}</button></details></GroupListingCard></div>
+      <div class="group-grid"><GroupListingCard v-for="g in visible" :key="g.id" :group="g"><button class="btn btn--primary" :disabled="busy||!canPrefer||joins.some(j=>j.partyId===g.id&&j.status==='pending')" @click="join(g.id)">Request to join</button><details v-if="g.automaticPlacementAvailable"><summary>Optional automatic-placement preference</summary><p>Saving this only guides a separately run Gale–Shapley round for legacy listings.</p><button class="btn btn--ghost" :disabled="busy||(!g.preferred&&!canPrefer)" @click="preference(g.id,g.preferred)">{{g.preferred?'Remove Preference':'Prefer Group'}}</button></details></GroupListingCard></div>
       <nav class="group-actions"><button class="btn btn--ghost" :disabled="loading||busy||offset===0" @click="offset=Math.max(0,offset-20);load()">Previous 20</button><span>{{total}} results</span><button class="btn btn--ghost" :disabled="loading||busy||offset+20>=total" @click="offset+=20;load()">Next 20</button></nav>
-      <section v-if="joins.length" class="card group-panel"><h2>Join requests</h2><p v-for="j in joins" :key="j.id">{{j.artist}} · {{j.status}} <RouterLink v-if="j.status==='accepted'" :to="`/groups/${j.partyId}/members`">Your group</RouterLink></p></section>
+      <section v-if="joins.length" class="card group-panel"><h2>Join requests</h2><p v-for="j in joins" :key="j.id">{{j.artist}} · {{j.status}} <button v-if="j.status==='pending'" class="btn btn--ghost" :disabled="busy" @click="withdrawJoin(j.id)">Withdraw request</button><RouterLink v-if="j.status==='accepted'" :to="`/groups/${j.partyId}/members`">Your group</RouterLink></p></section>
       <p v-if="!visible.length" class="group-muted">No eligible groups match these filters. Try another concert or adjust your filters.</p>
       <section class="card group-panel"><h2>Saved preferences</h2><p>You can remove preferences here even when a group fills, closes, or becomes ineligible.</p><p v-if="!saved.length">No saved preferences for this concert.</p><div v-for="p in saved" :key="p.partyId" class="group-actions"><span>{{ p.hostName }} · {{ LABELS.section[p.section] }} · {{ p.status }}</span><button class="btn btn--ghost" :disabled="busy" @click="preference(p.partyId, true)">Remove Preference</button></div></section>
     </template>
