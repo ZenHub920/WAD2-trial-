@@ -20,27 +20,24 @@ onMounted(async () => {
 const steps = [
   {
     n: '01',
-    title: 'Say what your night looks like',
+    title: 'Pick your concert',
     body:
-      'Section, budget, whether you queue at noon or turn up at doors, and what you ' +
-      'want either side of the show. Not a bio — the things that actually decide ' +
-      'whether two people enjoy the same evening.',
+      'Choose the show, your section and your budget. Tell people whether you ' +
+      'like to queue early, sing along or grab supper afterward.',
   },
   {
     n: '02',
-    title: 'We build everyone\'s ranking',
+    title: 'Choose your company',
     body:
-      'You never rank strangers by hand. The system scores every compatible pairing ' +
-      'from both directions at once — because a host putting up a spare ticket and ' +
-      'someone looking for one do not care about the same things.',
+      'Look for a Kaki or browse groups with shared preferences. Send a request ' +
+      'to the group you like; its host decides whether to accept.',
   },
   {
     n: '03',
-    title: 'Matching runs when the round closes',
+    title: 'Make a plan together',
     body:
-      'Not first-come-first-served. Everyone is considered together, and the result ' +
-      'is provably stable: there is no pair of people who would both rather have ' +
-      'been matched with each other.',
+      'Compare availability, suggest a meeting place and agree on the details. ' +
+      'Your group can also invite another group to meet before the show.',
   },
 ];
 </script>
@@ -59,10 +56,8 @@ const steps = [
         </h1>
 
         <p class="lede hero__lede">
-          You wanted the ticket. Your friends did not want the artist. Encore groups
-          concert-goers by how they actually want to spend the night — and does it with
-          an algorithm that will not leave two people wishing they had been paired
-          with each other.
+          Find a Kaki, join a group or meet another group going to the same concert.
+          Compare how you like to spend the night and make plans together.
         </p>
 
         <div class="hero__actions">
@@ -72,19 +67,19 @@ const steps = [
 
         <dl class="hero__stats">
           <div>
-            <dt>Blocking pairs</dt>
-            <dd class="tabular">0</dd>
-            <p>in every matching we publish</p>
+            <dt>Group recommendations</dt>
+            <dd class="tabular">20</dd>
+            <p>per page, for you to choose from</p>
           </div>
           <div>
-            <dt>Ranking</dt>
-            <dd class="tabular">8</dd>
-            <p>signals scored per pairing</p>
+            <dt>Preferences</dt>
+            <dd>Shared</dd>
+            <p>drawn from the whole group</p>
           </div>
           <div>
-            <dt>Guarantee</dt>
-            <dd>Optimal</dd>
-            <p>best stable result for seekers</p>
+            <dt>Joining</dt>
+            <dd>Your choice</dd>
+            <p>with approval from the host</p>
           </div>
         </dl>
       </div>
@@ -94,39 +89,38 @@ const steps = [
     <section class="section">
       <div class="container problem">
         <div class="problem__text prose">
-          <p class="eyebrow">The gap</p>
-          <h2>Ticketing solved supply. It never solved company.</h2>
+          <p class="eyebrow">Going together</p>
+          <h2>Same artist. A different idea of a good night.</h2>
           <p>
-            Resale markets will find you a seat in ninety seconds. Nothing will find you
-            someone to sit in it with. So the fan who wants the pit goes with the friend
-            who wants to sit down, or does not go at all.
+            You might want to queue early and sing every word. Someone else might
+            prefer arriving at doors and listening from the back. Those details
+            help you find people you will enjoy going with.
           </p>
           <p>
-            The forums that try to fill the gap run on speed: whoever replies to the
-            thread first gets the spare ticket. That is not matching, it is a race — and
-            it reliably pairs people who have nothing in common beyond the date.
+            Going on your own? Request a place in a group. Already going with
+            friends? Keep your group and arrange to meet another one.
           </p>
         </div>
 
         <figure class="problem__compare">
-          <figcaption>Two ways to fill a spare ticket</figcaption>
+          <figcaption>Two ways to meet concert-goers</figcaption>
           <div class="compare">
-            <div class="compare__col compare__col--bad">
-              <h3>First reply wins</h3>
+            <div class="compare__col">
+              <h3>Join a group</h3>
               <ul>
-                <li>Fastest responder, not best fit</li>
-                <li>No account of budget or section</li>
-                <li>People keep looking after "matching"</li>
-                <li>Pairs dissolve before the date</li>
+                <li>Browse groups for your concert</li>
+                <li>Compare preferences and open places</li>
+                <li>Choose a group and send a request</li>
+                <li>Join once its host accepts</li>
               </ul>
             </div>
-            <div class="compare__col compare__col--good">
-              <h3>Stable matching</h3>
+            <div class="compare__col">
+              <h3>Connect your group</h3>
               <ul>
-                <li>Everyone considered together</li>
-                <li>Eight compatibility signals, both directions</li>
-                <li>No pair would rather swap</li>
-                <li>Result is provable, not asserted</li>
+                <li>Include everyone's preferences</li>
+                <li>Find another group at the same show</li>
+                <li>Send an invitation from your group</li>
+                <li>Plan together after they accept</li>
               </ul>
             </div>
           </div>
@@ -138,12 +132,13 @@ const steps = [
     <section class="section stability">
       <div class="container">
         <div class="stability__head prose">
-          <p class="eyebrow">What "stable" means</p>
-          <h2>A match is only good if nobody wants out of it.</h2>
+          <p class="eyebrow">Inside automatic matching</p>
+          <h2>Try the matching demo.</h2>
           <p>
-            Two people form a <strong>blocking pair</strong> when they would both rather
-            be with each other than with whoever they were given. One blocking pair is
-            one broken group. Drag the slider and watch one appear.
+            Automatic matching rounds use ranked preferences. A <strong>blocking
+            pair</strong> is a pair who both prefer each other to their assigned
+            matches. Drag the slider to see one. Group requests above are decided
+            by you and the host instead.
           </p>
         </div>
 
@@ -154,8 +149,8 @@ const steps = [
     <!-- --------------------------------------------------------------- Steps -->
     <section class="section">
       <div class="container">
-        <p class="eyebrow">How it runs</p>
-        <h2 class="steps__title">Three things happen between signing up and standing in the room.</h2>
+        <p class="eyebrow">Before the show</p>
+        <h2 class="steps__title">Find company. Sort out the details.</h2>
 
         <ol class="steps">
           <li v-for="step in steps" :key="step.n" class="step">
@@ -172,8 +167,8 @@ const steps = [
       <div class="container">
         <div class="upcoming__head">
           <div>
-            <p class="eyebrow">Open rounds</p>
-            <h2>Matching now</h2>
+            <p class="eyebrow">On the calendar</p>
+            <h2>Find your next show</h2>
           </div>
           <RouterLink to="/concerts" class="btn btn--ghost">See all concerts</RouterLink>
         </div>
@@ -183,8 +178,7 @@ const steps = [
         </div>
 
         <p v-else-if="!concerts.length" class="empty-note">
-          No concerts loaded. Start the API with <code>npm start</code> in
-          <code>server/</code>, then seed it with <code>npm run seed</code>.
+          No concerts are available right now. Check back soon.
         </p>
 
         <div v-else class="upcoming__grid">
@@ -211,12 +205,12 @@ const steps = [
       <div class="container">
         <div class="cta">
           <div class="cta__content">
-            <h2>Watch the algorithm decide.</h2>
+            <h2>Already going with friends?</h2>
             <p>
-              Every round records its proposals step by step. Play one back and see
-              exactly who proposed to whom, who was displaced, and why the result holds.
+              Create your group, add your friends and find another group to meet
+              before the concert.
             </p>
-            <RouterLink to="/concerts" class="btn btn--primary">Open a round</RouterLink>
+            <RouterLink to="/groups/connect" class="btn btn--primary">Set up your group</RouterLink>
           </div>
           <div class="cta__viz" aria-hidden="true">
             <span v-for="n in 28" :key="n" class="cta__bar" :style="{ '--i': n }" />
@@ -385,19 +379,13 @@ const steps = [
 }
 
 .compare__col li::before {
+  content: '—';
+  color: var(--accent-400);
   flex-shrink: 0;
   font-family: var(--font-mono);
   font-size: var(--step--1);
   line-height: 1.45;
 }
-
-.compare__col--bad { border-color: color-mix(in oklab, var(--rose-400) 26%, var(--ink-600)); }
-.compare__col--bad h3 { color: var(--rose-400); }
-.compare__col--bad li::before { content: '×'; color: var(--rose-400); }
-
-.compare__col--good { border-color: color-mix(in oklab, var(--mint-400) 26%, var(--ink-600)); }
-.compare__col--good h3 { color: var(--mint-400); }
-.compare__col--good li::before { content: '✓'; color: var(--mint-400); }
 
 /* ----------------------------------------------------------- Stability ---- */
 

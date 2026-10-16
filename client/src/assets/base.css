@@ -95,6 +95,10 @@ a {
 }
 
 a:hover {
+  color: var(--accent-600);
+}
+
+:where(:root[data-theme='dark']) a:hover {
   color: var(--accent-300);
 }
 
@@ -308,6 +312,10 @@ code, pre, .mono {
 .tag--accent {
   background: color-mix(in oklab, var(--accent-500) 16%, transparent);
   border-color: color-mix(in oklab, var(--accent-500) 32%, transparent);
+  color: var(--accent-400);
+}
+
+:root[data-theme='dark'] .tag--accent {
   color: var(--accent-300);
 }
 
