@@ -8,3 +8,6 @@ export function reservedPlacesSql(partyIdSql) {
   return `((SELECT COUNT(*) FROM match_proposals mp WHERE mp.party_id=${partyIdSql} AND ${activeReservationSql()})
     + (SELECT COUNT(*) FROM group_memberships gm WHERE gm.party_id=${partyIdSql} AND gm.source='join' AND gm.status='active'))`;
 }
+export function availableCapacitySql(partyAlias='p') {
+  return `COALESCE((SELECT gs.stranger_slots FROM group_settings gs WHERE gs.party_id=${partyAlias}.id),${partyAlias}.capacity)`;
+}
