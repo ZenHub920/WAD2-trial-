@@ -51,3 +51,27 @@ test('custom terms keep originals, aliases deduplicate and unknown terms never b
   assert.ok(result.reasons.some(r=>r.concept==='post_supper'));
   assert.throws(()=>validateAnswers({about:[{text:'x',conceptId:'invented'}]}),/unknown_concept/);
 });
+test('recommendations use member answers, preserve opposite intent, and publish only completed groups',()=>{
+ repos.membership.configure('h1','p1',{expectedFriends:0});
+ repos.membership.saveAnswers('h1','p1',answers);
+ repos.recommendations.savePersonal('seeker','c1',answers);
+ assert.ok(!repos.recommendations.individual('seeker','c1').some(g=>g.id==='p1'));
+ repos.membership.publish('h1','p1',{connectOpen:true});
+ const g=repos.recommendations.individual('seeker','c1').find(g=>g.id==='p1');
+ assert.ok(g.reasons.some(r=>r.concept==='post_supper'));
+ const negative=compareProfiles(aggregateAnswers([validateAnswers({about:['singalong'],avoid:['supper']})]),repos.membership.profile('p1'));
+ assert.ok(negative.score<1);
+});
+test('seeker chooses once and receiving host approves atomically without a second seeker response',()=>{
+ repos.membership.configure('h1','p1',{expectedFriends:0});repos.membership.saveAnswers('h1','p1',answers);repos.membership.publish('h1','p1');
+ repos.recommendations.savePersonal('seeker','c1',answers);
+ const request=repos.recommendations.requestJoin('seeker','p1');
+ assert.equal(repos.parties.findById('p1').remaining_capacity,2);
+ assert.throws(()=>repos.recommendations.respond('seeker',request.id,'accept'),/request_not_found/);
+ assert.equal(repos.recommendations.respond('h1',request.id,'accept').status,'accepted');
+ assert.equal(repos.membership.active('seeker','c1').party_id,'p1');
+ assert.equal(repos.parties.findById('p1').remaining_capacity,1);
+ assert.throws(()=>repos.recommendations.respond('h1',request.id,'accept'),/not_pending/);
+ assert.throws(()=>repos.recommendations.requestJoin('seeker','p2'),/already_in_concert_group/);
+ assert.deepEqual(db.pragma('foreign_key_check'),[]);
+});

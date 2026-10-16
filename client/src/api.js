@@ -44,6 +44,20 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  preferenceConcepts: (q='') => request(`/preference-concepts?q=${encodeURIComponent(q)}`),
+  groupMembership: id=>request(`/groups/${encodeURIComponent(id)}/membership`),
+  configureGroup: (id,data)=>request(`/groups/${encodeURIComponent(id)}/settings`,{method:'PUT',body:JSON.stringify(data)}),
+  saveMemberPreferences: (id,data)=>request(`/groups/${encodeURIComponent(id)}/member-preferences`,{method:'PUT',body:JSON.stringify(data)}),
+  publishGroup: (id,data)=>request(`/groups/${encodeURIComponent(id)}/publish`,{method:'POST',body:JSON.stringify(data)}),
+  friendInvite: id=>request(`/groups/${encodeURIComponent(id)}/friend-invites`,{method:'POST'}),
+  acceptFriendInvite: token=>request(`/group-friend-invites/${encodeURIComponent(token)}/accept`,{method:'POST'}),
+  leaveGroup: id=>request(`/groups/${encodeURIComponent(id)}/leave`,{method:'POST'}),
+  cancelGroup: id=>request(`/groups/${encodeURIComponent(id)}/cancel`,{method:'POST'}),
+  saveDiscoveryPreferences: (id,data)=>request(`/me/discovery-preferences/${encodeURIComponent(id)}`,{method:'PUT',body:JSON.stringify(data)}),
+  discoveryPreferences: id=>request(`/me/discovery-preferences/${encodeURIComponent(id)}`),
+  requestGroupJoin: id=>request(`/groups/${encodeURIComponent(id)}/join-requests`,{method:'POST'}),
+  groupJoinRequests: ()=>request('/me/group-join-requests'),
+  respondGroupJoin: (id,action)=>request(`/group-join-requests/${encodeURIComponent(id)}/respond`,{method:'POST',body:JSON.stringify({action})}),
   login: (data) => request('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   register: (data) => request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   me: () => request('/auth/me'),
@@ -175,7 +189,7 @@ export const api = {
     method: 'POST', headers: { 'Idempotency-Key': batchKey },
   }),
 
-  discoverGroups: (id) => request(`/groups/discover/${encodeURIComponent(id)}`),
+  discoverGroups: (id,params={}) => request(`/groups/discover/${encodeURIComponent(id)}?${new URLSearchParams(params)}`),
   seekerRequest: (id) => request(`/me/seeker-request/${encodeURIComponent(id)}`),
   reopenSeekerRequest: (id) => request(`/me/seeker-request/${encodeURIComponent(id)}/reopen`, { method: 'POST' }),
   groupPreferences: (id) => request(`/me/group-preferences/${encodeURIComponent(id)}`),
