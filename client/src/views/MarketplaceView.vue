@@ -356,8 +356,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
             </div>
 
             <div class="panel__foot">
-              <button type="button" class="text-button" @click="resetFilters">Reset everything</button>
-              <button type="button" class="btn btn--ghost panel__done" @click="panelOpen = false">Minimise</button>
+              <!-- No "minimise" button: the Filters toggle above and Escape both
+                   close the drawer, so a third control would only repeat them. -->
+              <button type="button" class="text-button" @click="resetFilters">Reset</button>
             </div>
           </div>
         </div>
@@ -719,12 +720,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 .panel__foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-4);
   margin-top: var(--space-4);
 }
 
-.panel__done { padding: var(--space-2) var(--space-5); }
 .text-button { color: var(--text-300); font-size: var(--step--1); }
 .text-button:hover { color: var(--text-100); }
 
@@ -852,7 +851,5 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 @media (max-width: 520px) {
   .concert-grid,
   .ticket-grid { grid-template-columns: 1fr; }
-  .panel__foot { flex-direction: column-reverse; align-items: stretch; }
-  .panel__done { width: 100%; }
 }
 </style>
