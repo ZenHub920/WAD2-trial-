@@ -18,21 +18,26 @@ import { createParticipationController } from '../controllers/participationContr
 import { createOrderController } from '../controllers/orderController.js';
 import { createChatController } from '../controllers/chatController.js';
 import { createAdminController } from '../controllers/adminController.js';
+import { createAvatarController } from '../controllers/avatarController.js';
+import { openStream } from '../services/realtime.js';
 
 export function createRoutes({
   db,
   repos,
   matching,
   sessions,
-  images
+  images,
+  avatars = null,
+  realtime = null,
 })  {
   const router = Router();
   const concerts = createConcertController(repos);
   const matches = createMatchController({ repos, matching });
-  const users = createUserController(repos, sessions);
+  const users = createUserController(repos, sessions, avatars);
   const tickets = createTicketController(repos, images);
   const kaki = createKakiController(repos);
-  const kakiChat = createKakiChatController(repos);
+  const kakiChat = createKakiChatController(repos, realtime);
+  const avatar = avatars ? createAvatarController(repos, avatars) : null;
   const profile = createProfileController(repos);
   const participation = createParticipationController(repos);
   const orders = createOrderController(repos);
@@ -92,6 +97,23 @@ export function createRoutes({
   // Only reachable between two people who liked each other for the same
   // concert, and only while neither has blocked the other. Every handler
   // re-checks; holding a conversation id grants nothing on its own.
+  /**
+   * Live updates, over Server-Sent Events.
+   *
+   * Events are addressed to the authenticated user by the server, so there is
+   * nothing to subscribe to and no way to listen in on a thread you are not
+   * part of. Registered before the other chat routes only for readability.
+   */
+  if (realtime) {
+    router.get('/kaki/stream', requireUser, (req, res) => {
+      const close = openStream(realtime, req, res, req.user.id);
+      // Fires on tab close, navigation and network loss alike; without it the
+      // heartbeat interval would keep a dead connection alive forever.
+      req.on('close', close);
+    });
+  }
+
+  router.get('/kaki/unread', requireUser, kakiChat.unread);
   router.get('/kaki/conversations', requireUser, kakiChat.list);
   router.get('/kaki/chat-backgrounds', requireUser, kakiChat.backgrounds);
   // Opening a thread is namespaced under the concert rather than sitting at
@@ -104,6 +126,14 @@ export function createRoutes({
   router.patch('/kaki/conversations/:id/messages/:messageId', requireUser, kakiChat.edit);
   router.delete('/kaki/conversations/:id/messages/:messageId', requireUser, kakiChat.remove);
   router.put('/kaki/conversations/:id/background', requireUser, kakiChat.setBackground);
+  router.post('/kaki/conversations/:id/read', requireUser, kakiChat.markRead);
+
+  // Profile picture. Optional throughout — no picture is a valid state, not a
+  // setup step to be completed.
+  if (avatar) {
+    router.put('/me/avatar', requireUser, avatar.set);
+    router.delete('/me/avatar', requireUser, avatar.clear);
+  }
 
   // Safety. Blocking is mutual in effect — it closes the thread for both
   // sides — but only the blocker can lift it.

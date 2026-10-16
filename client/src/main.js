@@ -1,5 +1,7 @@
-import { createApp } from 'vue';
+import { createApp, watch } from 'vue';
 import { createRouter, createWebHistory } from 'vue-router';
+
+import { currentUser, sessionReady } from './auth.js';
 
 import App from './App.vue';
 import './assets/base.css';
@@ -73,14 +75,14 @@ const router = createRouter({
       path: '/kaki/chat',
       name: 'kaki-chat',
       component: KakiChatListView,
-      meta: { title: 'Messages' },
+      meta: { title: 'Messages', requiresAuth: true },
     },
     {
       path: '/kaki/chat/:id',
       name: 'kaki-chat-thread',
       component: KakiChatView,
       props: true,
-      meta: { title: 'Messages' },
+      meta: { title: 'Messages', requiresAuth: true },
     },
 
     { path: '/chat', name: 'chat', component: ChatView, meta: { title: 'Chat' } },
@@ -93,6 +95,32 @@ const router = createRouter({
     if (to.hash) return { el: to.hash, behavior: 'smooth', top: 80 };
     return { top: 0 };
   },
+});
+
+/**
+ * Chat is for signed-in accounts only.
+ *
+ * The server already refuses these endpoints without a session; this exists so
+ * a signed-out visitor lands on the sign-in page instead of an empty screen
+ * full of 401s, and returns to where they were headed afterwards.
+ *
+ * It waits for `sessionReady` because the session is restored from a cookie
+ * asynchronously — guarding before that resolves would bounce a signed-in
+ * user to the login page on a cold page load.
+ */
+router.beforeEach(async (to) => {
+  if (!to.meta?.requiresAuth) return true;
+  if (!sessionReady.value) {
+    await new Promise((resolve) => {
+      const stop = watch(sessionReady, (ready) => {
+        if (!ready) return;
+        stop();
+        resolve();
+      }, { immediate: true });
+    });
+  }
+  if (currentUser.value) return true;
+  return { path: '/login', query: { redirect: to.fullPath } };
 });
 
 router.afterEach((to) => {

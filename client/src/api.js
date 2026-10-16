@@ -96,6 +96,13 @@ export const api = {
    * match was withdrawn or somebody blocked — the UI treats both the same.
    */
   kakiConversations: () => request('/kaki/conversations'),
+  kakiUnread: () => request('/kaki/unread'),
+  markKakiRead: (id) =>
+    request(`/kaki/conversations/${encodeURIComponent(id)}/read`, { method: 'POST' }),
+
+  setAvatar: (image) => request('/me/avatar', { method: 'PUT', body: JSON.stringify({ image }) }),
+  clearAvatar: () => request('/me/avatar', { method: 'DELETE' }),
+
   kakiChatBackgrounds: () => request('/kaki/chat-backgrounds'),
   openKakiConversation: (concertId, userId) =>
     request(`/kaki/concerts/${encodeURIComponent(concertId)}/conversations/${encodeURIComponent(userId)}`, {

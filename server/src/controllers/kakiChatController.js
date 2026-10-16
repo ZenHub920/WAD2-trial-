@@ -30,8 +30,13 @@ const BACKGROUNDS = ['default', 'dusk', 'neon', 'paper', 'forest', 'mono'];
 
 const REPORT_CATEGORIES = ['harassment', 'misleading_profile', 'spam', 'other'];
 
-export function createKakiChatController(repos) {
+export function createKakiChatController(repos, realtime = null) {
   const chat = repos.kakiChat;
+
+  /** Push an event to both participants, when a realtime bus is wired up. */
+  const push = (conversation, type, payload) => {
+    realtime?.emitTo([conversation.user_a_id, conversation.user_b_id], type, payload);
+  };
 
   /** The other participant's id, or null if the viewer is not in this thread. */
   const counterpartOf = (conversation, userId) => {
@@ -97,13 +102,52 @@ export function createKakiChatController(repos) {
       });
     },
 
+    /**
+     * Opening a thread marks it read. The other side is told immediately so
+     * their ticks turn double without waiting for a poll.
+     */
     detail(req, res) {
       const ctx = open(req, res);
       if (!ctx) return undefined;
+
+      const before = chat.lastReadRowid(ctx.conversation.id, req.user.id);
+      const after = chat.markReadToLatest(ctx.conversation.id, req.user.id);
+      if (after > before) {
+        push(ctx.conversation, 'read', {
+          conversationId: ctx.conversation.id,
+          readerId: req.user.id,
+          lastReadSeq: after,
+        });
+      }
+
+      const theirLastRead = chat.lastReadRowid(ctx.conversation.id, ctx.other);
       return res.json({
         conversation: shapeConversation(ctx.conversation, req.user.id, chat),
-        messages: chat.messages(ctx.conversation.id).map(shapeMessage),
+        messages: chat.messages(ctx.conversation.id)
+          .map((m) => shapeMessage(m, req.user.id, theirLastRead)),
       });
+    },
+
+    /** Explicit read acknowledgement, for when the tab regains focus. */
+    markRead(req, res) {
+      const ctx = open(req, res);
+      if (!ctx) return undefined;
+
+      const before = chat.lastReadRowid(ctx.conversation.id, req.user.id);
+      const after = chat.markReadToLatest(ctx.conversation.id, req.user.id);
+      if (after > before) {
+        push(ctx.conversation, 'read', {
+          conversationId: ctx.conversation.id,
+          readerId: req.user.id,
+          lastReadSeq: after,
+        });
+      }
+      return res.json({ lastReadSeq: after, unreadTotal: chat.unreadTotal(req.user.id) });
+    },
+
+    /** Badge count for the navbar. Cheap enough to call on every page load. */
+    unread(req, res) {
+      res.json({ total: chat.unreadTotal(req.user.id) });
     },
 
     send(req, res) {
@@ -122,7 +166,24 @@ export function createKakiChatController(repos) {
       }
 
       const message = chat.addMessage(ctx.conversation.id, req.user.id, body, replyTo);
-      return res.status(201).json({ message: shapeMessage(message) });
+
+      // The sender has by definition read their own message, so advance their
+      // marker too — otherwise sending would leave the thread looking unread.
+      chat.markReadToLatest(ctx.conversation.id, req.user.id);
+
+      const theirLastRead = chat.lastReadRowid(ctx.conversation.id, ctx.other);
+      push(ctx.conversation, 'message', {
+        conversationId: ctx.conversation.id,
+        message: shapeMessage(message, req.user.id, theirLastRead),
+        // Each recipient needs their own unread total, so the raw counts go
+        // out and the client picks the one addressed to it.
+        unreadFor: {
+          [ctx.other]: chat.unreadTotal(ctx.other),
+          [req.user.id]: chat.unreadTotal(req.user.id),
+        },
+      });
+
+      return res.status(201).json({ message: shapeMessage(message, req.user.id, theirLastRead) });
     },
 
     /** Edit own message only. Enforced in SQL as well as here. */
@@ -146,9 +207,15 @@ export function createKakiChatController(repos) {
       }
 
       chat.editMessage(req.params.messageId, req.user.id, body);
-      const updated = chat.messages(ctx.conversation.id)
-        .find((m) => m.id === req.params.messageId);
-      return res.json({ message: shapeMessage(updated) });
+      const theirLastRead = chat.lastReadRowid(ctx.conversation.id, ctx.other);
+      const updated = shapeMessage(
+        chat.messages(ctx.conversation.id).find((m) => m.id === req.params.messageId),
+        req.user.id, theirLastRead,
+      );
+      push(ctx.conversation, 'message-updated', {
+        conversationId: ctx.conversation.id, message: updated,
+      });
+      return res.json({ message: updated });
     },
 
     /**
@@ -169,9 +236,15 @@ export function createKakiChatController(repos) {
       }
 
       chat.deleteMessage(req.params.messageId, req.user.id);
-      const updated = chat.messages(ctx.conversation.id)
-        .find((m) => m.id === req.params.messageId);
-      return res.json({ message: shapeMessage(updated) });
+      const theirLastRead = chat.lastReadRowid(ctx.conversation.id, ctx.other);
+      const updated = shapeMessage(
+        chat.messages(ctx.conversation.id).find((m) => m.id === req.params.messageId),
+        req.user.id, theirLastRead,
+      );
+      push(ctx.conversation, 'message-updated', {
+        conversationId: ctx.conversation.id, message: updated,
+      });
+      return res.json({ message: updated });
     },
 
     /** Chat background. Personal to the caller; the other side is unaffected. */
@@ -292,6 +365,7 @@ function shapeConversation(c, viewerId, chat) {
     other: {
       id: viewerIsA ? c.user_b_id : c.user_a_id,
       displayName: viewerIsA ? c.user_b_name : c.user_a_name,
+      avatarUrl: avatarUrl(viewerIsA ? c.user_b_avatar : c.user_a_avatar),
     },
     background: chat.background(c.id, viewerId),
     lastMessage: c.last_at
@@ -299,28 +373,46 @@ function shapeConversation(c, viewerId, chat) {
           body: c.last_deleted_at ? null : c.last_body,
           deleted: Boolean(c.last_deleted_at),
           createdAt: c.last_at,
+          mine: c.last_sender_id === viewerId,
         }
       : null,
+    // Present on the list query; absent on a single findById, where the
+    // caller is opening the thread and is about to mark it read anyway.
+    unread: c.unread_count ?? 0,
     messageCount: c.message_count ?? 0,
     createdAt: c.created_at,
   };
+}
+
+/** A stored filename becomes a served path; no picture stays null. */
+export function avatarUrl(path) {
+  return path ? `/api/avatars/${path}` : null;
 }
 
 /**
  * A deleted message keeps its position and authorship so the thread still
  * reads coherently, but carries no text — the tombstone is all the client gets.
  */
-function shapeMessage(m) {
+function shapeMessage(m, viewerId = null, otherLastReadSeq = 0) {
   if (!m) return null;
   const deleted = Boolean(m.deleted_at);
+  const mine = viewerId !== null && m.sender_user_id === viewerId;
   return {
     id: m.id,
+    seq: m.seq,
     senderId: m.sender_user_id,
     body: deleted ? null : m.body,
     deleted,
     edited: Boolean(m.edited_at) && !deleted,
     createdAt: m.created_at,
     editedAt: deleted ? null : m.edited_at,
+    /**
+     * Tick state, and only ever on your OWN messages — showing a read receipt
+     * on someone else's message would be telling them what you have read.
+     *   'sent' → one tick, it is stored
+     *   'read' → two ticks, the other person's read marker has passed it
+     */
+    status: mine ? (m.seq <= otherLastReadSeq ? 'read' : 'sent') : null,
     replyTo: m.reply_to_message_id
       ? {
           id: m.reply_to_message_id,

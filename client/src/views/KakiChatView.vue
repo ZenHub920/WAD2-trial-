@@ -21,6 +21,8 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api.js';
+import { onChatEvent, connectionState, refreshUnread } from '../chatLive.js';
+import UserAvatar from '../components/UserAvatar.vue';
 
 const props = defineProps({ id: { type: String, required: true } });
 const router = useRouter();
@@ -45,7 +47,9 @@ const notice = ref('');
 
 const scroller = ref(null);
 const composer = ref(null);
-let timer = null;
+let stopListening = null;
+/** Fallback refresh, used only when the live stream is not connected. */
+let fallbackTimer = null;
 
 const me = computed(() => conversation.value?.me ?? null);
 
@@ -129,7 +133,10 @@ async function send() {
   replyingTo.value = null;
   try {
     const { message } = await api.sendKakiMessage(props.id, body, replyTo);
-    messages.value.push(message);
+    // The live stream delivers this same message to us as well, and it can
+    // arrive before this response does. Both paths must check, or the sender
+    // sees their own message twice.
+    if (!messages.value.some((m) => m.id === message.id)) messages.value.push(message);
     await scrollToEnd();
   } catch (err) {
     if (err.status === 403) closed.value = true;
@@ -221,24 +228,97 @@ async function scrollToEnd() {
   if (el) el.scrollTop = el.scrollHeight;
 }
 
-function onVisibility() {
-  if (document.visibilityState === 'visible') load({ quiet: true });
+/** Coming back to the tab marks the thread read and resyncs. */
+async function onVisibility() {
+  if (document.visibilityState !== 'visible' || closed.value) return;
+  await load({ quiet: true });
+  acknowledgeRead();
+}
+
+/** Tell the server we have seen everything, so their ticks turn double. */
+async function acknowledgeRead() {
+  if (closed.value) return;
+  try {
+    await api.markKakiRead(props.id);
+    await refreshUnread();
+  } catch { /* a missed acknowledgement corrects itself on the next open */ }
+}
+
+/**
+ * Live events. Only three matter here, and each is applied in place rather
+ * than triggering a refetch — a full reload on every keystroke-speed message
+ * would fight the scroll position and flicker the thread.
+ */
+function handleEvent(type, data) {
+  if (data.conversationId && data.conversationId !== props.id) return;
+
+  if (type === 'ready') {
+    // Reconnected: the stream does not replay what was missed, so resync.
+    load({ quiet: true });
+    return;
+  }
+
+  if (type === 'message') {
+    if (!messages.value.some((m) => m.id === data.message.id)) {
+      messages.value.push(data.message);
+      const atBottom = isNearBottom();
+      if (atBottom) scrollToEnd();
+      // Seeing a message while the tab is focused counts as reading it.
+      if (document.visibilityState === 'visible' && data.message.senderId !== myId.value) {
+        acknowledgeRead();
+      }
+    }
+    return;
+  }
+
+  if (type === 'message-updated') {
+    const index = messages.value.findIndex((m) => m.id === data.message.id);
+    if (index !== -1) messages.value[index] = data.message;
+    return;
+  }
+
+  if (type === 'read' && data.readerId !== myId.value) {
+    // They read up to `lastReadSeq`: promote our own ticks to double.
+    for (const m of messages.value) {
+      if (m.senderId === myId.value && m.seq <= data.lastReadSeq) m.status = 'read';
+    }
+  }
+}
+
+/** Only auto-scroll when already at the bottom, so reading history is not yanked. */
+function isNearBottom() {
+  const el = scroller.value;
+  if (!el) return true;
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 120;
 }
 
 onMounted(async () => {
   await load();
   await scrollToEnd();
+  acknowledgeRead();
   try {
     backgrounds.value = (await api.kakiChatBackgrounds()).backgrounds;
   } catch { /* the picker falls back to the default-only list */ }
-  timer = window.setInterval(() => {
-    if (document.visibilityState === 'visible' && !closed.value) load({ quiet: true });
-  }, 4000);
+
+  stopListening = onChatEvent(handleEvent);
+
+  // Safety net for the case where SSE cannot connect at all (a proxy that
+  // buffers, a corporate network). Idle while the stream is live, so the
+  // normal path costs nothing.
+  fallbackTimer = window.setInterval(() => {
+    if (connectionState.value !== 'live'
+      && document.visibilityState === 'visible'
+      && !closed.value) {
+      load({ quiet: true });
+    }
+  }, 8000);
+
   document.addEventListener('visibilitychange', onVisibility);
 });
 
 onUnmounted(() => {
-  if (timer) window.clearInterval(timer);
+  stopListening?.();
+  if (fallbackTimer) window.clearInterval(fallbackTimer);
   document.removeEventListener('visibilitychange', onVisibility);
 });
 
@@ -252,9 +332,11 @@ watch(() => props.id, () => load());
       <RouterLink to="/kaki/chat" class="bar__back" aria-label="Back to conversations">←</RouterLink>
 
       <div v-if="conversation" class="bar__who">
-        <span class="avatar" aria-hidden="true">
-          {{ conversation.other.displayName.slice(0, 1).toUpperCase() }}
-        </span>
+        <UserAvatar
+          :src="conversation.other.avatarUrl"
+          :name="conversation.other.displayName"
+          :size="36"
+        />
         <div>
           <p class="bar__name">{{ conversation.other.displayName }}</p>
           <p class="bar__sub">{{ conversation.concert.artist }}</p>
@@ -362,6 +444,20 @@ watch(() => props.id, () => load());
             <p class="meta">
               <span>{{ clockTime(row.createdAt) }}</span>
               <span v-if="row.edited" class="meta__edited">edited</span>
+              <!-- Ticks appear only on your own messages. One = stored,
+                   two = the other person has opened the thread past it. -->
+              <span
+                v-if="row.status && !row.deleted"
+                class="ticks"
+                :class="{ 'ticks--read': row.status === 'read' }"
+                :title="row.status === 'read' ? 'Read' : 'Sent'"
+              >
+                <svg viewBox="0 0 20 12" aria-hidden="true">
+                  <path d="M1 6.5 4.2 10 10.5 2" />
+                  <path v-if="row.status === 'read'" d="M8 6.5 11.2 10 17.5 2" />
+                </svg>
+                <span class="sr-only">{{ row.status === 'read' ? 'Read' : 'Sent' }}</span>
+              </span>
             </p>
           </div>
 
@@ -610,6 +706,28 @@ watch(() => props.id, () => load());
 }
 
 .meta__edited { font-style: italic; }
+
+/* Ticks sit in the bubble's own colour until they turn read, when they take
+   a distinct accent — the colour change is what the eye catches, not the
+   second stroke, which is small at this size. */
+.ticks { display: inline-flex; align-items: center; }
+
+.ticks svg {
+  width: 1.05rem;
+  height: 0.75rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ticks--read {
+  color: var(--cyan-400);
+  opacity: 1;
+}
+
+.bubble--mine .ticks--read { color: #7ff0ff; }
 
 .row__more {
   opacity: 0;

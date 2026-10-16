@@ -2,6 +2,8 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { currentUser, signOut } from '../auth.js';
+import { unreadTotal } from '../chatLive.js';
+import UserAvatar from './UserAvatar.vue';
 
 defineProps({ theme: { type: String, default: 'dark' } });
 defineEmits(['toggle-theme']);
@@ -60,10 +62,27 @@ async function logOut() {
           <RouterLink to="/marketplace" @click="menuOpen = false">Ticket Market</RouterLink>
           <RouterLink to="/concerts" @click="menuOpen = false">Concerts</RouterLink>
           <RouterLink to="/kaki" @click="menuOpen = false">KakiFinder</RouterLink>
-          <RouterLink to="/chat" @click="menuOpen = false">Chat</RouterLink>
-          <RouterLink to="/profile" @click="menuOpen = false">Profile</RouterLink>
+          <!-- Kaki messages. The dot is the only thing competing for attention
+               in the navbar, so it is reserved for genuinely new activity and
+               carries a count rather than a bare mark. -->
+          <RouterLink to="/kaki/chat" class="nav__chats" @click="menuOpen = false">
+            Chats
+            <span v-if="unreadTotal > 0" class="nav__dot" :aria-label="`${unreadTotal} unread`">
+              {{ unreadTotal > 9 ? '9+' : unreadTotal }}
+            </span>
+          </RouterLink>
+          <RouterLink to="/chat" @click="menuOpen = false">Sellers</RouterLink>
           <RouterLink v-if="currentUser?.isOperator" to="/operator/verifications" @click="menuOpen = false">Verify tickets</RouterLink>
           <RouterLink to="/my-listings" class="my-listings-btn" @click="menuOpen = false">My listings</RouterLink>
+          <!-- The profile picture doubles as the link to Profile: it is the
+               clearest signal of who is signed in. -->
+          <RouterLink to="/profile" class="nav__me" aria-label="Your profile" @click="menuOpen = false">
+            <UserAvatar
+              :src="currentUser?.avatarUrl"
+              :name="currentUser?.displayName"
+              :size="32"
+            />
+          </RouterLink>
         </template>
         <template v-else>
           <RouterLink to="/marketplace" @click="menuOpen = false">Ticket Market</RouterLink>
@@ -326,5 +345,47 @@ async function logOut() {
   .theme-btn {
     align-self: flex-start;
   }
+}
+</style>
+
+<style scoped>
+/* ---- Chats link and unread badge --------------------------------------- */
+
+.nav__chats {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* A count, not a bare dot: "you have messages" is less useful than how many,
+   and the number is what stops it reading as decoration. */
+.nav__dot {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.3em;
+  border-radius: var(--radius-pill);
+  background: var(--accent-500);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.nav__me {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 50%;
+  transition: transform var(--dur-fast) var(--ease-spring);
+}
+
+.nav__me:hover { transform: scale(1.08); }
+
+.nav__me:focus-visible {
+  outline: 2px solid var(--accent-500);
+  outline-offset: 2px;
 }
 </style>

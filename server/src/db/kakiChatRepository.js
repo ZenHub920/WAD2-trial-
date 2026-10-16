@@ -67,6 +67,8 @@ export function createKakiChatRepo(db) {
     SELECT c.*,
            ua.display_name AS user_a_name,
            ub.display_name AS user_b_name,
+           ua.avatar_path AS user_a_avatar,
+           ub.avatar_path AS user_b_avatar,
            ct.artist AS concert_artist,
            ct.event_date AS concert_date
     FROM conversations c
@@ -85,13 +87,22 @@ export function createKakiChatRepo(db) {
     SELECT c.*,
            ua.display_name AS user_a_name,
            ub.display_name AS user_b_name,
+           ua.avatar_path AS user_a_avatar,
+           ub.avatar_path AS user_b_avatar,
            ct.artist AS concert_artist,
            ct.event_date AS concert_date,
            last.body AS last_body,
            last.created_at AS last_at,
            last.deleted_at AS last_deleted_at,
+           last.sender_user_id AS last_sender_id,
            (SELECT COUNT(*) FROM messages m
-            WHERE m.conversation_id = c.id AND m.deleted_at IS NULL) AS message_count
+            WHERE m.conversation_id = c.id AND m.deleted_at IS NULL) AS message_count,
+           (SELECT COUNT(*) FROM messages m
+            WHERE m.conversation_id = c.id
+              AND m.sender_user_id <> @me
+              AND m.rowid > COALESCE((SELECT last_read_rowid FROM conversation_reads
+                                      WHERE conversation_id = c.id AND user_id = @me), 0)
+           ) AS unread_count
     FROM conversations c
     JOIN users ua ON ua.id = c.user_a_id
     JOIN users ub ON ub.id = c.user_b_id
@@ -121,6 +132,7 @@ export function createKakiChatRepo(db) {
   const listMessages = db.prepare(`
     SELECT m.id, m.conversation_id, m.sender_user_id, m.created_at,
            m.edited_at, m.deleted_at, m.reply_to_message_id,
+           m.rowid AS seq,
            CASE WHEN m.deleted_at IS NULL THEN m.body ELSE NULL END AS body,
            r.sender_user_id AS reply_sender_id,
            CASE WHEN r.deleted_at IS NULL THEN r.body ELSE NULL END AS reply_body,
@@ -182,6 +194,58 @@ export function createKakiChatRepo(db) {
     WHERE b.blocker_user_id = ? ORDER BY b.created_at DESC
   `);
 
+  // ---- read state --------------------------------------------------------
+
+  const readRow = db.prepare(
+    'SELECT last_read_rowid FROM conversation_reads WHERE conversation_id = ? AND user_id = ?',
+  );
+
+  /**
+   * Advance the read marker. GREATEST-style guard via `MAX`: a late-arriving
+   * request from an older tab must never pull the marker backwards and
+   * resurrect messages as unread.
+   */
+  const markRead = db.prepare(`
+    INSERT INTO conversation_reads (conversation_id, user_id, last_read_rowid, updated_at)
+    VALUES (@conversation, @user, @rowid, datetime('now'))
+    ON CONFLICT (conversation_id, user_id)
+    DO UPDATE SET last_read_rowid = MAX(last_read_rowid, excluded.last_read_rowid),
+                  updated_at = datetime('now')
+  `);
+
+  const latestRowid = db.prepare(
+    'SELECT COALESCE(MAX(rowid), 0) AS seq FROM messages WHERE conversation_id = ?',
+  );
+
+  /** Messages the viewer has not seen. Their own never count as unread. */
+  const unreadCount = db.prepare(`
+    SELECT COUNT(*) AS n FROM messages m
+    WHERE m.conversation_id = @conversation
+      AND m.sender_user_id <> @user
+      AND m.rowid > COALESCE(
+        (SELECT last_read_rowid FROM conversation_reads
+         WHERE conversation_id = @conversation AND user_id = @user), 0)
+  `);
+
+  /** Unread across every thread the viewer can still see — drives the nav dot. */
+  const unreadTotal = db.prepare(`
+    SELECT COUNT(*) AS n
+    FROM messages m
+    JOIN conversations c ON c.id = m.conversation_id
+    WHERE (c.user_a_id = @user OR c.user_b_id = @user)
+      AND m.sender_user_id <> @user
+      AND m.rowid > COALESCE(
+        (SELECT last_read_rowid FROM conversation_reads
+         WHERE conversation_id = c.id AND user_id = @user), 0)
+      AND NOT EXISTS (
+        SELECT 1 FROM blocks b
+        WHERE (b.blocker_user_id = @user
+               AND b.blocked_user_id = CASE WHEN c.user_a_id = @user THEN c.user_b_id ELSE c.user_a_id END)
+           OR (b.blocked_user_id = @user
+               AND b.blocker_user_id = CASE WHEN c.user_a_id = @user THEN c.user_b_id ELSE c.user_a_id END)
+      )
+  `);
+
   const insertReport = db.prepare(`
     INSERT INTO reports (id, reporter_user_id, reported_user_id, reason_category,
                          details, conversation_id, message_id)
@@ -241,6 +305,23 @@ export function createKakiChatRepo(db) {
     deleteMessage(id, senderId) {
       return softDelete.run({ id, sender: senderId }).changes > 0;
     },
+
+    // ---- read state ------------------------------------------------------
+
+    lastReadRowid: (conversationId, userId) =>
+      readRow.get(conversationId, userId)?.last_read_rowid ?? 0,
+
+    /** Mark everything currently in the thread as read by this user. */
+    markReadToLatest(conversationId, userId) {
+      const seq = latestRowid.get(conversationId).seq;
+      markRead.run({ conversation: conversationId, user: userId, rowid: seq });
+      return seq;
+    },
+
+    unread: (conversationId, userId) =>
+      unreadCount.get({ conversation: conversationId, user: userId }).n,
+
+    unreadTotal: (userId) => unreadTotal.get({ user: userId }).n,
 
     background: (conversationId, userId) =>
       readSettings.get(conversationId, userId)?.background ?? 'default',
