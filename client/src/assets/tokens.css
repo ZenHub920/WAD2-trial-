@@ -5,8 +5,8 @@
  * hard-code a colour, a radius or a spacing step, which is what keeps the interface
  * reading as one system rather than a pile of screens.
  *
- * The palette comes from the Concert Kaki hi-fi prototype: a near-white lavender
- * room, deep indigo ink, and a purple accent that carries every primary action.
+ * The palette keeps the Concert Kaki prototype's lavender and indigo, with
+ * slightly deeper surfaces and a restrained purple accent for primary actions.
  * Because every screen already reads from these names, restyling the product is a
  * change of VALUES here rather than a sweep through the views.
  *
@@ -18,32 +18,32 @@
 
 :root {
   /* ---- Colour: surfaces --------------------------------------------------
-   * Page is the off-white the prototype uses behind everything; cards are pure
-   * white so they lift off it without needing a heavy shadow. */
-  --ink-900: #fdfbff;   /* page */
-  --ink-850: #faf5ff;   /* raised page */
-  --ink-800: #ffffff;   /* card */
-  --ink-750: #faf5ff;   /* card hover */
-  --ink-700: #f6f2fb;   /* input, well */
-  --ink-600: #ebe7ef;   /* border strong */
-  --ink-500: #ddd6e8;   /* border */
+   * A muted lavender page and off-white cards keep the existing hierarchy
+   * without the bright white wash or extra elevation. */
+  --ink-900: #eeebf2;   /* page */
+  --ink-850: #e8e3ed;   /* raised page */
+  --ink-800: #f9f7fb;   /* card */
+  --ink-750: #f0ecf5;   /* card hover */
+  --ink-700: #e8e3ed;   /* input, well */
+  --ink-600: #d8d1e1;   /* border strong */
+  --ink-500: #c7bed3;   /* border */
 
   /* ---- Colour: text ------------------------------------------------------
    * Headings and body are both indigo in the prototype — body is not grey, it
    * is the same ink at a lighter weight. Secondary text is the slate. */
   --text-100: #2f195f;  /* headings */
   --text-200: #3a2a63;  /* body */
-  --text-300: #656f77;  /* secondary */
-  --text-400: #8b8f99;  /* muted, captions */
+  --text-300: #56515f;  /* secondary */
+  --text-400: #6b6375;  /* muted, captions */
 
   /* ---- Colour: accent ----------------------------------------------------
    * 600 is the button fill, 500 the selected-chip fill, 400 the interactive
    * purple, 300 the orchid used for tints and highlights. */
   --accent-300: #efc3f5;
-  --accent-400: #7353ba;
+  --accent-400: #6748a5;
   --accent-500: #4f378b;  /* primary accent */
   --accent-600: #2f195f;
-  --accent-glow: rgba(79, 55, 139, 0.25);
+  --accent-glow: rgba(79, 55, 139, 0.14);
 
   /* Data hues for the algorithm views. Darkened from the originals so they
      still pass contrast on a white card rather than glowing on black. */
@@ -105,7 +105,7 @@
   --shadow-sm: 0 1px 2px rgba(47, 25, 95, 0.06);
   --shadow-md: 0 8px 24px -10px rgba(47, 25, 95, 0.18);
   --shadow-lg: 0 24px 64px -20px rgba(47, 25, 95, 0.22);
-  --shadow-accent: 0 8px 32px -8px var(--accent-glow);
+  --shadow-accent: 0 2px 6px rgba(47, 25, 95, 0.12);
 
   /* ---- Motion ------------------------------------------------------------
    * Curves are named for what they communicate, not for their shape, so a
@@ -140,7 +140,7 @@
   /* Depth. Translucent layers read as glass only if the blur and the tint move
    * together, so they are defined as a pair rather than per-component. */
   --glass-blur: saturate(180%) blur(20px);
-  --glass-tint: rgba(253, 251, 255, 0.78);
+  --glass-tint: rgba(238, 235, 242, 0.88);
   --glass-edge: rgba(47, 25, 95, 0.08);
 
   /* ---- Layout ------------------------------------------------------------ */
