@@ -90,6 +90,43 @@ export const api = {
       method: 'DELETE',
     }),
 
+  /* ---- Kaki chat ---------------------------------------------------------
+   * Only reachable between two people who liked each other for the same
+   * concert. The server re-checks on every call, so a 403 here means the
+   * match was withdrawn or somebody blocked — the UI treats both the same.
+   */
+  kakiConversations: () => request('/kaki/conversations'),
+  kakiChatBackgrounds: () => request('/kaki/chat-backgrounds'),
+  openKakiConversation: (concertId, userId) =>
+    request(`/kaki/concerts/${encodeURIComponent(concertId)}/conversations/${encodeURIComponent(userId)}`, {
+      method: 'POST',
+    }),
+  kakiConversation: (id) => request(`/kaki/conversations/${encodeURIComponent(id)}`),
+  sendKakiMessage: (id, body, replyTo = null) =>
+    request(`/kaki/conversations/${encodeURIComponent(id)}/messages`, {
+      method: 'POST', body: JSON.stringify({ body, replyTo }),
+    }),
+  editKakiMessage: (id, messageId, body) =>
+    request(`/kaki/conversations/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}`, {
+      method: 'PATCH', body: JSON.stringify({ body }),
+    }),
+  deleteKakiMessage: (id, messageId) =>
+    request(`/kaki/conversations/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}`, {
+      method: 'DELETE',
+    }),
+  setKakiBackground: (id, background) =>
+    request(`/kaki/conversations/${encodeURIComponent(id)}/background`, {
+      method: 'PUT', body: JSON.stringify({ background }),
+    }),
+
+  blockedUsers: () => request('/me/blocked'),
+  blockUser: (userId) => request(`/users/${encodeURIComponent(userId)}/block`, { method: 'PUT' }),
+  unblockUser: (userId) => request(`/users/${encodeURIComponent(userId)}/block`, { method: 'DELETE' }),
+  reportUser: (userId, payload) =>
+    request(`/users/${encodeURIComponent(userId)}/reports`, {
+      method: 'POST', body: JSON.stringify(payload),
+    }),
+
   health: () => request('/health'),
 
   concerts: () => request('/concerts'),

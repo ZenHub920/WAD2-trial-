@@ -10,6 +10,7 @@
  */
 
 import { createProposalRepo } from './proposalRepository.js';
+import { createKakiChatRepo } from './kakiChatRepository.js';
 import { randomUUID } from 'node:crypto';
 
 // ---------------------------------------------------------------------------
@@ -1574,6 +1575,9 @@ export function createRepositories(db) {
     rounds: createRoundRepo(db),
     sessions: createSessionRepo(db),
     kaki: createKakiRepo(db),
+    // Kaki Finder messaging. Separate from `conversations` above, which is the
+    // buyer–seller chat on a ticket listing.
+    kakiChat: createKakiChatRepo(db),
     proposals: createProposalRepo(db),
   };
 }

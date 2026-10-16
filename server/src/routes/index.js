@@ -12,6 +12,7 @@ import { createMatchController } from '../controllers/matchController.js';
 import { createUserController } from '../controllers/userController.js';
 import { createTicketController } from '../controllers/ticketController.js';
 import { createKakiController } from '../controllers/kakiController.js';
+import { createKakiChatController } from '../controllers/kakiChatController.js';
 import { createProfileController } from '../controllers/profileController.js';
 import { createParticipationController } from '../controllers/participationController.js';
 import { createOrderController } from '../controllers/orderController.js';
@@ -31,6 +32,7 @@ export function createRoutes({
   const users = createUserController(repos, sessions);
   const tickets = createTicketController(repos, images);
   const kaki = createKakiController(repos);
+  const kakiChat = createKakiChatController(repos);
   const profile = createProfileController(repos);
   const participation = createParticipationController(repos);
   const orders = createOrderController(repos);
@@ -85,6 +87,30 @@ export function createRoutes({
   router.put('/kaki/decisions/:concertId/:targetUserId', requireUser, kaki.setDecision);
   router.delete('/kaki/decisions/:concertId/:targetUserId', requireUser, kaki.deleteDecision);
   router.get('/kaki/matches', requireUser, kaki.matches);
+
+  // ---- Kaki chat -----------------------------------------------------------
+  // Only reachable between two people who liked each other for the same
+  // concert, and only while neither has blocked the other. Every handler
+  // re-checks; holding a conversation id grants nothing on its own.
+  router.get('/kaki/conversations', requireUser, kakiChat.list);
+  router.get('/kaki/chat-backgrounds', requireUser, kakiChat.backgrounds);
+  // Opening a thread is namespaced under the concert rather than sitting at
+  // /kaki/conversations/:concertId/:userId — that shape also matches
+  // /kaki/conversations/<id>/messages, so every send would have been routed
+  // here instead.
+  router.post('/kaki/concerts/:concertId/conversations/:userId', requireUser, kakiChat.start);
+  router.get('/kaki/conversations/:id', requireUser, kakiChat.detail);
+  router.post('/kaki/conversations/:id/messages', requireUser, kakiChat.send);
+  router.patch('/kaki/conversations/:id/messages/:messageId', requireUser, kakiChat.edit);
+  router.delete('/kaki/conversations/:id/messages/:messageId', requireUser, kakiChat.remove);
+  router.put('/kaki/conversations/:id/background', requireUser, kakiChat.setBackground);
+
+  // Safety. Blocking is mutual in effect — it closes the thread for both
+  // sides — but only the blocker can lift it.
+  router.get('/me/blocked', requireUser, kakiChat.blockedList);
+  router.put('/users/:userId/block', requireUser, kakiChat.block);
+  router.delete('/users/:userId/block', requireUser, kakiChat.unblock);
+  router.post('/users/:userId/reports', requireUser, kakiChat.report);
 
   router.get('/concerts', concerts.list);
   router.post('/concerts', concerts.create);
