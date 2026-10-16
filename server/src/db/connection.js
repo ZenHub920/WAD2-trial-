@@ -16,6 +16,7 @@ import { migrateGroups } from './groupMigrations.js';
 import { migrateCommunity } from './communityMigrations.js';
 import { migrateNotifications } from './notificationRepository.js';
 import { migrateMeetups } from './meetupRepository.js';
+import { migrateFeedback } from './feedbackRepository.js';
 const here = dirname(fileURLToPath(import.meta.url));
 
 let db = null;
@@ -42,6 +43,7 @@ export function getDb() {
   migrateCommunity(db);
   migrateNotifications(db);
   migrateMeetups(db);
+  migrateFeedback(db);
   return db;
 }
 
@@ -228,6 +230,7 @@ export function createTestDb() {
   migrateCommunity(testDb);
   migrateNotifications(testDb);
   migrateMeetups(testDb);
+  migrateFeedback(testDb);
   return testDb;
 }
 

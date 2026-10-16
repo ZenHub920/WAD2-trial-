@@ -16,6 +16,7 @@ import { activeReservationSql, reservedPlacesSql } from './capacity.js';
 import { createRecommendationRepo } from './recommendationRepository.js';
 import { createNotificationRepo } from './notificationRepository.js';
 import { createMeetupRepo } from './meetupRepository.js';
+import { createFeedbackRepo } from './feedbackRepository.js';
 import { createKakiChatRepo } from './kakiChatRepository.js';
 import { randomUUID } from 'node:crypto';
 
@@ -1589,5 +1590,6 @@ export function createRepositories(db) {
   repos.recommendations = createRecommendationRepo(db, repos);
   repos.notifications = createNotificationRepo(db);
   repos.meetups = createMeetupRepo(db,repos);
+  repos.feedback = createFeedbackRepo(db,repos);
   return repos;
 }

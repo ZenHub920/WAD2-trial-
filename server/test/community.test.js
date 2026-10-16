@@ -131,3 +131,20 @@ test('weather warns only for the covered time and degrades safely on errors',asy
  const offline=createMeetupWeather({now:()=>now,fetchImpl:async()=>{throw new Error('offline');}});
  assert.equal((await offline.forecast({latitude:1.3,longitude:103.8,startsAt:now})).status,'unavailable');
 });
+test('post-event feedback requires genuine co-membership, rejects duplicates and refreshes reliability',()=>{
+ repos.membership.configure('h1','p1',{expectedFriends:1});const link=repos.membership.invite('h1','p1');repos.membership.acceptInvite('friend',link.token);
+ db.prepare("UPDATE parties SET created_at='2019-12-01 00:00:00' WHERE id='p1'").run();
+ db.prepare("UPDATE group_memberships SET joined_at='2019-12-01 00:00:00' WHERE party_id='p1'").run();
+ const input={partyId:'p1',ratedUserId:'friend',showedUp:true,rating:5,comment:'Great communication'};
+ assert.throws(()=>repos.feedback.submit('outsider',input),/participants_required/);
+ assert.equal(repos.feedback.submit('h1',input).submitted,true);
+ assert.ok(repos.users.findById('friend').reliability>0.75);
+ assert.throws(()=>repos.feedback.submit('h1',input),/already_submitted/);
+ assert.equal(repos.feedback.mine('outsider').length,0);
+ assert.equal(repos.feedback.mine('friend').length,1);
+ assert.throws(()=>repos.feedback.submit('friend',{...input,ratedUserId:'friend'}),/invalid_feedback/);
+});
+test('feedback cannot be manufactured by joining after a concert',()=>{
+ repos.membership.configure('h1','p1',{expectedFriends:1});const link=repos.membership.invite('h1','p1');repos.membership.acceptInvite('friend',link.token);
+ assert.throws(()=>repos.feedback.submit('h1',{partyId:'p1',ratedUserId:'friend',showedUp:true,rating:5}),/participants_required/);
+});
