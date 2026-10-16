@@ -11,6 +11,7 @@
 
 import { createProposalRepo } from './proposalRepository.js';
 import { createGroupDiscoveryRepo } from './groupDiscoveryRepository.js';
+import { createMembershipRepo } from './membershipRepository.js';
 import { activeReservationSql } from './capacity.js';
 import { createKakiChatRepo } from './kakiChatRepository.js';
 import { randomUUID } from 'node:crypto';
@@ -1591,5 +1592,6 @@ export function createRepositories(db) {
     proposals: createProposalRepo(db),
   };
   repos.groups = createGroupDiscoveryRepo(db, repos);
+  repos.membership = createMembershipRepo(db, repos);
   return repos;
 }
