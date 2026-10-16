@@ -11,6 +11,7 @@ import { currentUser } from '../auth.js';
 const route = useRoute(), router = useRouter();
 const hosted = ref([]), candidates = ref([]), connections = ref([]);
 const joins=ref([]);
+const offset=ref(0),total=ref(0);let filterTimer;
 const allConcerts = ref([]), hostConcertId = ref('');
 const hostForm = reactive({ capacity: 2, section: 'ga_standing', spend_band: 2, arrival_plan: 'mid', plans: {}, notes: '' });
 const concertId = ref(typeof route.query.concertId === 'string' ? route.query.concertId : '');
@@ -31,8 +32,8 @@ async function loadCandidates() {
   if (!id) { loading.value = false; return; }
   loading.value = true;
   try {
-    const result = await api.connectionCandidates(concertId.value, id);
-    if (alive && current === generation) candidates.value = result.groups;
+    const result = await api.connectionCandidates(concertId.value, id,{offset:offset.value,q:filters.query,section:filters.section,arrival:filters.arrival,spendBand:filters.spendBand,minCapacity:filters.minCapacity,activity:filters.activity,vibe:filters.vibe,sort:filters.sort});
+    if (alive && current === generation) {candidates.value = result.groups;total.value=result.total;}
   } catch (e) { if (alive && current === generation) error.value = e.message; }
   finally { if (alive && current === generation) loading.value = false; }
 }
@@ -51,7 +52,8 @@ watch(concertId, id => {
   sourceId.value = sources.value[0]?.id ?? '';
   if (!sourceId.value) loadCandidates();
 });
-watch(sourceId, loadCandidates);
+watch(sourceId, ()=>{offset.value=0;loadCandidates();});
+watch(()=>Object.values(filters),()=>{clearTimeout(filterTimer);filterTimer=setTimeout(()=>{offset.value=0;loadCandidates();},250);});
 watch(() => route.query.concertId, id => {
   const next = typeof id === 'string' ? id : '';
   if (next !== concertId.value) concertId.value = next;
@@ -63,7 +65,7 @@ onMounted(async () => { try {
   hostConcertId.value = concertId.value || allConcerts.value[0]?.id || '';
   await refresh();
 } catch (e) { if (alive) error.value = e.message; } });
-onUnmounted(() => { alive = false; generation++; });
+onUnmounted(() => { alive = false; generation++;clearTimeout(filterTimer); });
 async function act(operation) {
   if (busy.value) return;
   busy.value = true; error.value = ''; message.value = '';
@@ -100,7 +102,7 @@ async function host() {
     <p v-else>Host a concert group to start sending invitations.</p>
     <RouterLink v-if="sourceId" :to="`/groups/${sourceId}/members`" class="btn btn--ghost">Manage members, friend links &amp; shared preferences</RouterLink>
     <RouterLink v-if="sourceId" :to="{path:'/meetups',query:{partyId:sourceId}}" class="btn btn--ghost">Plan your group meetup</RouterLink>
-    <section v-if="joins.length" class="card group-panel"><h2>Seeker join requests</h2><article v-for="j in joins" :key="j.id"><p>{{j.seekerName}} · {{j.artist}} · {{j.status}}</p><div v-if="j.status==='pending'" class="group-actions"><button class="btn btn--primary" :disabled="busy" @click="act(()=>api.respondGroupJoin(j.id,'accept'))">Approve seeker</button><button class="btn btn--ghost" :disabled="busy" @click="act(()=>api.respondGroupJoin(j.id,'reject'))">Reject</button></div></article></section>
+    <section v-if="joins.length" class="card group-panel"><h2>Seeker join requests</h2><article v-for="j in joins" :key="j.id"><p>{{j.seekerName}} · {{j.artist}} · {{j.status}}</p><p v-if="j.preferences">Enjoys: {{j.preferences.about.map(p=>p.text).join(", ") || "No preferences specified"}}. Companions: {{j.preferences.wants.map(p=>p.text).join(", ") || "Flexible"}}.</p><p v-if="j.seeker">{{j.seeker.ageBand}} - {{j.seeker.languages.join(", ")}}</p><div v-if="j.status==='pending'" class="group-actions"><button class="btn btn--primary" :disabled="busy" @click="act(()=>api.respondGroupJoin(j.id,'accept'))">Approve seeker</button><button class="btn btn--ghost" :disabled="busy" @click="act(()=>api.respondGroupJoin(j.id,'reject'))">Reject</button></div></article></section>
     <details class="card group-panel"><summary>Host a new group</summary>
       <form class="group-panel" @submit.prevent="host">
         <div class="group-controls">
@@ -120,6 +122,7 @@ async function host() {
       <p v-if="loading" role="status">Loading groups…</p>
       <div v-else class="group-grid"><GroupListingCard v-for="g in visible" :key="g.id" :group="g"><p v-if="g.invitation">Invitation: {{ g.invitation.status }}</p><button v-else class="btn btn--primary" :disabled="busy" @click="act(() => api.inviteGroup(sourceId, g.id))">Send Invitation</button></GroupListingCard></div>
       <p v-if="!loading && !visible.length">No other eligible groups match these filters.</p>
+      <nav class="group-actions"><button class="btn btn--ghost" :disabled="busy||loading||offset===0" @click="offset=Math.max(0,offset-20);loadCandidates()">Previous 20</button><span>{{total}} results</span><button class="btn btn--ghost" :disabled="busy||loading||offset+20>=total" @click="offset+=20;loadCandidates()">Next 20</button></nav>
     </template>
     <section class="card group-panel"><h2>Incoming invitations</h2><p v-if="!incoming.length">No pending invitations.</p><article v-for="c in incoming" :key="c.id" class="group-panel"><p>{{ describe(c) }}</p><div class="group-actions"><button class="btn btn--primary" :disabled="busy" @click="act(() => api.respondToGroup(c.id, 'accept'))">Accept</button><button class="btn btn--ghost" :disabled="busy" @click="act(() => api.respondToGroup(c.id, 'decline'))">Decline</button></div></article></section>
     <section class="card group-panel"><h2>Outgoing invitations</h2><p v-if="!outgoing.length">No pending invitations.</p><p v-for="c in outgoing" :key="c.id">{{ describe(c) }} · Pending</p></section>
