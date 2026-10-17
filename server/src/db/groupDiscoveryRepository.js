@@ -144,6 +144,26 @@ export function createGroupDiscoveryRepo(db, repos) {
         WHERE a.host_user_id = ? OR b.host_user_id = ? ORDER BY gc.created_at DESC, gc.id`)
         .all(userId, userId).map(r => connectionDetails(r, userId));
     },
+    /**
+     * Withdraw an invitation you sent.
+     *
+     * `respond` is the receiving host's door and refuses anybody else, so the
+     * sender had no way to take an invitation back. The row is deleted rather
+     * than marked: a withdrawn invitation is not a decision either host should
+     * keep seeing, and deleting frees the (party_a_id, party_b_id) unique pair
+     * so the same two groups can be introduced again later. A DECLINE still
+     * writes its status and stays — that one is a record.
+     */
+    cancel: db.transaction((userId, id) => {
+      const row = connectionRow(id);
+      if (!row) return fail('invitation_not_found', 404);
+      const initiator = repos.parties.findById(row.initiator_party_id);
+      if (!initiator || initiator.host_user_id !== userId) return fail('sending_host_required', 403);
+      if (row.status !== 'pending') return fail('invitation_already_answered');
+      const removed = db.prepare("DELETE FROM group_connections WHERE id = ? AND status = 'pending'").run(id);
+      if (!removed.changes) return fail('invitation_already_answered');
+      return { id, status: 'cancelled' };
+    }).immediate,
     respond: db.transaction((userId, id, action) => {
       if (!['accept', 'decline'].includes(action)) return fail('invalid_decision', 400);
       const row = connectionRow(id);

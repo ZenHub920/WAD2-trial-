@@ -50,4 +50,8 @@ export function registerGroupDiscoveryRoutes(router, { repos, requireUser }) {
   });
   router.post('/group-connections/:id/respond', requireUser, (req, res) =>
     send(res, repos.groups.respond(req.user.id, req.params.id, req.body?.action), 'connection'));
+  // Withdrawing is the sender's counterpart to responding, so it gets its own
+  // verb rather than an action the respond route would have to refuse by host.
+  router.delete('/group-connections/:id', requireUser, (req, res) =>
+    send(res, repos.groups.cancel(req.user.id, req.params.id), 'connection'));
 }

@@ -218,6 +218,8 @@ export const api = {
   groupConnections: () => request('/me/group-connections'),
   inviteGroup: (fromPartyId, toPartyId) => request('/group-connections', { method: 'POST', body: JSON.stringify({ fromPartyId, toPartyId }) }),
   respondToGroup: (id, action) => request(`/group-connections/${encodeURIComponent(id)}/respond`, { method: 'POST', body: JSON.stringify({ action }) }),
+  /** Withdraw an invitation you sent; only the sending host may. */
+  cancelGroupInvite: (id) => request(`/group-connections/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   round: (roundId) => request(`/rounds/${roundId}`),
   roundTrace: (roundId, limit = 2000) => request(`/rounds/${roundId}/trace?limit=${limit}`),

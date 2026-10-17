@@ -196,6 +196,33 @@ test('only receiving hosts respond, accepted connections appear for both and do 
   for (const host of ['hostA', 'hostB']) assert.equal((await call('/me/group-connections', host)).body.connections[0].status, 'accepted');
   assert.deepEqual(state(), snapshot);
 });
+test('only the sending host may withdraw an invitation, and withdrawing frees the pair', async () => {
+  const id = (await invite()).body.connection.id;
+  // The receiving host answers; they do not withdraw. Nor does a bystander.
+  assert.equal((await call(`/group-connections/${id}`, 'hostB', 'DELETE')).status, 403);
+  assert.equal((await call(`/group-connections/${id}`, 'other', 'DELETE')).status, 403);
+  assert.equal((await call(`/group-connections/${id}`, null, 'DELETE')).status, 401);
+  assert.equal((await call('/me/group-connections', 'hostB')).body.connections.length, 1);
+
+  assert.equal((await call(`/group-connections/${id}`, 'hostA', 'DELETE')).status, 200);
+  // Gone for both sides, not merely hidden from the sender.
+  for (const host of ['hostA', 'hostB']) {
+    assert.equal((await call('/me/group-connections', host)).body.connections.length, 0);
+  }
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM group_connections').get().n, 0);
+
+  // Withdrawn is not a verdict: the same two groups can be introduced again.
+  const second = await invite();
+  assert.equal(second.status, 201);
+  assert.notEqual(second.body.connection.id, id);
+
+  // Twice is a no-op, and an answered invitation is not withdrawable.
+  assert.equal((await call(`/group-connections/${id}`, 'hostA', 'DELETE')).status, 404);
+  const live = second.body.connection.id;
+  assert.equal((await call(`/group-connections/${live}/respond`, 'hostB', 'POST', { action: 'accept' })).status, 200);
+  assert.equal((await call(`/group-connections/${live}`, 'hostA', 'DELETE')).status, 409);
+  assert.equal((await call('/me/group-connections', 'hostA')).body.connections[0].status, 'accepted');
+});
 test('one active hosted group is enforced, history remains, and declined invitations stay final', async () => {
   assert.throws(()=>repos.parties.create(makeParty('pA2', makeUser(cookies.hostAId))),/already_in_concert_group/);
   const first = (await invite()).body.connection.id;
