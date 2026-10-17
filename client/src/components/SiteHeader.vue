@@ -1,23 +1,20 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { useRoute } from 'vue-router';
-import { currentUser, signOut } from '../auth.js';
+import { currentUser } from '../auth.js';
 import { unreadTotal } from '../chatLive.js';
-import { introActive } from '../intro.js';
 import UserAvatar from './UserAvatar.vue';
 import NotificationsLink from './NotificationsLink.vue';
 
-defineProps({ theme: { type: String, default: 'dark' } });
+defineProps({
+  theme: { type: String, default: 'light' },
+  fixed: { type: Boolean, default: false },
+});
 defineEmits(['toggle-theme']);
 
 const scrolled = ref(false);
 const menuOpen = ref(false);
-const route = useRoute();
 const homeLink = computed(() => (currentUser.value ? '/marketplace' : '/'));
 const isLoggedIn = computed(() => Boolean(currentUser.value));
-const hasFixedHeader = computed(() =>
-  isLoggedIn.value || ['marketplace', 'list-ticket', 'my-listings', 'ticket-detail'].includes(route.name),
-);
 
 function onScroll() {
   scrolled.value = window.scrollY > 12;
@@ -29,26 +26,14 @@ onMounted(() => {
 });
 onUnmounted(() => window.removeEventListener('scroll', onScroll));
 
-async function logOut() {
-  try {
-    await signOut();
-    menuOpen.value = false;
-  } catch (error) {
-    console.error('Could not sign out', error);
-  }
-}
 </script>
 
 <template>
-  <header class="header" :class="{ 'header--scrolled': scrolled, 'header--fixed': hasFixedHeader }">
+  <header class="header" :class="{ 'header--scrolled': scrolled, 'header--fixed': fixed }">
     <div class="header__inner container container--wide">
-      <!-- data-brand-target is where the opening title flies to; the logo
-           waits out the flight so the two are never on screen together. -->
       <RouterLink
         :to="homeLink"
         class="brand"
-        :class="{ 'brand--waiting': introActive }"
-        data-brand-target
         @click="menuOpen = false"
       >
         <span class="brand__mark" aria-hidden="true">
@@ -160,15 +145,6 @@ async function logOut() {
   color: var(--text-100);
 }
 
-/* Hidden, not removed: it must keep its place so the title has somewhere to land. */
-.brand--waiting {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.brand {
-  transition: opacity var(--dur-base) var(--ease-out);
-}
 
 .brand__mark {
   display: flex;

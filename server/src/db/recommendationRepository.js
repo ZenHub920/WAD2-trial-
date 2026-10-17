@@ -72,10 +72,8 @@ export function createRecommendationRepo(db, repos) {
   const rankIndividual = (user, card) => {
     const p = repos.parties.findById(card.id),
       s = repos.groups.seeker(user, p.concert_id);
-    const concepts = compareProfiles(
-      personal(user, p.concert_id),
-      repos.membership.profile(p.id),
-    );
+    const profile = repos.membership.profile(p.id);
+    const concepts = compareProfiles(personal(user, p.concert_id), profile);
     const base = s ? scorePair(s, aggregateParty(p)) : null;
     return {
       ...card,
@@ -88,7 +86,7 @@ export function createRecommendationRepo(db, repos) {
         : null,
       reasons: concepts.reasons,
       confidence: concepts.confidence,
-      profile: repos.membership.profile(p.id),
+      profile,
       requiresHostApproval: true,
       automaticPlacementAvailable: !repos.membership.settings(p.id),
     };
@@ -115,10 +113,11 @@ export function createRecommendationRepo(db, repos) {
       const previous = db.prepare(
         "SELECT answers_json FROM seeker_discovery_preferences WHERE user_id=? AND concert_id=?",
       ).get(user, concert)?.answers_json;
+      const serialized = JSON.stringify(answers);
       db.prepare(
         `INSERT INTO seeker_discovery_preferences VALUES(?,?,?) ON CONFLICT(user_id,concert_id) DO UPDATE SET answers_json=excluded.answers_json`,
-      ).run(user, concert, JSON.stringify(answers));
-      if (previous !== JSON.stringify(answers))
+      ).run(user, concert, serialized);
+      if (previous !== serialized)
         // A missing version means consent must be renewed, even if answers are later restored.
         db.prepare(`UPDATE group_join_requests SET group_version=NULL WHERE user_id=? AND status='pending'
           AND party_id IN(SELECT id FROM parties WHERE concert_id=?)`).run(user, concert);
@@ -136,7 +135,7 @@ export function createRecommendationRepo(db, repos) {
         .filter((card) => visible(repos.parties.findById(card.id)))
         .filter(
           (card) =>
-            !repos.groups.seeker(user, concert) ||
+            !request ||
             feasible(user, repos.parties.findById(card.id)),
         )
         .map((card) => rankIndividual(user, card))
@@ -155,10 +154,11 @@ export function createRecommendationRepo(db, repos) {
       if (candidates.error)
         throw communityError(candidates.error, candidates.status);
       const from = repos.parties.findById(source);
+      const sourceProfile = repos.membership.profile(source);
       return candidates
         .map((c) => {
           const result = compareProfiles(
-            repos.membership.profile(source),
+            sourceProfile,
             repos.membership.profile(c.id),
           );
           const target = repos.parties.findById(c.id);

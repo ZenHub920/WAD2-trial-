@@ -1,23 +1,17 @@
 <script setup>
-/**
- * Interactive explainer for blocking pairs.
- *
- * Four people, two possible pairings. One is stable; the other contains a pair who
- * would both rather be together — which is the whole idea the product rests on, so
- * it is worth letting someone feel it rather than reading it.
- */
+// Swapping a stable pairing exposes a pair who both prefer each other.
 import { ref, computed } from 'vue';
 
 const swapped = ref(false);
 
 const people = {
   left: [
-    { id: 'A', name: 'Amira', wants: 'Pit, queue early', ranks: ['C', 'D'] },
-    { id: 'B', name: 'Bryan', wants: 'Pit, arrive at doors', ranks: ['C', 'D'] },
+    { id: 'A', name: 'Amira', wants: 'Pit, queue early' },
+    { id: 'B', name: 'Bryan', wants: 'Pit, arrive at doors' },
   ],
   right: [
-    { id: 'C', name: "Chloe's group", wants: 'Pit · 1 slot', ranks: ['A', 'B'] },
-    { id: 'D', name: "Daniel's group", wants: 'Upper bowl · 1 slot', ranks: ['A', 'B'] },
+    { id: 'C', name: "Chloe's group", wants: 'Pit, 1 place' },
+    { id: 'D', name: "Daniel's group", wants: 'Upper bowl, 1 place' },
   ],
 };
 
@@ -88,18 +82,12 @@ const lineFor = (seekerId) => {
           v-for="seeker in ['A', 'B']"
           :key="seeker"
           class="link"
-          :class="{ 'link--blocking': isBlocking(seeker) && isBlocking(pairing[seeker]) }"
           x1="2"
           x2="98"
           :y1="lineFor(seeker).y1"
           :y2="lineFor(seeker).y2"
         />
-        <!--
-          The pair that would defect. Amira (left, row 0) and Chloe's group
-          (right, row 0) both sit in the top row, so the arc bows ABOVE that row
-          rather than crossing — a straight line there would be mistaken for an
-          assignment, and crossing rows would point at the wrong two people.
-        -->
+        <!-- The blocking pair is in the top row; the arc is not an assignment. -->
         <path
           v-if="blockingPair"
           class="link link--defect"
@@ -126,15 +114,12 @@ const lineFor = (seekerId) => {
 
     <Transition name="explain">
       <p v-if="swapped" class="demo__explain demo__explain--bad">
-        <strong>Amira and Chloe's group both prefer each other</strong> to what they were
-        given — Amira ranked Chloe's group first, and Chloe's group ranked Amira first.
-        They will pair up privately and the arrangement collapses. That is a blocking
-        pair, and it is what the algorithm exists to rule out.
+        <strong>Amira and Chloe's group prefer each other</strong> to their current
+        matches. This is a blocking pair.
       </p>
       <p v-else class="demo__explain demo__explain--good">
-        <strong>No pair can improve by defecting.</strong> Amira got her first choice;
-        Bryan would prefer Chloe's group, but they rank Amira above him and have no
-        spare slot. Nobody has both the desire and the opportunity to leave.
+        <strong>The pairing is stable.</strong> No person and group would both
+        prefer each other to their current matches.
       </p>
     </Transition>
   </div>
@@ -345,11 +330,6 @@ const lineFor = (seekerId) => {
   transition:
     stroke var(--dur-base) var(--ease-out),
     opacity var(--dur-base) var(--ease-out);
-}
-
-.link--blocking {
-  stroke: var(--rose-400);
-  opacity: 0.4;
 }
 
 .link--defect {

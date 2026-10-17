@@ -3,12 +3,7 @@ import { Router } from 'express';
 import { registerGroupDiscoveryRoutes } from './groupDiscovery.js';
 import { registerCommunityRoutes } from './community.js';
 
-// Improvements #5–15:
-// Dedicated APIs for proposals, messaging, dashboards,
-// marketplace enhancements, feedback and safety.
-import {
-  registerEnhancementRoutes
-} from './enhancements.js';
+import { registerEnhancementRoutes } from './enhancements.js';
 import { createConcertController } from '../controllers/concertController.js';
 import { createMatchController } from '../controllers/matchController.js';
 import { createUserController } from '../controllers/userController.js';
@@ -169,25 +164,7 @@ export function createRoutes({
   router.post('/auth/logout', requireUser, users.logout);
   router.get('/users/:id', users.get);
 
-    // ============================================================
-  // REGISTER ENCORE ENHANCEMENT ENDPOINTS
-  // ============================================================
-  //
-  // These reuse the same session middleware and repositories
-  // as the existing API routes.
-  //
-  // Do not create a second Express application or a second
-  // authentication system.
-
-  registerEnhancementRoutes(
-    router,
-    {
-      db,
-      repos,
-      requireUser,
-      requireOperator
-    }
-  );
+  registerEnhancementRoutes(router, { repos, requireUser });
 
 
   registerGroupDiscoveryRoutes(router, { repos, requireUser });

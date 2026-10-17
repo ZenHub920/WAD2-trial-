@@ -37,8 +37,8 @@ defineEmits(['toggle-save']);
         {{ listing.concert.artist }}
       </RouterLink>
     </h3>
-    <p class="lcard__meta">{{ formatDate(listing.concert.event_date) }} · {{ listing.concert.venue }}</p>
-    <p class="lcard__meta">{{ LABELS.section[listing.section] ?? listing.section }} · {{ listing.quantity }} {{ listing.quantity === 1 ? 'ticket' : 'tickets' }}</p>
+    <p class="lcard__meta">{{ formatDate(listing.concert.event_date) }}, {{ listing.concert.venue }}</p>
+    <p class="lcard__meta">{{ LABELS.section[listing.section] ?? listing.section }}, {{ listing.quantity }} {{ listing.quantity === 1 ? 'ticket' : 'tickets' }}</p>
 
     <footer class="lcard__foot">
       <span class="lcard__price tabular">{{ formatMoney(listing.priceCents) }}</span>

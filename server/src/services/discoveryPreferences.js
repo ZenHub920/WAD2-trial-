@@ -168,7 +168,7 @@ export function aggregateAnswers(answers) {
     for (const intent of ["about", "wants", "avoid"])
       for (const item of a[intent] ?? []) {
         profile[intent][item.key] =
-          (profile[intent][item.key] ?? 0) + 1 / Math.max(1, answers.length);
+          (profile[intent][item.key] ?? 0) + 1 / answers.length;
       }
   return profile;
 }
@@ -181,17 +181,16 @@ export function compareProfiles(a, b) {
       customWeight = 0;
     const evidence = [];
     for (const [key, support] of Object.entries(from.wants)) {
-      const w = support;
       const overlap = to.about[key] ?? 0;
       if (key.startsWith("custom:")) {
-        customWeight += w;
-        customTotal += w * overlap;
+        customWeight += support;
+        customTotal += support * overlap;
       } else {
-        weight += w;
-        total += w * overlap;
+        weight += support;
+        total += support * overlap;
       }
       if (overlap > 0)
-        evidence.push({ key, support: overlap, strength: w * overlap });
+        evidence.push({ key, support: overlap, strength: support * overlap });
     }
     const avoid = Object.entries(from.avoid).reduce(
       (sum, [key, support]) => sum + support * (to.about[key] ?? 0),

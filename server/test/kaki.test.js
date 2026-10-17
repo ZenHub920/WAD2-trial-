@@ -96,6 +96,7 @@ test('Kaki routes require authentication and reject self, blocks, and cross-conc
     body: { decision: 'like' } })).status, 404);
   assert.equal((await f.api(f.decision('c_one', host), { method: 'PUT', cookie: bob.cookie,
     body: { decision: 'like' } })).status, 404);
+  f.db.prepare('UPDATE users SET avatar_path = ? WHERE id = ?').run('bob-avatar.png', bob.id);
   const pool = (await f.api('/kaki/pool', { cookie: alice.cookie })).body;
   assert.deepEqual(pool.concerts.map((item) => item.id), ['c_one']);
   assert.deepEqual(pool.people.map((person) => person.id), [`c_one:${bob.id}`]);
@@ -108,6 +109,7 @@ test('Kaki routes require authentication and reject self, blocks, and cross-conc
   assert.equal(pool.people[0].arrivalPref, 'doors');
   assert.deepEqual(pool.people[0].plansWanted, {});
   assert.equal(pool.people[0].user.id, bob.id);
+  assert.equal(pool.people[0].user.avatarUrl, '/api/avatars/bob-avatar.png');
   for (const field of ['email', 'password_hash', 'gender', 'companion_gender_pref', 'created_at']) {
     assert.equal(pool.people[0].user[field], undefined);
   }

@@ -90,11 +90,6 @@ async function submit() {
   <div class="auth container">
     <div class="auth_intro">
       <h1>{{ isRegistering ? "Let's Get Started" : 'Welcome back.' }}</h1>
-      <p class="lede">
-        {{ isRegistering
-          ? 'Save your concert preferences and find people who want to spend the night the same way.'
-          : 'Sign in to see your groups, requests, and upcoming concert plans.' }}
-      </p>
     </div>
 
     <section class="auth_card card" aria-labelledby="auth-title">
@@ -139,7 +134,6 @@ async function submit() {
           {{ loading ? 'Working…' : isRegistering ? 'Create account' : 'Sign in' }}
         </button>
       </form>
-      <p class="auth_note">Your account is stored securely with Encore’s existing database.</p>
     </section>
   </div>
 </template>
@@ -157,10 +151,6 @@ async function submit() {
 .auth_intro h1 {
   margin-block: var(--space-3) var(--space-4);
   max-width: 10ch;
-}
-
-.auth_intro .lede {
-  max-width: 42ch;
 }
 
 .auth_card {
@@ -216,7 +206,6 @@ async function submit() {
 .auth_form input::placeholder { color: var(--text-400); }
 .auth_form input:focus { border-color: var(--accent-400); outline: none; }
 .auth_submit { width: 100%; margin-top: var(--space-2); }
-.auth_note { margin-top: var(--space-5); color: var(--text-400); font-size: var(--step--2); text-align: center; }
 .form-message { font-size: var(--step--1); }
 .form-message--error { color: var(--rose-400); }
 .form-message--success { color: var(--mint-400); }

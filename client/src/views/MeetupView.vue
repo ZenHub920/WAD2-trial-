@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref, watch } from "vue";
+import { reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api } from "../api.js";
 import { currentUser } from "../auth.js";
@@ -54,13 +54,6 @@ async function load() {
     );
   } else boards.value = (await api.meetups()).meetups;
 }
-onMounted(async () => {
-  try {
-    await load();
-  } catch (e) {
-    error.value = e.message;
-  }
-});
 watch(
   () => props.id,
   async () => {
@@ -70,6 +63,7 @@ watch(
       error.value = e.message;
     }
   },
+  { immediate: true },
 );
 async function act(fn) {
   if (busy.value) return;
@@ -124,9 +118,16 @@ function assignLocation() {
       });
 }
 async function getWeather() {
-  await act(async () => {
+  if (busy.value) return;
+  busy.value = true;
+  error.value = "";
+  try {
     weather.value = (await api.meetupWeather(props.id)).weather;
-  });
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    busy.value = false;
+  }
 }
 </script>
 <template>
@@ -139,8 +140,7 @@ async function getWeather() {
     <p v-if="error" class="group-error" role="alert">{{ error }}</p>
     <template v-if="!id"
       ><p>
-        Create a board from your group, accepted connection, or Kaki
-        conversation so only its current participants can access it.
+        Plan a meetup with your group or Kaki conversation.
       </p>
       <form
         v-if="
@@ -170,12 +170,11 @@ async function getWeather() {
         </button>
       </form>
       <RouterLink v-for="m in boards" :key="m.id" :to="`/meetups/${m.id}`"
-        >{{ m.title }} · {{ m.status }}</RouterLink
+        >{{ m.title }}, {{ m.status }}</RouterLink
       ></template
     ><template v-else-if="board"
       ><p>
-        {{ board.participantCount }} current participants · {{ board.status }} ·
-        revision {{ board.version }}
+        {{ board.participantCount }} participants, {{ board.status }}
       </p>
       <button
         v-if="
@@ -192,15 +191,13 @@ async function getWeather() {
       <section class="card group-panel">
         <h2>When are you available?</h2>
         <p>
-          Select 30-minute slots. Only aggregate availability is shared; your
-          submitted locations stay private.
+          Select 30-minute slots. Your starting locations stay private.
         </p>
         <div class="group-controls">
           <label v-for="s in board.grid" :key="s.startsAt" class="group-check"
             ><input v-model="slots[s.startsAt].selected" type="checkbox" />{{
               time(s.startsAt)
-            }}
-            · {{ s.availableCount }}/{{
+            }}, {{ s.availableCount }}/{{
               board.participantCount
             }}
             available</label
@@ -231,10 +228,8 @@ async function getWeather() {
           Apply this location to selected slots
         </button>
         <p>
-          Keep all available slots selected. After applying a common starting
-          location, adjust individual slot coordinates below if you will move
-          during the day. Approximate public starting points are sufficient;
-          locations are optional.
+          Starting locations are optional. Use an approximate public place;
+          adjust individual slots below if your location changes.
         </p>
         <details>
           <summary>Different locations during the day</summary>
@@ -270,7 +265,7 @@ async function getWeather() {
         class="card group-panel"
         @submit.prevent="act(() => api.proposeMeetupPlace(id, place))"
       >
-        <h2>Suggest an actual meeting place</h2>
+        <h2>Suggest a meeting place</h2>
         <label
           >Place name<input v-model="place.label" required maxlength="150"
         /></label>
@@ -300,23 +295,16 @@ async function getWeather() {
       </form>
       <section class="card group-panel">
         <h2>Recommended options</h2>
-        <p>
-          Ranked by attendance coverage, people within 15 km, total
-          straight-line distance, then distance fairness and votes. These are
-          not transit travel-time estimates.
-        </p>
         <article
           v-for="s in board.suggestions"
           :key="`${s.placeId}:${s.startsAt}`"
         >
           <p>
-            {{ s.label }} · {{ time(s.startsAt) }} · {{ s.availableCount }}/{{
+            {{ s.label }}, {{ time(s.startsAt) }}, {{ s.availableCount }}/{{
               s.participantCount
             }}
-            available · {{ s.totalDistanceKm === null ? 'Distance unavailable' : `${s.totalDistanceKm} km combined` }} ({{
-              s.locationRespondents
-            }}
-            locations supplied)
+            available, {{ s.totalDistanceKm === null ? 'distance unavailable' : `${s.totalDistanceKm} km combined distance` }}
+            ({{ s.locationRespondents }} locations supplied)
           </p>
           <div class="group-actions">
             <button
@@ -348,8 +336,7 @@ async function getWeather() {
         <p>
           {{
             board.places.find((p) => p.id === board.selected_place_id)?.label
-          }}
-          · {{ time(board.selected_start) }}
+          }}, {{ time(board.selected_start) }}
         </p>
         <p>
           Approvals: {{ board.approvals.length }}/{{
@@ -365,17 +352,16 @@ async function getWeather() {
           :disabled="busy"
           @click="act(() => api.approveMeetup(id, board.version))"
         >
-          Approve this revision</button
+          Approve plan</button
         ><button class="btn btn--ghost" :disabled="busy" @click="getWeather">
           Check short-range weather
         </button>
-        <p v-if="weather">{{ weather.message ?? weather.reason }}</p>
+        <p v-if="weather">{{ weather.message ?? 'Weather is unavailable right now.' }}</p>
       </section>
       <section class="card group-panel">
         <h2>Discuss and revise</h2>
         <p>
-          Suggest changes here or share this planning-board link in your group
-          chat. Changes to planning inputs invalidate earlier approvals.
+          Changes to the plan require fresh approvals.
         </p>
         <p v-for="c in board.comments" :key="c.id">
           <strong>{{ c.name }}:</strong> {{ c.body }}

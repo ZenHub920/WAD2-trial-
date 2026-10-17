@@ -38,8 +38,8 @@ watch(() => props.open, async (open) => {
       role="dialog"
       aria-modal="true"
       :aria-label="title"
-      @click.self="emit('cancel')"
-      @keydown.esc="emit('cancel')"
+      @click.self="!busy && emit('cancel')"
+      @keydown.esc="!busy && emit('cancel')"
     >
       <div class="confirm__panel">
         <h2 class="confirm__title">{{ title }}</h2>

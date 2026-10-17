@@ -2,8 +2,7 @@
  * Database connection and schema bootstrap.
  *
  * SQLite is used because it needs no server process, which keeps the project
- * runnable from a clone. The data access is confined to repositories.js, so
- * swapping in MySQL or Postgres means rewriting one file, not the application.
+ * runnable from a clone. Repositories keep SQL out of controllers and services.
  */
 
 import Database from 'better-sqlite3';
@@ -11,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createTicketImages, decodeTicketImage } from '../services/ticketImages.js';
+import { createTicketImages } from '../services/ticketImages.js';
 import { migrateGroups } from './groupMigrations.js';
 import { migrateCommunity } from './communityMigrations.js';
 import { migrateNotifications } from './notificationRepository.js';
@@ -26,17 +25,13 @@ export function getDb() {
 
   const file = process.env.ENCORE_DB ?? join(here, '../../data/encore.db');
   if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true });
-  db = new Database(file === ':memory:' ? ':memory:' : file);
+  db = new Database(file);
 
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
   const schema = readFileSync(join(here, 'schema.sql'), 'utf8');
   db.exec(schema);
-  const userColumns = db.prepare('PRAGMA table_info(users)').all();
-  if (!userColumns.some((column) => column.name === 'password_hash')) {
-    db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT');
-  }
   migrate(db);
   migrateGroups(db);
   migrateLegacyTickets(db);
@@ -59,6 +54,7 @@ export function getDb() {
  * without rebuilding their tables.
  */
 const ADDED_COLUMNS = [
+  ['users', 'password_hash', 'TEXT'],
   ['users', 'is_operator', 'INTEGER NOT NULL DEFAULT 0 CHECK (is_operator IN (0,1))'],
   ['concerts', 'source', 'TEXT'],
   ['concerts', 'source_event_id', 'TEXT'],
@@ -190,7 +186,6 @@ export function migrateLegacyTickets(target, imageDir = process.env.ENCORE_TICKE
     let imagePath = null;
     if (!row.ticket_id && hasImage && row.image_data) {
       try {
-        decodeTicketImage(row.image_data);
         imagePath = images.save(row.image_data);
       } catch (err) {
         if (err.message !== 'invalid_image') throw err;

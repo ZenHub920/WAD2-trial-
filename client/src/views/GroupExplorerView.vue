@@ -53,7 +53,7 @@ onMounted(async () => {
 });
 onUnmounted(() => { alive = false; generation++;clearTimeout(filterTimer); });
 async function saveAnswers(value){busy.value=true;try{await api.saveDiscoveryPreferences(concertId.value,value);await load();message.value='Preferences saved.';}catch(e){error.value=e.message;}finally{busy.value=false;}}
-async function join(id){busy.value=true;try{await api.requestGroupJoin(id);await load();message.value='Join request sent. The host will review it; no place is reserved yet.';}catch(e){await load();error.value=e.message;}finally{busy.value=false;}}
+async function join(id){busy.value=true;try{await api.requestGroupJoin(id);await load();message.value='Request sent. Your place is confirmed when the host approves.';}catch(e){await load();error.value=e.message;}finally{busy.value=false;}}
 async function withdrawJoin(id){busy.value=true;try{await api.respondGroupJoin(id,'withdraw');await load();}catch(e){error.value=e.message;}finally{busy.value=false;}}
 async function enroll(reopen = false) {
   if (busy.value) return;
@@ -81,15 +81,14 @@ async function preference(id, remove) {
 <template>
   <main class="container groups-page">
     <h1>Find a Group</h1>
-    <p>Find people going to the same concert. Choose a group and send a request to its host.</p>
     <nav class="group-actions"><RouterLink to="/kaki">Find a Kaki</RouterLink><RouterLink :to="{ path: '/groups/connect', query: { concertId } }">Connect Groups</RouterLink><RouterLink v-if="concertId" :to="`/concerts/${encodeURIComponent(concertId)}`">Concert &amp; proposals</RouterLink></nav>
-    <label>Concert<select v-model="concertId" :disabled="busy"><option value="">Select a concert</option><option v-for="c in concerts" :key="c.id" :value="c.id">{{ c.artist }} · {{ c.event_date }}</option></select></label>
+    <label>Concert<select v-model="concertId" :disabled="busy"><option value="">Select a concert</option><option v-for="c in concerts" :key="c.id" :value="c.id">{{ c.artist }}, {{ c.event_date }}</option></select></label>
     <p v-if="error" class="group-error" role="alert">{{ error }} <button class="btn btn--ghost" :disabled="busy || loading" @click="load">Retry</button></p>
     <p v-if="message" class="group-success" role="status">{{ message }}</p>
     <p v-if="loading" role="status">Loading groups and your preferences…</p>
     <template v-else-if="concertId">
       <section v-if="!seeker" class="card group-panel">
-        <h2>Create a seeker request</h2><p>Your request is separate from Find a Kaki enrollment.</p>
+        <h2>Your concert preferences</h2>
         <form class="group-panel" @submit.prevent="enroll()">
           <div class="group-controls">
             <label>Preferred seating<select v-model="form.section_pref"><option v-for="(name, id) in LABELS.section" :key="id" :value="id">{{ name }}</option></select></label>
@@ -97,18 +96,18 @@ async function preference(id, remove) {
             <label>Arrival<select v-model="form.arrival_pref"><option v-for="(name, id) in LABELS.arrival" :key="id" :value="id">{{ name }}</option></select></label>
           </div>
           <fieldset><legend>Activities</legend><label v-for="(name, id) in LABELS.plans" :key="id" class="group-check"><input v-model="form.plans_wanted[id]" type="checkbox">{{ name }}</label></fieldset>
-          <button class="btn btn--primary" :disabled="busy">{{ busy ? 'Saving…' : 'Create seeker request' }}</button>
+          <button class="btn btn--primary" :disabled="busy">{{ busy ? 'Saving…' : 'Start finding groups' }}</button>
         </form>
       </section>
-      <section v-else class="card group-panel"><h2>Your request: {{ seeker.status }}</h2><p v-if="seeker.status === 'matched'">Review your proposal on the concert page. You can still remove saved preferences.</p><button v-if="seeker.status === 'withdrawn'" class="btn btn--primary" :disabled="busy" @click="enroll(true)">Reopen withdrawn request</button></section>
+      <section v-else class="card group-panel"><h2>Your request: {{ seeker.status }}</h2><p v-if="seeker.status === 'matched'">Review your proposal on the concert page.</p><button v-if="seeker.status === 'withdrawn'" class="btn btn--primary" :disabled="busy" @click="enroll(true)">Reopen request</button></section>
       <section class="card group-panel"><h2>Search groups</h2><GroupFilters :filters="filters" preferences /></section>
-      <details v-if="answers" class="card group-panel"><summary>Your discovery preferences</summary><PreferenceEditor :key="concertId" :initial="answers" :busy="busy" @save="saveAnswers"/></details>
+      <details v-if="answers" class="card group-panel"><summary>Your preferences</summary><PreferenceEditor :key="concertId" :initial="answers" :busy="busy" @save="saveAnswers"/></details>
       <p>{{ visible.length }} {{ visible.length === 1 ? 'group' : 'groups' }} on this page. <span v-if="!seeker">Create a request to see your matches.</span></p>
-      <div class="group-grid"><GroupListingCard v-for="g in visible" :key="g.id" :group="g"><button class="btn btn--primary" :disabled="busy||!canPrefer||joins.some(j=>j.partyId===g.id&&j.status==='pending')" @click="join(g.id)">Request to join</button><details v-if="g.automaticPlacementAvailable"><summary>Optional automatic-placement preference</summary><p>Saving this only guides a separately run Gale–Shapley round for legacy listings.</p><button class="btn btn--ghost" :disabled="busy||(!g.preferred&&!canPrefer)" @click="preference(g.id,g.preferred)">{{g.preferred?'Remove Preference':'Prefer Group'}}</button></details></GroupListingCard></div>
+      <div class="group-grid"><GroupListingCard v-for="g in visible" :key="g.id" :group="g"><button class="btn btn--primary" :disabled="busy||!canPrefer||joins.some(j=>j.partyId===g.id&&j.status==='pending')" @click="join(g.id)">Request to join</button><details v-if="g.automaticPlacementAvailable"><summary>Matching preference</summary><button class="btn btn--ghost" :disabled="busy||(!g.preferred&&!canPrefer)" @click="preference(g.id,g.preferred)">{{g.preferred?'Remove preference':'Prefer for next round'}}</button></details></GroupListingCard></div>
       <nav class="group-actions"><button class="btn btn--ghost" :disabled="loading||busy||offset===0" @click="offset=Math.max(0,offset-20);load()">Previous 20</button><span>{{total}} results</span><button class="btn btn--ghost" :disabled="loading||busy||offset+20>=total" @click="offset+=20;load()">Next 20</button></nav>
-      <section v-if="joins.length" class="card group-panel"><h2>Join requests</h2><p v-for="j in joins" :key="j.id">{{j.artist}} · {{j.status}} <button v-if="j.status==='pending'" class="btn btn--ghost" :disabled="busy" @click="withdrawJoin(j.id)">Withdraw request</button><RouterLink v-if="j.status==='accepted'" :to="`/groups/${j.partyId}/members`">Your group</RouterLink></p></section>
+      <section v-if="joins.length" class="card group-panel"><h2>Join requests</h2><p v-for="j in joins" :key="j.id">{{j.artist}}, {{j.status}} <button v-if="j.status==='pending'" class="btn btn--ghost" :disabled="busy" @click="withdrawJoin(j.id)">Withdraw request</button><RouterLink v-if="j.status==='accepted'" :to="`/groups/${j.partyId}/members`">Your group</RouterLink></p></section>
       <p v-if="!visible.length" class="group-muted">No eligible groups match these filters. Try another concert or adjust your filters.</p>
-      <section class="card group-panel"><h2>Saved preferences</h2><p>You can remove preferences here even when a group fills, closes, or becomes ineligible.</p><p v-if="!saved.length">No saved preferences for this concert.</p><div v-for="p in saved" :key="p.partyId" class="group-actions"><span>{{ p.hostName }} · {{ LABELS.section[p.section] }} · {{ p.status }}</span><button class="btn btn--ghost" :disabled="busy" @click="preference(p.partyId, true)">Remove Preference</button></div></section>
+      <section class="card group-panel"><h2>Saved preferences</h2><p v-if="!saved.length">No saved preferences for this concert.</p><div v-for="p in saved" :key="p.partyId" class="group-actions"><span>{{ p.hostName }}, {{ LABELS.section[p.section] }}, {{ p.status }}</span><button class="btn btn--ghost" :disabled="busy" @click="preference(p.partyId, true)">Remove preference</button></div></section>
     </template>
     <p v-else-if="!concerts.length">No concerts are available yet.</p>
   </main>

@@ -51,7 +51,7 @@ function methodLabel(id) {
     </MarketNotice>
 
     <MarketNotice v-else-if="error" tone="error" title="Could not load this order">
-      <p class="mono">{{ error.message }}</p>
+      <p>Please refresh the page to try again.</p>
     </MarketNotice>
 
     <template v-else>

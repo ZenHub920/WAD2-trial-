@@ -73,7 +73,7 @@ function publicConversation(c, viewerId) {
     },
     listing: {
       id: c.ticket_id,
-      title: `${c.concert_artist} · ${c.ticket_section}`,
+      title: `${c.concert_artist}, ${c.ticket_section}`,
       priceCents: c.ticket_price_cents,
       status: c.ticket_status,
     },

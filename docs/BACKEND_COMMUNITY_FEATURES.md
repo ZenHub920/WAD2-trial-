@@ -437,3 +437,33 @@ All runtime verification used isolated databases. No development database was re
 This is not a full mobile/browser acceptance pass or a live-provider weather guarantee.
 Future group chat, embeddings, maps/transit, push delivery and scheduled weather
 remain explicit non-goals, not missing backend requirements.
+
+## Interface and code simplification review
+
+Standardized the product name as `Encore`. Removed obsolete footer/splash
+components, disabled placeholder filters, unused modules/styles/props and repetitive
+implementation copy. Kept the existing Vue/Express/SQLite structure and dependencies.
+
+The second source review simplified matching queues and rank-map construction,
+reused prepared statements/profiles/blocklists, removed unused realtime/repository
+wrappers and avoided reading whole chat transcripts for single-message responses.
+It also corrected Kaki avatar hydration and concert-specific new-match identity.
+
+Browser checks exercised direct finder entry, history undo, optional matching-demo
+interaction and mobile layouts. Reproduced draft leakage between marketplace
+threads, then confirmed resource changes start with an empty draft. Confirmed
+notification read actions preserve unsaved settings and weather checks preserve
+unsaved availability. The live home page has consistent branding, no footer/splash,
+no app-authored middots/em dashes and no horizontal overflow at 390px.
+
+Final verification: **253 backend tests passed**, frontend production build passed,
+and the static UI check passed across **73 frontend files**. An isolated live HTTP
+smoke exercised registration, publication, Kaki participation/mutual chat and ticket
+creation; the main app remains available on ports 5173/3000.
+
+The standard benchmark emitted valid JSON for four scenarios, all with stable
+Gale-Shapley results. The full `--json --scale` run exceeded Node's default roughly
+2 GB heap on this machine. The largest single-event input considers ten million
+candidate pairs. Temporary candidate objects now become collectible earlier, but
+this is not a verified fix for that dense-graph memory limit; workload/output were
+not reduced and the failing full-scale run was not repeated.

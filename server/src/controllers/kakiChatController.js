@@ -21,8 +21,6 @@
  * message for the person who did not act.
  */
 
-import { publicUser } from './publicUser.js';
-
 const MAX_BODY = 2000;
 
 /** Backgrounds the client offers. Server-side allowlist, not a free text field. */
@@ -171,19 +169,19 @@ export function createKakiChatController(repos, realtime = null) {
 
       // The sender has by definition read their own message, so advance their
       // marker too — otherwise sending would leave the thread looking unread.
-      chat.markReadToLatest(ctx.conversation.id, req.user.id);
+      const myLastRead = chat.markReadToLatest(ctx.conversation.id, req.user.id);
 
       const theirLastRead = chat.lastReadRowid(ctx.conversation.id, ctx.other);
+      const unreadFor = {
+        [ctx.other]: chat.unreadTotal(ctx.other),
+        [req.user.id]: chat.unreadTotal(req.user.id),
+      };
       push(ctx.conversation, 'message', (viewerId) => ({
         conversationId: ctx.conversation.id,
         message: shapeMessage(message, viewerId,
-          chat.lastReadRowid(ctx.conversation.id, viewerId === req.user.id ? ctx.other : req.user.id)),
-        // Each recipient needs their own unread total, so the raw counts go
-        // out and the client picks the one addressed to it.
-        unreadFor: {
-          [ctx.other]: chat.unreadTotal(ctx.other),
-          [req.user.id]: chat.unreadTotal(req.user.id),
-        },
+          viewerId === req.user.id ? theirLastRead : myLastRead),
+        // Each tab receives the totals for both participants.
+        unreadFor,
       }));
 
       return res.status(201).json({ message: shapeMessage(message, req.user.id, theirLastRead) });
@@ -211,7 +209,7 @@ export function createKakiChatController(repos, realtime = null) {
 
       chat.editMessage(req.params.messageId, req.user.id, body);
       const theirLastRead = chat.lastReadRowid(ctx.conversation.id, ctx.other);
-      const message = chat.messages(ctx.conversation.id).find((m) => m.id === req.params.messageId);
+      const message = chat.messageById(req.params.messageId);
       const updated = shapeMessage(message, req.user.id, theirLastRead);
       push(ctx.conversation, 'message-updated', (viewerId) => ({
         conversationId: ctx.conversation.id,
@@ -240,7 +238,7 @@ export function createKakiChatController(repos, realtime = null) {
 
       chat.deleteMessage(req.params.messageId, req.user.id);
       const theirLastRead = chat.lastReadRowid(ctx.conversation.id, ctx.other);
-      const message = chat.messages(ctx.conversation.id).find((m) => m.id === req.params.messageId);
+      const message = chat.messageById(req.params.messageId);
       const updated = shapeMessage(message, req.user.id, theirLastRead);
       push(ctx.conversation, 'message-updated', (viewerId) => ({
         conversationId: ctx.conversation.id,
@@ -432,5 +430,3 @@ function shapeMessage(m, viewerId = null, otherLastReadSeq = 0) {
       : null,
   };
 }
-
-export { publicUser };

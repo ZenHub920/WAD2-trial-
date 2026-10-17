@@ -25,8 +25,8 @@ const showBlocked = ref(false);
 
 /** Matches with no thread yet — the ones worth prompting about. */
 const unstarted = computed(() => {
-  const talking = new Set(conversations.value.map((c) => c.other.id));
-  return matches.value.filter((m) => !talking.has(m.user.id));
+  const talking = new Set(conversations.value.map((c) => `${c.concert.id}:${c.other.id}`));
+  return matches.value.filter((m) => !talking.has(`${m.concertId}:${m.user.id}`));
 });
 
 async function load() {
@@ -92,9 +92,7 @@ function when(iso) {
 
 let stopListening = null;
 
-onMounted(async () => {
-  await load();
-  await loadBlocked();
+onMounted(() => {
   // A new message, an edit or a read receipt can all change what this list
   // shows (preview text, ordering, unread count), and none of them are worth
   // reasoning about individually — reload the list, which is one small query.
@@ -102,6 +100,8 @@ onMounted(async () => {
     load();
     refreshUnread();
   });
+  load();
+  loadBlocked();
 });
 
 onUnmounted(() => stopListening?.());
@@ -126,8 +126,7 @@ onUnmounted(() => stopListening?.());
     <div v-if="showBlocked" class="blocked">
       <h2 class="blocked__title">Blocked people</h2>
       <p class="blocked__hint">
-        They cannot message you and your shared chats are hidden. Unblocking
-        restores the conversation and its history.
+        Blocking hides your chats and stops messages. Unblocking restores your chat history.
       </p>
       <ul class="blocked__list">
         <li v-for="entry in blocked" :key="entry.id">
@@ -185,8 +184,8 @@ onUnmounted(() => stopListening?.());
       </ul>
 
       <p v-else-if="!unstarted.length" class="empty">
-        No conversations yet. Match with someone in
-        <RouterLink to="/kaki">Kaki Finder</RouterLink> and you can message them here.
+        No conversations yet. Find your next concert companion in
+        <RouterLink to="/kaki">Kaki Finder</RouterLink>.
       </p>
     </template>
   </div>
@@ -245,23 +244,6 @@ onUnmounted(() => stopListening?.());
   width: 4.5rem;
 }
 
-.fresh__avatar {
-  display: grid;
-  place-items: center;
-  width: 3.5rem;
-  height: 3.5rem;
-  border-radius: 50%;
-  background: linear-gradient(145deg, var(--accent-400), var(--accent-600));
-  color: #fff;
-  font-size: var(--step-1);
-  font-weight: 600;
-  /* A ring, because an unstarted match is the thing to act on. */
-  box-shadow: 0 0 0 2px var(--ink-900), 0 0 0 4px var(--accent-500);
-  transition: transform var(--dur-fast) var(--ease-spring);
-}
-
-.fresh__item:hover .fresh__avatar { transform: scale(1.06); }
-
 .fresh__name {
   font-size: var(--step--2);
   color: var(--text-300);
@@ -287,18 +269,6 @@ onUnmounted(() => stopListening?.());
 }
 
 .thread:hover { background: var(--ink-850); }
-
-.thread__avatar {
-  display: grid;
-  place-items: center;
-  width: 3rem;
-  height: 3rem;
-  border-radius: 50%;
-  background: var(--ink-700);
-  color: var(--text-200);
-  font-weight: 600;
-  flex-shrink: 0;
-}
 
 .thread__text { display: grid; gap: 2px; flex: 1; min-width: 0; }
 .thread__top { display: flex; justify-content: space-between; gap: var(--space-3); }

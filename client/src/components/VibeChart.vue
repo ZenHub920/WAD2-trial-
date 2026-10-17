@@ -1,16 +1,10 @@
 <script setup>
-/**
- * Six-axis radar for a person's vibe vector.
- *
- * The same vector the backend feeds into cosine similarity, drawn so two people's
- * compatibility is legible at a glance rather than as a number.
- */
+// Radar for the vibe vector used in compatibility scoring.
 import { computed } from 'vue';
 import { LABELS } from '../api.js';
 
 const props = defineProps({
   vibe: { type: Object, required: true },
-  compare: { type: Object, default: null },
   size: { type: Number, default: 160 },
   max: { type: Number, default: 5 },
 });
@@ -98,7 +92,6 @@ const labelPositions = computed(() =>
       />
     </g>
 
-    <polygon v-if="compare" class="radar__compare" :points="polygon(compare)" />
     <polygon class="radar__shape" :points="polygon(vibe)" />
 
     <g class="radar__labels">
@@ -142,14 +135,6 @@ const labelPositions = computed(() =>
   transition: all var(--dur-slow) var(--ease-out);
 }
 
-.radar__compare {
-  fill: color-mix(in oklab, var(--cyan-400) 18%, transparent);
-  stroke: var(--cyan-400);
-  stroke-width: 1.5;
-  stroke-dasharray: 4 3;
-  stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
-}
 
 .radar__labels text {
   font-family: var(--font-mono);

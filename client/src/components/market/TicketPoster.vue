@@ -32,7 +32,7 @@ const hue = computed(() => hueFor(props.listing.concert.id));
     <div v-else class="poster__art" :style="{ '--hue': hue }" aria-hidden="true">
       <p class="poster__artist">{{ listing.concert.artist }}</p>
       <p class="poster__meta">
-        {{ formatShortDate(listing.concert.event_date) }} · {{ listing.concert.venue }}
+        {{ formatShortDate(listing.concert.event_date) }}, {{ listing.concert.venue }}
       </p>
     </div>
   </div>

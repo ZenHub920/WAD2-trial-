@@ -60,7 +60,7 @@ async function pay() {
     <div v-if="loading" class="skeleton" aria-busy="true" />
 
     <MarketNotice v-else-if="error" tone="error" title="Could not load checkout">
-      <p class="mono">{{ error.message }}</p>
+      <p>Please refresh the page to try again.</p>
     </MarketNotice>
 
     <form v-else class="checkout" @submit.prevent="pay">
@@ -102,7 +102,7 @@ async function pay() {
       </button>
       <p class="secure">
         <MarketIcon name="lock" :size="14" />
-        Demo checkout — no real payment is taken.
+        Demo checkout. No real payment is taken.
       </p>
     </form>
   </div>

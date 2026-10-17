@@ -17,7 +17,7 @@ async function applyAvatar(dataUrl) {
   } catch (err) {
     avatarError.value = err.message === 'invalid_image'
       ? 'That file is not a readable image.'
-      : `Could not save the picture: ${err.message}`;
+      : 'Could not save the picture. Please try again.';
   } finally {
     avatarBusy.value = false;
   }
@@ -29,8 +29,8 @@ async function removeAvatar() {
   try {
     const { user } = await api.clearAvatar();
     setCurrentUser({ ...currentUser.value, ...user });
-  } catch (err) {
-    avatarError.value = `Could not remove the picture: ${err.message}`;
+  } catch {
+    avatarError.value = 'Could not remove the picture. Please try again.';
   } finally {
     avatarBusy.value = false;
   }
@@ -111,7 +111,7 @@ async function save() {
     sessionExpired.value = error.status === 401;
     saveError.value = sessionExpired.value
       ? 'Your session has expired. Sign in again to edit your profile.'
-      : `Could not save your profile: ${error.message}`;
+      : 'Could not save your profile. Please try again.';
   } finally {
     saving.value = false;
   }
@@ -128,7 +128,7 @@ async function save() {
 
     <p v-if="loading" role="status">Loading your profile…</p>
     <div v-else-if="loadError" class="profile__notice" role="alert">
-      <p>{{ loadError.status === 401 ? 'Sign in to see your profile.' : `Could not load your profile: ${loadError.message}` }}</p>
+      <p>{{ loadError.status === 401 ? 'Sign in to see your profile.' : 'Could not load your profile. Please try again.' }}</p>
       <RouterLink v-if="loadError.status === 401" to="/login" class="btn btn--primary">Sign in</RouterLink>
       <button v-else class="btn btn--ghost" type="button" @click="loadProfile">Retry</button>
     </div>
@@ -155,7 +155,7 @@ async function save() {
             <input v-model="form.displayName" type="text" autocomplete="nickname" required />
           </label>
           <label class="profile__field">
-            Email <span class="profile__hint">Only visible to you; not editable here.</span>
+            Email <span class="profile__hint">Only visible to you.</span>
             <input :value="profile.email" type="email" readonly />
           </label>
           <label class="profile__field">
@@ -191,8 +191,7 @@ async function save() {
         </fieldset>
       </section>
       <p class="profile__hint">
-        {{ profile.verified ? 'Verified account' : 'Not verified' }} · Reliability {{ Math.round(profile.reliability * 100) }}%
-        (these account indicators cannot be edited here).
+        {{ profile.verified ? 'Verified account' : 'Not verified' }}, Reliability {{ Math.round(profile.reliability * 100) }}%
       </p>
 
       <section class="profile__card" aria-labelledby="profile-vibe">

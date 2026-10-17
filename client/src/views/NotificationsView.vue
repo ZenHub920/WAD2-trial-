@@ -8,12 +8,7 @@ const items = ref([]),
 let timer;
 async function load() {
   try {
-    const [a, b] = await Promise.all([
-      api.notifications(),
-      api.notificationSettings(),
-    ]);
-    items.value = a.notifications;
-    settings.value = b.preferences;
+    items.value = (await api.notifications()).notifications;
   } catch (e) {
     error.value = e.message;
   }
@@ -27,19 +22,25 @@ async function read(id) {
   }
 }
 async function save() {
+  if (busy.value) return;
   busy.value = true;
   try {
     await api.saveNotificationSettings(settings.value);
-    await load();
+    settings.value = (await api.notificationSettings()).preferences;
   } catch (e) {
     error.value = e.message;
   } finally {
     busy.value = false;
   }
 }
-onMounted(() => {
+onMounted(async () => {
   load();
   timer = setInterval(load, 30000);
+  try {
+    settings.value = (await api.notificationSettings()).preferences;
+  } catch (e) {
+    error.value = e.message;
+  }
 });
 onUnmounted(() => clearInterval(timer));
 </script>
@@ -50,7 +51,7 @@ onUnmounted(() => clearInterval(timer));
     <form class="card group-panel" @submit.prevent="save">
       <h2>Notify me about</h2>
       <label v-for="(_, key) in settings" :key="key" class="group-check"
-        ><input v-model="settings[key]" type="checkbox" />{{ key }}</label
+        ><input v-model="settings[key]" type="checkbox" :disabled="busy" />{{ key }}</label
       ><button class="btn btn--primary" :disabled="busy">Save settings</button>
     </form>
     <p v-if="!items.length">No notifications yet.</p>
@@ -58,7 +59,7 @@ onUnmounted(() => clearInterval(timer));
       <RouterLink :to="item.path" @click="read(item.id)">{{
         item.title
       }}</RouterLink
-      ><span>{{ item.createdAt }} · {{ item.readAt ? "Read" : "Unread" }}</span
+      ><span>{{ item.createdAt }}, {{ item.readAt ? "Read" : "Unread" }}</span
       ><button
         v-if="!item.readAt"
         class="btn btn--ghost"

@@ -133,7 +133,7 @@ export function createKakiChatRepo(db) {
    * the tombstone is built from deleted_at alone, so a deleted message cannot
    * leak through the API even if a caller forgets to mask it.
    */
-  const listMessages = db.prepare(`
+  const MESSAGE_ROWS = `
     SELECT m.id, m.conversation_id, m.sender_user_id, m.created_at,
            m.edited_at, m.deleted_at, m.reply_to_message_id,
            m.rowid AS seq,
@@ -143,6 +143,9 @@ export function createKakiChatRepo(db) {
            r.deleted_at AS reply_deleted_at
     FROM messages m
     LEFT JOIN messages r ON r.id = m.reply_to_message_id
+  `;
+  const listMessages = db.prepare(`
+    ${MESSAGE_ROWS}
     WHERE m.conversation_id = ?
     -- Tie-break on rowid, NOT on id. created_at is datetime('now'), which has
     -- one-second granularity, so a burst of messages shares a timestamp — and
@@ -156,7 +159,7 @@ export function createKakiChatRepo(db) {
     VALUES (@id, @conversation, @sender, @body, @replyTo)
   `);
 
-  const messageById = db.prepare('SELECT * FROM messages WHERE id = ?');
+  const messageById = db.prepare(`${MESSAGE_ROWS} WHERE m.id = ?`);
 
   const inConversation = db.prepare(
     'SELECT 1 AS ok FROM messages WHERE id = ? AND conversation_id = ?',
@@ -304,7 +307,7 @@ export function createKakiChatRepo(db) {
       insertMessage.run({
         id, conversation: conversationId, sender: senderId, body, replyTo,
       });
-      return listMessages.all(conversationId).find((m) => m.id === id);
+      return messageById.get(id);
     },
 
     messageById: (id) => messageById.get(id),

@@ -62,8 +62,8 @@ export function galeShapley(profile, options = {}) {
     if ((seekerPrefs.get(seekerId) ?? []).length > 0) free.push(seekerId);
   }
 
-  while (free.length > 0) {
-    const seekerId = free.shift();
+  for (let nextFree = 0; nextFree < free.length; nextFree += 1) {
+    const seekerId = free[nextFree];
     const list = seekerPrefs.get(seekerId) ?? [];
     const cursor = nextProposal.get(seekerId);
 

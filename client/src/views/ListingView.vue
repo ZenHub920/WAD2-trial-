@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api, formatDate } from '../api.js';
 import { SECTION_SUGGESTIONS } from '../market.js';
@@ -17,7 +17,6 @@ const proof = ref('');
 const concerts = ref([]);
 const concertId = ref('');
 const addingConcert = ref(false);
-const selectedConcert = computed(() => concerts.value.find((c) => c.id === concertId.value) ?? null);
 
 onMounted(async () => {
   try {
@@ -88,7 +87,7 @@ async function submitListing() {
             event_date: listing.value.eventDate,
           },
         }
-        : { concertId: selectedConcert.value.id }),
+        : { concertId: concertId.value }),
       priceCents: Math.round(Number(listing.value.price) * 100),
       quantity: Number(listing.value.quantity),
       section: listing.value.section,
@@ -117,9 +116,7 @@ async function submitListing() {
       <RouterLink to="/marketplace" class="listing-page__back">← Back to ticket market</RouterLink>
 
       <header class="listing-page__header">
-        <p class="eyebrow">Sell with Encore</p>
         <h1>List your ticket</h1>
-        <p>Share your spare ticket with someone who wants to be there too.</p>
       </header>
 
       <form class="listing-form" @submit.prevent="submitListing">
@@ -140,7 +137,7 @@ async function submitListing() {
             <select v-model="concertId" required>
               <option value="" disabled>Choose the concert</option>
               <option v-for="concert in concerts" :key="concert.id" :value="concert.id">
-                {{ concert.artist }} — {{ formatDate(concert.event_date) }} · {{ concert.venue }}
+                {{ concert.artist }}, {{ formatDate(concert.event_date) }}, {{ concert.venue }}
               </option>
             </select>
             <button type="button" class="listing-form__link" @click="addingConcert = true">
@@ -164,7 +161,7 @@ async function submitListing() {
               <input v-model="listing.eventDate" type="date" lang="en-GB" required />
             </label>
             <p v-if="concerts.length" class="listing-form__field listing-form__field--wide listing-form__hint">
-              A newly added concert has no issued ticket list yet, so verification goes through proof review.
+              New concerts require proof of purchase for verification.
               <button type="button" class="listing-form__link" @click="addingConcert = false">Choose an existing concert instead</button>
             </p>
           </template>
@@ -211,7 +208,7 @@ async function submitListing() {
             />
           </label>
           <div class="listing-form__field listing-form__field--wide">
-            <p class="listing-form__hint">No ticket number, or the concert has no issued list? Upload proof for an operator to review instead.</p>
+            <p class="listing-form__hint">You can also upload proof of purchase for review.</p>
             <ProofUpload v-model="proof" />
           </div>
         </section>
@@ -238,7 +235,6 @@ async function submitListing() {
 .listing-page__back { color: var(--text-300); text-decoration: none; font-size: var(--step--1); }
 .listing-page__header { margin-block: var(--space-7) var(--space-6); }
 .listing-page__header h1 { margin-top: var(--space-2); }
-.listing-page__header p:last-child { margin-top: var(--space-3); color: var(--text-300); }
 .listing-form { display: grid; gap: var(--space-5); }
 .listing-form__section { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); padding: var(--space-5); border: var(--border-soft); border-radius: var(--radius-lg); background: var(--ink-850); }
 .listing-form__section h2 { grid-column: 1 / -1; font-size: var(--step-1); }

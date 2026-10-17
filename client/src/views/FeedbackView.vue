@@ -29,6 +29,7 @@ onMounted(async () => {
   }
 });
 async function submit(item) {
+  if (busy.value) return;
   busy.value = true;
   error.value = "";
   try {
@@ -49,8 +50,7 @@ async function submit(item) {
   <main class="container groups-page">
     <h1>Post-concert feedback</h1>
     <p>
-      Feedback is available after the concert day ends in Singapore, only for
-      people in your confirmed attendance group before that event.
+      Share feedback about your group after the concert.
     </p>
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-if="!opportunities.length">
@@ -62,7 +62,7 @@ async function submit(item) {
       class="card group-panel"
       @submit.prevent="submit(item)"
     >
-      <h2>{{ item.name }} · {{ item.artist }}</h2>
+      <h2>{{ item.name }}, {{ item.artist }}</h2>
       <label class="group-check"
         ><input
           v-model="forms[`${item.partyId}:${item.ratedUserId}`].showedUp"
@@ -87,8 +87,8 @@ async function submit(item) {
       <h2>Your feedback history</h2>
       <article v-for="item in history" :key="item.id">
         <p>
-          {{ item.rating }}/5 ·
-          {{ item.showedUp ? "Attended" : "Did not attend" }} ·
+          {{ item.rating }}/5,
+          {{ item.showedUp ? "Attended" : "Did not attend" }},
           {{ item.createdAt }}
         </p>
         <p>{{ item.comment }}</p>

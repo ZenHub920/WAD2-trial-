@@ -22,16 +22,10 @@
  * stated plainly rather than left for someone to discover.
  */
 
-import { EventEmitter } from 'node:events';
-
 /** Browsers reconnect an idle EventSource; a comment line keeps it from idling. */
 const HEARTBEAT_MS = 25_000;
 
 export function createRealtime() {
-  const bus = new EventEmitter();
-  // A popular user could exceed the default 10-listener warning threshold.
-  bus.setMaxListeners(0);
-
   /** userId -> Set of subscriber callbacks (one per open tab). */
   const subscribers = new Map();
 
@@ -68,7 +62,6 @@ export function createRealtime() {
     connectionCount: (userId) => subscribers.get(userId)?.size ?? 0,
     totalConnections: () => [...subscribers.values()].reduce((n, s) => n + s.size, 0),
     HEARTBEAT_MS,
-    bus,
   };
 }
 

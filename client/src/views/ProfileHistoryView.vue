@@ -88,8 +88,6 @@ async function undo() {
       <span />
     </header>
 
-    <p class="hist__lede">Your skips, likes and mutual matches — undo any decision.</p>
-
     <label class="hist__search">
       <span class="sr-only">Search by name or concert</span>
       <input v-model="query" type="search" placeholder="Search by name or concert" />
@@ -104,7 +102,7 @@ async function undo() {
     </div>
     <template v-else>
       <p v-if="skipped.length === 0 && liked.length === 0" class="hist__state">
-        Nothing yet. Skipped and liked profiles show up here.
+        {{ query.trim() ? 'No profiles match your search.' : 'Your skipped and liked profiles will appear here.' }}
       </p>
 
       <section v-if="skipped.length" class="hist__section">
@@ -153,7 +151,7 @@ async function undo() {
               </span>
               <span class="hist__time">{{ relativeTime(row.at) }}</span>
               <span class="hist__time">
-                {{ row.mutual ? 'Matched — mutual like' : 'Liked — waiting for their like' }}
+                {{ row.mutual ? 'Matched' : 'Waiting for their like' }}
               </span>
             </span>
 
@@ -226,13 +224,6 @@ async function undo() {
 
 .hist__back:hover {
   background: var(--ink-700);
-}
-
-.hist__lede {
-  margin: 0 0 var(--space-4);
-  text-align: center;
-  font-size: var(--step--1);
-  color: var(--text-300);
 }
 
 .hist__search input {

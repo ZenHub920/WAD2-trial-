@@ -30,7 +30,7 @@ export function sectionLabel(section) {
 
 /** A listing has no title of its own: it is the concert plus the section, e.g. "KIYOKO · Cat 1". */
 export function listingTitle(listing) {
-  return `${listing.concert.artist} · ${sectionLabel(listing.section)}`;
+  return `${listing.concert.artist}, ${sectionLabel(listing.section)}`;
 }
 
 /** Common categories offered as suggestions; sellers can type any section printed on their ticket. */
@@ -104,7 +104,7 @@ export function useTicket(id) {
   }
 
   watch(() => toValue(id), load, { immediate: true });
-  return { listing, loading, error, reload: load };
+  return { listing, loading, error };
 }
 
 /* ---------------------------------------------------------------------------

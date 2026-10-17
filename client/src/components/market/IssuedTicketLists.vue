@@ -75,10 +75,10 @@ onMounted(load);
         <div class="row__main">
           <div class="row__name">
             <strong>{{ concert.artist }}</strong>
-            <span>{{ formatDate(concert.event_date) }} · {{ concert.venue }}</span>
+            <span>{{ formatDate(concert.event_date) }}, {{ concert.venue }}</span>
           </div>
           <span class="row__count tabular" :class="{ 'row__count--none': !concert.issued }">
-            {{ concert.issued ? `${concert.issued} issued · ${concert.listed} listed` : 'No list' }}
+            {{ concert.issued ? `${concert.issued} issued, ${concert.listed} listed` : 'No list' }}
           </span>
           <button class="btn btn--ghost row__btn" type="button" :aria-expanded="openId === concert.id" @click="toggle(concert.id)">
             {{ openId === concert.id ? 'Cancel' : 'Import' }}

@@ -36,6 +36,7 @@ const props = defineProps({
   items: { type: Array, required: true },
   /** How many cards behind the top one are rendered. */
   depth: { type: Number, default: 2 },
+  showProfile: { type: Boolean, default: true },
 
   /* Wording. The deck is used for groups on a concert page and for people in
      the Kaki Finder, and "Shortlist this group" is wrong in the second. The
@@ -59,7 +60,7 @@ const prefersReduced = useReducedMotion();
 
 const index = ref(0);
 const drag = ref({ x: 0, y: 0, active: false, grabBelowCentre: 0 });
-const leaving = ref(null); // { id, direction } while a committed card flies out
+const leaving = ref(null); // { direction } while a committed card flies out
 const history = ref([]); // for undo
 const announcement = ref('');
 const pending = ref(false);
@@ -138,7 +139,7 @@ function stackStyle(offset) {
 
   return {
     transform: `translate3d(0, ${lift}px, 0) scale(${scale})`,
-    opacity: offset > props.depth ? 0 : 1 - depthStep * 0.25,
+    opacity: 1 - depthStep * 0.25,
     transition: drag.value.active
       ? 'none'
       : prefersReduced.value
@@ -236,7 +237,7 @@ function commit(direction) {
     return;
   }
 
-  leaving.value = { id: item.id, direction };
+  leaving.value = { direction };
   window.setTimeout(() => { void finish(item, direction); }, 300);
 }
 
@@ -327,7 +328,7 @@ defineExpose({ undo, remaining });
     <div class="deck__status">
       <p class="deck__count">
         <span class="tabular">{{ remaining }}</span>
-        {{ remaining === 1 ? nounSingular : nounPlural }} to judge
+        {{ remaining === 1 ? nounSingular : nounPlural }} left
       </p>
       <div class="deck__track" aria-hidden="true">
         <div class="deck__track-fill" :style="{ transform: `scaleX(${progress})` }" />
@@ -339,8 +340,8 @@ defineExpose({ undo, remaining });
       role="application"
       :aria-label="
         current
-          ? `Judging ${labelFor(current)}. Arrow right to ${yesLabel.toLowerCase()}, arrow left to ${noLabel.toLowerCase()}.`
-          : `No ${nounPlural} left to judge`
+          ? `${labelFor(current)}. Arrow right to ${yesLabel.toLowerCase()}, arrow left to ${noLabel.toLowerCase()}.`
+          : `No ${nounPlural} left`
       "
       tabindex="0"
       @keydown="onKeydown"
@@ -393,7 +394,7 @@ defineExpose({ undo, remaining });
           <slot name="card" :item="item" :is-top="offset === 0" />
 
           <button
-            v-if="offset === 0"
+            v-if="offset === 0 && showProfile"
             class="deck__open"
             data-no-drag
             type="button"
@@ -407,10 +408,7 @@ defineExpose({ undo, remaining });
       <div v-if="!current" class="deck__empty">
         <h3>That's everyone</h3>
         <slot name="empty">
-          <p>
-            Your shortlist is ready for the next matching round. Nothing is final —
-            the algorithm still has to find a stable assignment.
-          </p>
+          <p>Your shortlist is ready for the next matching round.</p>
         </slot>
         <button v-if="history.length" class="btn btn--ghost" type="button" :disabled="pending" @click="undo">
           Back one

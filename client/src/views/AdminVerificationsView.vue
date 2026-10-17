@@ -70,13 +70,12 @@ onMounted(load);
     <div v-if="loading" class="skeleton" aria-busy="true" />
 
     <MarketNotice v-else-if="error?.status === 401 || error?.status === 403" title="Operators only">
-      This page is for ticket reviewers. An operator account is granted with
-      <code>npm run operator:grant -- &lt;email&gt;</code>.
+      A reviewer account is required to access this page.
       <RouterLink :to="{ name: 'marketplace' }">Back to the market</RouterLink>
     </MarketNotice>
 
     <MarketNotice v-else-if="error" tone="error" title="Could not load the queue">
-      <p class="mono">{{ error.message }}</p>
+      <p>Use Refresh to try again.</p>
     </MarketNotice>
 
     <template v-else>
@@ -107,9 +106,9 @@ onMounted(load);
           </h2>
           <dl class="item__facts">
             <div><dt>Seller</dt><dd>{{ listing.seller.displayName }}</dd></div>
-            <div><dt>Event</dt><dd>{{ listing.concert.artist }} · {{ formatDate(listing.concert.event_date) }}</dd></div>
+            <div><dt>Event</dt><dd>{{ listing.concert.artist }}, {{ formatDate(listing.concert.event_date) }}</dd></div>
             <div><dt>Venue</dt><dd>{{ listing.concert.venue }}</dd></div>
-            <div><dt>Ticket</dt><dd>{{ sectionLabel(listing.section) }} · {{ listing.quantity }} × · {{ formatMoney(listing.priceCents) }}</dd></div>
+            <div><dt>Ticket</dt><dd>{{ sectionLabel(listing.section) }}, {{ listing.quantity }} × {{ formatMoney(listing.priceCents) }}</dd></div>
             <div><dt>Listed</dt><dd>{{ formatRelative(listing.createdAt) }}</dd></div>
           </dl>
           <p class="item__check">
@@ -118,7 +117,7 @@ onMounted(load);
 
           <label class="item__note">
             Note to seller (required to reject)
-            <textarea v-model="notes[listing.id]" rows="2" maxlength="500" placeholder="e.g. Order number is cut off — please upload the full confirmation." />
+            <textarea v-model="notes[listing.id]" rows="2" maxlength="500" placeholder="e.g. Please upload the full confirmation showing the order number." />
           </label>
           <p v-if="actionError[listing.id]" class="item__error" role="alert">{{ actionError[listing.id] }}</p>
 

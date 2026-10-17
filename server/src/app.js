@@ -40,11 +40,6 @@ export function createApp({
   app.use('/api/ticket-images', express.static(imageDir));
   app.use('/api/avatars', express.static(avatarDir));
   app.use('/api', createTicketmasterRoutes());
-   // Pass the existing SQLite connection to the route registry.
-  //
-  // Reuse the same database instance for matching,
-  // proposals, sessions and upcoming enhancements.
-
   app.use('/api', createRoutes({
     db,
     repos,

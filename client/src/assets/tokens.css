@@ -1,11 +1,11 @@
 /**
- * Design tokens — Concert Kaki.
+ * Design tokens — encore.
  *
  * Everything visual in the app resolves to a value defined here. Components never
  * hard-code a colour, a radius or a spacing step, which is what keeps the interface
  * reading as one system rather than a pile of screens.
  *
- * The palette keeps the Concert Kaki prototype's lavender and indigo, with
+ * The palette keeps the encore prototype's lavender and indigo, with
  * slightly deeper surfaces and a restrained purple accent for primary actions.
  * Because every screen already reads from these names, restyling the product is a
  * change of VALUES here rather than a sweep through the views.
@@ -86,7 +86,6 @@
   --space-7: 3rem;
   --space-8: 4rem;
   --space-9: 6rem;
-  --space-10: 8rem;
 
   /* ---- Radii, borders, shadows ------------------------------------------
    * The prototype's inputs and buttons are softer than the old dark theme's,
@@ -127,7 +126,6 @@
   --ease-snap: cubic-bezier(0.5, 0, 0.75, 0);
   --ease-glide: cubic-bezier(0.4, 0, 0.2, 1);
 
-  --dur-instant: 80ms;
   --dur-fast: 140ms;
   --dur-base: 240ms;
   --dur-slow: 420ms;
@@ -141,7 +139,6 @@
    * together, so they are defined as a pair rather than per-component. */
   --glass-blur: saturate(180%) blur(20px);
   --glass-tint: rgba(238, 235, 242, 0.88);
-  --glass-edge: rgba(47, 25, 95, 0.08);
 
   /* ---- Layout ------------------------------------------------------------ */
   --measure: 68ch;          /* readable line length for prose */
@@ -159,7 +156,7 @@
 /**
  * Dark theme.
  *
- * The original Encore stage palette, kept intact and moved behind an explicit
+ * The original encore stage palette, kept intact and moved behind an explicit
  * opt-in. Nothing in the app depends on it any more, but the toggle still works
  * and the algorithm views were tuned against these hues.
  */
@@ -197,7 +194,6 @@
   --shadow-lg: 0 24px 64px -16px rgba(0, 0, 0, 0.85);
 
   --glass-tint: rgba(13, 12, 19, 0.72);
-  --glass-edge: rgba(255, 255, 255, 0.08);
 }
 
 @media (max-width: 640px) {

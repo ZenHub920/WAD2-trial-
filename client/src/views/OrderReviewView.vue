@@ -27,7 +27,7 @@ const buyable = computed(() => listing.value?.status === 'active' && !ownListing
     <div v-if="loading" class="skeleton" aria-busy="true" />
 
     <MarketNotice v-else-if="error" tone="error" title="Could not load this order">
-      <p class="mono">{{ error.message }}</p>
+      <p>Please refresh the page to try again.</p>
     </MarketNotice>
 
     <template v-else>

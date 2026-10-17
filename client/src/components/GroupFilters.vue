@@ -5,7 +5,7 @@ defineProps({ filters: { type: Object, required: true }, preferences: Boolean })
 
 <template>
   <div class="group-controls" role="search" aria-label="Filter groups">
-    <label>Search concert, artist, host or notes<input v-model="filters.query" type="search" placeholder="Search groups"></label>
+    <label>Search<input v-model="filters.query" type="search" placeholder="Artist, host or notes"></label>
     <label>Seating<select v-model="filters.section"><option value="">All sections</option><option v-for="(name, id) in LABELS.section" :key="id" :value="id">{{ name }}</option></select></label>
     <label>Minimum available places<input v-model.number="filters.minCapacity" type="number" min="0" step="1"></label>
     <label>Spending<select v-model="filters.spendBand"><option value="">Any budget</option><option v-for="n in 4" :key="n" :value="n">{{ LABELS.spendBand[n] }}</option></select></label>

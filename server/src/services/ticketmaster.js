@@ -1,6 +1,6 @@
 const DISCOVERY_URL = 'https://app.ticketmaster.com/discovery/v2/events.json';
 
-/** Return concert fields understood by Encore, not a provider-specific response body. */
+/** Return concert fields understood by encore, not a provider-specific response body. */
 export function normalizeTicketmasterEvent(event) {
   const id = event?.id;
   const date = event?.dates?.start?.localDate;

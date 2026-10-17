@@ -49,12 +49,8 @@ const PRESSURE_COPY = {
 <template>
   <div class="container section">
     <header class="page-head">
-      <p class="eyebrow">Open rounds</p>
-      <h1>Concerts matching now</h1>
-      <p class="lede">
-        Each concert runs its own matching round. Join as someone looking for a group,
-        or list the spare tickets you are holding.
-      </p>
+      <h1>Concerts</h1>
+      <p class="lede">Find a concert and people to go with.</p>
     </header>
 
     <div class="filters" role="group" aria-label="Filter concerts">
@@ -75,12 +71,8 @@ const PRESSURE_COPY = {
     </div>
 
     <div v-else-if="error" class="notice notice--error">
-      <h3>Could not reach the API</h3>
-      <p>
-        Start the backend from <code>server/</code>:
-        <code>npm install &amp;&amp; npm run seed &amp;&amp; npm start</code>
-      </p>
-      <p class="notice__detail mono">{{ error.message }}</p>
+      <h3>Could not load concerts</h3>
+      <p>Refresh the page to try again.</p>
     </div>
 
     <p v-else-if="!filtered.length" class="notice">
@@ -102,7 +94,7 @@ const PRESSURE_COPY = {
 
         <h2 class="concert__artist">{{ concert.artist }}</h2>
         <p v-if="concert.tour_name" class="concert__tour">{{ concert.tour_name }}</p>
-        <p class="concert__venue">{{ concert.venue }} · {{ concert.city }}</p>
+        <p class="concert__venue">{{ concert.venue }}, {{ concert.city }}</p>
 
         <p v-if="concert.blurb" class="concert__blurb">{{ concert.blurb }}</p>
 
@@ -331,9 +323,6 @@ const PRESSURE_COPY = {
   margin-bottom: var(--space-3);
 }
 
-.notice code {
-  color: var(--accent-400);
-}
 
 .notice__detail {
   margin-top: var(--space-3);

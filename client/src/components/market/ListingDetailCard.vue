@@ -23,7 +23,7 @@ const props = defineProps({
   busy: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['buy', 'chat', 'toggle-save', 'add-to-cart', 'copy-link', 'remove', 'edit']);
+const emit = defineEmits(['buy', 'chat', 'toggle-save', 'copy-link', 'remove', 'edit']);
 
 const price = computed(() => priceParts(props.listing.priceCents));
 const available = computed(() => props.listing.status === 'active');
@@ -94,14 +94,6 @@ function copyLink() {
       <span v-if="!available" class="tag tag--rose">Sold</span>
 
       <div class="dcard__quick">
-        <button
-          class="icon-btn"
-          aria-label="Add to cart"
-          :disabled="!available"
-          @click="emit('add-to-cart', listing)"
-        >
-          <MarketIcon name="cart" />
-        </button>
         <button
           class="icon-btn"
           :class="{ 'icon-btn--on': saved }"

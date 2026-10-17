@@ -1,52 +1,9 @@
 /**
- * ============================================================
- * ENCORE — ENHANCEMENT ROUTES
- * ============================================================
- *
- * This module registers the additional API endpoints
- * introduced by improvements #5–15.
- *
- * Current section:
- *   #5  Current proposal retrieval
- *   #6  Proposal acceptance and declining
- *   #12 Historical matching explanations
- *
- * Other enhancement routes will be added in later phases.
- *
- * IMPORTANT SECURITY RULE:
- *
- * User identity must always come from req.user,
- * which is populated by the existing session middleware.
- *
- * Never trust a userId submitted by the frontend.
+ * Proposal retrieval, responses and historical explanations for the session user.
+ * Identity always comes from req.user, never from a userId in the request body.
  */
 
-export function registerEnhancementRoutes(
-  router,
-  {
-    db,
-    repos,
-    requireUser,
-    requireOperator
-  }
-) {
-
-  // These are supplied by the existing application.
-  // Additional feature routes will use db and requireOperator.
-  void db;
-  void requireOperator;
-
-  // ============================================================
-  // HELPER: RETURN REPOSITORY ERRORS AS HTTP RESPONSES
-  // ============================================================
-
-  function sendRepositoryError(res, result) {
-
-    return res.status(result.status ?? 400).json({
-      error: result.error
-    });
-
-  }
+export function registerEnhancementRoutes(router, { repos, requireUser }) {
 
   // ============================================================
   // IMPROVEMENT #5
@@ -195,7 +152,7 @@ export function registerEnhancementRoutes(
         // 409 = proposal already answered or expired
 
         if (result.error) {
-          return sendRepositoryError(res, result);
+          return res.status(result.status ?? 400).json({ error: result.error });
         }
 
         return res.json({

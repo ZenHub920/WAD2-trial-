@@ -9,6 +9,7 @@
 
 import {
   buildPreferences,
+  buildRankMaps,
   galeShapley,
   greedyMatch,
   randomMatch,
@@ -27,19 +28,8 @@ export function createMatchingService({ db, repos }) {
      */
     preview(concertId, { trace = false, withBaselines = false } = {}) {
       const { seekers, parties, blocklist } = loadInstance(repos, concertId);
-      // ============================================================
-      // IMPROVEMENT #6: EXCLUDE PREVIOUSLY DECLINED PAIRS
-      // ============================================================
-      //
-      // A declined seeker-request/party pair should not
-      // be suggested again during later matching rounds.
-      //
-      // The repository returns a Set containing keys:
-      //
-      // seekerRequestId|partyId
-
-      const declinedPairs =
-        repos.proposals.declinedPairsForConcert(concertId);
+      // Declined request/party pairs must not be proposed again.
+      const declinedPairs = repos.proposals.declinedPairsForConcert(concertId);
       if (seekers.length === 0 || parties.length === 0) {
         return { empty: true, seekers: seekers.length, parties: parties.length };
       }
@@ -398,8 +388,8 @@ run(concertId, { trace = true, batchKey } = {}) {
         seekerPrefs,
         partyPrefs,
         capacities,
-        seekerRanks: invert(seekerPrefs),
-        partyRanks: invert(partyPrefs),
+        seekerRanks: buildRankMaps(seekerPrefs),
+        partyRanks: buildRankMaps(partyPrefs),
         pairScores: new Map(),
       };
 
@@ -500,8 +490,6 @@ function loadInstance(repos, concertId) {
 
     ...party,
 
-    totalCapacity: party.capacity,
-
     capacity: party.remaining_capacity
 
   }));
@@ -525,15 +513,6 @@ function loadInstance(repos, concertId) {
   };
 }
 
-function invert(prefs) {
-  const ranks = new Map();
-  for (const [ownerId, list] of prefs) {
-    const map = new Map();
-    list.forEach((id, index) => map.set(id, index));
-    ranks.set(ownerId, map);
-  }
-  return ranks;
-}
 
 function round2(n) {
   return Math.round(n * 100) / 100;

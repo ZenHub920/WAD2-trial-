@@ -32,7 +32,7 @@ onMounted(async () => {
     </MarketNotice>
 
     <MarketNotice v-else-if="error" tone="error" title="Could not load your messages">
-      <p class="mono">{{ error.message }}</p>
+      <p>Please refresh the page to try again.</p>
     </MarketNotice>
 
     <MarketNotice v-else-if="!conversations.length" title="No conversations yet">
@@ -52,8 +52,8 @@ onMounted(async () => {
               </time>
             </div>
             <p class="thread__listing">
-              {{ c.role === 'buyer' ? 'Buying' : 'Selling' }} · {{ c.listing.title }}
-              · {{ formatMoney(c.listing.priceCents) }}
+              {{ c.role === 'buyer' ? 'Buying' : 'Selling' }}: {{ c.listing.title }},
+              {{ formatMoney(c.listing.priceCents) }}
             </p>
             <p class="thread__preview">{{ c.lastMessage?.body ?? 'No messages yet' }}</p>
           </div>

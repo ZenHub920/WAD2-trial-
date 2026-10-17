@@ -111,17 +111,7 @@ const router = createRouter({
   },
 });
 
-/**
- * Chat is for signed-in accounts only.
- *
- * The server already refuses these endpoints without a session; this exists so
- * a signed-out visitor lands on the sign-in page instead of an empty screen
- * full of 401s, and returns to where they were headed afterwards.
- *
- * It waits for `sessionReady` because the session is restored from a cookie
- * asynchronously — guarding before that resolves would bounce a signed-in
- * user to the login page on a cold page load.
- */
+// Restore the session before deciding whether a protected page can open.
 router.beforeEach(async (to) => {
   if (!to.meta?.requiresAuth) return true;
   if (!sessionReady.value) {
@@ -139,7 +129,7 @@ router.beforeEach(async (to) => {
 
 router.afterEach((to) => {
   const title = to.meta?.title;
-  document.title = title ? `${title} · Encore` : 'Encore';
+  document.title = title && title !== 'Encore' ? `${title} | Encore` : 'Encore';
 });
 
 createApp(App).use(router).mount('#app');

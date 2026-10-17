@@ -76,7 +76,7 @@ function onFile(event) {
       >Remove</button>
 
       <p class="picker__hint">
-        Optional. Without one you appear as a grey silhouette.
+        Optional. PNG, JPEG, GIF or WebP, up to 2MB.
       </p>
       <p v-if="error" class="picker__error">{{ error }}</p>
     </div>
