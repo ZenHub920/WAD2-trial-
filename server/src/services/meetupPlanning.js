@@ -28,7 +28,7 @@ export function rankMeetupOptions({
         people.set(row.user_id, row);
     for (const place of places) {
       const distances = [...people.values()]
-        .filter((p) => p.latitude !== null && p.longitude !== null)
+        .filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude))
         .map((p) => distanceKm(p, place));
       const reachable = distances.filter((d) => d <= maxDistanceKm).length;
       options.push({
@@ -40,8 +40,9 @@ export function rankMeetupOptions({
         participantCount,
         locationRespondents: distances.length,
         reachableCount: reachable,
-        totalDistanceKm:
-          Math.round(distances.reduce((a, b) => a + b, 0) * 100) / 100,
+        totalDistanceKm: distances.length
+          ? Math.round(distances.reduce((a, b) => a + b, 0) * 100) / 100
+          : null,
         maximumDistanceKm: distances.length
           ? Math.round(Math.max(...distances) * 100) / 100
           : null,
@@ -54,7 +55,7 @@ export function rankMeetupOptions({
       (a, b) =>
         b.availableCount - a.availableCount ||
         b.reachableCount - a.reachableCount ||
-        a.totalDistanceKm - b.totalDistanceKm ||
+        (a.totalDistanceKm ?? Infinity) - (b.totalDistanceKm ?? Infinity) ||
         (a.maximumDistanceKm ?? Infinity) - (b.maximumDistanceKm ?? Infinity) ||
         b.votes - a.votes ||
         a.startsAt - b.startsAt ||

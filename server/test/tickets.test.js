@@ -119,6 +119,7 @@ test('ticket image bytes are stored on disk; invalid uploads and failed inserts 
   const countBefore = db.prepare('SELECT COUNT(*) AS n FROM concerts').get().n;
   const failed = await api('/tickets', { method: 'POST', cookie, body: { ...listing, imageData } });
   assert.equal(failed.status, 500);
+  assert.deepEqual(failed.body, { error: 'internal_error' }, 'database error details stay private');
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM concerts').get().n, countBefore);
   assert.deepEqual(readdirSync(imageDir), []);
 });
@@ -157,4 +158,30 @@ test('legacy priced parties migrate once, preserve matching history and cannot e
   migrateLegacyTickets(db, imageDir);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM tickets WHERE source_party_id = ?').get('p_old').n, 1);
   assert.equal(db.prepare('SELECT status FROM parties WHERE id = ?').get('p_old').status, 'cancelled');
+});
+
+test('JSON requests above the configured upload limit return 413 rather than an internal error', async (t) => {
+  const { api } = await fixture(t);
+  const oversized = await api('/tickets', {
+    method: 'POST', body: { imageData: 'x'.repeat(4 * 1024 * 1024) },
+  });
+  assert.equal(oversized.status, 413);
+  assert.deepEqual(oversized.body, { error: 'request_too_large' });
+});
+
+test('marketplace and party cards retain the public avatar filename from hydrated users', async (t) => {
+  const { api, db, register } = await fixture(t);
+  const seller = await register('avatar-seller');
+  db.prepare('UPDATE users SET avatar_path = ? WHERE id = ?').run('seller-avatar.png', seller.body.user.id);
+  const created = await api('/tickets', { method: 'POST', cookie: seller.cookie, body: listing });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.listing.seller.avatarUrl, '/api/avatars/seller-avatar.png');
+  const concertId = created.body.listing.concert.id;
+  const party = await api(`/concerts/${concertId}/parties`, {
+    method: 'POST', cookie: seller.cookie,
+    body: { capacity: 1, section: 'pit', spend_band: 2, arrival_plan: 'mid' },
+  });
+  assert.equal(party.status, 201);
+  const cards = await api(`/concerts/${concertId}/parties`);
+  assert.equal(cards.body.parties[0].host.avatarUrl, '/api/avatars/seller-avatar.png');
 });

@@ -80,8 +80,8 @@ round references. Neither a listing nor a seller is proof of ticket ownership.
 The `/marketplace` cards use the existing `/api/tickets` listings, including
 the seller, concert, section, quantity, price and optional image. Search and
 filters work on that inventory; “Saved only” bookmarks are stored in this
-browser's local storage, not in an account. Checkout and payment are not
-implemented; viewing a listing never records a paid order.
+browser's local storage, not in an account. Checkout records an order and transfers
+the listed inventory to its buyer; it does not integrate a real payment provider.
 
 
 ### Kaki Finder
@@ -94,8 +94,8 @@ decision. A like is pending until both people like one another for the same
 concert. `GET /api/kaki/matches` reports only those mutual, currently eligible
 pairs. Joining a concert through `POST /api/concerts/:id/participation`
 enrolls you in Kaki Finder; it does **not** create a seeker request or enter
-the group-matching round. Existing open group seekers and hosts are also
-eligible for Kaki until they explicitly withdraw. Withdrawal removes your
+the group-matching round. Hosting or creating an ordinary seeker request does
+not enroll an account in Kaki; participation must be explicit. Withdrawal removes
 outgoing Kaki decisions for that concert; blocking either direction hides
 the pair. The Profile tab edits matching preferences and vibe axes through
 `GET` / `PATCH /api/me/profile`; public user responses never expose email.

@@ -72,3 +72,16 @@ test('skips provider events without a date or Singapore venue', async () => {
   });
   assert.deepEqual(events, []);
 });
+
+test('provider normalization rejects impossible dates and tolerates absent image arrays', async () => {
+  const concerts = await searchTicketmaster({
+    apiKey: 'test-key',
+    fetchImpl: async () => new Response(JSON.stringify({ _embedded: { events: [
+      { ...providerEvent, dates: { start: { localDate: '2027-02-30' } } },
+      { ...providerEvent, id: 'image-less', images: {} },
+    ] } }), { status: 200 }),
+  });
+  assert.equal(concerts.length, 1);
+  assert.equal(concerts[0].source_event_id, 'image-less');
+  assert.equal(concerts[0].hero_image_url, null);
+});

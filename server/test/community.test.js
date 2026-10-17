@@ -14,6 +14,7 @@ import { migrateCommunity } from "../src/db/communityMigrations.js";
 import { migrateNotifications } from "../src/db/notificationRepository.js";
 import { migrateMeetups } from "../src/db/meetupRepository.js";
 import { migrateFeedback } from "../src/db/feedbackRepository.js";
+import { rankMeetupOptions, SLOT_MS } from "../src/services/meetupPlanning.js";
 let db, repos;
 beforeEach(() => {
   db = createTestDb();
@@ -291,6 +292,11 @@ test("meetup availability and private locations produce real-place recommendatio
   assert.throws(() => repos.meetups.detail("friend", id), /not_found/);
 });
 test("connected groups require both hosts to approve and never expose locations to unrelated users", () => {
+  for (const [host, party] of [["h1", "p1"], ["h2", "p2"]]) {
+    repos.membership.configure(host, party, { expectedFriends: 0 });
+    repos.membership.saveAnswers(host, party, answers);
+    repos.membership.publish(host, party, { connectOpen: true });
+  }
   const c = repos.groups.invite("h1", "p1", "p2");
   repos.groups.respond("h2", c.id, "accept");
   const { id } = repos.meetups.create("h1", {
@@ -521,6 +527,7 @@ test("changed group preferences require renewed seeker choice before host approv
 });
 test("legacy duplicate groups remain intact and can be explicitly reconciled by cancellation", () => {
   db.exec("DROP TRIGGER one_host_group_insert");
+  db.exec("DROP TRIGGER IF EXISTS party_host_membership_created");
   repos.parties.create(makeParty("legacyDuplicate", makeUser("h1")));
   migrateCommunity(db);
   assert.equal(
@@ -541,4 +548,221 @@ test("legacy duplicate groups remain intact and can be explicitly reconciled by 
   repos.membership.configure("h1", "p1", { expectedFriends: 0 });
   assert.equal(repos.membership.active("h1", "c1").party_id, "p1");
   assert.deepEqual(db.pragma("foreign_key_check"), []);
+});
+test("meetup inputs reject malformed windows and missing choices without changing revisions", () => {
+  const { id } = repos.meetups.create("h1", windowInput);
+  const version = repos.meetups.detail("h1", id).version;
+  assert.throws(() => repos.meetups.availability("h1", id, [null]), /invalid_availability/);
+  assert.throws(() => repos.meetups.vote("h1", id), /place_not_found/);
+  assert.throws(() => repos.meetups.propose("h1", id, {
+    version, startsAt: windowInput.startsAt,
+  }), /invalid_meetup_choice/);
+  assert.equal(repos.meetups.detail("h1", id).version, version);
+});
+
+test("seven-day meetup boards retain the documented 96-interval limit", () => {
+  const startsAt = Date.parse(windowInput.startsAt);
+  const endsAt = startsAt + 7 * 86400000;
+  const { id } = repos.meetups.create("h1", {
+    ...windowInput, endsAt: new Date(endsAt).toISOString(),
+  });
+  const windows = Array.from({ length: 96 }, (_, index) => ({
+    startsAt: new Date(startsAt + index * SLOT_MS).toISOString(),
+    endsAt: new Date(startsAt + (index + 1) * SLOT_MS).toISOString(),
+  }));
+  repos.meetups.availability("h1", id, windows);
+  assert.equal(repos.meetups.detail("h1", id).availability.length, 96);
+  assert.throws(() => repos.meetups.availability("h1", id, [...windows, windows[0]]), /invalid_availability/);
+  assert.throws(() => repos.meetups.create("h1", {
+    ...windowInput, endsAt: new Date(endsAt + SLOT_MS).toISOString(),
+  }), /invalid_meetup_window/);
+});
+
+test("departed members stop contributing meetup votes and cancelled connections lose access", () => {
+  repos.membership.configure("h1", "p1", { expectedFriends: 1 });
+  repos.membership.acceptInvite("friend", repos.membership.invite("h1", "p1").token);
+  for (const [host, party, members] of [
+    ["h1", "p1", ["h1", "friend"]], ["h2", "p2", ["h2"]],
+  ]) {
+    if (party === "p2") repos.membership.configure(host, party, { expectedFriends: 0 });
+    for (const user of members) repos.membership.saveAnswers(user, party, answers);
+    repos.membership.publish(host, party, { connectOpen: true });
+  }
+  const connection = repos.groups.invite("h1", "p1", "p2");
+  repos.groups.respond("h2", connection.id, "accept");
+  const { id } = repos.meetups.create("h1", {
+    ...windowInput, partyId: undefined, connectionId: connection.id,
+  });
+  const place = repos.meetups.place("h1", id, {
+    label: "Station", latitude: 1.3, longitude: 103.8,
+  });
+  repos.meetups.vote("friend", id, place.id);
+  assert.equal(repos.meetups.detail("h1", id).places[0].votes, 1);
+  repos.membership.leave("friend", "p1");
+  assert.equal(repos.meetups.detail("h1", id).places[0].votes, 0);
+  assert.throws(() => repos.meetups.detail("friend", id), /not_found/);
+  repos.membership.cancel("h2", "p2");
+  assert.throws(() => repos.meetups.detail("h1", id), /not_found/);
+});
+
+test("unknown meetup travel distances remain unknown and do not beat measured travel", () => {
+  const options = rankMeetupOptions({
+    startsAt: 0, endsAt: 2 * SLOT_MS, participantCount: 1,
+    availability: [
+      { user_id: "h1", starts_at: 0, ends_at: SLOT_MS, latitude: null, longitude: null },
+      { user_id: "h1", starts_at: SLOT_MS, ends_at: 2 * SLOT_MS, latitude: 0, longitude: 0 },
+    ],
+    places: [{ id: "place", label: "Place", latitude: 1, longitude: 1 }],
+  });
+  assert.equal(options[0].startsAt, SLOT_MS);
+  assert.equal(options[1].totalDistanceKm, null);
+  assert.equal(options[1].maximumDistanceKm, null);
+});
+
+test("meetup and chat notifications roll back with their event writes", () => {
+  repos.membership.configure("h1", "p1", { expectedFriends: 1 });
+  repos.membership.acceptInvite("friend", repos.membership.invite("h1", "p1").token);
+  const { id } = repos.meetups.create("h1", windowInput);
+  const before = repos.notifications.list("friend");
+  const version = repos.meetups.detail("h1", id).version;
+  assert.throws(db.transaction(() => {
+    repos.meetups.comment("h1", id, "Rolled back");
+    repos.meetups.place("h1", id, { label: "Station", latitude: 1.3, longitude: 103.8 });
+    repos.notifications.chatMessage({
+      messageId: "rollback", conversationPath: "/groups/p1/members",
+      senderId: "h1", recipientIds: ["friend"],
+    });
+    throw new Error("rollback");
+  }), /rollback/);
+  assert.deepEqual(repos.notifications.list("friend"), before);
+  assert.equal(repos.meetups.detail("h1", id).comments.length, 0);
+  assert.equal(repos.meetups.detail("h1", id).places.length, 0);
+  assert.equal(repos.meetups.detail("h1", id).version, version);
+  assert.throws(() => repos.notifications.chatMessage({
+    messageId: "invalid", conversationPath: "/groups/p1/members", recipientIds: ["friend"],
+  }), /invalid_notification_event/);
+});
+
+test("weather rejects nonnumeric coordinates and requires complete slot coverage", async () => {
+  const now = Date.parse("2030-01-01T10:00:00+08:00");
+  let calls = 0;
+  const weather = createMeetupWeather({
+    now: () => now,
+    fetchImpl: async () => {
+      calls++;
+      return { ok: true, json: async () => ({ code: 0, data: {
+        area_metadata: [{ name: "City", label_location: { latitude: 1.3, longitude: 103.8 } }],
+        items: [{
+          valid_period: { start: new Date(now).toISOString(), end: new Date(now + SLOT_MS - 1).toISOString() },
+          forecasts: [{ area: "City", forecast: "Fair" }],
+        }],
+      } }) };
+    },
+  });
+  for (const latitude of [undefined, NaN, "1.3"])
+    assert.equal((await weather.forecast({ latitude, longitude: 103.8, startsAt: now })).status, "unavailable");
+  assert.equal(calls, 0);
+  assert.equal((await weather.forecast({ latitude: 1.3, longitude: 103.8, startsAt: now })).reason,
+    "meeting_not_covered_by_forecast");
+});
+
+test("legacy feedback requires confirmation before cutoff, not proposal creation", () => {
+  const round = createMatchingService({ db, repos }).run("c1", { batchKey: "feedback-confirmation" });
+  const proposal = db.prepare("SELECT * FROM match_proposals WHERE round_id=?").get(round.roundId);
+  assert.ok(proposal);
+  const party = repos.parties.findById(proposal.party_id);
+  db.prepare("UPDATE parties SET created_at='2019-12-01 00:00:00' WHERE id=?").run(party.id);
+  db.prepare("UPDATE match_proposals SET created_at='2019-12-01 00:00:00',status='confirmed' WHERE id=?").run(proposal.id);
+  const input = { partyId: party.id, ratedUserId: "seeker", showedUp: true, rating: 5 };
+  assert.throws(() => repos.feedback.submit(party.host_user_id, input), /participants_required/);
+  assert.ok(db.prepare("SELECT confirmed_at FROM match_proposals WHERE id=?").get(proposal.id).confirmed_at);
+  db.prepare("UPDATE match_proposals SET confirmed_at='2019-12-01 00:00:00' WHERE id=?").run(proposal.id);
+  assert.equal(repos.feedback.submit(party.host_user_id, input).submitted, true);
+});
+
+test("feedback failure rolls back the rating, reliability cache and receipt notification", () => {
+  repos.membership.configure("h1", "p1", { expectedFriends: 1 });
+  repos.membership.acceptInvite("friend", repos.membership.invite("h1", "p1").token);
+  db.prepare("UPDATE parties SET created_at='2019-12-01 00:00:00' WHERE id='p1'").run();
+  db.prepare("UPDATE group_memberships SET joined_at='2019-12-01 00:00:00' WHERE party_id='p1'").run();
+  const before = repos.users.findById("friend").reliability;
+  db.exec("CREATE TRIGGER fail_feedback_receipt BEFORE INSERT ON notifications WHEN NEW.category='feedback' BEGIN SELECT RAISE(ABORT,'receipt_failed'); END");
+  assert.throws(() => repos.feedback.submit("h1", {
+    partyId: "p1", ratedUserId: "friend", showedUp: true, rating: 5,
+  }), /receipt_failed/);
+  assert.equal(repos.feedback.mine("friend").length, 0);
+  assert.equal(repos.users.findById("friend").reliability, before);
+  assert.equal(repos.notifications.unread("friend"), 0);
+});
+test("ticket inventory parties cannot create or retain attendance meetup boards", () => {
+  const { id } = repos.meetups.create("h1", windowInput);
+  db.prepare(`INSERT INTO tickets(id,seller_user_id,concert_id,price_cents,quantity,section,source_party_id)
+    VALUES('ticket','h1','c1',1000,1,'ga_standing','p1')`).run();
+  assert.throws(() => repos.meetups.create("h1", windowInput), /scope_membership_required/);
+  assert.throws(() => repos.meetups.detail("h1", id), /not_found/);
+  assert.deepEqual(repos.meetups.list("h1"), []);
+});
+
+test("pending join preference changes notify requester and host atomically and respect optouts", () => {
+  repos.membership.configure("h1", "p1", { expectedFriends: 0 });
+  repos.membership.saveAnswers("h1", "p1", answers);
+  repos.membership.publish("h1", "p1");
+  repos.recommendations.savePersonal("seeker", "c1", answers);
+  repos.recommendations.requestJoin("seeker", "p1");
+  const hostBefore = repos.notifications.unread("h1");
+  const seekerBefore = repos.notifications.unread("seeker");
+  const changed = { about: ["quiet"], wants: ["quiet"], avoid: [] };
+  repos.recommendations.savePersonal("seeker", "c1", changed);
+  assert.equal(repos.notifications.unread("h1"), hostBefore + 1);
+  assert.equal(repos.notifications.unread("seeker"), seekerBefore + 1);
+  repos.recommendations.savePersonal("seeker", "c1", changed);
+  assert.equal(repos.notifications.unread("h1"), hostBefore + 1);
+  repos.notifications.setSettings("h1", { group: false });
+  repos.recommendations.savePersonal("seeker", "c1", answers);
+  assert.equal(repos.notifications.unread("h1"), hostBefore + 1);
+  assert.equal(repos.notifications.unread("seeker"), seekerBefore + 2);
+  assert.throws(db.transaction(() => {
+    repos.recommendations.savePersonal("seeker", "c1", changed);
+    throw new Error("rollback");
+  }), /rollback/);
+  assert.equal(repos.notifications.unread("seeker"), seekerBefore + 2);
+});
+
+test("feedback opens after the Singapore event day and a connection alone is insufficient", (t) => {
+  repos.membership.configure("h1", "p1", { expectedFriends: 1 });
+  repos.membership.acceptInvite("friend", repos.membership.invite("h1", "p1").token);
+  for (const [host, party, members] of [
+    ["h1", "p1", ["h1", "friend"]], ["h2", "p2", ["h2"]],
+  ]) {
+    if (party === "p2") repos.membership.configure(host, party, { expectedFriends: 0 });
+    for (const user of members) repos.membership.saveAnswers(user, party, answers);
+    repos.membership.publish(host, party, { connectOpen: true });
+  }
+  repos.groups.respond("h2", repos.groups.invite("h1", "p1", "p2").id, "accept");
+  db.prepare("UPDATE parties SET created_at='2019-12-01 00:00:00'").run();
+  db.prepare("UPDATE group_memberships SET joined_at='2019-12-01 00:00:00'").run();
+  let now = Date.parse("2020-01-01T15:59:59.999Z");
+  t.mock.method(Date, "now", () => now);
+  const input = { partyId: "p1", ratedUserId: "friend", showedUp: true, rating: 5 };
+  assert.throws(() => repos.feedback.submit("h1", input), /concert_not_finished/);
+  now++;
+  assert.throws(() => repos.feedback.submit("h1", { ...input, ratedUserId: "h2" }), /participants_required/);
+  assert.equal(repos.feedback.submit("h1", input).submitted, true);
+});
+test("explicit departed memberships cannot regain planning or feedback through legacy proposals", () => {
+  const round = createMatchingService({ db, repos }).run("c1", { batchKey: "departed-legacy" });
+  const proposal = db.prepare("SELECT * FROM match_proposals WHERE round_id=?").get(round.roundId);
+  assert.ok(proposal);
+  const party = repos.parties.findById(proposal.party_id);
+  db.prepare("UPDATE match_proposals SET status='confirmed' WHERE id=?").run(proposal.id);
+  db.prepare("UPDATE match_proposals SET confirmed_at='2019-12-01 00:00:00' WHERE id=?").run(proposal.id);
+  repos.membership.attach(party, "seeker", "proposal");
+  db.prepare(`UPDATE group_memberships SET joined_at='2019-12-01 00:00:00',
+    left_at='2019-12-31 00:00:00',status='left' WHERE party_id=? AND user_id='seeker'`).run(party.id);
+  db.prepare("UPDATE parties SET created_at='2019-12-01 00:00:00' WHERE id=?").run(party.id);
+  const { id } = repos.meetups.create(party.host_user_id, { ...windowInput, partyId: party.id });
+  assert.throws(() => repos.meetups.detail("seeker", id), /not_found/);
+  assert.throws(() => repos.feedback.submit(party.host_user_id, {
+    partyId: party.id, ratedUserId: "seeker", showedUp: true, rating: 5,
+  }), /participants_required/);
 });

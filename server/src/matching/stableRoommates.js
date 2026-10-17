@@ -189,10 +189,9 @@ function runPhase1(ids, table, rank) {
 // ---------------------------------------------------------------------------
 
 /**
- * A rotation is a sequence (a0,b0), (a1,b1), ... where b_i is a_i's FIRST remaining
- * choice and a_{i+1} is b_i's LAST remaining choice. Eliminating it removes the
- * pairs (b_i, a_{i+1}), which is the only way to break the cyclic stalemate that
- * survives phase 1.
+ * A rotation follows a_i's SECOND remaining choice b_i, then b_i's LAST
+ * remaining choice a_{i+1}. Each b_i receives a better proposal from a_i;
+ * rejecting its worse choices removes the old first-choice edges together.
  */
 function runPhase2(ids, table, rank) {
   let eliminated = 0;
@@ -213,10 +212,10 @@ function runPhase2(ids, table, rank) {
       };
     }
 
-    for (let i = 0; i < rotation.length; i += 1) {
-      const b = rotation[i].b;
-      const nextA = rotation[(i + 1) % rotation.length].a;
-      removeEdge(table, b, nextA);
+    for (const { a, b } of rotation) {
+      const cutoff = rank.get(b).get(a);
+      const rejected = table.get(b).filter((other) => rank.get(b).get(other) > cutoff);
+      for (const other of rejected) removeEdge(table, b, other);
     }
     eliminated += 1;
 
@@ -247,8 +246,8 @@ function findRotation(start, table) {
     seenIndex.set(a, sequence.length);
 
     const listA = table.get(a);
-    if (!listA || listA.length === 0) return null;
-    const b = listA[0]; // a's first remaining choice
+    if (!listA || listA.length < 2) return null;
+    const b = listA[1]; // rotations advance to the second remaining choice
 
     const listB = table.get(b);
     if (!listB || listB.length === 0) return null;

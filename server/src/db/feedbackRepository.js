@@ -1,8 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { communityError } from "./membershipRepository.js";
 export function migrateFeedback(db) {
-  db.transaction(() =>
-    db.exec(`CREATE TABLE IF NOT EXISTS group_attendance_feedback(
+  db.transaction(() => {
+    if (!db.prepare("PRAGMA table_info(match_proposals)").all().some((c) => c.name === "confirmed_at"))
+      db.exec("ALTER TABLE match_proposals ADD COLUMN confirmed_at TEXT");
+    db.exec(`CREATE TRIGGER IF NOT EXISTS record_proposal_confirmation_insert AFTER INSERT ON match_proposals
+      WHEN NEW.status='confirmed' AND NEW.confirmed_at IS NULL BEGIN
+        UPDATE match_proposals SET confirmed_at=datetime('now') WHERE id=NEW.id; END;
+      CREATE TRIGGER IF NOT EXISTS record_proposal_confirmation_update AFTER UPDATE OF status ON match_proposals
+      WHEN NEW.status='confirmed' AND OLD.status<>'confirmed' BEGIN
+        UPDATE match_proposals SET confirmed_at=datetime('now') WHERE id=NEW.id; END;
+    CREATE TABLE IF NOT EXISTS group_attendance_feedback(
   id TEXT PRIMARY KEY,party_id TEXT NOT NULL REFERENCES parties(id),concert_id TEXT NOT NULL REFERENCES concerts(id),
   rater_user_id TEXT NOT NULL REFERENCES users(id),rated_user_id TEXT NOT NULL REFERENCES users(id),
   showed_up INTEGER NOT NULL CHECK(showed_up IN(0,1)),rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),comment TEXT,
@@ -14,8 +22,8 @@ export function migrateFeedback(db) {
   ) SELECT u.id user_id,COUNT(f.id) ratings_count,COALESCE(AVG(f.showed_up),1.0) show_rate,
    COALESCE(AVG(f.rating)/5.0,0.75) mean_rating,
    ROUND((COUNT(f.id)*COALESCE(AVG(f.showed_up)*0.5+(AVG(f.rating)/5.0)*0.5,0.75)+3*0.75)/(COUNT(f.id)+3.0),4) derived_reliability
-  FROM users u LEFT JOIN all_feedback f ON f.rated_user_id=u.id GROUP BY u.id;`),
-  ).immediate();
+  FROM users u LEFT JOIN all_feedback f ON f.rated_user_id=u.id GROUP BY u.id;`);
+  }).immediate();
 }
 export function createFeedbackRepo(db, repos) {
   const event = (partyId) =>
@@ -36,18 +44,17 @@ export function createFeedbackRepo(db, repos) {
     const membership = db
       .prepare("SELECT * FROM group_memberships WHERE party_id=? AND user_id=?")
       .get(p.id, user);
-    if (
-      membership &&
-      Date.parse(`${membership.joined_at.replace(" ", "T")}Z`) <= cutoff &&
-      (!membership.left_at ||
-        Date.parse(`${membership.left_at.replace(" ", "T")}Z`) > cutoff)
-    )
-      return true;
+    if (membership)
+      return (
+        Date.parse(`${membership.joined_at.replace(" ", "T")}Z`) <= cutoff &&
+        (!membership.left_at ||
+          Date.parse(`${membership.left_at.replace(" ", "T")}Z`) > cutoff)
+      );
     return Boolean(
       db
         .prepare(
           `SELECT 1 FROM match_proposals mp JOIN seeker_requests s ON s.id=mp.seeker_request_id
-    WHERE mp.party_id=? AND s.user_id=? AND mp.status='confirmed' AND datetime(mp.created_at)<=datetime(?)`,
+    WHERE mp.party_id=? AND s.user_id=? AND mp.status='confirmed' AND datetime(mp.confirmed_at)<=datetime(?)`,
         )
         .get(p.id, user, new Date(cutoff).toISOString()),
     );
@@ -150,7 +157,7 @@ export function createFeedbackRepo(db, repos) {
           "SELECT p.*,c.event_date,c.artist FROM parties p JOIN concerts c ON c.id=p.concert_id",
         )
         .all()) {
-        if (Date.now() <= end(p) || !eligibleMember(user, p)) continue;
+        if (!Number.isFinite(end(p)) || Date.now() <= end(p) || !eligibleMember(user, p)) continue;
         const users = [
           ...new Set([
             p.host_user_id,

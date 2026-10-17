@@ -39,16 +39,11 @@ describe("Irving's algorithm — solvable instances", () => {
       6: ['5', '1', '3', '4', '2'],
     });
     const result = stableRoommates(p);
-    if (result.stable) {
-      assert.equal(result.pairs.length, 3, 'six participants should form three pairs');
-      const check = findRoommateBlockingPairs(p, result.pairs);
-      assert.equal(check.stable, true, `independent verifier found ${JSON.stringify(check.blockingPairs)}`);
-    } else {
-      // A "no stable matching" verdict is a legitimate outcome, but it must be
-      // reported with a reason rather than silently producing garbage.
-      assert.ok(result.reason, 'an unsolvable verdict must carry a reason');
-      assert.deepEqual(result.pairs, []);
-    }
+    assert.equal(result.stable, true);
+    assert.deepEqual(result.pairs, [['1', '6'], ['2', '4'], ['3', '5']]);
+    assert.ok(result.phases.phase2.rotationsEliminated > 0, 'this instance needs rotations');
+    const check = findRoommateBlockingPairs(p, result.pairs);
+    assert.equal(check.stable, true, `independent verifier found ${JSON.stringify(check.blockingPairs)}`);
   });
 });
 

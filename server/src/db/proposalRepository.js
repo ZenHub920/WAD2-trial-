@@ -149,7 +149,7 @@ export function createProposalRepo(db) {
     // Load the associated party.
 
     const party = db.prepare(`
-      SELECT capacity, status
+      SELECT ${availableCapacitySql('parties')} AS capacity, status
       FROM parties
       WHERE id = ?
     `).get(partyId);
@@ -274,6 +274,9 @@ export function createProposalRepo(db) {
         const party = db.prepare(`SELECT ${availableCapacitySql()} capacity,p.status FROM parties p WHERE p.id = ?`).get(match.party_id);
         if (!party || party.status === 'cancelled' || reserved.get(match.party_id).n >= party.capacity) {
           throw new Error('party_capacity_exceeded');
+        }
+        if (db.prepare('SELECT 1 FROM group_settings WHERE party_id=?').get(match.party_id)) {
+          throw new Error('managed_group_requires_host_approval');
         }
 
         const proposalId = `mp_${randomUUID()}`;
@@ -511,11 +514,29 @@ export function createProposalRepo(db) {
         ? 'confirmed'
         : 'declined';
       if(nextStatus==='confirmed') {
+        const party = db.prepare(`SELECT p.status, ${availableCapacitySql()} AS capacity
+          FROM parties p WHERE p.id=?`).get(proposal.party_id);
+        const request = db.prepare('SELECT status FROM seeker_requests WHERE id=?').get(proposal.seeker_request_id);
+        if (!party || party.status === 'cancelled' || request?.status === 'withdrawn'
+          || db.prepare('SELECT 1 FROM tickets WHERE source_party_id=?').get(proposal.party_id)) {
+          return { error: 'group_unavailable', status: 409 };
+        }
+        if (db.prepare('SELECT 1 FROM group_settings WHERE party_id=?').get(proposal.party_id)) {
+          return { error: 'managed_group_requires_host_approval', status: 409 };
+        }
+        if (reserved.get(proposal.party_id).n > party.capacity) {
+          return { error: 'party_capacity_exceeded', status: 409 };
+        }
+        if (db.prepare(`SELECT 1 FROM blocks WHERE
+          (blocker_user_id=? AND blocked_user_id=?) OR (blocker_user_id=? AND blocked_user_id=?)`)
+          .get(userId, proposal.host_user_id, proposal.host_user_id, userId)) {
+          return { error: 'group_unavailable', status: 409 };
+        }
         const other=db.prepare("SELECT 1 FROM group_memberships WHERE user_id=? AND concert_id=? AND status='active' AND party_id<>?").get(userId,proposal.concert_id,proposal.party_id);
         const hosted=db.prepare("SELECT 1 FROM parties WHERE host_user_id=? AND concert_id=? AND status<>'cancelled' AND id<>?").get(userId,proposal.concert_id,proposal.party_id);
         if(other||hosted)return {error:'already_in_concert_group',status:409};
         db.prepare(`INSERT INTO group_memberships(party_id,user_id,concert_id,source) VALUES(?,?,?,'proposal')
-          ON CONFLICT(party_id,user_id) DO UPDATE SET status='active',source='proposal',left_at=NULL`).run(proposal.party_id,userId,proposal.concert_id);
+          ON CONFLICT(party_id,user_id) DO UPDATE SET status='active',source='proposal',joined_at=datetime('now'),left_at=NULL`).run(proposal.party_id,userId,proposal.concert_id);
       }
 
       // STEP 7: Persist the response.

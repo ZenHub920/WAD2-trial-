@@ -72,19 +72,19 @@ async function fixture(t) {
       .run(id, `Artist ${id}`, 'Tour', 'Hall', 'Singapore', '2027-05-01');
   }
 
-  function seeker(id, person, concertId) {
-    db.prepare(`INSERT INTO seeker_requests
-                (id, user_id, concert_id, section_pref, spend_band_max, arrival_pref)
-                VALUES (?, ?, ?, 'pit', 2, 'doors')`)
-      .run(id, person.id, concertId);
+  async function participate(person, concertId) {
+    const result = await api(`/concerts/${concertId}/participation`, {
+      method: 'POST', cookie: person.cookie, body: { sectionPref: 'pit', arrivalPref: 'doors' },
+    });
+    assert.equal(result.status, 200);
   }
 
   async function matchedPair(concertId) {
     const a = await user(`rt-a-${concertId}`);
     const b = await user(`rt-b-${concertId}`);
     concert(concertId);
-    seeker(`s-a-${concertId}`, a, concertId);
-    seeker(`s-b-${concertId}`, b, concertId);
+    await participate(a, concertId);
+    await participate(b, concertId);
     for (const [me, them] of [[a, b], [b, a]]) {
       // eslint-disable-next-line no-await-in-loop
       await api(`/kaki/decisions/${concertId}/${them.id}`, {
@@ -155,7 +155,7 @@ async function fixture(t) {
     return { done, stop: () => controller.abort() };
   }
 
-  return { db, api, user, concert, seeker, matchedPair, send, listen, realtime: built.realtime };
+  return { db, api, user, concert, join, matchedPair, send, listen, base, realtime: built.realtime };
 }
 
 test('the stream requires a session and announces itself when open', async (t) => {
@@ -322,4 +322,61 @@ test('the other person avatar travels with the conversation', async (t) => {
 
   const list = await f.api('/kaki/conversations', { cookie: a.cookie });
   assert.match(list.body.conversations[0].other.avatarUrl, /^\/api\/avatars\//);
+});
+
+test('withdrawing a mutual like removes the closed thread from unread totals', async (t) => {
+  const f = await fixture(t);
+  const { a, b, id } = await f.matchedPair('c_unread_unmatch');
+  await f.send(a, id, 'unread before unmatching');
+  assert.equal((await f.api('/kaki/unread', { cookie: b.cookie })).body.total, 1);
+  await f.api(`/kaki/decisions/c_unread_unmatch/${a.id}`, { method: 'DELETE', cookie: b.cookie });
+  assert.equal((await f.api('/kaki/unread', { cookie: b.cookie })).body.total, 0);
+});
+
+test('live message events shape read receipts separately for each participant', async (t) => {
+  const f = await fixture(t);
+  const { a, b, id } = await f.matchedPair('c_live_receipt_shape');
+  const received = { [a.id]: [], [b.id]: [] };
+  const unsubscribers = [a, b].map(person => f.realtime.subscribe(person.id, (type, payload) => {
+    if (type === 'message' || type === 'message-updated') received[person.id].push(payload.message);
+  }));
+  try {
+    const sent = await f.send(a, id, 'private receipt');
+    assert.equal(received[a.id].at(-1).status, 'sent');
+    assert.equal(received[b.id].at(-1).status, null);
+    await f.api(`/kaki/conversations/${id}`, { cookie: b.cookie });
+    await f.api(`/kaki/conversations/${id}/messages/${sent.body.message.id}`, {
+      method: 'PATCH', cookie: a.cookie, body: { body: 'edited private receipt' },
+    });
+    assert.equal(received[a.id].at(-1).status, 'read');
+    assert.equal(received[b.id].at(-1).status, null);
+    await f.api(`/kaki/conversations/${id}/messages/${sent.body.message.id}`, {
+      method: 'DELETE', cookie: a.cookie,
+    });
+    assert.equal(received[a.id].at(-1).deleted, true);
+    assert.equal(received[b.id].at(-1).status, null);
+  } finally {
+    for (const unsubscribe of unsubscribers) unsubscribe();
+  }
+});
+
+test('logging out revokes an already connected Kaki event stream before message delivery', async (t) => {
+  const f = await fixture(t);
+  const { a, b, id } = await f.matchedPair('c_stream_logout');
+  const controller = new AbortController();
+  try {
+    const response = await fetch(`${f.base()}/kaki/stream`, {
+      headers: { cookie: b.cookie }, signal: controller.signal,
+    });
+    assert.equal(response.status, 200);
+    const reader = response.body.getReader();
+    const ready = await reader.read();
+    assert.match(new TextDecoder().decode(ready.value), /event: ready/);
+    assert.equal((await f.api('/auth/logout', { method: 'POST', cookie: b.cookie })).status, 204);
+    await f.send(a, id, 'must not reach logged-out browser');
+    assert.equal((await reader.read()).done, true);
+    assert.equal(f.realtime.connectionCount(b.id), 0);
+  } finally {
+    controller.abort();
+  }
 });

@@ -44,8 +44,14 @@ async function fixture(t) {
     db.prepare("INSERT INTO parties (id, host_user_id, concert_id, capacity, section, spend_band, arrival_plan) VALUES (?, ?, ?, 2, 'pit', 2, 'doors')")
       .run(id, person.id, concertId);
   }
+  async function join(person, concertId) {
+    const result = await api(`/concerts/${concertId}/participation`, {
+      method: 'POST', cookie: person.cookie, body: { sectionPref: 'pit', arrivalPref: 'doors' },
+    });
+    assert.equal(result.status, 200);
+  }
   const decision = (concertId, target) => `/kaki/decisions/${concertId}/${target.id}`;
-  return { db, api, user, concert, seeker, party, decision,
+  return { db, api, user, concert, seeker, party, join, decision,
     async restart() {
       await new Promise((resolve) => server.close(resolve));
       await listen();
@@ -65,6 +71,10 @@ test('Kaki routes require authentication and reject self, blocks, and cross-conc
   f.seeker('s_bob_other', bob, 'c_two');
   f.seeker('s_outsider', outsider, 'c_two');
   f.party('p_host', host, 'c_one');
+  await f.join(alice, 'c_one');
+  await f.join(bob, 'c_one');
+  await f.join(bob, 'c_two');
+  await f.join(outsider, 'c_two');
   for (const path of ['/kaki/pool', '/kaki/decisions', '/kaki/matches']) {
     assert.equal((await f.api(path)).status, 401);
   }
@@ -81,17 +91,10 @@ test('Kaki routes require authentication and reject self, blocks, and cross-conc
   assert.equal((await f.api(f.decision('c_one', bob), { method: 'PUT', cookie: alice.cookie,
     body: { decision: 'maybe' } })).status, 400);
   const hostPool = (await f.api('/kaki/pool', { cookie: host.cookie })).body;
-  assert.deepEqual(hostPool.people.map((person) => person.id).sort(),
-    [`c_one:${alice.id}`, `c_one:${bob.id}`].sort());
+  assert.deepEqual(hostPool, { concerts: [], people: [] });
   assert.equal((await f.api(f.decision('c_one', bob), { method: 'PUT', cookie: host.cookie,
-    body: { decision: 'like' } })).body.decision.mutual, false);
-  assert.equal((await f.api(f.decision('c_one', host), { method: 'PUT', cookie: bob.cookie,
     body: { decision: 'like' } })).status, 404);
-  f.db.prepare("UPDATE parties SET status = 'cancelled' WHERE id = 'p_host'").run();
-  assert.deepEqual((await f.api('/kaki/pool', { cookie: host.cookie })).body,
-    { concerts: [], people: [] });
-  assert.deepEqual((await f.api('/kaki/decisions', { cookie: host.cookie })).body.decisions, {});
-  assert.equal((await f.api(f.decision('c_one', bob), { method: 'PUT', cookie: host.cookie,
+  assert.equal((await f.api(f.decision('c_one', host), { method: 'PUT', cookie: bob.cookie,
     body: { decision: 'like' } })).status, 404);
   const pool = (await f.api('/kaki/pool', { cookie: alice.cookie })).body;
   assert.deepEqual(pool.concerts.map((item) => item.id), ['c_one']);
@@ -129,6 +132,8 @@ test('Kaki likes persist, mutuality is live, and skips/undo/inactive membership 
   f.concert('c_likes');
   f.seeker('s_like_alice', alice, 'c_likes');
   f.seeker('s_like_bob', bob, 'c_likes');
+  await f.join(alice, 'c_likes');
+  await f.join(bob, 'c_likes');
   const aliceToBob = f.decision('c_likes', bob);
   const bobToAlice = f.decision('c_likes', alice);
   const first = await f.api(aliceToBob, { method: 'PUT', cookie: alice.cookie, body: { decision: 'like' } });
@@ -158,7 +163,7 @@ test('Kaki likes persist, mutuality is live, and skips/undo/inactive membership 
   assert.deepEqual((await f.api('/kaki/matches', { cookie: alice.cookie })).body.matches, []);
   assert.equal((await f.api(bobToAlice, { method: 'PUT', cookie: bob.cookie,
     body: { decision: 'like' } })).body.decision.mutual, true);
-  f.db.prepare("UPDATE seeker_requests SET status = 'withdrawn' WHERE id = 's_like_bob'").run();
+  f.db.prepare("UPDATE concert_participants SET status = 'withdrawn' WHERE user_id = ?").run(bob.id);
   assert.deepEqual((await f.api('/kaki/pool', { cookie: alice.cookie })).body.people, []);
   assert.deepEqual((await f.api('/kaki/decisions', { cookie: alice.cookie })).body.decisions, {});
   assert.deepEqual((await f.api('/kaki/matches', { cookie: alice.cookie })).body.matches, []);
@@ -166,7 +171,7 @@ test('Kaki likes persist, mutuality is live, and skips/undo/inactive membership 
     body: { decision: 'like' } })).status, 404);
   assert.equal((await f.api(bobToAlice, { method: 'PUT', cookie: bob.cookie,
     body: { decision: 'like' } })).status, 404);
-  f.db.prepare("UPDATE seeker_requests SET status = 'open' WHERE id = 's_like_bob'").run();
+  f.db.prepare("UPDATE concert_participants SET status = 'joined' WHERE user_id = ?").run(bob.id);
   assert.deepEqual((await f.api('/kaki/matches', { cookie: alice.cookie })).body.matches.map((p) => p.id),
     [`c_likes:${bob.id}`]);
   f.db.prepare('INSERT INTO blocks (blocker_user_id, blocked_user_id) VALUES (?, ?)').run(bob.id, alice.id);

@@ -222,18 +222,16 @@ export function compareProfiles(a, b) {
   const evidence = [...ab.evidence, ...ba.evidence, ...shared].sort(
     (x, y) => y.strength - x.strength || x.key.localeCompare(y.key),
   );
-  const reasons = [
-    ...new Map(
-      evidence.map((e) => [
-        e.key,
-        {
-          concept: e.key,
-          label: CONCEPTS.find((c) => c.id === e.key)?.label ?? e.key.slice(7),
-          support: Math.round(e.support * 100),
-        },
-      ]),
-    ).values(),
-  ].slice(0, 3);
+  const supported = new Map();
+  for (const e of evidence) {
+    if (supported.has(e.key)) continue;
+    supported.set(e.key, {
+      concept: e.key,
+      label: CONCEPTS.find((c) => c.id === e.key)?.label ?? e.key.slice(7),
+      support: Math.round(e.support * 100),
+    });
+  }
+  const reasons = [...supported.values()].slice(0, 3);
   return {
     score: Math.round(((ab.score + ba.score) / 2) * 10000) / 10000,
     seekerScore: ab.score,

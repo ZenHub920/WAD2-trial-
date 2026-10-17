@@ -313,7 +313,7 @@ async function getWeather() {
             {{ s.label }} · {{ time(s.startsAt) }} · {{ s.availableCount }}/{{
               s.participantCount
             }}
-            available · {{ s.totalDistanceKm }} km combined ({{
+            available · {{ s.totalDistanceKm === null ? 'Distance unavailable' : `${s.totalDistanceKm} km combined` }} ({{
               s.locationRespondents
             }}
             locations supplied)

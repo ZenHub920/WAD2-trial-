@@ -25,7 +25,7 @@ const sending = ref(false);
 const sendError = ref('');
 const listEl = ref(null);
 
-const lastAt = computed(() => messages.value.at(-1)?.createdAt ?? null);
+const lastMessageId = computed(() => messages.value.at(-1)?.id ?? null);
 const mine = (message) => message.senderId === currentUser.value?.id;
 
 function append(incoming) {
@@ -59,7 +59,7 @@ async function load() {
 async function poll() {
   if (document.hidden || !conversation.value) return;
   try {
-    append((await api.conversation(props.id, lastAt.value)).messages);
+    append((await api.conversation(props.id, lastMessageId.value)).messages);
   } catch {
     // A missed poll is harmless; the next one catches up.
   }

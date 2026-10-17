@@ -334,3 +334,11 @@ describe('Trace', () => {
     assert.deepEqual([...a.assignments].sort(), [...b.assignments].sort());
   });
 });
+
+test('zero-capacity parties reject proposals without crashing', () => {
+  const profile = makeProfile({ s1: ['p1', 'p2'] }, { p1: ['s1'], p2: ['s1'] }, { p1: 0 });
+  const result = galeShapley(profile);
+  assert.equal(result.assignments.get('s1'), 'p2');
+  assert.deepEqual(result.partyMembers.get('p1'), []);
+  assert.equal(findBlockingPairs(profile, result).stable, true);
+});

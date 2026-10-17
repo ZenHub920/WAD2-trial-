@@ -442,3 +442,15 @@ describe('Operational result isolation', () => {
     assert.equal((await mine('c_private', cookies.host_b)).body.result.outcome, 'no_members');
   });
 });
+
+test('concert creation rejects impossible calendar dates without persisting them', async () => {
+  const count = db.prepare('SELECT COUNT(*) AS n FROM concerts').get().n;
+  for (const event_date of ['2027-02-30', '2027-13-01', '2027-00-10']) {
+    const result = await api('/api/concerts', {
+      method: 'POST', body: JSON.stringify({ artist: 'Act', venue: 'Hall', event_date }),
+    });
+    assert.equal(result.status, 400);
+    assert.equal(result.body.error, 'concert_date_required');
+  }
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM concerts').get().n, count);
+});

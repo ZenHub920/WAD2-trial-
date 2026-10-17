@@ -184,3 +184,98 @@ test('the local grant command migrates an existing DB and requires an existing e
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('registration applies the same profile constraints as profile updates before creating an account', async () => {
+  const db = createTestDb();
+  const api = await start(db);
+  try {
+    const invalid = [
+      { vibe: 'invalid' }, { vibe: { dancing: 5 } }, { languages: 'en' },
+      { languages: [] }, { age_band: 'unknown' }, { home_region: 'unknown' },
+      { gender: 'unknown' }, { companion_gender_pref: 'unknown' },
+    ];
+    for (const [index, fields] of invalid.entries()) {
+      const result = await api.request('/auth/register', {
+        method: 'POST', body: { ...registration(`invalid-${index}`), ...fields },
+      });
+      assert.equal(result.status, 400, JSON.stringify(fields));
+      assert.equal(result.body.error, 'invalid_profile');
+      assert.equal(result.setCookie, null);
+    }
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM users').get().n, 0);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM sessions').get().n, 0);
+  } finally {
+    await stop(api.server);
+    db.close();
+  }
+});
+
+test('seed resets populated community records and rolls all deletion back if reseeding fails', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'encore-seed-'));
+  const file = join(dir, 'seed.db');
+  const db = createTestDb();
+  try {
+    db.exec(`
+      INSERT INTO users(id,display_name,age_band,home_region,gender,vibe_json)
+        VALUES('seed-host','Host','21-24','central','f','{}');
+      INSERT INTO sessions(token_hash,user_id,expires_at) VALUES('seed-session','seed-host',9999999999999);
+      INSERT INTO concerts(id,artist,venue,city,event_date)
+        VALUES('seed-concert','Act','Hall','Singapore','2027-01-01');
+      INSERT INTO parties(id,host_user_id,concert_id,capacity,section,spend_band,arrival_plan)
+        VALUES('seed-party','seed-host','seed-concert',1,'pit',2,'mid');
+      INSERT INTO group_settings(party_id) VALUES('seed-party');
+      INSERT OR IGNORE INTO group_memberships(party_id,user_id,concert_id,source)
+        VALUES('seed-party','seed-host','seed-concert','host');
+      INSERT INTO meetups(id,creator_id,party_id,title,starts_at,ends_at)
+        VALUES('seed-meetup','seed-host','seed-party','Meetup',1,2);
+      CREATE TRIGGER deny_seed_insert BEFORE INSERT ON users BEGIN SELECT RAISE(ABORT,'seed denied'); END;
+    `);
+    await db.backup(file);
+  } finally {
+    db.close();
+  }
+  const script = fileURLToPath(new URL('../src/db/seed.js', import.meta.url));
+  const seed = () => spawnSync(process.execPath, [script],
+    { encoding: 'utf8', env: { ...process.env, ENCORE_DB: file } });
+  try {
+    const failed = seed();
+    assert.notEqual(failed.status, 0);
+    const stored = new Database(file);
+    try {
+      assert.equal(stored.prepare("SELECT COUNT(*) AS n FROM users WHERE id='seed-host'").get().n, 1);
+      assert.equal(stored.prepare("SELECT COUNT(*) AS n FROM meetups WHERE id='seed-meetup'").get().n, 1);
+      assert.equal(stored.prepare("SELECT COUNT(*) AS n FROM sessions WHERE token_hash='seed-session'").get().n, 1);
+      stored.exec('DROP TRIGGER deny_seed_insert');
+    } finally {
+      stored.close();
+    }
+    const seeded = seed();
+    assert.equal(seeded.status, 0, seeded.stderr);
+    const replaced = new Database(file);
+    try {
+      assert.equal(replaced.prepare("SELECT COUNT(*) AS n FROM users WHERE id='seed-host'").get().n, 0);
+      assert.ok(replaced.prepare('SELECT COUNT(*) AS n FROM users').get().n > 0);
+      assert.equal(replaced.prepare('SELECT COUNT(*) AS n FROM meetups').get().n, 0);
+      assert.deepEqual(replaced.prepare('PRAGMA foreign_key_check').all(), []);
+    } finally {
+      replaced.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('registration conflicts do not expose raw SQLite diagnostics', async () => {
+  const db = createTestDb();
+  const api = await start(db);
+  try {
+    const body = registration('duplicate');
+    assert.equal((await api.request('/auth/register', { method: 'POST', body })).status, 201);
+    const conflict = await api.request('/auth/register', { method: 'POST', body });
+    assert.equal(conflict.status, 409);
+    assert.deepEqual(conflict.body, { error: 'could_not_create_user' });
+  } finally {
+    await stop(api.server);
+    db.close();
+  }
+});

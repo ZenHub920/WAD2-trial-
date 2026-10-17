@@ -108,7 +108,8 @@ export function createRoutes({
    */
   if (realtime) {
     router.get('/kaki/stream', requireUser, (req, res) => {
-      const close = openStream(realtime, req, res, req.user.id);
+      const close = openStream(realtime, req, res, req.user.id,
+        () => sessions.current(req)?.id === req.user.id);
       // Fires on tab close, navigation and network loss alike; without it the
       // heartbeat interval would keep a dead connection alive forever.
       req.on('close', close);

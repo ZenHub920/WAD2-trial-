@@ -509,7 +509,13 @@ function loadInstance(repos, concertId) {
   return {
 
     seekers: repos.seekers.openForConcert(concertId).filter(s=>{
-      try{repos.membership.ensureFree(s.user_id,concertId,'');return true;}catch{return false;}
+      try {
+        repos.membership.ensureFree(s.user_id, concertId, '');
+        return true;
+      } catch (error) {
+        if (['already_in_concert_group', 'active_matching_proposal_exists'].includes(error.message)) return false;
+        throw error;
+      }
     }),
 
     parties: availableParties,

@@ -39,6 +39,10 @@ const MUTUAL = `(
   EXISTS (SELECT 1 FROM kaki_decisions d
           WHERE d.concert_id = @concert AND d.actor_user_id = @other
             AND d.target_user_id = @me AND d.decision = 'like')
+  AND EXISTS (SELECT 1 FROM concert_participants p
+              WHERE p.concert_id = @concert AND p.user_id = @me AND p.status = 'joined')
+  AND EXISTS (SELECT 1 FROM concert_participants p
+              WHERE p.concert_id = @concert AND p.user_id = @other AND p.status = 'joined')
 )`;
 
 /** SQL fragment: neither has blocked the other, in either direction. */
@@ -237,6 +241,16 @@ export function createKakiChatRepo(db) {
       AND m.rowid > COALESCE(
         (SELECT last_read_rowid FROM conversation_reads
          WHERE conversation_id = c.id AND user_id = @user), 0)
+      AND EXISTS (SELECT 1 FROM kaki_decisions d
+                  WHERE d.concert_id = c.concert_id AND d.actor_user_id = c.user_a_id
+                    AND d.target_user_id = c.user_b_id AND d.decision = 'like')
+      AND EXISTS (SELECT 1 FROM kaki_decisions d
+                  WHERE d.concert_id = c.concert_id AND d.actor_user_id = c.user_b_id
+                    AND d.target_user_id = c.user_a_id AND d.decision = 'like')
+      AND EXISTS (SELECT 1 FROM concert_participants p
+                  WHERE p.concert_id = c.concert_id AND p.user_id = c.user_a_id AND p.status = 'joined')
+      AND EXISTS (SELECT 1 FROM concert_participants p
+                  WHERE p.concert_id = c.concert_id AND p.user_id = c.user_b_id AND p.status = 'joined')
       AND NOT EXISTS (
         SELECT 1 FROM blocks b
         WHERE (b.blocker_user_id = @user

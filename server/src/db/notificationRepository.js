@@ -103,6 +103,20 @@ export function migrateNotifications(db) {
       "NEW.version<>OLD.version",
     );
     trigger(
+      "notify_seeker_profile_changed",
+      "seeker_discovery_preferences",
+      "UPDATE OF answers_json",
+      "group",
+      `SELECT NEW.user_id recipient WHERE EXISTS(SELECT 1 FROM group_join_requests r JOIN parties p ON p.id=r.party_id
+        WHERE r.user_id=NEW.user_id AND p.concert_id=NEW.concert_id AND r.status='pending')
+       UNION SELECT p.host_user_id recipient FROM group_join_requests r JOIN parties p ON p.id=r.party_id
+        WHERE r.user_id=NEW.user_id AND p.concert_id=NEW.concert_id AND r.status='pending'`,
+      "Seeker preferences changed; review and resubmit the join request",
+      "CASE WHEN recipient=NEW.user_id THEN '/groups' ELSE '/groups/connect' END",
+      "'seeker-profile:'||NEW.user_id||':'||NEW.concert_id||':'||lower(hex(randomblob(16)))",
+      "NEW.answers_json<>OLD.answers_json",
+    );
+    trigger(
       "notify_group_response",
       "group_connections",
       "UPDATE OF status",
@@ -217,7 +231,10 @@ export function createNotificationRepo(db) {
           !messageId ||
           typeof conversationPath !== "string" ||
           !/^\/(?:groups|kaki|chat)(?:\/|$)/.test(conversationPath) ||
-          !Array.isArray(recipientIds)
+          typeof senderId !== "string" ||
+          !senderId ||
+          !Array.isArray(recipientIds) ||
+          recipientIds.some((id) => typeof id !== "string" || !id)
         )
           throw communityError("invalid_notification_event", 400);
         for (const user of new Set(

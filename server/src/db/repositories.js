@@ -115,6 +115,7 @@ const USER_COLUMNS = (alias, prefix) => `
   ${alias}.vibe_json             AS ${prefix}vibe_json,
   ${alias}.reliability           AS ${prefix}reliability,
   ${alias}.verified              AS ${prefix}verified,
+  ${alias}.avatar_path           AS ${prefix}avatar_path,
   ${alias}.created_at            AS ${prefix}created_at
 `;
 
@@ -510,7 +511,12 @@ export function createTicketRepo(db) {
 
   const numberOnActiveTicket = db.prepare(`
     SELECT 1 FROM ticket_numbers n JOIN tickets t ON t.id = n.ticket_id
-    WHERE n.concert_id = ? AND n.ticket_number = ? AND t.status = 'active'
+    WHERE n.concert_id = ? AND n.ticket_number = ? AND t.status = 'active' AND t.id <> ?
+  `);
+  const lastBuyer = db.prepare(`
+    SELECT o.buyer_user_id FROM ticket_numbers n JOIN orders o ON o.ticket_id = n.ticket_id
+    WHERE n.concert_id = ? AND n.ticket_number = ? AND o.status = 'paid'
+    ORDER BY o.created_at DESC, o.rowid DESC LIMIT 1
   `);
   const issuedCount = db.prepare('SELECT COUNT(*) AS n FROM issued_tickets WHERE concert_id = ?');
   const issued = db.prepare('SELECT category FROM issued_tickets WHERE concert_id = ? AND ticket_number = ?');
@@ -522,12 +528,14 @@ export function createTicketRepo(db) {
    *  - if the concert has an issued list, every number must be on it, in the same
    *    section when the list records one — and then the ticket is verified outright.
    */
-  function checkNumbers(concertId, section, numbers) {
+  function checkNumbers(concertId, section, numbers, sellerId, excludeId = '') {
     const seen = new Set();
     for (const number of numbers) {
       if (seen.has(number)) throw marketError('duplicate_ticket_number', number);
       seen.add(number);
-      if (numberOnActiveTicket.get(concertId, number)) throw marketError('ticket_number_already_listed', number);
+      if (numberOnActiveTicket.get(concertId, number, excludeId)) throw marketError('ticket_number_already_listed', number);
+      const buyer = lastBuyer.get(concertId, number);
+      if (buyer && buyer.buyer_user_id !== sellerId) throw marketError('ticket_number_not_owned', number);
     }
     if (!numbers.length || issuedCount.get(concertId).n === 0) return false;
     for (const number of numbers) {
@@ -560,7 +568,7 @@ export function createTicketRepo(db) {
                       VALUES (?, ?, ?, ?, ?)`)
             .run(concertId, concert.artist, concert.venue, concert.city ?? 'Singapore', concert.event_date);
         }
-        const matched = checkNumbers(concertId, section, numbers);
+        const matched = checkNumbers(concertId, section, numbers, seller_user_id);
         const verified = matched || seededVerified;
         db.prepare(`INSERT INTO tickets
                     (id, seller_user_id, concert_id, price_cents, quantity, section, description, image_path,
@@ -615,7 +623,7 @@ export function createTicketRepo(db) {
         SET verification_status = @status, verified = @verified, review_note = @note,
             verification_method = CASE WHEN @verified = 1 THEN 'proof' ELSE NULL END,
             reviewed_by = @reviewerId, reviewed_at = datetime('now')
-        WHERE id = @id AND verification_status = 'pending'
+        WHERE id = @id AND verification_status = 'pending' AND status = 'active'
       `).run({
         id,
         status: approve ? 'approved' : 'rejected',
@@ -636,12 +644,28 @@ export function createTicketRepo(db) {
         ORDER BY t.created_at DESC, t.id DESC`).all(userId).map(mapTicket);
     },
     updateOwned(id, sellerId, fields) {
-      const result = db.prepare(`UPDATE tickets
-        SET price_cents = ?, quantity = ?, section = ?, description = ?, image_path = ?
-        WHERE id = ? AND seller_user_id = ? AND status = 'active'`)
-        .run(fields.priceCents, fields.quantity, fields.section, fields.description, fields.image_path,
-          id, sellerId);
-      return result.changes ? this.findById(id) : null;
+      return db.transaction(() => {
+        const current = this.findById(id);
+        if (!current || current.seller_user_id !== sellerId || current.status !== 'active') return null;
+        if (fields.section !== current.section) {
+          checkNumbers(current.concert.id, fields.section, this.ticketNumbers(id), sellerId, id);
+        }
+        const reviewChanged = current.verification.method !== 'ticket_number'
+          && (fields.section !== current.section || fields.quantity !== current.quantity);
+        const result = db.prepare(`UPDATE tickets
+          SET price_cents = @priceCents, quantity = @quantity, section = @section,
+              description = @description, image_path = @image_path,
+              verified = CASE WHEN @reviewChanged THEN 0 ELSE verified END,
+              verification_status = CASE WHEN @reviewChanged
+                THEN CASE WHEN proof_data IS NOT NULL THEN 'pending' ELSE NULL END ELSE verification_status END,
+              verification_method = CASE WHEN @reviewChanged THEN NULL ELSE verification_method END,
+              review_note = CASE WHEN @reviewChanged THEN NULL ELSE review_note END,
+              reviewed_by = CASE WHEN @reviewChanged THEN NULL ELSE reviewed_by END,
+              reviewed_at = CASE WHEN @reviewChanged THEN NULL ELSE reviewed_at END
+          WHERE id = @id AND seller_user_id = @sellerId AND status = 'active'`)
+          .run({ ...fields, reviewChanged: reviewChanged ? 1 : 0, id, sellerId });
+        return result.changes ? this.findById(id) : null;
+      })();
     },
     deleteOwned(id, sellerId) {
       const result = db.prepare(`UPDATE tickets SET status = 'deleted'
@@ -921,6 +945,7 @@ export function createRoundRepo(db) {
 
         WHERE p.concert_id = ?
           AND p.status = 'matched'
+          AND NOT EXISTS (SELECT 1 FROM group_settings gs WHERE gs.party_id = p.id)
 
           AND NOT EXISTS (
             SELECT 1
@@ -1291,37 +1316,15 @@ export function createSessionRepo(db) {
   };
 }
 
-// A withdrawal overrides legacy open seeker/host membership.
-const kakiWithdrawn = (user, concert) => `EXISTS (
-  SELECT 1 FROM concert_participants withdrawn
-  WHERE withdrawn.user_id = ${user} AND withdrawn.concert_id = ${concert}
-    AND withdrawn.status = 'withdrawn'
-)`;
 const kakiJoined = (user, concert) => `EXISTS (
   SELECT 1 FROM concert_participants joined
   WHERE joined.user_id = ${user} AND joined.concert_id = ${concert}
     AND joined.status = 'joined'
 )`;
-const kakiOpenSeeker = (user, concert) => `EXISTS (
-  SELECT 1 FROM seeker_requests active_seeker
-  WHERE active_seeker.user_id = ${user} AND active_seeker.concert_id = ${concert}
-    AND active_seeker.status = 'open'
-)`;
-const kakiCandidate = (user, concert) => `(
-  NOT ${kakiWithdrawn(user, concert)}
-  AND (${kakiJoined(user, concert)} OR ${kakiOpenSeeker(user, concert)})
-)`;
-const kakiActiveMember = (user, concert) => `(
-  NOT ${kakiWithdrawn(user, concert)}
-  AND (${kakiJoined(user, concert)} OR ${kakiOpenSeeker(user, concert)}
-    OR EXISTS (SELECT 1 FROM parties active_party
-               WHERE active_party.host_user_id = ${user} AND active_party.concert_id = ${concert}
-                 AND active_party.status = 'open'))
-)`;
 const kakiEligiblePair = (actor, concert, target) => `(
   ${actor} <> ${target}
-  AND ${kakiActiveMember(actor, concert)}
-  AND ${kakiCandidate(target, concert)}
+  AND ${kakiJoined(actor, concert)}
+  AND ${kakiJoined(target, concert)}
   AND NOT EXISTS (SELECT 1 FROM blocks b
                   WHERE (b.blocker_user_id = ${actor} AND b.blocked_user_id = ${target})
                      OR (b.blocker_user_id = ${target} AND b.blocked_user_id = ${actor}))
@@ -1330,32 +1333,25 @@ const kakiEligiblePair = (actor, concert, target) => `(
 export function createKakiRepo(db) {
   const concerts = db.prepare(`
     SELECT c.* FROM concerts c
-    WHERE ${kakiActiveMember('@viewer', 'c.id')}
+    WHERE ${kakiJoined('@viewer', 'c.id')}
     ORDER BY c.event_date, c.id
   `);
   const people = db.prepare(`
-    WITH candidates AS (
-      SELECT concert_id, user_id FROM seeker_requests WHERE status = 'open'
-      UNION
-      SELECT concert_id, user_id FROM concert_participants WHERE status = 'joined'
-    )
     SELECT c.id AS concert_id, c.artist, c.tour_name, c.event_date, c.venue,
-           COALESCE(p.section_pref, s.section_pref) AS section_pref,
+           p.section_pref,
            s.spend_band_max,
-           COALESCE(p.arrival_pref, s.arrival_pref) AS arrival_pref,
+           p.arrival_pref,
            COALESCE(s.plans_wanted_json, '{}') AS plans_wanted_json,
            u.id AS user_id, u.display_name AS user_display_name,
            u.age_band AS user_age_band, u.home_region AS user_home_region,
            u.languages_json AS user_languages_json, u.vibe_json AS user_vibe_json,
            u.reliability AS user_reliability, u.verified AS user_verified
-    FROM candidates candidate
-    JOIN concerts c ON c.id = candidate.concert_id
-    JOIN users u ON u.id = candidate.user_id
-    LEFT JOIN seeker_requests s ON s.concert_id = candidate.concert_id
-      AND s.user_id = candidate.user_id AND s.status = 'open'
-    LEFT JOIN concert_participants p ON p.concert_id = candidate.concert_id
-      AND p.user_id = candidate.user_id AND p.status = 'joined'
-    WHERE ${kakiEligiblePair('@viewer', 'c.id', 'u.id')}
+    FROM concert_participants p
+    JOIN concerts c ON c.id = p.concert_id
+    JOIN users u ON u.id = p.user_id
+    LEFT JOIN seeker_requests s ON s.concert_id = p.concert_id
+      AND s.user_id = p.user_id AND s.status = 'open'
+    WHERE p.status = 'joined' AND ${kakiEligiblePair('@viewer', 'c.id', 'u.id')}
     ORDER BY c.event_date, c.id, u.id
   `);
   const eligible = db.prepare(`
@@ -1364,7 +1360,7 @@ export function createKakiRepo(db) {
   const decisions = db.prepare(`
     SELECT d.concert_id, d.target_user_id, d.decision, d.decided_at,
            reverse.decision AS reverse_decision,
-           ${kakiCandidate('d.actor_user_id', 'd.concert_id')} AS actor_is_candidate
+           ${kakiJoined('d.actor_user_id', 'd.concert_id')} AS actor_is_candidate
     FROM kaki_decisions d
     LEFT JOIN kaki_decisions reverse ON reverse.concert_id = d.concert_id
       AND reverse.actor_user_id = d.target_user_id
@@ -1381,7 +1377,7 @@ export function createKakiRepo(db) {
     SELECT 1 FROM kaki_decisions d
     WHERE d.concert_id = @concert AND d.actor_user_id = @target
       AND d.target_user_id = @actor AND d.decision = 'like'
-      AND ${kakiCandidate('@actor', '@concert')}
+      AND ${kakiJoined('@actor', '@concert')}
   `);
   const remove = db.prepare(`
     DELETE FROM kaki_decisions
@@ -1542,12 +1538,14 @@ export function createConversationRepo(db) {
       `).all({ u: userId });
     },
 
-    /** Messages after `after` (a created_at), so polling only fetches what is new. */
+    /** Messages after a message id; row order keeps same-millisecond messages distinct. */
     messages(conversationId, after = null) {
       return db.prepare(`
         SELECT * FROM ticket_messages
-        WHERE conversation_id = @c AND (@after IS NULL OR created_at > @after)
-        ORDER BY created_at, rowid
+        WHERE conversation_id = @c AND (@after IS NULL OR rowid > (
+          SELECT rowid FROM ticket_messages WHERE id = @after AND conversation_id = @c
+        ))
+        ORDER BY rowid
         LIMIT 500
       `).all({ c: conversationId, after });
     },
