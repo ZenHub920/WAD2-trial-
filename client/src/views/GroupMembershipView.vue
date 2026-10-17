@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "../api.js";
 import { currentUser } from "../auth.js";
@@ -24,13 +24,6 @@ async function load() {
     connect.value = Boolean(group.value.settings?.connect_open);
   }
 }
-onMounted(async () => {
-  try {
-    await load();
-  } catch (e) {
-    error.value = e.message;
-  }
-});
 watch(
   () => props.id,
   async () => {
@@ -40,6 +33,7 @@ watch(
       error.value = e.message;
     }
   },
+  { immediate: true },
 );
 async function act(fn) {
   if (busy.value) return;
@@ -73,7 +67,7 @@ async function invite() {
 </script>
 <template>
   <main class="container groups-page">
-    <h1>Group membership &amp; preferences</h1>
+    <h1>Your group</h1>
     <nav class="group-actions">
       <RouterLink to="/groups">Find a Group</RouterLink
       ><RouterLink to="/groups/connect">Connect Groups</RouterLink>
@@ -82,8 +76,7 @@ async function invite() {
     <p v-if="notice" role="status">{{ notice }}</p>
     <section v-if="token && !group" class="card group-panel">
       <p>
-        You were invited as an existing friend. Joining does not consume a place
-        advertised to strangers.
+        Join your friend's group using this invitation.
       </p>
       <button class="btn btn--primary" :disabled="busy" @click="accept">
         Accept invitation
@@ -96,7 +89,7 @@ async function invite() {
       </p>
       <ul>
         <li v-for="m in group.members" :key="m.id">
-          {{ m.name }} · {{ m.source }} ·
+          {{ m.name }},
           {{ m.answered ? "Answered" : "Preferences pending" }}
         </li>
       </ul>
@@ -119,7 +112,7 @@ async function invite() {
             min="0"
             max="100" /></label
         ><label
-          >Additional stranger places (zero for a friends-only group)<input
+          >Places for new companions (zero for friends only)<input
             v-model.number="strangerPlaces"
             type="number"
             min="0"
@@ -127,7 +120,7 @@ async function invite() {
         /></label>
         <p>These places exclude you and your invited friends.</p>
         <button class="btn btn--ghost" :disabled="busy">
-          Configure / return to draft
+          Save and return to draft
         </button>
       </form>
       <PreferenceEditor
@@ -143,7 +136,7 @@ async function invite() {
           :disabled="busy || !group.settings"
           @click="invite"
         >
-          Create a single-use friend link</button
+          Create single-use friend link</button
         ><label v-if="link"
           >Copy and share privately<input
             :value="link"
@@ -157,8 +150,9 @@ async function invite() {
           :disabled="busy || !group.settings"
           @click="act(() => api.publishGroup(id, { connectOpen: connect }))"
         >
-          Publish group after everyone answers
+          Publish group
         </button>
+        <p>Everyone must answer before publishing.</p>
         <p>{{ group.settings?.published ? "Published" : "Draft" }}</p>
         <button
           class="btn btn--ghost"

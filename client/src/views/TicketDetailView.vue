@@ -144,7 +144,7 @@ async function saveListing() {
     </MarketNotice>
 
     <MarketNotice v-else-if="error" tone="error" title="Could not load this listing">
-      <p class="mono">{{ error.message }}</p>
+      <p>Please refresh the page to try again.</p>
     </MarketNotice>
 
     <template v-else>
@@ -158,7 +158,6 @@ async function saveListing() {
         @chat="chat"
         @edit="startEditing"
         @remove="removeListing"
-        @add-to-cart="announce('The cart isn’t available yet — use Buy to check out now.')"
         @copy-link="copyLink"
       />
 

@@ -1,21 +1,18 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
-import IntroCurtain from './components/IntroCurtain.vue';
 import SiteHeader from './components/SiteHeader.vue';
-import SiteFooter from './components/SiteFooter.vue';
-import { refreshSession } from './auth.js';
+import { currentUser, refreshSession } from './auth.js';
 
-// Concert Kaki is a light product; dark is the opt-in now, not the default.
+// Encore starts in light mode; dark mode is optional.
 const theme = ref('light');
 const route = useRoute();
-// The chat thread sizes itself to the remaining viewport and scrolls
-// internally, so it needs the header out of flow — otherwise the page scrolls
-// as well and the thread's own bar slides under the navbar.
-const hasFixedHeader = computed(() => [
-  'marketplace', 'list-ticket', 'my-listings', 'ticket-detail',
-  'kaki-chat', 'kaki-chat-thread',
-].includes(route.name));
+const hasFixedHeader = computed(() =>
+  Boolean(currentUser.value) || [
+    'marketplace', 'list-ticket', 'my-listings', 'ticket-detail',
+    'kaki-chat', 'kaki-chat-thread',
+  ].includes(route.name),
+);
 refreshSession().catch((error) => console.error('Could not load session', error));
 
 onMounted(() => {
@@ -34,17 +31,15 @@ function toggleTheme() {
 </script>
 
 <template>
-  <IntroCurtain />
   <a class="skip-link" href="#main">Skip to content</a>
-  <SiteHeader :theme="theme" @toggle-theme="toggleTheme" />
+  <SiteHeader :theme="theme" :fixed="hasFixedHeader" @toggle-theme="toggleTheme" />
   <main id="main" :class="{ 'main--with-fixed-header': hasFixedHeader }">
     <RouterView v-slot="{ Component }">
       <Transition name="page" mode="out-in">
-        <component :is="Component" />
+        <component :is="Component" :key="route.path" />
       </Transition>
     </RouterView>
   </main>
-  <SiteFooter />
 </template>
 
 <style>

@@ -121,8 +121,8 @@ function runPhase1(ids, table, rank) {
   const free = [...ids];
   let proposals = 0;
 
-  while (free.length > 0) {
-    const proposer = free.shift();
+  for (let nextFree = 0; nextFree < free.length; nextFree += 1) {
+    const proposer = free[nextFree];
     if (proposedBy.has(proposer)) continue;
 
     const list = table.get(proposer);

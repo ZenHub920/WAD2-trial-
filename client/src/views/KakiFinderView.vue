@@ -19,7 +19,7 @@ import {
   writeDecision,
 } from '../kaki.js';
 
-const stage = ref('filters'); // filters | ready | tutorial | deck | matched
+const stage = ref('filters'); // filters | deck | matched
 
 const loading = ref(true);
 const error = ref(null);
@@ -34,7 +34,6 @@ const applied = ref({ ...EMPTY_FILTERS });
 /** The person on the match screen. */
 const matchedWith = ref(null);
 const matchedDecision = ref(null);
-const tutorialStep = ref(0);
 
 onMounted(async () => {
   try {
@@ -101,7 +100,7 @@ function resetFilters() {
 function applyAndContinue() {
   applied.value = { ...filters.value };
   buildDeck();
-  stage.value = 'ready';
+  stage.value = 'deck';
 }
 
 /* ---- Age range ----------------------------------------------------------
@@ -155,31 +154,11 @@ function backToDeck() {
   stage.value = 'deck';
 }
 
-/* ---- Tutorial -----------------------------------------------------------
- * Three coach marks from the prototype. Kept as an overlay on the real deck
- * rather than a set of illustrations, so what is pointed at is the live UI.
- */
-const TUTORIAL = [
-  { title: 'View profile history here', hint: 'Everyone you skipped, with an undo.' },
-  { title: 'View filters here', hint: 'Change artist, date, section or age at any time.' },
-  { title: 'Swipe card left or right', hint: 'Left to skip, right to like. A match needs both people to like each other.' },
-];
-
-function nextTutorial() {
-  if (tutorialStep.value < TUTORIAL.length - 1) {
-    tutorialStep.value += 1;
-  } else {
-    stage.value = 'deck';
-  }
-}
-
-const viewer = computed(() => currentUser.value);
-
 const matchAvatars = computed(() => {
   if (!matchedWith.value) return null;
   return {
     them: avatarFor(matchedWith.value.user),
-    you: avatarFor(viewer.value ?? { displayName: 'You', id: 'you' }),
+    you: avatarFor(currentUser.value ?? { displayName: 'You', id: 'you' }),
   };
 });
 </script>
@@ -230,12 +209,12 @@ const matchAvatars = computed(() => {
     </div>
     <!-- --------------------------------------------------------- Filters -->
     <section v-else-if="stage === 'filters'" class="kaki__panel">
-      <h2 class="kaki__h2">Select filters to find Kaki</h2>
+      <h2 class="kaki__h2">Find your Kaki</h2>
 
       <label class="field">
         <span class="sr-only">Artist</span>
         <select v-model="filters.artist">
-          <option value="">Select artist from your Concerts</option>
+          <option value="">All artists</option>
           <option v-for="artist in artists" :key="artist" :value="artist">{{ artist }}</option>
         </select>
       </label>
@@ -243,7 +222,7 @@ const matchAvatars = computed(() => {
       <label class="field">
         <span class="sr-only">Concert date</span>
         <select v-model="filters.date">
-          <option value="">Concert Date(s)</option>
+          <option value="">All concert dates</option>
           <option v-for="date in dates" :key="date" :value="date">{{ formatDate(date) }}</option>
         </select>
       </label>
@@ -251,19 +230,10 @@ const matchAvatars = computed(() => {
       <label class="field">
         <span class="sr-only">Section</span>
         <select v-model="filters.section">
-          <option value="">Section</option>
+          <option value="">All sections</option>
           <option v-for="section in sections" :key="section" :value="section">
             {{ LABELS.section[section] }}
           </option>
-        </select>
-      </label>
-
-      <!-- Seat number is in the prototype but has no column in the schema, so
-           the control is shown disabled rather than silently doing nothing. -->
-      <label class="field field--disabled">
-        <span class="sr-only">Seat number</span>
-        <select disabled>
-          <option>Seat Number — not stored yet</option>
         </select>
       </label>
 
@@ -285,69 +255,24 @@ const matchAvatars = computed(() => {
             aria-label="Maximum age" @input="onAgeMax"
           />
         </div>
-        <p class="range__note">Profiles carry an age band, so a band is kept when it overlaps.</p>
       </div>
 
-      <!-- Gender is in the prototype, but the API's public user shape does not
-           expose it. Shown disabled for the same reason as seat number. -->
-      <label class="field field--disabled">
-        <span class="sr-only">Gender</span>
-        <select disabled>
-          <option>Gender — not exposed by the API</option>
-        </select>
-      </label>
-
       <p class="kaki__count">
-        {{ previewCount }} {{ previewCount === 1 ? 'person' : 'people' }} match these filters
+        {{ previewCount }} {{ previewCount === 1 ? 'person matches' : 'people match' }} these filters
       </p>
 
       <div class="kaki__buttons">
         <button class="btn btn--ghost" @click="resetFilters">Reset</button>
         <button class="btn btn--primary" :disabled="previewCount === 0" @click="applyAndContinue">
-          Apply
+          Find people
         </button>
       </div>
-    </section>
-
-    <!-- ----------------------------------------------------------- Ready -->
-    <section v-else-if="stage === 'ready'" class="kaki__panel kaki__panel--centre">
-      <div class="ready__art" aria-hidden="true">
-        <svg viewBox="0 0 120 70" fill="none">
-          <circle cx="24" cy="18" r="9" stroke="currentColor" stroke-width="3" />
-          <path d="M6 58c0-11 8-18 18-18s18 7 18 18" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
-          <circle cx="96" cy="18" r="9" stroke="currentColor" stroke-width="3" />
-          <path d="M78 58c0-11 8-18 18-18s18 7 18 18" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
-          <circle cx="56" cy="40" r="4" fill="currentColor" />
-          <circle cx="68" cy="34" r="4" fill="currentColor" />
-          <path d="M60 40V20l12-4v18" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
-        </svg>
-      </div>
-      <h2 class="kaki__h2 kaki__h2--centre">Ready to find your Kaki?</h2>
-      <p class="ready__count">{{ deck.length }} {{ deck.length === 1 ? 'profile' : 'profiles' }} waiting</p>
-      <button class="btn btn--primary btn--block" @click="stage = 'tutorial'; tutorialStep = 0">
-        Start tutorial
-      </button>
-      <button class="btn btn--text" @click="stage = 'deck'">Skip tutorial</button>
-    </section>
-
-    <!-- -------------------------------------------------------- Tutorial -->
-    <section v-else-if="stage === 'tutorial'" class="kaki__panel kaki__panel--centre">
-      <div class="coach">
-        <p class="coach__title">{{ TUTORIAL[tutorialStep].title }}</p>
-        <p class="coach__hint">{{ TUTORIAL[tutorialStep].hint }}</p>
-      </div>
-      <div class="coach__dots" aria-hidden="true">
-        <span v-for="(t, i) in TUTORIAL" :key="i" :class="{ on: i === tutorialStep }" />
-      </div>
-      <button class="btn btn--primary btn--block" @click="nextTutorial">
-        {{ tutorialStep === TUTORIAL.length - 1 ? 'Start swiping' : 'Next' }}
-      </button>
     </section>
 
     <!-- ------------------------------------------------------------ Deck -->
     <section v-else-if="stage === 'deck'" class="kaki__panel">
       <div v-if="swipeError" class="notice notice--error" role="alert">
-        <p>Could not save this change. The deck has not moved; please try again.</p>
+        <p>Could not save this change. Please try again.</p>
         <RouterLink v-if="swipeError.status === 401" to="/login">Sign in</RouterLink>
         <p v-else class="mono">{{ swipeError.message }}</p>
       </div>
@@ -358,6 +283,7 @@ const matchAvatars = computed(() => {
       <SwipeDeck
         v-else
         :items="deck"
+        :show-profile="false"
         noun-singular="profile"
         noun-plural="profiles"
         yes-label="Like"
@@ -371,27 +297,16 @@ const matchAvatars = computed(() => {
         @shortlist="onLike"
       >
         <template #card="{ item }">
-          <KakiCard :person="item" :viewer="viewer" />
+          <KakiCard :person="item" :viewer="currentUser" />
         </template>
         <template #empty>
-          <p>All decisions are saved. A like becomes a match when they like you back.</p>
+          <p>You're all caught up. Check Messages for your matches.</p>
         </template>
       </SwipeDeck>
     </section>
 
     <!-- --------------------------------------------------------- Matched -->
     <section v-else-if="stage === 'matched'" class="kaki__panel kaki__panel--centre">
-      <div class="ready__art" aria-hidden="true">
-        <svg viewBox="0 0 120 70" fill="none">
-          <circle cx="24" cy="18" r="9" stroke="currentColor" stroke-width="3" />
-          <path d="M6 58c0-11 8-18 18-18s18 7 18 18" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
-          <circle cx="96" cy="18" r="9" stroke="currentColor" stroke-width="3" />
-          <path d="M78 58c0-11 8-18 18-18s18 7 18 18" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
-          <circle cx="56" cy="40" r="4" fill="currentColor" />
-          <circle cx="68" cy="34" r="4" fill="currentColor" />
-          <path d="M60 40V20l12-4v18" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
-        </svg>
-      </div>
 
       <h2 class="kaki__h2 kaki__h2--centre">
         {{ matchedDecision?.mutual ? 'You matched with' : 'You liked' }}
@@ -409,9 +324,12 @@ const matchAvatars = computed(() => {
 
       <p class="match__note">
         {{ matchedDecision?.mutual
-          ? 'You both liked each other. Messaging arrives with the Chat section.'
-          : 'Your like is saved. It becomes a match only if they like you back.' }}
+          ? 'You both liked each other.'
+          : 'Waiting for them to like you back.' }}
       </p>
+      <RouterLink v-if="matchedDecision?.mutual" to="/kaki/chat" class="btn btn--primary">
+        Messages
+      </RouterLink>
 
       <button class="btn btn--text" @click="backToDeck">Keep swiping</button>
     </section>
@@ -536,11 +454,6 @@ const matchAvatars = computed(() => {
   background-repeat: no-repeat;
 }
 
-.field--disabled select {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
 /* ---- Age range --------------------------------------------------------- */
 
 .range {
@@ -620,12 +533,6 @@ const matchAvatars = computed(() => {
   cursor: grab;
 }
 
-.range__note {
-  margin: var(--space-2) 0 0;
-  font-size: var(--step--2);
-  color: var(--text-400);
-}
-
 /* ---- Buttons ----------------------------------------------------------- */
 
 .kaki__buttons {
@@ -669,10 +576,6 @@ const matchAvatars = computed(() => {
   background: var(--accent-500);
 }
 
-.btn--block {
-  width: 100%;
-}
-
 .btn--text {
   background: none;
   color: var(--text-300);
@@ -680,60 +583,7 @@ const matchAvatars = computed(() => {
   text-decoration: underline;
 }
 
-/* ---- Ready / tutorial / match ------------------------------------------ */
-
-.ready__art {
-  color: var(--accent-600);
-  width: 160px;
-}
-
-.ready__art svg {
-  width: 100%;
-  height: auto;
-}
-
-.ready__count {
-  margin: 0;
-  color: var(--text-300);
-  font-size: var(--step--1);
-}
-
-.coach {
-  background: var(--ink-800);
-  border: var(--border-hairline);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
-  padding: var(--space-4) var(--space-5);
-}
-
-.coach__title {
-  margin: 0;
-  font-weight: 800;
-  font-size: var(--step-1);
-  color: var(--text-100);
-}
-
-.coach__hint {
-  margin: var(--space-2) 0 0;
-  font-size: var(--step--1);
-  color: var(--text-300);
-}
-
-.coach__dots {
-  display: flex;
-  gap: var(--space-2);
-}
-
-.coach__dots span {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--ink-600);
-}
-
-.coach__dots span.on {
-  background: var(--accent-600);
-}
+/* ---- Match ------------------------------------------------------------- */
 
 .match__avatars {
   display: flex;

@@ -31,6 +31,16 @@ npm run dev
 
 Open <http://localhost:5173>.
 
+### Interface
+
+The product brand is **Encore**. Kaki Finder remains the name of the companion-finding
+feature. The interface keeps working controls and concise task guidance; project
+footers, opening overlays, disabled placeholder filters and implementation notes
+have been removed. Automatic-matching explanations are optional on `/method`.
+
+Route changes reset resource-specific drafts. Notification refreshes and weather
+checks preserve unsaved settings and availability.
+
 ### Account sessions
 
 Register or sign in at `/login`. `POST /api/auth/register` and
@@ -286,8 +296,8 @@ server/
 
 client/
   src/assets/         design tokens and base stylesheet
-  src/components/     header, footer, stability explainer, vibe radar
-  src/views/          home, concerts, concert, algorithm visualiser, round, method
+  src/components/     navigation, cards, forms, chat and matching visualisations
+  src/views/          concerts, groups, Kaki, marketplace, planning and account pages
 
 docs/ALGORITHM.md     the specification
 ```

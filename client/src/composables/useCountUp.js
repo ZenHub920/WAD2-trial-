@@ -28,6 +28,7 @@ function easeOutQuart(t) {
  */
 export function useCountUp(source, options = {}) {
   const { duration = 900, decimals = 0, enabled = true } = options;
+  const factor = 10 ** decimals;
 
   const displayed = ref(0);
   let frame = null;
@@ -52,7 +53,6 @@ export function useCountUp(source, options = {}) {
     const t = Math.min(1, elapsed / duration);
     const value = from + (to - from) * easeOutQuart(t);
 
-    const factor = 10 ** decimals;
     displayed.value = Math.round(value * factor) / factor;
 
     if (t < 1) {
@@ -82,7 +82,7 @@ export function useCountUp(source, options = {}) {
   const gate = typeof enabled === 'boolean' ? ref(enabled) : enabled;
 
   watch(
-    [() => read(), () => gate.value],
+    [read, () => gate.value],
     ([target, open]) => {
       if (!open) return;
       run(target);

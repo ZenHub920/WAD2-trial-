@@ -1,8 +1,7 @@
 /**
  * Data access.
  *
- * The only module that knows SQL. Everything above it works with plain objects,
- * so the storage engine can change without touching the matching engine or the API.
+ * Repositories keep SQL here and return plain objects to controllers and services.
  *
  * Hydration note: the matching engine expects seekers and parties to arrive with
  * their user object attached (`.user` / `.host`) and JSON columns already parsed.
@@ -901,7 +900,7 @@ export function createRoundRepo(db) {
      *
      * WHY?
      *
-     * Old versions of Encore could mark seeker requests and
+     * Old versions of encore could mark seeker requests and
      * parties as matched using historical match_results.
      *
      * The new implementation counts only active proposals.
@@ -1047,7 +1046,7 @@ export function createRoundRepo(db) {
       
     },
 
-    /** Only the latest round can reveal a result; ownership is always the session user. */
+    /** Active proposals across all rounds, restricted to the session account. */
         /**
      * ============================================================
      * IMPROVEMENT #5: CURRENT OPERATIONAL MATCH RETRIEVAL
@@ -1345,7 +1344,8 @@ export function createKakiRepo(db) {
            u.id AS user_id, u.display_name AS user_display_name,
            u.age_band AS user_age_band, u.home_region AS user_home_region,
            u.languages_json AS user_languages_json, u.vibe_json AS user_vibe_json,
-           u.reliability AS user_reliability, u.verified AS user_verified
+           u.reliability AS user_reliability, u.verified AS user_verified,
+           u.avatar_path AS user_avatar_path
     FROM concert_participants p
     JOIN concerts c ON c.id = p.concert_id
     JOIN users u ON u.id = p.user_id

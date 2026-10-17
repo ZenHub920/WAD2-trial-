@@ -299,12 +299,10 @@ const insert = db.transaction(() => {
     DELETE FROM users;
   `);
   for (const concert of CONCERTS) {
-    if (!repos.concerts.findById(concert.id)) {
-      repos.concerts.create({
-        ...concert,
-        matching_closes_at: `${concert.event_date}T00:00:00`,
-      });
-    }
+    repos.concerts.create({
+      ...concert,
+      matching_closes_at: `${concert.event_date}T00:00:00`,
+    });
   }
 
   // Co-prime strides over both name lists, so first and last names advance at

@@ -64,34 +64,21 @@ export function migrateCommunity(db) {
           OR EXISTS(SELECT 1 FROM group_memberships WHERE party_id<>NEW.id AND user_id=NEW.host_user_id AND concert_id=NEW.concert_id AND status='active');
       END;
     `);
-    if (
-      !db
-        .prepare("PRAGMA table_info(group_settings)")
-        .all()
-        .some((c) => c.name === "stranger_slots")
-    )
+    const settingsColumns = db.prepare("PRAGMA table_info(group_settings)").all();
+    if (!settingsColumns.some((c) => c.name === "stranger_slots"))
       db.exec(
         "ALTER TABLE group_settings ADD COLUMN stranger_slots INTEGER CHECK(stranger_slots>=0)",
       );
-    if (
-      !db
-        .prepare("PRAGMA table_info(group_settings)")
-        .all()
-        .some((c) => c.name === "version")
-    )
+    if (!settingsColumns.some((c) => c.name === "version"))
       db.exec(
         "ALTER TABLE group_settings ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
       );
-    if (
-      !db
-        .prepare("PRAGMA table_info(group_join_requests)")
-        .all()
-        .some((c) => c.name === "group_version")
-    )
+    const requestColumns = db.prepare("PRAGMA table_info(group_join_requests)").all();
+    if (!requestColumns.some((c) => c.name === "group_version"))
       db.exec(
         "ALTER TABLE group_join_requests ADD COLUMN group_version INTEGER",
       );
-    if (!db.prepare("PRAGMA table_info(group_join_requests)").all().some((c) => c.name === "preferences_json"))
+    if (!requestColumns.some((c) => c.name === "preferences_json"))
       db.exec("ALTER TABLE group_join_requests ADD COLUMN preferences_json TEXT");
     db.exec(`CREATE TRIGGER IF NOT EXISTS membership_host_guard BEFORE INSERT ON group_memberships WHEN NEW.status='active'
       BEGIN SELECT RAISE(ABORT,'already_in_concert_group') WHERE EXISTS(SELECT 1 FROM parties WHERE host_user_id=NEW.user_id

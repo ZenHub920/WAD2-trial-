@@ -17,7 +17,7 @@ import PriceRange from '../components/market/PriceRange.vue';
 const listings = ref([]);
 const concerts = ref([]);
 const loading = ref(true);
-const error = ref('');
+const error = computed(() => ticketError.value && concertError.value ? ticketError.value : '');
 // One feed can fail while the other works; say so in that block rather than
 // letting an empty grid read as "nobody has listed anything".
 const ticketError = ref('');
@@ -76,7 +76,6 @@ onMounted(async () => {
   else ticketError.value = reason(tickets);
   if (shows.status === 'fulfilled') concerts.value = shows.value.concerts;
   else concertError.value = reason(shows);
-  if (ticketError.value && concertError.value) error.value = ticketError.value;
   loading.value = false;
 });
 
@@ -187,14 +186,13 @@ const filteredListings = computed(() => {
     return price >= n.min && price <= n.max;
   });
 
-  const sorted = [...found];
-  if (n.sort === 'price_asc') sorted.sort((a, b) => a.priceCents - b.priceCents);
-  else if (n.sort === 'price_desc') sorted.sort((a, b) => b.priceCents - a.priceCents);
+  if (n.sort === 'price_asc') found.sort((a, b) => a.priceCents - b.priceCents);
+  else if (n.sort === 'price_desc') found.sort((a, b) => b.priceCents - a.priceCents);
   else if (n.sort === 'soonest') {
-    sorted.sort((a, b) => a.concert.event_date.localeCompare(b.concert.event_date));
+    found.sort((a, b) => a.concert.event_date.localeCompare(b.concert.event_date));
   }
   // 'newest' is the order the API already returns.
-  return sorted;
+  return found;
 });
 
 /** Every upcoming concert in demand order, each with its resale summary. */
@@ -228,11 +226,6 @@ const concertHeading = computed(() => {
   return concertsNarrowed.value ? 'Concerts matching your search' : 'Concerts you could still join';
 });
 
-const concertNote = computed(() => {
-  if (!refining.value) return 'Ranked by how many people are chasing places — seekers against spare seats and resale.';
-  return 'Open a concert to join its matching round, or see what is on resale.';
-});
-
 const SPOTLIGHT = 6;
 const showAllConcerts = ref(false);
 const visibleConcerts = computed(() =>
@@ -243,10 +236,10 @@ const summary = computed(() => {
   const tickets = filteredListings.value.length;
   const shows = matchingConcerts.value.length;
   if (refining.value) {
-    return `${tickets} ${tickets === 1 ? 'ticket' : 'tickets'} · ${shows} ${shows === 1 ? 'concert' : 'concerts'}`;
+    return `${tickets} ${tickets === 1 ? 'ticket' : 'tickets'}, ${shows} ${shows === 1 ? 'concert' : 'concerts'}`;
   }
-  if (!tickets) return `No tickets listed yet · ${shows} ${shows === 1 ? 'concert' : 'concerts'} matching now`;
-  return `${tickets} ${tickets === 1 ? 'ticket' : 'tickets'} on sale · ${shows} upcoming ${shows === 1 ? 'concert' : 'concerts'}`;
+  if (!tickets) return `No tickets listed yet, ${shows} ${shows === 1 ? 'concert' : 'concerts'} matching now`;
+  return `${tickets} ${tickets === 1 ? 'ticket' : 'tickets'} on sale, ${shows} upcoming ${shows === 1 ? 'concert' : 'concerts'}`;
 });
 
 /* ---- Jumping from a recommendation to its tickets ------------------------ */
@@ -398,11 +391,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 
       <div v-if="error" class="notice notice--error">
         <h3>Could not load the market</h3>
-        <p>
-          Start the backend from <code>server/</code>:
-          <code>npm install &amp;&amp; npm run seed &amp;&amp; npm start</code>
-        </p>
-        <p class="mono">{{ error }}</p>
+        <p>Please refresh the page to try again.</p>
       </div>
 
       <div v-else-if="loading" class="ticket-grid">
@@ -417,7 +406,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
           <header class="block__head">
             <div>
               <h2 id="concerts-heading">{{ concertHeading }}</h2>
-              <p class="block__note">{{ concertNote }}</p>
             </div>
             <button
               v-if="matchingConcerts.length > SPOTLIGHT"
@@ -448,7 +436,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
           <header class="block__head">
             <div>
               <h2 id="tickets-heading">{{ refining ? 'Tickets matching your filters' : 'Tickets on resale' }}</h2>
-              <p class="block__note">Listed by other fans. Every listing shows its seller and verification state.</p>
             </div>
             <RouterLink to="/list-ticket" class="btn btn--ghost">List a ticket</RouterLink>
           </header>
@@ -466,7 +453,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
           <div v-else-if="ticketError" class="empty">
             <MarketIcon name="ticket" :size="26" />
             <h3>Could not load the listings.</h3>
-            <p>The concerts above loaded, so this is the ticket feed alone. <span class="mono">{{ ticketError }}</span></p>
+            <p>Please refresh the page to try again.</p>
           </div>
 
           <div v-else class="empty">
@@ -476,7 +463,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
               Tickets appear here the moment a fan lists one. The concerts above are the ones to watch.
             </p>
             <p v-else-if="matchingConcerts.length">
-              The concerts below still match — open one to join its matching round, or widen your filters.
+              Browse matching concerts or widen your filters.
             </p>
             <p v-else>
               Nothing in the market matches that, concerts included. Try a different artist or venue.
@@ -487,7 +474,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
         </section>
 
         <p v-if="concertError" class="dead-end">
-          Recommended concerts are unavailable right now. <span class="mono">{{ concertError }}</span>
+          Recommended concerts are unavailable right now. Please try again later.
         </p>
       </div>
     </div>
@@ -783,7 +770,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 }
 
 .block__head h2 { font-size: var(--step-1); }
-.block__note { margin-top: var(--space-2); max-width: 56ch; color: var(--text-300); font-size: var(--step--1); }
 
 /* Both grids are positioning contexts: a card leaving the list is taken out of
    flow (see .pop-leave-active) so the remaining cards slide up behind it. */
@@ -827,8 +813,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 }
 
 .notice h3 { margin-bottom: var(--space-3); color: var(--rose-400); font-size: var(--step-0); }
-.notice code { color: var(--accent-400); }
-.notice .mono { margin-top: var(--space-3); color: var(--text-400); font-size: var(--step--2); }
 
 .skeleton {
   min-height: 320px;

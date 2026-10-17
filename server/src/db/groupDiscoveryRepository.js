@@ -9,10 +9,8 @@ export function createGroupDiscoveryRepo(db, repos) {
     return row ? repos.seekers.findById(row.id) : null;
   };
   const isTicket = id => Boolean(db.prepare('SELECT 1 FROM tickets WHERE source_party_id = ?').get(id));
-  const blocked = (a, b) => {
-    const list = repos.users.blocklist();
-    return list.has(`${a}:${b}`) || list.has(`${b}:${a}`);
-  };
+  const blocked = (a, b, blocklist) =>
+    blocklist.has(`${a}:${b}`) || blocklist.has(`${b}:${a}`);
   const card = party => {
     const concert = repos.concerts.findById(party.concert_id);
     return {
@@ -34,13 +32,15 @@ export function createGroupDiscoveryRepo(db, repos) {
     if (from.id === to.id || from.host_user_id === to.host_user_id) return fail('cannot_connect_own_groups', 400);
     if (from.concert_id !== to.concert_id) return fail('different_concert', 400);
     if ([from, to].some(p => p.status === 'cancelled' || isTicket(p.id))) return fail('group_unavailable');
-    if (blocked(from.host_user_id, to.host_user_id)) return fail('blocked_pair', 403);
+    const blocklist = repos.users.blocklist();
+    if (blocked(from.host_user_id, to.host_user_id, blocklist)) return fail('blocked_pair', 403);
     for(const p of [from,to]) {
       const settings=repos.membership.settings(p.id);
       if(!settings||!settings.published||!settings.connect_open)return fail('group_not_open_to_connections');
     }
-    const members=id=>[repos.parties.findById(id).host_user_id,...db.prepare("SELECT user_id FROM group_memberships WHERE party_id=? AND status='active'").all(id).map(r=>r.user_id)];
-    if(members(fromId).some(a=>members(toId).some(b=>blocked(a,b))))return fail('blocked_pair',403);
+    const members = p => [p.host_user_id, ...db.prepare("SELECT user_id FROM group_memberships WHERE party_id=? AND status='active'").all(p.id).map(r => r.user_id)];
+    const fromMembers = members(from), toMembers = members(to);
+    if (fromMembers.some(a => toMembers.some(b => blocked(a, b, blocklist)))) return fail('blocked_pair', 403);
     return { from, to };
   };
   const connectionRow = id => db.prepare('SELECT * FROM group_connections WHERE id = ?').get(id);
@@ -74,7 +74,7 @@ export function createGroupDiscoveryRepo(db, repos) {
       const declines = repos.proposals.declinedPairsForConcert(concertId);
       const preferred = this.preferredPairs(concertId);
       return repos.parties.openForConcert(concertId).filter(p => {
-        if (p.host_user_id === userId || blocked(userId, p.host_user_id)) return false;
+        if (p.host_user_id === userId || blocked(userId, p.host_user_id, blocklist)) return false;
         return !request || (!declines.has(`${request.id}|${p.id}`)
           && checkFeasibility(request, p, { blocklist }).feasible);
       }).map(p => ({ ...card(p), preferred: request ? preferred.has(`${request.id}|${p.id}`) : false,

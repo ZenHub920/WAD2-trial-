@@ -4,7 +4,7 @@ import { reservedPlacesSql,availableCapacitySql } from './capacity.js';
 
 /**
  * ============================================================
- * ENCORE — MATCH PROPOSAL REPOSITORY
+ * encore — MATCH PROPOSAL REPOSITORY
  * Improvements #5, #6 and #12
  * ============================================================
  *
@@ -112,8 +112,7 @@ export function createProposalRepo(db) {
   // HELPER: COUNT RESERVED PARTY CAPACITY
   // ============================================================
 
-  const reservedQuery = db.prepare(`SELECT ${reservedPlacesSql('@id')} AS n`);
-  const reserved = { get: id => reservedQuery.get({id}) };
+  const reserved = db.prepare(`SELECT ${reservedPlacesSql('@id')} AS n`);
 
   // ============================================================
   // HELPER: REOPEN SEEKER AND PARTY AFTER CAPACITY RELEASE
@@ -161,7 +160,7 @@ export function createProposalRepo(db) {
     // STEP 4:
     // Calculate how many seats remain reserved.
 
-    const reservedCount = reserved.get(partyId).n;
+    const reservedCount = reserved.get({ id: partyId }).n;
 
     const fullyReserved = reservedCount >= party.capacity;
 
@@ -272,7 +271,7 @@ export function createProposalRepo(db) {
 
       for (const match of matches) {
         const party = db.prepare(`SELECT ${availableCapacitySql()} capacity,p.status FROM parties p WHERE p.id = ?`).get(match.party_id);
-        if (!party || party.status === 'cancelled' || reserved.get(match.party_id).n >= party.capacity) {
+        if (!party || party.status === 'cancelled' || reserved.get({ id: match.party_id }).n >= party.capacity) {
           throw new Error('party_capacity_exceeded');
         }
         if (db.prepare('SELECT 1 FROM group_settings WHERE party_id=?').get(match.party_id)) {
@@ -524,7 +523,7 @@ export function createProposalRepo(db) {
         if (db.prepare('SELECT 1 FROM group_settings WHERE party_id=?').get(proposal.party_id)) {
           return { error: 'managed_group_requires_host_approval', status: 409 };
         }
-        if (reserved.get(proposal.party_id).n > party.capacity) {
+        if (reserved.get({ id: proposal.party_id }).n > party.capacity) {
           return { error: 'party_capacity_exceeded', status: 409 };
         }
         if (db.prepare(`SELECT 1 FROM blocks WHERE

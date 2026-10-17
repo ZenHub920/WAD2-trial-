@@ -1,11 +1,8 @@
 <template>
   <div class="container section nf">
     <p class="eyebrow">404</p>
-    <h1>No match for that one.</h1>
-    <p class="lede">
-      The page you were after is not on the list. Which, given what this site is about,
-      feels like an unstable outcome.
-    </p>
+    <h1>Page not found</h1>
+    <p class="lede">This page may have moved or been removed.</p>
     <div class="nf__actions">
       <RouterLink to="/" class="btn btn--primary">Back to the start</RouterLink>
       <RouterLink to="/concerts" class="btn btn--ghost">Browse concerts</RouterLink>

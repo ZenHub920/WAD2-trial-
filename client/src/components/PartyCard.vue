@@ -1,19 +1,11 @@
 <script setup>
-/**
- * The face of a group listing.
- *
- * Shared by the swipe deck and the expanded detail panel, so a card that is
- * dragged and a card that is opened are demonstrably the same object. The
- * `dense` variant drops the radar and tightens spacing for the stacked list.
- */
-
+// Shared by the swipe deck and the expanded group panel.
 import { computed } from 'vue';
 import { LABELS } from '../api.js';
 import VibeChart from './VibeChart.vue';
 
 const props = defineProps({
   party: { type: Object, required: true },
-  dense: { type: Boolean, default: false },
   /** Hide the radar when the card is behind others and will not be read. */
   showChart: { type: Boolean, default: true },
 });
@@ -32,12 +24,12 @@ const region = computed(() => (host.value.homeRegion ?? '').replace(/_/g, ' '));
 </script>
 
 <template>
-  <div class="face" :class="{ 'face--dense': dense }">
+  <div class="face">
     <header class="face__head">
       <div class="face__id">
         <h3 class="face__name">{{ host.displayName }}</h3>
         <p class="face__meta">
-          {{ host.ageBand }} · {{ region }} · {{ (host.languages ?? []).join(', ') }}
+          {{ host.ageBand }}, {{ region }}, {{ (host.languages ?? []).join(', ') }}
         </p>
       </div>
       <div class="face__badges">
@@ -55,10 +47,8 @@ const region = computed(() => (host.value.homeRegion ?? '').replace(/_/g, ' '));
       <span v-for="plan in activePlans" :key="plan" class="tag tag--cyan">{{ plan }}</span>
     </div>
 
-    <!-- The row is always present when not dense, so the grid keeps the same
-         shape whether or not the radar is drawn. Cards behind the top one skip
-         the SVG (nobody reads them) without changing the layout. -->
-    <div v-if="!dense" class="face__chart">
+    <!-- Keep the chart row for stacked cards without rendering hidden SVGs. -->
+    <div class="face__chart">
       <VibeChart v-if="showChart" :vibe="host.vibe" :size="184" />
     </div>
 
@@ -140,12 +130,6 @@ const region = computed(() => (host.value.homeRegion ?? '').replace(/_/g, ' '));
   overflow: hidden;
 }
 
-/* When the chart is absent (dense listing, or a card behind in the stack) the
-   row must not reserve space it is not using. */
-.face--dense {
-  grid-template-rows: auto auto auto;
-}
-
 .face__reliability {
   display: grid;
   gap: var(--space-2);
@@ -183,13 +167,5 @@ const region = computed(() => (host.value.homeRegion ?? '').replace(/_/g, ' '));
 
 .meter__fill--high {
   background: linear-gradient(90deg, var(--mint-500), var(--mint-400));
-}
-
-.face--dense {
-  gap: var(--space-3);
-}
-
-.face--dense .face__name {
-  font-size: var(--step-1);
 }
 </style>

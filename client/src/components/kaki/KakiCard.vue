@@ -11,7 +11,7 @@
  *     claim, which includes every signed-out viewer
  */
 import { computed } from 'vue';
-import { avatarFor, displayAge, sharedInterests } from '../../kaki.js';
+import { avatarFor, sharedInterests } from '../../kaki.js';
 import { LABELS, formatShortDate } from '../../api.js';
 
 const props = defineProps({
@@ -44,7 +44,7 @@ const interests = computed(() => {
       <h3 class="kaki-card__name">{{ person.user.displayName }}</h3>
 
       <p class="kaki-card__meta">
-        {{ displayAge(person.user.ageBand) }} · {{ person.user.homeRegion.replace('_', ' ') }}
+        {{ person.user.ageBand }}, {{ person.user.homeRegion.replace('_', ' ') }}
         <span v-if="person.user.verified" class="kaki-card__verified" title="Verified account">
           ✓ verified
         </span>
@@ -56,7 +56,7 @@ const interests = computed(() => {
       </p>
 
       <p class="kaki-card__section">
-        {{ LABELS.section[person.sectionPref] }} · {{ LABELS.arrival[person.arrivalPref] }}
+        {{ LABELS.section[person.sectionPref] }}, {{ LABELS.arrival[person.arrivalPref] }}
       </p>
 
       <template v-if="interests.items.length">

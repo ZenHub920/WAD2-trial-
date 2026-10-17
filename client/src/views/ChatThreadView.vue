@@ -120,7 +120,7 @@ function timeOf(value) {
     </MarketNotice>
 
     <MarketNotice v-else-if="error" tone="error" title="Could not load this conversation">
-      <p class="mono">{{ error.message }}</p>
+      <p>Please refresh the page to try again.</p>
     </MarketNotice>
 
     <template v-else>
@@ -141,7 +141,7 @@ function timeOf(value) {
       <ol ref="listEl" class="messages" aria-live="polite" aria-label="Messages">
         <li v-if="!messages.length" class="messages__empty">
           {{ conversation.role === 'buyer'
-            ? `Say hi to ${conversation.other.displayName} — ask about the seats, transfer, or price.`
+            ? `Say hi to ${conversation.other.displayName}. Ask about the seats, transfer, or price.`
             : 'No messages yet.' }}
         </li>
         <li

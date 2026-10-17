@@ -22,16 +22,12 @@ export function migrateMeetups(db) {
   CREATE INDEX IF NOT EXISTS idx_meetup_connection ON meetups(connection_id);`);
 }
 export const coordinates = (lat, lon) =>
-  typeof lat === "number" &&
   Number.isFinite(lat) &&
   Math.abs(lat) <= 90 &&
-  typeof lon === "number" &&
   Number.isFinite(lon) &&
   Math.abs(lon) <= 180;
 const timestamp = (value) =>
-  typeof value === "string" &&
-  /(Z|[+-]\d{2}:\d{2})$/.test(value) &&
-  Number.isFinite(Date.parse(value))
+  typeof value === "string" && /(Z|[+-]\d{2}:\d{2})$/.test(value)
     ? Date.parse(value)
     : NaN;
 export function createMeetupRepo(db, repos) {
@@ -287,8 +283,9 @@ export function createMeetupRepo(db, repos) {
       db.prepare(
         "DELETE FROM meetup_availability WHERE meetup_id=? AND user_id=?",
       ).run(id, user);
+      const insert = db.prepare("INSERT INTO meetup_availability VALUES(?,?,?,?,?,?,?)");
       for (const r of rows)
-        db.prepare("INSERT INTO meetup_availability VALUES(?,?,?,?,?,?,?)").run(
+        insert.run(
           id,
           user,
           r.start,

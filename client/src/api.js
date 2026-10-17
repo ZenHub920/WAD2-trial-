@@ -108,7 +108,7 @@ export const api = {
   /** Open (or reopen) the signed-in buyer's chat with a listing's seller. */
   startChat: (ticketId) => request(`/tickets/${encodeURIComponent(ticketId)}/conversations`, { method: 'POST' }),
   conversations: () => request('/conversations'),
-  /** With `after`, only messages newer than that timestamp — what polling uses. */
+  /** With `after`, only messages newer than that message id — what polling uses. */
   conversation: (id, after) =>
     request(`/conversations/${encodeURIComponent(id)}${after ? `?after=${encodeURIComponent(after)}` : ''}`),
   sendMessage: (id, body) =>

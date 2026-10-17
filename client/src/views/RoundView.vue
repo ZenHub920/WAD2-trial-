@@ -75,11 +75,11 @@ const rankHistogram = computed(() => {
     <div v-else-if="error" class="notice--error" role="alert">
       <h3>{{ error.status === 403 ? 'Operator access required'
         : error.status === 401 ? 'Sign in required' : 'Could not load this round' }}</h3>
-      <p v-if="error.status === 403">Detailed round results are available only to operators. You can still see the public forecast and your own result on the concert page.</p>
-      <p v-else-if="error.status === 401">Sign in with an operator account to see detailed round results. Your own result is available on the concert page after signing in.</p>
+      <p v-if="error.status === 403">Use an operator account to view this round.</p>
+      <p v-else-if="error.status === 401">Sign in with an operator account to view this round.</p>
       <p v-else class="mono">{{ error.message }}</p>
       <RouterLink v-if="error.status === 401" to="/login" class="btn btn--primary">Sign in</RouterLink>
-      <RouterLink :to="concertLink" class="btn btn--ghost">{{ route.query.concertId ? 'Concert and your result' : 'Browse concerts and your result' }}</RouterLink>
+      <RouterLink :to="concertLink" class="btn btn--ghost">{{ route.query.concertId ? 'Back to concert' : 'Browse concerts' }}</RouterLink>
     </div>
 
     <template v-else-if="round">
@@ -103,12 +103,10 @@ const rankHistogram = computed(() => {
             {{ round.isStable ? 'Verified stable' : `${round.blockingPairCount} blocking pairs` }}
           </h2>
           <p v-if="round.isStable">
-            Every acceptable pairing was checked. There is no pair of people who would
-            both rather have been matched with each other than with what they got.
+            All acceptable pairs passed the stability check.
           </p>
           <p v-else>
-            This matching contains pairs who would both prefer to defect. That is a bug —
-            deferred acceptance should never produce one.
+            Some seekers and groups would prefer another pairing.
           </p>
 
           <button class="btn btn--ghost stamp__btn" :disabled="verifying" @click="verify">
@@ -117,14 +115,13 @@ const rankHistogram = computed(() => {
 
           <Transition name="fade">
             <p v-if="verification" class="stamp__verdict mono">
-              Re-ran the blocking-pair search over {{ verification.pairsChecked }} acceptable
-              pairs against this round's stored preference snapshot:
+              Checked {{ verification.pairsChecked }} acceptable pairs:
               <strong :class="verification.verified ? 'ok' : 'bad'">
                 {{ verification.blockingPairCount }} found
               </strong>.
               {{ verification.agreesWithStoredClaim
-                ? 'Agrees with the stored claim.'
-                : 'DISAGREES with the stored claim — the record has been altered.' }}
+                ? 'Matches the saved result.'
+                : 'Differs from the saved result.' }}
             </p>
           </Transition>
         </div>
@@ -139,8 +136,8 @@ const rankHistogram = computed(() => {
             note: 'got their top-ranked group' },
           { label: 'Top three', value: `${Math.round(round.metrics.topThreeRate * 100)}%`,
             note: 'placed within their first three' },
-          { label: 'Mean rank', value: round.metrics.seekerRank.mean ?? '—',
-            note: `worst was ${round.metrics.seekerRank.worst ?? '—'}` },
+          { label: 'Mean rank', value: round.metrics.seekerRank.mean ?? 'N/A',
+            note: `worst was ${round.metrics.seekerRank.worst ?? 'N/A'}` },
           { label: 'Capacity used', value: `${Math.round(round.metrics.capacityUtilisation * 100)}%`,
             note: 'of all open slots' },
           { label: 'Solve time', value: `${round.timings.solveMs}ms`,
@@ -156,9 +153,7 @@ const rankHistogram = computed(() => {
       <section v-if="rankHistogram.length" class="histogram">
         <h2 class="section-title">Where people landed on their own list</h2>
         <p class="section-note">
-          Rank 1 means they were placed with their top-ranked group. Deferred acceptance
-          is seeker-optimal, so this distribution is the best achievable across all
-          stable matchings.
+          Rank 1 is the seeker's first choice.
         </p>
         <div class="bars">
           <div v-for="bin in rankHistogram" :key="bin.rank" class="bar">

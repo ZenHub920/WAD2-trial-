@@ -14,8 +14,7 @@
  *     needs one usually needs the other, and a harassment report applies the
  *     block for you.
  *
- * Polling stands in for a websocket. It is honest about what it is: a 4s
- * refresh while the tab is visible, paused when it is not.
+ * Live events update the thread, with a fallback refresh while disconnected.
  */
 
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
@@ -51,8 +50,6 @@ let stopListening = null;
 /** Fallback refresh, used only when the live stream is not connected. */
 let fallbackTimer = null;
 
-const me = computed(() => conversation.value?.me ?? null);
-
 /** Group by calendar day so the thread gets date separators. */
 const grouped = computed(() => {
   const out = [];
@@ -83,7 +80,7 @@ function clockTime(iso) {
 }
 
 /** Supplied by the API rather than inferred, so it is correct on an empty thread. */
-const myId = ref(null);
+const myId = computed(() => conversation.value?.me ?? null);
 const mine = (m) => m.senderId === myId.value;
 
 async function load({ quiet = false } = {}) {
@@ -92,7 +89,6 @@ async function load({ quiet = false } = {}) {
     const data = await api.kakiConversation(props.id);
     conversation.value = data.conversation;
     messages.value = data.messages;
-    myId.value = data.conversation.me;
     closed.value = false;
     error.value = null;
   } catch (err) {
@@ -293,13 +289,6 @@ function isNearBottom() {
 }
 
 onMounted(async () => {
-  await load();
-  await scrollToEnd();
-  acknowledgeRead();
-  try {
-    backgrounds.value = (await api.kakiChatBackgrounds()).backgrounds;
-  } catch { /* the picker falls back to the default-only list */ }
-
   stopListening = onChatEvent(handleEvent);
 
   // Safety net for the case where SSE cannot connect at all (a proxy that
@@ -314,6 +303,13 @@ onMounted(async () => {
   }, 8000);
 
   document.addEventListener('visibilitychange', onVisibility);
+  await load();
+  await scrollToEnd();
+  acknowledgeRead();
+  try {
+    backgrounds.value = (await api.kakiChatBackgrounds()).backgrounds;
+  } catch { /* the picker falls back to the default-only list */ }
+
 });
 
 onUnmounted(() => {
@@ -376,7 +372,6 @@ watch(() => props.id, () => load());
                 @click="chooseBackground(bg)"
               >{{ bg }}</button>
             </div>
-            <p class="sheet__hint">Only you see this. Their thread is unchanged.</p>
           </section>
 
           <section class="sheet__section sheet__section--danger">
@@ -387,9 +382,6 @@ watch(() => props.id, () => load());
             <button class="danger" type="button" @click="blockOther">
               Block {{ conversation?.other.displayName }}
             </button>
-            <p class="sheet__hint">
-              Blocking closes this chat for both of you. They are not told.
-            </p>
           </section>
 
           <button class="sheet__close" type="button" @click="showSettings = false">Done</button>
@@ -406,17 +398,13 @@ watch(() => props.id, () => load());
 
     <div v-else-if="closed" class="centered closed">
       <h2>This conversation is closed</h2>
-      <p>
-        It is no longer available. That happens when a match is withdrawn, or
-        when someone blocks.
-      </p>
       <RouterLink to="/kaki/chat" class="btn btn--ghost">Back to messages</RouterLink>
     </div>
 
     <!-- ----------------------------------------------------------- bubbles -->
     <div v-else ref="scroller" class="scroll">
       <p v-if="!messages.length" class="empty">
-        You matched. Say something — {{ conversation?.other.displayName }} can see this too.
+        Say hello to {{ conversation?.other.displayName }}.
       </p>
 
       <template v-for="row in grouped" :key="row.id">
@@ -515,7 +503,7 @@ watch(() => props.id, () => load());
       <div class="sheet__panel">
         <h2 class="sheet__title">Report {{ conversation?.other.displayName }}</h2>
         <p class="sheet__hint">
-          They are not told you reported them. Reporting harassment also blocks them.
+          Reports are private. Reporting harassment also blocks this person.
         </p>
 
         <label class="field">
@@ -535,7 +523,7 @@ watch(() => props.id, () => load());
             class="field__input"
             rows="4"
             maxlength="1000"
-            placeholder="Tell us what happened. Messages from this chat are attached automatically."
+            placeholder="What happened? Messages from this chat will be included."
           />
         </label>
 
@@ -930,7 +918,6 @@ watch(() => props.id, () => load());
 }
 
 .centered { display: grid; place-content: center; gap: var(--space-3); text-align: center; padding: var(--space-8); }
-.closed p { max-width: 34ch; color: var(--text-300); margin-inline: auto; }
 
 .notice--ok {
   margin: var(--space-3) var(--gutter) 0;

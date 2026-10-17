@@ -1,4 +1,4 @@
-# Encore — Matching Algorithm Specification
+# Encore: Matching Algorithm Specification
 
 This document defines the matching problem, the algorithm used to solve it, and the
 correctness properties we claim. It is written to be read *before* the code.

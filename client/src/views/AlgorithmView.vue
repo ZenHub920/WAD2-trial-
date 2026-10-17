@@ -1,11 +1,5 @@
 <script setup>
-/**
- * Algorithm visualiser.
- *
- * Replays the proposal trace the backend recorded for a real round: every
- * acceptance, rejection and eviction, in the order deferred acceptance produced
- * them. Nothing here is simulated — the events come from the solver.
- */
+// Replay the solver's trace for this concert's current listings.
 import { ref, computed, onUnmounted, watch } from 'vue';
 import { api, LABELS } from '../api.js';
 import { currentUser, sessionReady } from '../auth.js';
@@ -17,7 +11,6 @@ const error = ref(null);
 const concert = ref(null);
 const trace = ref([]);
 const metrics = ref(null);
-const capacities = ref(new Map());
 const seekerNames = ref(new Map());
 const partyNames = ref(new Map());
 
@@ -60,7 +53,6 @@ watch(
       }
       trace.value = run.trace ?? [];
       metrics.value = run.metrics;
-      capacities.value = new Map(partyData.parties.map((p) => [p.id, p.capacity]));
       partyNames.value = new Map(
         partyData.parties.map((p) => [
           p.id,
@@ -68,7 +60,7 @@ watch(
         ]),
       );
       seekerNames.value = new Map(
-        requestData.requests.map((r) => [r.id, { name: r.user.displayName, section: r.sectionPref }]),
+        requestData.requests.map((r) => [r.id, r.user.displayName]),
       );
     } catch (err) {
       if (requestId === loadRequest) error.value = err;
@@ -81,13 +73,7 @@ watch(
 
 onUnmounted(() => clearInterval(timer));
 
-// ---------------------------------------------------------------------------
-// State reconstruction
-//
-// The state after N events is derived by replaying the trace from the start.
-// Replaying is O(N), which is cheap at demo sizes and means scrubbing backwards
-// needs no undo logic — the trace is the single source of truth.
-// ---------------------------------------------------------------------------
+// Replaying from the start makes backwards scrubbing use the same trace.
 
 const state = computed(() => {
   const held = new Map();        // partyId -> [seekerId]
@@ -96,7 +82,7 @@ const state = computed(() => {
   let rejects = 0;
   let evictions = 0;
 
-  for (const partyId of capacities.value.keys()) held.set(partyId, []);
+  for (const partyId of partyNames.value.keys()) held.set(partyId, []);
 
   for (let i = 0; i < step.value && i < trace.value.length; i += 1) {
     const event = trace.value[i];
@@ -183,26 +169,21 @@ function onScrub(e) {
 // Presentation helpers
 // ---------------------------------------------------------------------------
 
-const seekerLabel = (id) => seekerNames.value.get(id)?.name ?? id;
+const seekerLabel = (id) => seekerNames.value.get(id) ?? id;
 const partyLabel = (id) => partyNames.value.get(id)?.name ?? id;
 
 const EVENT_COPY = {
   accept: (e) =>
     `${seekerLabel(e.seekerId)} proposed to ${partyLabel(e.partyId)}, who had a free slot and accepted.`,
   reject: (e) =>
-    `${seekerLabel(e.seekerId)} proposed to ${partyLabel(e.partyId)}, who is full and prefers everyone already held. Rejected — they move to their next choice.`,
+    `${seekerLabel(e.seekerId)} was rejected by ${partyLabel(e.partyId)} and moves to their next choice.`,
   evict: (e) =>
     `${seekerLabel(e.seekerId)} proposed to ${partyLabel(e.partyId)}, who preferred them to ${seekerLabel(e.evictedSeekerId)}. ${seekerLabel(e.evictedSeekerId)} is displaced and must propose again.`,
 };
 
-/** Seekers who are currently unplaced, for the "still proposing" rail. */
-const floating = computed(() => {
-  const out = [];
-  for (const id of seekerNames.value.keys()) {
-    if (!state.value.assigned.has(id)) out.push(id);
-  }
-  return out;
-});
+const floating = computed(() =>
+  [...seekerNames.value.keys()].filter(id => !state.value.assigned.has(id)),
+);
 
 const sortedParties = computed(() =>
   [...partyNames.value.entries()].sort((a, b) => b[1].capacity - a[1].capacity),
@@ -215,12 +196,9 @@ const sortedParties = computed(() =>
 
     <header class="head">
       <div>
-        <p class="eyebrow">Deferred acceptance, step by step</p>
         <h1>Watch the matching run</h1>
         <p class="lede">
-          Every proposal the algorithm made, in order. Nothing here is a mock-up — these
-          are the events the solver recorded while producing
-          <template v-if="concert">{{ concert.artist }}'s</template> matching.
+          Replay the recorded proposals<template v-if="concert"> for {{ concert.artist }}</template>.
         </p>
       </div>
     </header>
@@ -231,12 +209,12 @@ const sortedParties = computed(() =>
       <h3>{{ error.status === 403 ? 'Operator access required'
         : error.status === 401 ? 'Sign in required' : 'Nothing to replay' }}</h3>
       <p>{{ error.status === 403
-        ? 'The proposal trace is available only to operators. Your own result is on the concert page.'
+        ? 'Use an operator account to view the replay.'
         : error.status === 401
-          ? 'Sign in with an operator account to watch the matching trace. You can still view the public forecast and your own result on the concert page.'
+          ? 'Sign in with an operator account to view the replay.'
           : error.message }}</p>
       <RouterLink v-if="error.status === 401" to="/login" class="btn btn--primary">Sign in</RouterLink>
-      <RouterLink :to="`/concerts/${id}`" class="btn btn--ghost">Concert and your result</RouterLink>
+      <RouterLink :to="`/concerts/${id}`" class="btn btn--ghost">Back to concert</RouterLink>
     </div>
 
     <template v-else>
@@ -298,8 +276,7 @@ const sortedParties = computed(() =>
         <p class="event__text">
           <template v-if="currentEvent">{{ EVENT_COPY[currentEvent.type](currentEvent) }}</template>
           <template v-else>
-            Press play. Seekers propose down their preference lists; groups hold the best
-            offers they have received so far and release the rest.
+            Press play to start the replay.
           </template>
         </p>
       </div>
@@ -391,12 +368,11 @@ const sortedParties = computed(() =>
         <div v-if="finished && metrics" class="verdict">
           <div class="verdict__mark">✓</div>
           <div>
-            <h2>Matching complete — and stable.</h2>
+            <h2>Matching complete</h2>
             <p>
               {{ metrics.matched }} of {{ metrics.eligibleSeekers }} seekers placed after
               {{ trace.length }} proposals.
-              <strong>{{ metrics.blockingPairs }} blocking pairs</strong> — no two people
-              would both rather have been matched with each other.
+              <strong>{{ metrics.blockingPairs }} blocking pairs.</strong>
               {{ Math.round(metrics.firstChoiceRate * 100) }}% got their first choice.
             </p>
             <RouterLink :to="`/concerts/${id}`" class="btn btn--primary">

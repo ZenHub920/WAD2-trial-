@@ -175,6 +175,14 @@ test('messages send, list, and reply within the thread', async (t) => {
   assert.equal(reply.status, 201);
   assert.equal(reply.body.message.replyTo.id, sent.body.message.id);
   assert.equal(reply.body.message.replyTo.body, 'are you queueing early?');
+  assert.ok(reply.body.message.seq > sent.body.message.seq);
+  const edited = await f.api(`/kaki/conversations/${id}/messages/${reply.body.message.id}`, {
+    method: 'PATCH', cookie: b.cookie, body: { body: 'from 3pm instead' },
+  });
+  assert.equal(edited.status, 200);
+  assert.equal(edited.body.message.body, 'from 3pm instead');
+  assert.deepEqual(edited.body.message.replyTo, reply.body.message.replyTo);
+  assert.equal(edited.body.message.seq, reply.body.message.seq);
 
   const thread = await f.api(`/kaki/conversations/${id}`, { cookie: b.cookie });
   assert.equal(thread.body.messages.length, 2);

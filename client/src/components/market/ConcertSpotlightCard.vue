@@ -63,7 +63,7 @@ const countdown = computed(() => {
       <RouterLink :to="`/concerts/${concert.id}`" class="spot__link">{{ concert.artist }}</RouterLink>
     </h3>
     <p v-if="concert.tour_name" class="spot__tour">{{ concert.tour_name }}</p>
-    <p class="spot__venue">{{ concert.venue }} · {{ concert.city }}</p>
+    <p class="spot__venue">{{ concert.venue }}, {{ concert.city }}</p>
     <p class="spot__date">
       <span class="mono">{{ formatDate(concert.event_date) }}</span>
       <span v-if="countdown" class="spot__countdown">{{ countdown }}</span>
@@ -88,7 +88,7 @@ const countdown = computed(() => {
       <span v-if="onSale" class="spot__resale">
         <MarketIcon name="ticket" :size="15" />
         <!-- One element, so the flex gap does not open up mid-sentence. -->
-        <span><span class="tabular">From {{ from }}</span> · {{ onSale }} listed</span>
+        <span><span class="tabular">From {{ from }}</span>, {{ onSale }} listed</span>
       </span>
       <span v-else class="spot__resale spot__resale--none">
         <MarketIcon name="ticket" :size="15" />

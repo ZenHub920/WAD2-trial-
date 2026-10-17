@@ -67,21 +67,9 @@ export function buildPreferences(seekers, parties, options = {}) {
     for (const party of candidateParties) {
       evaluatedPairs += 1;
 
-// NEW:
-        // If this seeker has already declined this party,
-        // don't evaluate it or include it in preferences.
-        //
-        // The key uniquely identifies the request and party.
-
-        const declinedKey =
-            `${seeker.id}|${party.id}`;
-
-        if (options.declinedPairs?.has(declinedKey)) {
-
-            // Skip to the next candidate party.
-            continue;
-
-        }
+      // A declined request/party pair cannot be proposed again.
+      const key = pairKey(seeker.id, party.id);
+      if (options.declinedPairs?.has(key)) continue;
 
       const verdict = checkFeasibility(seeker, party, options);
       if (!verdict.feasible) {
@@ -93,18 +81,20 @@ export function buildPreferences(seekers, parties, options = {}) {
       const scored = scorePair(seeker, party);
       feasiblePairs += 1;
 
-      pairScores.set(pairKey(seeker.id, party.id), scored);
+      pairScores.set(key, scored);
       seekerCandidates.get(seeker.id).push({ id: party.id, score: scored.seekerToParty,
-        preferred: options.preferredPairs?.has(pairKey(seeker.id, party.id)) ? 1 : 0 });
+        preferred: options.preferredPairs?.has(key) ? 1 : 0 });
       partyCandidates.get(party.id).push({ id: seeker.id, score: scored.partyToSeeker });
     }
   }
 
   for (const [seekerId, candidates] of seekerCandidates) {
     seekerPrefs.set(seekerId, sortCandidates(candidates));
+    seekerCandidates.delete(seekerId);
   }
   for (const [partyId, candidates] of partyCandidates) {
     partyPrefs.set(partyId, sortCandidates(candidates));
+    partyCandidates.delete(partyId);
   }
 
   return {

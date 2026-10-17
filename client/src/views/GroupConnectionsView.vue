@@ -27,7 +27,7 @@ const outgoing = computed(() => connections.value.filter(c => !c.incoming && c.s
 const accepted = computed(() => connections.value.filter(c => c.status === 'accepted'));
 // Sections are stored as keys (`lower_bowl`); nobody should be reading those.
 const sectionName = key => LABELS.section[key] ?? key;
-const describe = c => `${c.partyA.hostName} (${sectionName(c.partyA.section)}) ↔ ${c.partyB.hostName} (${sectionName(c.partyB.section)}) · ${c.partyA.artist}`;
+const describe = c => `${c.partyA.hostName} (${sectionName(c.partyA.section)}) ↔ ${c.partyB.hostName} (${sectionName(c.partyB.section)}), ${c.partyA.artist}`;
 
 /** SQLite writes `datetime('now')` as UTC with no zone marker; read it as such. */
 function whenConnected(value) {
@@ -142,19 +142,19 @@ async function host() {
 
 <template>
   <main class="container groups-page">
-    <h1>Connect Groups</h1><p>Find another group going to the same concert and arrange to meet. Each group stays together.</p>
+    <h1>Connect Groups</h1><p>Meet another group going to the same concert.</p>
     <nav class="group-actions"><RouterLink to="/groups">Find a Group</RouterLink><RouterLink to="/kaki">Find a Kaki</RouterLink><RouterLink :to="concertId ? `/concerts/${encodeURIComponent(concertId)}` : '/concerts'">Host a group</RouterLink></nav>
     <p v-if="error" class="group-error" role="alert">{{ error }} <button class="btn btn--ghost" :disabled="busy" @click="retry">Retry</button></p>
     <p v-if="message" class="group-success" role="status">{{ message }}</p>
     <section v-if="hosted.length" class="card group-panel">
       <h2>Your group</h2>
-      <div class="group-controls"><label>Concert<select v-model="concertId" :disabled="busy"><option value="">Choose concert</option><option v-for="c in concerts" :key="c.id" :value="c.id">{{ c.artist }} · {{ c.date }}</option></select></label><label>Hosted group<select v-model="sourceId" :disabled="busy"><option value="">Choose group</option><option v-for="g in sources" :key="g.id" :value="g.id">{{ g.hostName }} · {{ g.section }} · {{ g.id }}</option></select></label></div>
+      <div class="group-controls"><label>Concert<select v-model="concertId" :disabled="busy"><option value="">Choose concert</option><option v-for="c in concerts" :key="c.id" :value="c.id">{{ c.artist }}, {{ c.date }}</option></select></label><label>Hosted group<select v-model="sourceId" :disabled="busy"><option value="">Choose group</option><option v-for="g in sources" :key="g.id" :value="g.id">{{ g.hostName }}, {{ sectionName(g.section) }}, {{ g.id }}</option></select></label></div>
       <p v-if="!sources.length">No active hosted groups for this concert. Open the concert page to host one.</p>
     </section>
     <p v-else>Host a concert group to start sending invitations.</p>
-    <RouterLink v-if="sourceId" :to="`/groups/${sourceId}/members`" class="btn btn--ghost">Manage members, friend links &amp; shared preferences</RouterLink>
+    <RouterLink v-if="sourceId" :to="`/groups/${sourceId}/members`" class="btn btn--ghost">Manage group</RouterLink>
     <RouterLink v-if="sourceId" :to="{path:'/meetups',query:{partyId:sourceId}}" class="btn btn--ghost">Plan your group meetup</RouterLink>
-    <section v-if="joins.length" class="card group-panel"><h2>Seeker join requests</h2><article v-for="j in joins" :key="j.id"><p>{{j.seekerName}} · {{j.artist}} · {{j.status}}</p><p v-if="j.preferences">Enjoys: {{j.preferences.about.map(p=>p.text).join(", ") || "No preferences specified"}}. Companions: {{j.preferences.wants.map(p=>p.text).join(", ") || "Flexible"}}.</p><p v-if="j.seeker">{{j.seeker.ageBand}} - {{j.seeker.languages.join(", ")}}</p><div v-if="j.status==='pending'" class="group-actions"><button class="btn btn--primary" :disabled="busy" @click="act(()=>api.respondGroupJoin(j.id,'accept'))">Approve seeker</button><button class="btn btn--ghost" :disabled="busy" @click="act(()=>api.respondGroupJoin(j.id,'reject'))">Reject</button></div></article></section>
+    <section v-if="joins.length" class="card group-panel"><h2>Join requests</h2><article v-for="j in joins" :key="j.id"><p>{{j.seekerName}}, {{j.artist}}, {{j.status}}</p><p v-if="j.preferences">Enjoys: {{j.preferences.about.map(p=>p.text).join(", ") || "No preferences specified"}}. Companions: {{j.preferences.wants.map(p=>p.text).join(", ") || "Flexible"}}.</p><p v-if="j.seeker">{{j.seeker.ageBand}}, {{j.seeker.languages.join(", ")}}</p><div v-if="j.status==='pending'" class="group-actions"><button class="btn btn--primary" :disabled="busy" @click="act(()=>api.respondGroupJoin(j.id,'accept'))">Approve</button><button class="btn btn--ghost" :disabled="busy" @click="act(()=>api.respondGroupJoin(j.id,'reject'))">Reject</button></div></article></section>
     <template v-if="sourceId">
       <section class="card group-panel"><h2>Discover groups</h2><GroupFilters :filters="filters" /></section>
       <p v-if="loading" role="status">Loading groups…</p>
@@ -168,7 +168,6 @@ async function host() {
     <section class="card group-panel connections">
       <header class="connections__head">
         <h2>Connections</h2>
-        <p class="connections__note">Groups you have agreed to meet, and any invitations still waiting on an answer.</p>
       </header>
 
       <div v-if="incoming.length" class="invites">
@@ -237,7 +236,7 @@ async function host() {
           <summary class="create__summary">Create</summary>
           <form class="group-panel" @submit.prevent="host">
             <div class="group-controls">
-              <label>Concert<select v-model="hostConcertId" required :disabled="busy"><option v-for="c in allConcerts" :key="c.id" :value="c.id">{{ c.artist }} · {{ c.event_date }}</option></select></label>
+              <label>Concert<select v-model="hostConcertId" required :disabled="busy"><option v-for="c in allConcerts" :key="c.id" :value="c.id">{{ c.artist }}, {{ c.event_date }}</option></select></label>
               <label>Available places<input v-model.number="hostForm.capacity" type="number" min="1" step="1" required :disabled="busy"></label>
               <label>Seating<select v-model="hostForm.section" :disabled="busy"><option v-for="(name, id) in LABELS.section" :key="id" :value="id">{{ name }}</option></select></label>
               <label>Spending<select v-model.number="hostForm.spend_band" :disabled="busy"><option v-for="n in 4" :key="n" :value="n">{{ LABELS.spendBand[n] }}</option></select></label>
@@ -268,7 +267,6 @@ async function host() {
 <style scoped>
 .connections { display: grid; gap: var(--space-5); }
 .connections__head h2 { font-size: var(--step-1); }
-.connections__note { margin-top: var(--space-2); color: var(--text-300); font-size: var(--step--1); }
 .connections__empty { color: var(--text-400); font-size: var(--step--1); }
 
 .invites, .connected { display: grid; gap: var(--space-3); }

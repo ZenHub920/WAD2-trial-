@@ -155,18 +155,6 @@ code, pre, .mono {
   max-width: var(--container-wide);
 }
 
-.prose {
-  max-width: var(--measure);
-}
-
-.prose p + p {
-  margin-top: var(--space-4);
-}
-
-.stack > * + * {
-  margin-top: var(--stack-space, var(--space-4));
-}
-
 .section {
   padding-block: var(--space-8);
 }

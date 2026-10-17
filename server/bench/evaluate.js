@@ -142,19 +142,19 @@ function scalingStudy() {
     { seekers: 5000, parties: 2000 },
   ];
 
-  console.log('\n\x1b[1mRuntime scaling\x1b[0m\n');
-  console.log(
+  if (!asJson) console.log('\n\x1b[1mRuntime scaling\x1b[0m\n');
+  if (!asJson) console.log(
     `  ${'seekers'.padStart(8)}${'parties'.padStart(9)}${'feasible pairs'.padStart(16)}` +
     `${'prefs ms'.padStart(11)}${'solve ms'.padStart(11)}${'verify ms'.padStart(11)}` +
     `${'blocking'.padStart(10)}`,
   );
-  console.log(`  ${'-'.repeat(76)}`);
+  if (!asJson) console.log(`  ${'-'.repeat(76)}`);
 
   const rows = [];
   for (const size of sizes) {
     const run = runOne({ ...size, seed: 99, label: `n=${size.seekers}` });
     rows.push(run);
-    console.log(
+    if (!asJson) console.log(
       `  ${String(size.seekers).padStart(8)}${String(size.parties).padStart(9)}` +
       `${String(run.instance.feasiblePairs).padStart(16)}` +
       `${String(run.timings.buildPreferencesMs).padStart(11)}` +
@@ -164,7 +164,7 @@ function scalingStudy() {
     );
   }
 
-  console.log(
+  if (!asJson) console.log(
     '\n  \x1b[2mSolve time tracks the number of FEASIBLE PAIRS, not the number of agents.\n' +
     '  Deferred acceptance itself stays close to linear in the edges it walks; the\n' +
     '  cost that grows is building and sorting the preference lists.\x1b[0m',
@@ -174,18 +174,18 @@ function scalingStudy() {
   // how the product behaves. Partitioning by event is the single largest
   // optimisation available, and it is free: pairs across different concerts are
   // infeasible by definition, so they are never enumerated.
-  console.log('\n\x1b[1m  Same population, partitioned across 20 concerts\x1b[0m\n');
-  console.log(
+  if (!asJson) console.log('\n\x1b[1m  Same population, partitioned across 20 concerts\x1b[0m\n');
+  if (!asJson) console.log(
     `  ${'seekers'.padStart(8)}${'parties'.padStart(9)}${'feasible pairs'.padStart(16)}` +
     `${'prefs ms'.padStart(11)}${'solve ms'.padStart(11)}${'verify ms'.padStart(11)}` +
     `${'blocking'.padStart(10)}`,
   );
-  console.log(`  ${'-'.repeat(76)}`);
+  if (!asJson) console.log(`  ${'-'.repeat(76)}`);
 
   for (const size of sizes.slice(-3)) {
     const run = runOne({ ...size, concerts: 20, seed: 99, label: `n=${size.seekers}/20` });
     rows.push(run);
-    console.log(
+    if (!asJson) console.log(
       `  ${String(size.seekers).padStart(8)}${String(size.parties).padStart(9)}` +
       `${String(run.instance.feasiblePairs).padStart(16)}` +
       `${String(run.timings.buildPreferencesMs).padStart(11)}` +
@@ -195,7 +195,7 @@ function scalingStudy() {
     );
   }
 
-  console.log(
+  if (!asJson) console.log(
     '\n  \x1b[2mPartitioning divides the pair count by roughly the number of concerts,\n' +
     '  because cross-event pairs are infeasible by definition and never enumerated.\n' +
     '  A production instance is one concert at a time, so the realistic upper bound\n' +
@@ -232,17 +232,17 @@ if (asJson) {
   const scale = args.has('--scale') ? scalingStudy() : [];
   console.log(JSON.stringify({ runs, scale }, null, 2));
 } else {
-  console.log('\n\x1b[1m═══ Encore matching — algorithm comparison ═══\x1b[0m');
+  console.log('\n\x1b[1m═══ encore matching — algorithm comparison ═══\x1b[0m');
   runs.forEach(printComparison);
 
   if (args.has('--scale')) scalingStudy();
 
-  const anyUnstable = runs.some((r) => r.results['gale-shapley'].blockingPairs > 0);
+  const unstable = runs.filter((r) => r.results['gale-shapley'].blockingPairs > 0).length;
   const greedyUnstable = runs.filter((r) => r.results.greedy.blockingPairs > 0).length;
 
   console.log('\n\x1b[1m═══ Summary ═══\x1b[0m');
   console.log(
-    `  Gale-Shapley produced a stable matching in ${runs.length - (anyUnstable ? 1 : 0)}` +
+    `  Gale-Shapley produced a stable matching in ${runs.length - unstable}` +
     `/${runs.length} scenarios (0 blocking pairs each).`,
   );
   console.log(
@@ -253,7 +253,7 @@ if (asJson) {
     '  contains blocking pairs is one whose users would rather pair up privately.\x1b[0m\n',
   );
 
-  if (anyUnstable) {
+  if (unstable > 0) {
     console.error('\x1b[31mFAIL: Gale-Shapley produced an unstable matching.\x1b[0m');
     process.exit(1);
   }

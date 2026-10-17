@@ -25,11 +25,6 @@ export function bandOverlaps(band, min, max) {
   return range[0] <= max && range[1] >= min;
 }
 
-/** The prototype shows "20, Female". We only have a band, so show the band. */
-export function displayAge(band) {
-  return band === '35+' ? '35+' : band;
-}
-
 /* ---------------------------------------------------------------------------
  * Interests
  *
@@ -114,10 +109,8 @@ export const EMPTY_FILTERS = {
   artist: '',
   date: '',
   section: '',
-  seat: '',
   ageMin: 18,
   ageMax: 100,
-  gender: '',
 };
 
 export function applyFilters(people, filters, excludeIds = new Set()) {

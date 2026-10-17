@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Encore — concert companion matching. Backend matching engine and API.",
+  "description": "Encore concert companion matching backend and API.",
   "engines": {
     "node": ">=20"
   },

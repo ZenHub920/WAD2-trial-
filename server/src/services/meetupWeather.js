@@ -85,15 +85,16 @@ export function createMeetupWeather({
         )?.forecast;
         if (typeof forecast !== "string")
           return { status: "unavailable", reason: "area_forecast_missing" };
+        const rainWarning = /rain|shower|thunder/i.test(forecast);
         return {
           status: "available",
           provider: "NEA via data.gov.sg",
           area: area.name,
           forecast,
-          rainWarning: /rain|shower|thunder/i.test(forecast),
+          rainWarning,
           validPeriod: item.valid_period,
           updatedAt: item.update_timestamp,
-          message: /rain|shower|thunder/i.test(forecast)
+          message: rainWarning
             ? "Rain or thunderstorms are forecast; discuss a sheltered meeting place."
             : "No rain indicated in this short-range forecast; conditions can change.",
         };

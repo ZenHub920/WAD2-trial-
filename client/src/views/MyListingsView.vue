@@ -45,7 +45,7 @@ const VERIFICATION_COPY = {
 };
 
 function verificationLabel({ status, method }) {
-  if (status === 'approved' && method === 'ticket_number') return 'Verified — ticket number matched the issued list';
+  if (status === 'approved' && method === 'ticket_number') return 'Verified ticket number';
   return VERIFICATION_COPY[status];
 }
 
@@ -75,9 +75,7 @@ onMounted(loadListings);
     <div class="my-listings-page__shell container container--wide">
       <header class="my-listings-page__header">
         <div>
-          <p class="eyebrow">Your marketplace activity</p>
           <h1>My listings</h1>
-          <p>View and manage the tickets you have listed for sale.</p>
         </div>
       </header>
 
@@ -98,7 +96,7 @@ onMounted(loadListings);
             <p class="listing-card__status">{{ listing.status }}</p>
             <h2>{{ listing.concert.artist }}</h2>
             <p class="listing-card__details">
-              {{ formatDate(listing.concert.event_date) }} · {{ listing.concert.venue }}
+              {{ formatDate(listing.concert.event_date) }}, {{ listing.concert.venue }}
             </p>
             <div class="listing-card__meta">
               <span>{{ sectionLabel(listing.section) }}</span>
@@ -160,7 +158,6 @@ onMounted(loadListings);
   margin-bottom: var(--space-6);
 }
 .my-listings-page__header h1 { margin-top: var(--space-2); }
-.my-listings-page__header p:last-child { margin-top: var(--space-3); color: var(--text-300); }
 .listing-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-5); }
 .listing-card { overflow: hidden; border: var(--border-soft); border-radius: var(--radius-lg); background: var(--ink-850); }
 .listing-card__image { display: block; width: 100%; height: 180px; object-fit: cover; }

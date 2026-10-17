@@ -10,18 +10,21 @@ const concepts = ref([]),
   error = ref("");
 const drafts = ref({ about: "", wants: "", avoid: "" });
 const matches = ref({ about: [], wants: [], avoid: [] });
-const originalText = ref(
-  Object.fromEntries(
-    ["about", "wants", "avoid"].map((k) => [
-      k,
-      Object.fromEntries(
-        (props.initial[k] ?? [])
-          .filter((x) => x.recognized !== false)
-          .map((x) => [x.key ?? x.conceptId, x.text]),
-      ),
-    ]),
-  ),
-);
+const originalText = ref({}), selected = ref({}), custom = ref({});
+for (const intent of ["about", "wants", "avoid"]) {
+  const answers = props.initial[intent] ?? [];
+  const recognized = answers.filter((answer) => answer.recognized !== false);
+  originalText.value[intent] = Object.fromEntries(
+    recognized.map((answer) => [answer.key ?? answer.conceptId, answer.text]),
+  );
+  selected.value[intent] = recognized
+    .map((answer) => answer.key ?? answer.conceptId)
+    .filter(Boolean);
+  custom.value[intent] = answers
+    .filter((answer) => answer.recognized === false || answer.key?.startsWith("custom:"))
+    .map((answer) => answer.text)
+    .join("\n");
+}
 const timers = {},
   generations = { about: 0, wants: 0, avoid: 0 };
 let alive = true;
@@ -61,32 +64,10 @@ onUnmounted(() => {
   alive = false;
   for (const timer of Object.values(timers)) clearTimeout(timer);
 });
-const selected = ref(
-  Object.fromEntries(
-    ["about", "wants", "avoid"].map((k) => [
-      k,
-      (props.initial[k] ?? [])
-        .filter((x) => x.recognized !== false)
-        .map((x) => x.key ?? x.conceptId)
-        .filter(Boolean),
-    ]),
-  ),
-);
-const custom = ref(
-  Object.fromEntries(
-    ["about", "wants", "avoid"].map((k) => [
-      k,
-      (props.initial[k] ?? [])
-        .filter((x) => x.recognized === false || x.key?.startsWith("custom:"))
-        .map((x) => x.text)
-        .join("\n"),
-    ]),
-  ),
-);
 const labels = {
   about: "What I enjoy",
   wants: "What I enjoy in companions",
-  avoid: "What I prefer to avoid (soft preferences)",
+  avoid: "What I prefer to avoid",
 };
 onMounted(async () => {
   try {
@@ -98,7 +79,7 @@ onMounted(async () => {
 function save() {
   if (Object.values(drafts.value).some((text) => text.trim())) {
     error.value =
-      "Choose a suggested meaning or keep each draft as custom before saving.";
+      "Choose a suggestion or keep your wording before saving.";
     return;
   }
   const answers = {};
@@ -121,11 +102,6 @@ function save() {
 </script>
 <template>
   <form class="group-panel" @submit.prevent="save">
-    <p>
-      Everyone answers individually. Your group's summary reflects each member
-      equally. Custom wording stays visible; recognized concepts improve
-      recommendations.
-    </p>
     <p v-if="error" role="alert">{{ error }}</p>
     <details
       v-for="(label, intent) in labels"
@@ -161,18 +137,18 @@ function save() {
           :disabled="busy"
           @click="confirmMeaning(intent, meaning)"
         >
-          Use meaning: {{ meaning.label }}</button
+          {{ meaning.label }}</button
         ><button
           type="button"
           class="btn btn--ghost"
           :disabled="busy"
           @click="keepCustom(intent)"
         >
-          Keep my wording as an unmapped custom preference
+          Keep my wording
         </button>
       </div>
       <label
-        >Custom preferences — one per line<textarea
+        >Custom preferences (one per line)<textarea
           v-model="custom[intent]"
           maxlength="3000"
           rows="3"

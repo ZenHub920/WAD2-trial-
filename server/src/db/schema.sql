@@ -1,4 +1,4 @@
--- Encore — schema
+-- encore — schema
 --
 -- Design notes:
 --   * Match results are IMMUTABLE and versioned by round. A round snapshots the
@@ -401,7 +401,7 @@ WHERE status IN ('proposed', 'confirmed');
 -- Speeds up queries that count a party's active proposals.
 --
 -- WHY:
--- Every time Gale-Shapley runs, Encore must determine how
+-- Every time Gale-Shapley runs, encore must determine how
 -- many spaces remain in each party.
 --
 -- Only proposed and confirmed assignments occupy capacity.
@@ -470,7 +470,7 @@ CREATE TABLE IF NOT EXISTS match_declines (
 -- EXAMPLE:
 -- Alex likes Jamie.
 -- Jamie likes Alex.
--- Encore creates one conversation for that concert.
+-- encore creates one conversation for that concert.
 --
 -- user_a_id and user_b_id are stored in sorted order
 -- (lexicographically smaller ID first).

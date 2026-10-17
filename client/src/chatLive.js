@@ -48,12 +48,14 @@ function dispatch(type, data) {
 }
 
 export async function refreshUnread() {
-  if (!currentUser.value) {
+  const userId = currentUser.value?.id;
+  if (!userId) {
     unreadTotal.value = 0;
     return;
   }
   try {
-    unreadTotal.value = (await api.kakiUnread()).total;
+    const { total } = await api.kakiUnread();
+    if (currentUser.value?.id === userId) unreadTotal.value = total;
   } catch {
     // A failed badge refresh is not worth surfacing; the next event corrects it.
   }
@@ -102,11 +104,10 @@ function disconnect() {
 }
 
 /** Follow the session: connect on sign-in, drop everything on sign-out. */
-watch(currentUser, (user) => {
-  if (user) {
+watch(() => currentUser.value?.id, (userId) => {
+  disconnect();
+  if (userId) {
     connect();
     refreshUnread();
-  } else {
-    disconnect();
   }
 }, { immediate: true });

@@ -28,11 +28,6 @@ defineProps({
     <template v-else-if="name === 'bookmark-filled'">
       <path d="M6 3.5h12v17l-6-4.2-6 4.2z" fill="currentColor" />
     </template>
-    <template v-else-if="name === 'cart'">
-      <path d="M2.5 3.5h2.6l2.3 11.2h11l2.1-7.9H6.2" />
-      <circle cx="9.2" cy="19.2" r="1.3" />
-      <circle cx="17" cy="19.2" r="1.3" />
-    </template>
     <template v-else-if="name === 'check-circle'">
       <circle cx="12" cy="12" r="9" />
       <path d="m8.2 12.2 2.6 2.6 5-5.2" />
@@ -48,9 +43,6 @@ defineProps({
     <template v-else-if="name === 'search'">
       <circle cx="10.5" cy="10.5" r="6.5" />
       <path d="m15.5 15.5 5 5" />
-    </template>
-    <template v-else-if="name === 'chat'">
-      <path d="M4 5.5h16v10.5H9.5L5 19.5V16H4z" />
     </template>
     <template v-else-if="name === 'send'">
       <path d="M21 3 10 14M21 3l-7 18-4-7-7-4z" />
