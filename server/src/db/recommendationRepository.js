@@ -108,16 +108,29 @@ export function createRecommendationRepo(db, repos) {
           '{"about":[],"wants":[],"avoid":[]}',
       );
     },
-    savePersonal(user, concert, input) {
+    savePersonal: db.transaction((user, concert, input) => {
       if (!repos.concerts.findById(concert))
         throw communityError("concert_not_found", 404);
       const answers = validateAnswers(input);
+      const previous = db.prepare(
+        "SELECT answers_json FROM seeker_discovery_preferences WHERE user_id=? AND concert_id=?",
+      ).get(user, concert)?.answers_json;
       db.prepare(
         `INSERT INTO seeker_discovery_preferences VALUES(?,?,?) ON CONFLICT(user_id,concert_id) DO UPDATE SET answers_json=excluded.answers_json`,
       ).run(user, concert, JSON.stringify(answers));
+      if (previous !== JSON.stringify(answers))
+        // A missing version means consent must be renewed, even if answers are later restored.
+        db.prepare(`UPDATE group_join_requests SET group_version=NULL WHERE user_id=? AND status='pending'
+          AND party_id IN(SELECT id FROM parties WHERE concert_id=?)`).run(user, concert);
       return answers;
-    },
+    }).immediate,
     individual(user, concert) {
+      repos.proposals.expire();
+      const request = repos.groups.seeker(user, concert);
+      if (
+        repos.membership.active(user, concert) ||
+        (request && request.status !== "open")
+      ) return [];
       return repos.groups
         .discover(user, concert)
         .filter((card) => visible(repos.parties.findById(card.id)))
@@ -141,34 +154,8 @@ export function createRecommendationRepo(db, repos) {
       );
       if (candidates.error)
         throw communityError(candidates.error, candidates.status);
-      const from = repos.parties.findById(source),
-        s = repos.membership.settings(source);
-      if (s && (!s.published || !s.connect_open)) return [];
+      const from = repos.parties.findById(source);
       return candidates
-        .filter((c) => {
-          const t = repos.membership.settings(c.id);
-          return !t || (t.published && t.connect_open);
-        })
-        .filter((c) => {
-          const a = db
-            .prepare(
-              "SELECT user_id FROM group_memberships WHERE party_id=? AND status='active'",
-            )
-            .all(source);
-          const b = db
-            .prepare(
-              "SELECT user_id FROM group_memberships WHERE party_id=? AND status='active'",
-            )
-            .all(c.id);
-          const blocks = repos.users.blocklist();
-          return !a.some((x) =>
-            b.some(
-              (y) =>
-                blocks.has(`${x.user_id}:${y.user_id}`) ||
-                blocks.has(`${y.user_id}:${x.user_id}`),
-            ),
-          );
-        })
         .map((c) => {
           const result = compareProfiles(
             repos.membership.profile(source),
@@ -248,8 +235,8 @@ export function createRecommendationRepo(db, repos) {
       const requestId = `gj_${randomUUID()}`;
       const inserted = db
         .prepare(
-          `INSERT INTO group_join_requests(id,party_id,user_id,status,expires_at,group_version) VALUES(?,?,?,'pending',?,?)
-        ON CONFLICT(party_id,user_id) DO UPDATE SET status='pending',expires_at=excluded.expires_at,responded_at=NULL,group_version=excluded.group_version
+          `INSERT INTO group_join_requests(id,party_id,user_id,status,expires_at,group_version,preferences_json) VALUES(?,?,?,'pending',?,?,?)
+        ON CONFLICT(party_id,user_id) DO UPDATE SET status='pending',expires_at=excluded.expires_at,responded_at=NULL,group_version=excluded.group_version,preferences_json=excluded.preferences_json
         WHERE group_join_requests.status IN('withdrawn','expired') RETURNING id`,
         )
         .get(
@@ -258,6 +245,7 @@ export function createRecommendationRepo(db, repos) {
           user,
           Date.now() + 48 * 3600000,
           repos.membership.settings(id)?.version ?? 0,
+          JSON.stringify(repos.recommendations.answers(user, p.concert_id)),
         );
       if (!inserted) throw communityError("join_request_already_exists");
       return { id: inserted.id, status: "pending" };
@@ -269,12 +257,12 @@ export function createRecommendationRepo(db, repos) {
       return db
         .prepare(
           `SELECT j.id,j.party_id AS partyId,j.user_id AS userId,u.display_name AS seekerName,p.host_user_id AS hostId,
-        p.concert_id AS concertId,c.artist,j.status,j.expires_at AS expiresAt,j.created_at AS createdAt FROM group_join_requests j
+        p.concert_id AS concertId,c.artist,j.status,j.expires_at AS expiresAt,j.created_at AS createdAt,j.preferences_json FROM group_join_requests j
         JOIN parties p ON p.id=j.party_id JOIN users u ON u.id=j.user_id JOIN concerts c ON c.id=p.concert_id
         WHERE j.user_id=? OR p.host_user_id=? ORDER BY j.created_at DESC,j.id`,
         )
         .all(user, user)
-        .map((r) => {
+        .map(({ preferences_json, ...r }) => {
           const seeker = repos.users.findById(r.userId);
           return {
             ...r,
@@ -286,7 +274,7 @@ export function createRecommendationRepo(db, repos) {
               vibe: seeker.vibe,
               reliability: seeker.reliability,
             },
-            preferences: repos.recommendations.answers(r.userId, r.concertId),
+            preferences: preferences_json ? JSON.parse(preferences_json) : null,
           };
         });
     },
@@ -304,8 +292,13 @@ export function createRecommendationRepo(db, repos) {
         throw communityError("request_not_pending");
       if (action === "accept") {
         if (
-          (j.group_version ?? 0) !==
-          (repos.membership.settings(p.id)?.version ?? 0)
+          j.group_version == null ||
+          !j.preferences_json ||
+          j.preferences_json !== JSON.stringify(repos.recommendations.answers(j.user_id, p.concert_id))
+        )
+          throw communityError("preferences_changed_withdraw_and_resubmit");
+        if (
+          j.group_version !== (repos.membership.settings(p.id)?.version ?? 0)
         )
           throw communityError("group_changed_withdraw_and_resubmit");
         repos.proposals.expire();

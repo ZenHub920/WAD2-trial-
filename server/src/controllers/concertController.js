@@ -16,7 +16,9 @@ export function createConcertController(repos) {
       const eventDate = typeof req.body?.event_date === 'string' ? req.body.event_date.trim() : '';
       if (!artist) return res.status(400).json({ error: 'concert_title_required' });
       if (!venue) return res.status(400).json({ error: 'venue_required' });
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)
+        || Number.isNaN(Date.parse(`${eventDate}T00:00:00Z`))
+        || new Date(`${eventDate}T00:00:00Z`).toISOString().slice(0, 10) !== eventDate) {
         return res.status(400).json({ error: 'concert_date_required' });
       }
 
@@ -30,8 +32,8 @@ export function createConcertController(repos) {
           event_date: eventDate,
         });
         res.status(201).json({ concert });
-      } catch (err) {
-        res.status(409).json({ error: 'could_not_create_concert', detail: err.message });
+      } catch {
+        res.status(409).json({ error: 'could_not_create_concert' });
       }
     },
 
@@ -104,8 +106,8 @@ export function createConcertController(repos) {
           ...req.body, host_user_id: req.user.id, concert_id: req.params.id,
         });
         res.status(201).json({ party });
-      } catch (err) {
-        res.status(409).json({ error: 'could_not_create_party', detail: err.message });
+      } catch {
+        res.status(409).json({ error: 'could_not_create_party' });
       }
     },
 
@@ -131,8 +133,8 @@ export function createConcertController(repos) {
           ...req.body, user_id: req.user.id, concert_id: req.params.id,
         });
         res.status(201).json({ request });
-      } catch (err) {
-        res.status(409).json({ error: 'could_not_create_request', detail: err.message });
+      } catch {
+        res.status(409).json({ error: 'could_not_create_request' });
       }
     },
   };

@@ -38,6 +38,8 @@ export function createMeetupWeather({
   return {
     async forecast({ latitude, longitude, startsAt }) {
       if (
+        !Number.isFinite(latitude) ||
+        !Number.isFinite(longitude) ||
         latitude < 1.1 ||
         latitude > 1.5 ||
         longitude < 103.5 ||

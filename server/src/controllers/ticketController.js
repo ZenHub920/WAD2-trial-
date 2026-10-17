@@ -23,6 +23,7 @@ const TICKET_NUMBER_ERRORS = {
   ticket_number_not_issued: 400,
   ticket_category_mismatch: 400,
   ticket_number_already_listed: 409,
+  ticket_number_not_owned: 409,
 };
 
 // Letters, digits, spaces and dashes, as printed on tickets; spaces and dashes match each other.
@@ -159,6 +160,8 @@ export function createTicketController(repos, images) {
         }
       } catch (err) {
         if (imagePath !== current.image_path) images.remove(imagePath);
+        const status = TICKET_NUMBER_ERRORS[err.code];
+        if (status) return res.status(status).json({ error: err.code, ticketNumber: err.detail });
         throw err;
       }
       if (imagePath !== current.image_path) images.remove(current.image_path);

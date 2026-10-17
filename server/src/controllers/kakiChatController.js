@@ -35,7 +35,9 @@ export function createKakiChatController(repos, realtime = null) {
 
   /** Push an event to both participants, when a realtime bus is wired up. */
   const push = (conversation, type, payload) => {
-    realtime?.emitTo([conversation.user_a_id, conversation.user_b_id], type, payload);
+    for (const userId of [conversation.user_a_id, conversation.user_b_id]) {
+      realtime?.emitTo([userId], type, typeof payload === 'function' ? payload(userId) : payload);
+    }
   };
 
   /** The other participant's id, or null if the viewer is not in this thread. */
@@ -172,16 +174,17 @@ export function createKakiChatController(repos, realtime = null) {
       chat.markReadToLatest(ctx.conversation.id, req.user.id);
 
       const theirLastRead = chat.lastReadRowid(ctx.conversation.id, ctx.other);
-      push(ctx.conversation, 'message', {
+      push(ctx.conversation, 'message', (viewerId) => ({
         conversationId: ctx.conversation.id,
-        message: shapeMessage(message, req.user.id, theirLastRead),
+        message: shapeMessage(message, viewerId,
+          chat.lastReadRowid(ctx.conversation.id, viewerId === req.user.id ? ctx.other : req.user.id)),
         // Each recipient needs their own unread total, so the raw counts go
         // out and the client picks the one addressed to it.
         unreadFor: {
           [ctx.other]: chat.unreadTotal(ctx.other),
           [req.user.id]: chat.unreadTotal(req.user.id),
         },
-      });
+      }));
 
       return res.status(201).json({ message: shapeMessage(message, req.user.id, theirLastRead) });
     },
@@ -208,13 +211,13 @@ export function createKakiChatController(repos, realtime = null) {
 
       chat.editMessage(req.params.messageId, req.user.id, body);
       const theirLastRead = chat.lastReadRowid(ctx.conversation.id, ctx.other);
-      const updated = shapeMessage(
-        chat.messages(ctx.conversation.id).find((m) => m.id === req.params.messageId),
-        req.user.id, theirLastRead,
-      );
-      push(ctx.conversation, 'message-updated', {
-        conversationId: ctx.conversation.id, message: updated,
-      });
+      const message = chat.messages(ctx.conversation.id).find((m) => m.id === req.params.messageId);
+      const updated = shapeMessage(message, req.user.id, theirLastRead);
+      push(ctx.conversation, 'message-updated', (viewerId) => ({
+        conversationId: ctx.conversation.id,
+        message: shapeMessage(message, viewerId,
+          chat.lastReadRowid(ctx.conversation.id, viewerId === req.user.id ? ctx.other : req.user.id)),
+      }));
       return res.json({ message: updated });
     },
 
@@ -237,13 +240,13 @@ export function createKakiChatController(repos, realtime = null) {
 
       chat.deleteMessage(req.params.messageId, req.user.id);
       const theirLastRead = chat.lastReadRowid(ctx.conversation.id, ctx.other);
-      const updated = shapeMessage(
-        chat.messages(ctx.conversation.id).find((m) => m.id === req.params.messageId),
-        req.user.id, theirLastRead,
-      );
-      push(ctx.conversation, 'message-updated', {
-        conversationId: ctx.conversation.id, message: updated,
-      });
+      const message = chat.messages(ctx.conversation.id).find((m) => m.id === req.params.messageId);
+      const updated = shapeMessage(message, req.user.id, theirLastRead);
+      push(ctx.conversation, 'message-updated', (viewerId) => ({
+        conversationId: ctx.conversation.id,
+        message: shapeMessage(message, viewerId,
+          chat.lastReadRowid(ctx.conversation.id, viewerId === req.user.id ? ctx.other : req.user.id)),
+      }));
       return res.json({ message: updated });
     },
 
@@ -269,6 +272,9 @@ export function createKakiChatController(repos, realtime = null) {
     block(req, res) {
       if (req.params.userId === req.user.id) {
         return res.status(400).json({ error: 'cannot_block_yourself' });
+      }
+      if (!repos.users.findById(req.params.userId)) {
+        return res.status(404).json({ error: 'user_not_found' });
       }
       chat.block(req.user.id, req.params.userId);
       // 200 rather than 201 even on a repeat: blocking is idempotent, and the
@@ -296,6 +302,9 @@ export function createKakiChatController(repos, realtime = null) {
       if (reported === req.user.id) {
         return res.status(400).json({ error: 'cannot_report_yourself' });
       }
+      if (!repos.users.findById(reported)) {
+        return res.status(404).json({ error: 'user_not_found' });
+      }
 
       const category = req.body?.category;
       if (!REPORT_CATEGORIES.includes(category)) {
@@ -312,7 +321,7 @@ export function createKakiChatController(repos, realtime = null) {
       const cited = typeof req.body?.conversationId === 'string' ? req.body.conversationId : null;
       if (cited) {
         const conversation = chat.findById(cited);
-        if (!conversation || !counterpartOf(conversation, req.user.id)) {
+        if (!conversation || counterpartOf(conversation, req.user.id) !== reported) {
           return res.status(404).json({ error: 'conversation_not_found' });
         }
         conversationId = conversation.id;

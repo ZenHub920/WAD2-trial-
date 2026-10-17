@@ -366,3 +366,22 @@ test("feedback HTTP flow excludes post-event joiners, protects private history a
     403,
   );
 });
+test("meetup HTTP validation returns client errors and weather rechecks current membership", async () => {
+  assert.equal((await api(`/meetups/${meetup}/weather`)).status, 401);
+  assert.equal((await api(`/meetups/${meetup}/weather`, "outsider")).status, 404);
+  const before = (await api(`/meetups/${meetup}`, "host")).body.meetup;
+  const availability = await api(`/meetups/${meetup}/availability`, "friend", "PUT", { windows: [null] });
+  assert.equal(availability.status, 400);
+  assert.equal(availability.body.error, "invalid_availability");
+  assert.equal((await api(`/meetups/${meetup}/vote`, "friend", "PUT", {})).status, 404);
+  const proposal = await api(`/meetups/${meetup}/propose`, "friend", "POST", {
+    version: before.version, startsAt: "2030-12-01T10:00:00+08:00",
+  });
+  assert.equal(proposal.status, 400);
+  assert.equal(proposal.body.error, "invalid_meetup_choice");
+  assert.equal((await api(`/meetups/${meetup}`, "host")).body.meetup.version, before.version);
+  assert.equal((await api(`/groups/${party}/leave`, "friend", "POST")).status, 200);
+  assert.equal((await api(`/meetups/${meetup}/weather`, "friend")).status, 404);
+  assert.equal((await api(`/meetups/${meetup}`, "friend")).status, 404);
+  assert.equal((await api("/me/feedback", "friend")).body.feedback.length, 1);
+});

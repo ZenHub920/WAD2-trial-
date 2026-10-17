@@ -43,6 +43,7 @@ export function createMeetupRepo(db, repos) {
   const groupMembers = (id) => {
     const p = repos.parties.findById(id);
     if (!p || p.status === "cancelled") return [];
+    if (db.prepare("SELECT 1 FROM tickets WHERE source_party_id=?").get(id)) return [];
     return [
       ...new Set([
         p.host_user_id,
@@ -54,7 +55,7 @@ export function createMeetupRepo(db, repos) {
           .map((x) => x.user_id),
         ...db
           .prepare(
-            "SELECT s.user_id FROM match_proposals mp JOIN seeker_requests s ON s.id=mp.seeker_request_id WHERE mp.party_id=? AND mp.status='confirmed'",
+            "SELECT s.user_id FROM match_proposals mp JOIN seeker_requests s ON s.id=mp.seeker_request_id WHERE mp.party_id=? AND mp.status='confirmed' AND NOT EXISTS(SELECT 1 FROM group_memberships gm WHERE gm.party_id=mp.party_id AND gm.user_id=s.user_id)",
           )
           .all(id)
           .map((x) => x.user_id),
@@ -70,8 +71,10 @@ export function createMeetupRepo(db, repos) {
           "SELECT * FROM group_connections WHERE id=? AND status='accepted'",
         )
         .get(m.connection_id);
-      if (c)
-        ids = [...groupMembers(c.party_a_id), ...groupMembers(c.party_b_id)];
+      if (c) {
+        const a = groupMembers(c.party_a_id), b = groupMembers(c.party_b_id);
+        if (a.length && b.length) ids = [...a, ...b];
+      }
     }
     if (m.kaki_conversation_id) {
       const c = db
@@ -197,10 +200,14 @@ export function createMeetupRepo(db, repos) {
         .all(id)
         .filter((a) => ids.includes(a.user_id));
       const places = db
-        .prepare(
-          `SELECT p.*,(SELECT COUNT(*) FROM meetup_votes v WHERE v.place_id=p.id) votes FROM meetup_places p WHERE p.meetup_id=? ORDER BY p.rowid`,
-        )
-        .all(id);
+        .prepare("SELECT * FROM meetup_places WHERE meetup_id=? ORDER BY rowid")
+        .all(id)
+        .map((p) => ({
+          ...p,
+          votes: db.prepare(
+            "SELECT user_id FROM meetup_votes WHERE meetup_id=? AND place_id=?",
+          ).all(id, p.id).filter((v) => ids.includes(v.user_id)).length,
+        }));
       return {
         ...m,
         participantCount: ids.length,
@@ -248,6 +255,8 @@ export function createMeetupRepo(db, repos) {
       if (!Array.isArray(input) || input.length > 96)
         throw communityError("invalid_availability", 400);
       const rows = input.map((r) => {
+        if (!r || typeof r !== "object" || Array.isArray(r))
+          throw communityError("invalid_availability", 400);
         const start = timestamp(r.startsAt),
           end = timestamp(r.endsAt);
         const hasCoordinates =
@@ -321,6 +330,7 @@ export function createMeetupRepo(db, repos) {
     vote: db.transaction((user, id, place) => {
       const m = access(user, id);
       if (
+        typeof place !== "string" ||
         !db
           .prepare("SELECT 1 FROM meetup_places WHERE id=? AND meetup_id=?")
           .get(place, id)
@@ -354,6 +364,7 @@ export function createMeetupRepo(db, repos) {
         start < m.starts_at ||
         start + SLOT_MS > m.ends_at ||
         start % SLOT_MS ||
+        typeof input.placeId !== "string" ||
         !db
           .prepare("SELECT 1 FROM meetup_places WHERE id=? AND meetup_id=?")
           .get(input.placeId, id)

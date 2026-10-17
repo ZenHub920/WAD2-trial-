@@ -34,7 +34,7 @@ Each member contributes one vote per concept per intent: three of four choosing 
 5. The seeker chooses a group and sends a join request. Only one pending choice per concert is allowed; withdrawal allows another choice. Pending requests do not reserve places.
 6. The host reviews the seeker profile/preferences and accepts or rejects. Acceptance transactionally rechecks eligibility/capacity, creates membership and consumes one stranger place.
 
-There is **no second seeker acceptance**. Changed membership/settings/preferences invalidate the original choice; the seeker must review, withdraw and resubmit before approval.
+There is **no second seeker acceptance**. Changed membership/settings/preferences invalidate the original choice; the seeker must review, withdraw and resubmit before approval. Requests preserve submitted seeker answers for host review; later seeker preference edits also invalidate consent, even if the old answers are restored.
 
 Ranking uses **60% structured compatibility** (vibe, language, logistics, reliability) and **40% mutual concepts**. Profiles incorporate member data, not averaged complete compatibility scores. Custom wants have capped influence; sparse evidence receives limited confidence.
 
@@ -48,7 +48,7 @@ Ranking uses **60% structured compatibility** (vibe, language, logistics, reliab
 4. The host sends an invitation. Database uniqueness prevents duplicate/reversed invitations.
 5. Only the receiving host can accept or decline. Acceptance rechecks current eligibility. Both groups remain separate and gain access to shared planning.
 
-Declines are final; filled capacity does not prevent connections.
+Declines are final; filled capacity does not prevent connections. Senders can withdraw pending invitations; withdrawn invitations can be sent again.
 
 ## 5. Notifications and the future chat integration
 
@@ -92,4 +92,4 @@ Migrations upgrade the schema at startup without resetting data. Conflicting his
 | Notifications/planning/feedback | Corresponding repositories; `/notifications`, `/meetups/:id`, `/feedback` |
 | Frontend requests/navigation | Existing `client/src/api.js` and `client/src/main.js` |
 
-Actions use session identity and backend authorization. Backend tests and frontend build passed; browser/mobile acceptance remains outstanding.
+Actions use session identity and backend authorization. The post-integration backend review passed 253 tests, the frontend production build and an isolated live HTTP journey. An authenticated browser smoke checked meetup distance rendering; full browser/mobile acceptance remains outstanding. See the backend guide's review section for fixes and migration details.

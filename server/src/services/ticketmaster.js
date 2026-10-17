@@ -5,15 +5,20 @@ export function normalizeTicketmasterEvent(event) {
   const id = event?.id;
   const date = event?.dates?.start?.localDate;
   const venue = event?._embedded?.venues?.[0];
-  if (typeof id !== 'string' || !id || !/^\d{4}-\d{2}-\d{2}$/.test(date ?? '') || !venue?.name || !venue?.city?.name) {
+  if (typeof id !== 'string' || !id || typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)
+    || Number.isNaN(Date.parse(`${date}T00:00:00Z`))
+    || new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) !== date
+    || typeof venue?.name !== 'string' || !venue.name.trim()
+    || typeof venue?.city?.name !== 'string' || !venue.city.name.trim()) {
     return null;
   }
   if (venue.country?.countryCode && venue.country.countryCode !== 'SG') return null;
 
-  const image = event.images?.find((item) => item.ratio === '16_9' && !item.fallback)
-    ?? event.images?.find((item) => !item.fallback);
+  const images = Array.isArray(event.images) ? event.images : [];
+  const image = images.find((item) => item && item.ratio === '16_9' && !item.fallback)
+    ?? images.find((item) => item && !item.fallback);
   const artist = event._embedded?.attractions?.[0]?.name || event.name;
-  if (!artist) return null;
+  if (typeof artist !== 'string' || !artist.trim()) return null;
 
   return {
     id: `tm_${id}`,

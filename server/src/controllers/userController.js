@@ -1,5 +1,6 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { publicUser } from './publicUser.js';
+import { validProfile } from './profileController.js';
 
 export function createUserController(repos, sessions, images = null) {
   return {
@@ -37,10 +38,10 @@ export function createUserController(repos, sessions, images = null) {
         if (avatar) repos.users.setAvatar(user.id, avatar);
         sessions.start(req, res, user.id);
         res.status(201).json({ user: ownUser(repos.users.findById(user.id)) });
-      } catch (err) {
+      } catch {
         // The account was not created, so the saved image is now an orphan.
         if (avatar) images?.remove(avatar);
-        res.status(409).json({ error: 'could_not_create_user', detail: err.message });
+        res.status(409).json({ error: 'could_not_create_user' });
       }
     },
 
@@ -87,6 +88,15 @@ function validateRegistration(body = {}) {
   if (typeof body.password !== 'string' || body.password.length < 8) {
     return 'password_must_be_at_least_8_characters';
   }
+  const fields = {
+    age_band: 'ageBand', home_region: 'homeRegion', gender: 'gender',
+    companion_gender_pref: 'companionGenderPref', languages: 'languages', vibe: 'vibe',
+  };
+  const preferences = {};
+  for (const [input, output] of Object.entries(fields)) {
+    if (Object.hasOwn(body, input)) preferences[output] = body[input];
+  }
+  if (!validProfile(preferences)) return 'invalid_profile';
   return null;
 }
 

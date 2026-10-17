@@ -56,11 +56,11 @@ async function fixture(t) {
       .run(id, `Artist ${id}`, 'Tour', 'Hall', 'Singapore', '2027-05-01');
   }
 
-  function seeker(id, person, concertId) {
-    db.prepare(`INSERT INTO seeker_requests
-                (id, user_id, concert_id, section_pref, spend_band_max, arrival_pref)
-                VALUES (?, ?, ?, 'pit', 2, 'doors')`)
-      .run(id, person.id, concertId);
+  async function join(person, concertId) {
+    const result = await api(`/concerts/${concertId}/participation`, {
+      method: 'POST', cookie: person.cookie, body: { sectionPref: 'pit', arrivalPref: 'doors' },
+    });
+    assert.equal(result.status, 200);
   }
 
   const like = (cookie, concertId, target) =>
@@ -73,8 +73,8 @@ async function fixture(t) {
     const a = await user(`a-${concertId}`);
     const b = await user(`b-${concertId}`);
     concert(concertId);
-    seeker(`s-a-${concertId}`, a, concertId);
-    seeker(`s-b-${concertId}`, b, concertId);
+    await join(a, concertId);
+    await join(b, concertId);
     assert.equal((await like(a.cookie, concertId, b)).status, 200);
     assert.equal((await like(b.cookie, concertId, a)).status, 200);
     return { a, b };
@@ -83,7 +83,7 @@ async function fixture(t) {
   const openChat = (cookie, concertId, other) =>
     api(`/kaki/concerts/${concertId}/conversations/${other.id}`, { method: 'POST', cookie });
 
-  return { db, api, user, concert, seeker, like, matchedPair, openChat };
+  return { db, api, user, concert, join, like, matchedPair, openChat };
 }
 
 test('a conversation requires a mutual like', async (t) => {
@@ -91,8 +91,8 @@ test('a conversation requires a mutual like', async (t) => {
   const alice = await f.user('m-alice');
   const bob = await f.user('m-bob');
   f.concert('c1');
-  f.seeker('s1', alice, 'c1');
-  f.seeker('s2', bob, 'c1');
+  await f.join(alice, 'c1');
+  await f.join(bob, 'c1');
 
   // Nobody has liked anybody.
   assert.equal((await f.openChat(alice.cookie, 'c1', bob)).status, 403);
@@ -440,4 +440,40 @@ test('chat background is per-viewer and validated against an allowlist', async (
   const theirs = await f.api(`/kaki/conversations/${id}`, { cookie: b.cookie });
   assert.equal(theirs.body.conversation.background, 'default',
     'restyling my own thread must not change what the other person sees');
+});
+
+test('reports cannot attach another users conversation as evidence against an unrelated user', async (t) => {
+  const f = await fixture(t);
+  const { a, b } = await f.matchedPair('c_wrong_report');
+  const unrelated = await f.user('unrelated-report-target');
+  const id = (await f.openChat(a.cookie, 'c_wrong_report', b)).body.conversation.id;
+  const result = await f.api(`/users/${unrelated.id}/reports`, {
+    method: 'POST', cookie: a.cookie,
+    body: { category: 'spam', details: 'wrong person', conversationId: id },
+  });
+  assert.equal(result.status, 404);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM reports').get().n, 0);
+});
+
+test('blocking and reporting nonexistent users return not found rather than foreign key errors', async (t) => {
+  const f = await fixture(t);
+  const a = await f.user('missing-report-target');
+  assert.equal((await f.api('/users/missing/block', { method: 'PUT', cookie: a.cookie })).status, 404);
+  assert.equal((await f.api('/users/missing/reports', {
+    method: 'POST', cookie: a.cookie, body: { category: 'spam', details: 'unknown user' },
+  })).status, 404);
+});
+
+test('chat requires current explicit Kaki participation even for stored mutual likes', async (t) => {
+  const f = await fixture(t);
+  const { a, b } = await f.matchedPair('c_chat_membership');
+  const id = (await f.openChat(a.cookie, 'c_chat_membership', b)).body.conversation.id;
+  await f.api(`/kaki/conversations/${id}/messages`, {
+    method: 'POST', cookie: a.cookie, body: { body: 'old conversation' },
+  });
+  f.db.prepare('DELETE FROM concert_participants WHERE user_id=?').run(a.id);
+  assert.equal((await f.api(`/kaki/conversations/${id}`, { cookie: b.cookie })).status, 403);
+  assert.equal((await f.openChat(a.cookie, 'c_chat_membership', b)).status, 403);
+  assert.deepEqual((await f.api('/kaki/conversations', { cookie: b.cookie })).body.conversations, []);
+  assert.equal((await f.api('/kaki/unread', { cookie: b.cookie })).body.total, 0);
 });

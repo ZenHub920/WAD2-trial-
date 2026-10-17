@@ -91,6 +91,8 @@ export function migrateCommunity(db) {
       db.exec(
         "ALTER TABLE group_join_requests ADD COLUMN group_version INTEGER",
       );
+    if (!db.prepare("PRAGMA table_info(group_join_requests)").all().some((c) => c.name === "preferences_json"))
+      db.exec("ALTER TABLE group_join_requests ADD COLUMN preferences_json TEXT");
     db.exec(`CREATE TRIGGER IF NOT EXISTS membership_host_guard BEFORE INSERT ON group_memberships WHEN NEW.status='active'
       BEGIN SELECT RAISE(ABORT,'already_in_concert_group') WHERE EXISTS(SELECT 1 FROM parties WHERE host_user_id=NEW.user_id
         AND concert_id=NEW.concert_id AND status<>'cancelled' AND id<>NEW.party_id); END;
@@ -98,6 +100,12 @@ export function migrateCommunity(db) {
         SELECT RAISE(ABORT,'membership_concert_mismatch') WHERE NOT EXISTS(SELECT 1 FROM parties WHERE id=NEW.party_id AND concert_id=NEW.concert_id);
         SELECT RAISE(ABORT,'already_in_concert_group') WHERE NEW.status='active' AND EXISTS(SELECT 1 FROM parties WHERE host_user_id=NEW.user_id
         AND concert_id=NEW.concert_id AND status<>'cancelled' AND id<>NEW.party_id); END;`);
+    db.exec(`CREATE TRIGGER IF NOT EXISTS party_host_membership_created AFTER INSERT ON parties WHEN NEW.status<>'cancelled'
+      BEGIN INSERT INTO group_memberships(party_id,user_id,concert_id,source)
+        VALUES(NEW.id,NEW.host_user_id,NEW.concert_id,'host'); END;
+      CREATE TRIGGER IF NOT EXISTS party_memberships_cancelled AFTER UPDATE OF status ON parties WHEN NEW.status='cancelled' AND OLD.status<>'cancelled'
+      BEGIN UPDATE group_memberships SET status='left',left_at=datetime('now')
+        WHERE party_id=NEW.id AND status='active'; END;`);
     // Do not silently discard duplicate legacy groups or assign a person twice.
     const add = db.prepare(
       `INSERT OR IGNORE INTO group_memberships(party_id,user_id,concert_id,source) VALUES(?,?,?,?)`,

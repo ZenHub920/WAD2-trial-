@@ -139,7 +139,7 @@ test('explicit concert joins are private, upsertable, withdrawable and independe
   assert.equal(f.db.prepare('SELECT count(*) AS n FROM seeker_requests').get().n, 0);
 });
 
-test('joined participants extend Kaki candidates, withdrawal overrides legacy membership and clears outgoing likes', async (t) => {
+test('only explicit participants enter Kaki, withdrawal clears outgoing likes', async (t) => {
   const f = await fixture(t);
   const alice = await f.user('candidate-alice');
   const bob = await f.user('candidate-bob');
@@ -148,6 +148,9 @@ test('joined participants extend Kaki candidates, withdrawal overrides legacy me
   f.seeker('s_alice', alice, 'c_pool');
   f.seeker('s_bob', bob, 'c_pool');
   f.host('p_host', host, 'c_pool');
+  assert.deepEqual(await poolIds(f, alice), []);
+  assert.deepEqual(await poolIds(f, bob), []);
+  assert.deepEqual(await poolIds(f, host), []);
   assert.equal((await join(f, 'c_pool', alice.cookie)).status, 200);
   assert.equal((await join(f, 'c_pool', bob.cookie, 'ga_standing', 'early_queue')).status, 200);
   assert.equal((await join(f, 'c_pool', host.cookie)).status, 200);

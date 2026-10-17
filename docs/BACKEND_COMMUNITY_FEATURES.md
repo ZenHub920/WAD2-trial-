@@ -20,7 +20,7 @@ Feature branches:
 | `feature/integration-hardening` | Cross-feature capacity/security fixes, additional HTTP tests, documentation and review formatting |
 | `feature/preference-suggestion-integration` | Inline recognized-meaning suggestions, explicit custom opt-out and preservation of the user's original wording |
 
-All are assembled through merge commits into `review/encore-backend-integration`. Each feature branch builds on the already integrated foundation so its prerequisites are available. Cross-feature corrections are in the final hardening branch and review integration result. `main` is not the destination of any feature commit, merge or push.
+These branches were originally assembled through merge commits into `review/encore-backend-integration`, then integrated into `main`. Each feature branch built on the integrated foundation. The branch list records implementation history, not outstanding integration work.
 
 ## 1. A real group and its places
 
@@ -392,4 +392,48 @@ Final executed verification on 17 October 2026:
 
 The existing negative-path ticket test intentionally logs a simulated SQLite trigger failure while its rollback assertions pass. Weather success/error/cache/horizon behavior was tested with controlled provider responses; the public provider payload was also inspected, but no live weather request against a user's private planning board or real multi-account browser acceptance pass is claimed.
 
-Review the assembled result on `review/encore-backend-integration`. All feature work and integration corrections are committed on non-main branches, with feature merges retained in history. The local `main` reference remains `3481b67`; no main merge or main push is authorized or performed. The source guide, endpoint map and manual acceptance checklist above are intended to support the owner's review before any later main integration.
+The feature expansion is now integrated into `main`. The verification table above records the original integration review; the backend review below records subsequent fixes and checks.
+
+## Backend review after integration
+
+Reviewed the backend controllers, routes, repositories, migrations, matching algorithms,
+authentication/session handling, chat/realtime, provider adapters and operational scripts
+against `TEAMMATE_FEATURE_GUIDE.md`. Kept the existing Express/SQLite structure and dependencies.
+
+### Corrected contract gaps and bugs
+
+| Area | Corrections |
+| --- | --- |
+| Formation/history | New hosts immediately receive authoritative membership. Reconfiguration preserves joining evidence; cancellation preserves historical departures, releases active memberships and reopens direct-join seekers. Increasing stranger places reopens a full group. |
+| Invitations/discovery | Friend acceptance checks every active member's blocks. Existing attendance and closed requests prevent ineligible discovery. Both connected groups must publish and explicitly opt in, including at acceptance. |
+| Consent/preferences | Join requests retain submitted preference snapshots. Changing seeker preferences invalidates pending choice, preserves the host's submitted view and notifies both sides transactionally; withdrawal/resubmission is required. Strongest supported recommendation evidence is retained. |
+| Legacy proposals | Confirmation rechecks cancellation, withdrawal, blocks, managed-group exclusion and shared capacity. Managed groups cannot bypass approval or incorrectly block unrelated legacy rounds. Unexpected membership lookup errors abort matching instead of silently hiding seekers. |
+| Matching algorithms | Gale–Shapley handles zero capacity; Irving phase-two rotations no longer falsely reject the covered solvable six-person instance. |
+| Kaki/chat | Enrollment is explicit, never inferred from hosting/seeking. Chat/unread authorization follows current participation and mutual likes. Receipt events are recipient-specific; open event streams recheck session validity. Report evidence must involve the reported user. |
+| Planning/weather | Departed participants lose fallback access and votes; cancelled connections and ticket-inventory parties cannot authorize attendance boards. Malformed inputs return controlled errors. Missing distances remain unknown, not zero; weather rejects invalid coordinates. The documented 96-interval submission limit remains unchanged. |
+| Feedback | Legacy eligibility requires confirmation-time or genuine membership evidence before cutoff, not merely proposal creation. Explicit departures cannot be bypassed by legacy fallback. |
+| Marketplace | Only the recorded buyer may relist sold issued numbers. Changes to reviewed quantity/section invalidate proof approval; issued categories cannot be swapped, and closed listings cannot be approved. Message-ID polling avoids equal-timestamp message loss. CSV headers and hydrated avatars are corrected. |
+| Inputs/operations | Registration shares profile constraints; impossible event dates are rejected/skipped. Public errors omit raw database diagnostics and oversized JSON returns 413. Seed reset covers new dependent tables and rolls back with failed insertion; its documented destructive default is unchanged. |
+
+Migrations add submitted-preference snapshots and proposal confirmation timestamps.
+Unknown historical consent/confirmation is not fabricated; affected pending choices
+must be resubmitted where evidence is missing. Existing membership timing remains
+independent feedback eligibility evidence.
+
+### Executed verification
+
+- Initial backend baseline: **207 passed, 0 failed**.
+- Focused regressions replayed against the original backend: **41 failures**, demonstrating original defects.
+- Final `npm.cmd test`: **253 passed, 0 failed, 0 skipped**.
+- `npm.cmd audit --omit=dev`: **0 reported vulnerabilities**.
+- `npm.cmd run build` in `client`: passed, **152 modules transformed**.
+- Live isolated HTTP smoke: registration, friend acceptance, shared preferences,
+  publication, discovery, host approval, capacity, notifications, meetup privacy,
+  proposal/approval and unavailable out-of-horizon weather; zero foreign-key violations.
+- Authenticated Chromium smoke: real meetup page rendered known and unknown
+  distances correctly; no captured browser errors.
+
+All runtime verification used isolated databases. No development database was reset.
+This is not a full mobile/browser acceptance pass or a live-provider weather guarantee.
+Future group chat, embeddings, maps/transit, push delivery and scheduled weather
+remain explicit non-goals, not missing backend requirements.

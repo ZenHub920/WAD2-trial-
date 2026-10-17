@@ -37,7 +37,7 @@ export function createGroupDiscoveryRepo(db, repos) {
     if (blocked(from.host_user_id, to.host_user_id)) return fail('blocked_pair', 403);
     for(const p of [from,to]) {
       const settings=repos.membership.settings(p.id);
-      if(settings&&(!settings.published||!settings.connect_open))return fail('group_not_open_to_connections');
+      if(!settings||!settings.published||!settings.connect_open)return fail('group_not_open_to_connections');
     }
     const members=id=>[repos.parties.findById(id).host_user_id,...db.prepare("SELECT user_id FROM group_memberships WHERE party_id=? AND status='active'").all(id).map(r=>r.user_id)];
     if(members(fromId).some(a=>members(toId).some(b=>blocked(a,b))))return fail('blocked_pair',403);
@@ -120,9 +120,11 @@ export function createGroupDiscoveryRepo(db, repos) {
       if (from.host_user_id !== userId) return fail('group_owner_required', 403);
       if (from.concert_id !== concertId) return fail('different_concert', 400);
       if (from.status === 'cancelled' || isTicket(from.id)) return fail('group_unavailable');
+      const settings = repos.membership.settings(fromId);
+      if (!settings || !settings.published || !settings.connect_open) return [];
       return db.prepare("SELECT id FROM parties WHERE concert_id = ? AND status <> 'cancelled' AND host_user_id <> ? ORDER BY id")
         .all(concertId, userId).filter(r => !isTicket(r.id)).map(r => repos.parties.findById(r.id))
-        .filter(p => !blocked(userId, p.host_user_id)).map(p => {
+        .filter(p => !validConnectionPair(userId, fromId, p.id).error).map(p => {
           const [a, b] = [fromId, p.id].sort();
           const invitation = db.prepare('SELECT id, status FROM group_connections WHERE party_a_id = ? AND party_b_id = ?').get(a, b);
           return { ...card(p), invitation: invitation ?? null };

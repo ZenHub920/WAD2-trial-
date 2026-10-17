@@ -197,7 +197,7 @@ CREATE TABLE IF NOT EXISTS ticket_messages (
 CREATE INDEX IF NOT EXISTS idx_ticket_messages_conversation ON ticket_messages(conversation_id, created_at);
 
 -- Kaki participation does not enroll a user in group matching.
--- Keep withdrawn rows so a legacy open seeker/host cannot reappear in Kaki.
+-- Keep withdrawn rows as participation history; only joined rows enroll in Kaki.
 CREATE TABLE IF NOT EXISTS concert_participants (
   user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   concert_id   TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,

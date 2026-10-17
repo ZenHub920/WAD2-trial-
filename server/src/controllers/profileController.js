@@ -23,7 +23,7 @@ function profile(user) {
   };
 }
 
-function validProfile(body) {
+export function validProfile(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)
     || Object.keys(body).some((key) => !FIELDS.includes(key))) return false;
   if ('displayName' in body && (typeof body.displayName !== 'string' || !body.displayName.trim())) return false;

@@ -8,17 +8,12 @@
  * Concerts are invented events at real venue names; all people are synthetic.
  */
 
-import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import '../config/loadEnv.js';
 
 import { getDb } from './connection.js';
 import { createRepositories } from './repositories.js';
 import { generateInstance } from '../../bench/generate.js';
 
-const here = dirname(fileURLToPath(import.meta.url));
-mkdirSync(join(here, '../../data'), { recursive: true });
 
 const args = new Set(process.argv.slice(2));
 const big = args.has('--big');
@@ -32,30 +27,6 @@ const repos = createRepositories(db);
 // (`--reset` is still accepted for backwards compatibility; it is now the default.)
 const existing = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
 
-db.exec(`
-  DELETE FROM kaki_decisions;
-  DELETE FROM concert_participants;
-  DELETE FROM ticket_messages;
-  DELETE FROM ticket_conversations;
-  DELETE FROM orders;
-  DELETE FROM ticket_numbers;
-  DELETE FROM issued_tickets;
-  DELETE FROM tickets;
-  DELETE FROM sessions;
-  DELETE FROM match_trace;
-  DELETE FROM match_results;
-  DELETE FROM match_rounds;
-  DELETE FROM attendance_feedback;
-  DELETE FROM seeker_requests;
-  DELETE FROM parties;
-  DELETE FROM blocks;
-  DELETE FROM concerts;
-  DELETE FROM users;
-`);
-
-if (existing > 0) {
-  console.log(`Cleared existing data (${existing} users).`);
-}
 
 const CONCERTS = [
   {
@@ -279,6 +250,54 @@ const concertIdMap = new Map(
 );
 
 const insert = db.transaction(() => {
+  db.exec(`
+    DELETE FROM meetup_approvals;
+    DELETE FROM meetup_comments;
+    DELETE FROM meetup_votes;
+    DELETE FROM meetup_availability;
+    DELETE FROM meetup_places;
+    DELETE FROM meetups;
+    DELETE FROM group_attendance_feedback;
+    DELETE FROM group_join_request_events;
+    DELETE FROM group_join_requests;
+    DELETE FROM group_friend_invites;
+    DELETE FROM group_member_preferences;
+    DELETE FROM group_memberships;
+    DELETE FROM membership_conflicts;
+    DELETE FROM seeker_discovery_preferences;
+    DELETE FROM group_settings;
+    DELETE FROM group_connections;
+    DELETE FROM seeker_party_preferences;
+    DELETE FROM notification_preferences;
+    DELETE FROM notifications;
+    DELETE FROM reports;
+    DELETE FROM messages;
+    DELETE FROM conversation_reads;
+    DELETE FROM conversation_settings;
+    DELETE FROM conversations;
+    DELETE FROM kaki_decisions;
+    DELETE FROM concert_participants;
+    DELETE FROM ticket_messages;
+    DELETE FROM ticket_conversations;
+    DELETE FROM ticket_inquiries;
+    DELETE FROM saved_tickets;
+    DELETE FROM orders;
+    DELETE FROM ticket_numbers;
+    DELETE FROM issued_tickets;
+    DELETE FROM tickets;
+    DELETE FROM sessions;
+    DELETE FROM match_proposals;
+    DELETE FROM match_declines;
+    DELETE FROM match_trace;
+    DELETE FROM attendance_feedback;
+    DELETE FROM match_results;
+    DELETE FROM match_rounds;
+    DELETE FROM seeker_requests;
+    DELETE FROM parties;
+    DELETE FROM blocks;
+    DELETE FROM concerts;
+    DELETE FROM users;
+  `);
   for (const concert of CONCERTS) {
     if (!repos.concerts.findById(concert.id)) {
       repos.concerts.create({
@@ -362,6 +381,7 @@ const insert = db.transaction(() => {
 let spareTicketNumbers = [];
 
 insert();
+if (existing > 0) console.log(`Cleared existing data (${existing} users).`);
 
 const counts = db.prepare(`
   SELECT

@@ -53,7 +53,7 @@ export function createAdminController(repos) {
       const invalid = [];
       csv.split(/\r?\n/).forEach((line, index) => {
         const [number = '', category = ''] = line.split(',').map((cell) => cell.trim());
-        if (!number || (index === 0 && /^ticket/i.test(number))) return;
+        if (!number || (index === 0 && /^ticket(?:_number|\s+number)?$/i.test(number))) return;
         if (!TICKET_NUMBER.test(number)) invalid.push(index + 1);
         else rows.push({ number, category });
       });

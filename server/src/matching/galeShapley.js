@@ -90,7 +90,7 @@ export function galeShapley(profile, options = {}) {
 
     const worst = partyHeap.peek();
 
-    if (rank < worst.rank) {
+    if (worst && rank < worst.rank) {
       // The party prefers the proposer to its current worst member: swap them.
       partyHeap.pop();
       assignments.delete(worst.id);

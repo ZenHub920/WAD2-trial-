@@ -51,7 +51,8 @@ export function createMembershipRepo(db, repos) {
     ensureFree(user, p.concert_id, p.id);
     db.prepare(
       `INSERT INTO group_memberships(party_id,user_id,concert_id,source) VALUES(?,?,?,?)
-      ON CONFLICT(party_id,user_id) DO UPDATE SET status='active',source=excluded.source,joined_at=datetime('now'),left_at=NULL`,
+      ON CONFLICT(party_id,user_id) DO UPDATE SET status='active',source=excluded.source,
+      joined_at=CASE WHEN group_memberships.status='active' THEN group_memberships.joined_at ELSE datetime('now') END,left_at=NULL`,
     ).run(p.id, user, p.concert_id, source);
   };
   const settings = (id) =>
@@ -133,6 +134,8 @@ export function createMembershipRepo(db, repos) {
       db.prepare(
         "UPDATE group_settings SET stranger_slots=? WHERE party_id=?",
       ).run(slots, id);
+      if (p.status === "matched" && slots > db.prepare(`SELECT ${reservedPlacesSql("@id")} n`).get({ id }).n)
+        repos.parties.setStatus(id, "open");
       return settings(id);
     }).immediate,
     saveAnswers: db.transaction((user, id, input) => {
@@ -230,9 +233,13 @@ export function createMembershipRepo(db, repos) {
         throw communityError("group_unavailable");
       if (member(user, p.id)) throw communityError("already_group_member");
       const blocks = repos.users.blocklist();
+      const members = db.prepare(
+        "SELECT user_id FROM group_memberships WHERE party_id=? AND status='active'",
+      ).all(p.id);
       if (
-        blocks.has(`${user}:${p.host_user_id}`) ||
-        blocks.has(`${p.host_user_id}:${user}`)
+        [p.host_user_id, ...members.map((m) => m.user_id)].some((id) =>
+          blocks.has(`${user}:${id}`) || blocks.has(`${id}:${user}`),
+        )
       )
         throw communityError("blocked_pair", 403);
       const friends = db
@@ -274,9 +281,13 @@ export function createMembershipRepo(db, repos) {
     }).immediate,
     cancel: db.transaction((user, id) => {
       const p = owner(user, id);
+      db.prepare(
+        `UPDATE seeker_requests SET status='open' WHERE concert_id=? AND user_id IN
+        (SELECT user_id FROM group_memberships WHERE party_id=? AND source='join' AND status='active')`,
+      ).run(p.concert_id, id);
       db.prepare("UPDATE parties SET status='cancelled' WHERE id=?").run(id);
       db.prepare(
-        "UPDATE group_memberships SET status='left',left_at=datetime('now') WHERE party_id=?",
+        "UPDATE group_memberships SET status='left',left_at=datetime('now') WHERE party_id=? AND status='active'",
       ).run(id);
       db.prepare(
         "UPDATE seeker_requests SET status='open' WHERE id IN(SELECT seeker_request_id FROM match_proposals WHERE party_id=? AND status IN('proposed','confirmed'))",

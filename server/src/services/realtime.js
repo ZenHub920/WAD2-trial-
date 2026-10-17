@@ -76,7 +76,7 @@ export function createRealtime() {
  * Turn an Express response into an SSE stream and register it.
  * Returns a cleanup function; the caller wires it to the request's close event.
  */
-export function openStream(realtime, req, res, userId) {
+export function openStream(realtime, req, res, userId, isAuthorized = () => true) {
   res.writeHead(200, {
     'content-type': 'text/event-stream',
     'cache-control': 'no-cache, no-transform',
@@ -88,24 +88,27 @@ export function openStream(realtime, req, res, userId) {
   });
   res.flushHeaders?.();
 
-  const send = (type, payload) => {
-    res.write(`event: ${type}\ndata: ${JSON.stringify(payload)}\n\n`);
-  };
-
-  // An immediate event tells the client the stream is live, so it can stop
-  // showing a "connecting" state without waiting for real traffic.
-  send('ready', { userId, at: new Date().toISOString() });
-
-  const heartbeat = setInterval(() => {
-    // A comment line: ignored by EventSource, but it keeps proxies and the
-    // browser from treating the connection as idle and dropping it.
-    res.write(': ping\n\n');
-  }, realtime.HEARTBEAT_MS);
-
-  const unsubscribe = realtime.subscribe(userId, send);
-
-  return () => {
+  let heartbeat;
+  let unsubscribe = () => {};
+  const close = () => {
     clearInterval(heartbeat);
     unsubscribe();
   };
+  const authorized = () => {
+    if (isAuthorized()) return true;
+    close();
+    res.end();
+    return false;
+  };
+  const send = (type, payload) => {
+    if (authorized()) res.write(`event: ${type}\ndata: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  unsubscribe = realtime.subscribe(userId, send);
+  heartbeat = setInterval(() => {
+    if (authorized()) res.write(': ping\n\n');
+  }, realtime.HEARTBEAT_MS);
+  res.on('close', close);
+  send('ready', { userId, at: new Date().toISOString() });
+  return close;
 }
