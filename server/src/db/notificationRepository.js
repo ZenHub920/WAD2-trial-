@@ -187,6 +187,11 @@ export function createNotificationRepo(db) {
       if (!result.changes) throw communityError("notification_not_found", 404);
       return { read: true };
     },
+    readConversation(user, path) {
+      return db.prepare(
+        "UPDATE notifications SET read_at=datetime('now') WHERE user_id=? AND category='chat' AND resource_path=? AND read_at IS NULL",
+      ).run(user, path).changes;
+    },
     readAll(user) {
       db.prepare(
         "UPDATE notifications SET read_at=datetime('now') WHERE user_id=? AND read_at IS NULL",

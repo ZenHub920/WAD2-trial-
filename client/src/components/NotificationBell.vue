@@ -1,7 +1,7 @@
 <script setup>
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { api } from '../api.js';
+import { api, notificationRevision } from '../api.js';
 import { formatDateTime } from '../market.js';
 import LoadingSpinner from './LoadingSpinner.vue';
 
@@ -78,6 +78,7 @@ watch(open, async (visible) => {
   panel.value?.focus();
 });
 watch(() => route.fullPath, () => { open.value = false; });
+watch(notificationRevision, () => open.value ? load() : refreshUnread());
 onMounted(() => {
   document.addEventListener('click', outside);
   document.addEventListener('keydown', onKeydown);

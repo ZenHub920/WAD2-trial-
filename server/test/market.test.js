@@ -139,6 +139,36 @@ test('chat: one thread per buyer and listing, readable only by its two people', 
   assert.equal((await api('/conversations', { as: 'seller' })).body.conversations[0].lastMessage.body, 'Yes it is!');
 });
 
+test('opening and polling ticket chats reads only the viewer’s notifications for that thread', async (t) => {
+  const { api, sell } = await fixture(t);
+  const createThread = async () => {
+    const listing = (await sell('seller')).body.listing;
+    return (await api(`/tickets/${listing.id}/conversations`, { method: 'POST', as: 'buyer' })).body.conversation.id;
+  };
+  const first = await createThread();
+  const second = await createThread();
+  const send = (id, as, body) => api(`/conversations/${id}/messages`, { method: 'POST', as, body: { body } });
+  const inbox = async (as) => (await api('/me/notifications', { as })).body.notifications;
+  const last = (await send(first, 'seller', 'Still available.')).body.message;
+  await send(second, 'seller', 'These seats are available too.');
+  await send(first, 'buyer', 'Thanks for confirming.');
+  assert.equal((await api(`/conversations/${first}`, { as: 'buyer2' })).status, 404);
+  assert.equal((await inbox('buyer')).find(n => n.path === `/chat/${first}`).readAt, null);
+
+  assert.equal((await api(`/conversations/${first}`, { as: 'buyer' })).status, 200);
+  let notifications = await inbox('buyer');
+  assert.ok(notifications.find(n => n.path === `/chat/${first}`).readAt);
+  assert.equal(notifications.find(n => n.path === `/chat/${second}`).readAt, null);
+  assert.equal((await inbox('seller')).find(n => n.path === `/chat/${first}`).readAt, null);
+
+  await send(first, 'seller', 'Let me know if you have any other questions.');
+  assert.ok((await inbox('buyer')).some(n => n.path === `/chat/${first}` && !n.readAt));
+  assert.equal((await api(`/conversations/${first}?after=${last.id}`, { as: 'buyer' })).status, 200);
+  notifications = await inbox('buyer');
+  assert.ok(notifications.filter(n => n.path === `/chat/${first}`).every(n => n.readAt));
+  assert.equal(notifications.find(n => n.path === `/chat/${second}`).readAt, null);
+});
+
 test('proof review: pending until an operator decides; rejection needs a note; approval is final', async (t) => {
   const { api, sell } = await fixture(t);
   const created = await sell('seller', { proofData: PROOF, verified: true });

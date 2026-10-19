@@ -52,8 +52,11 @@ close button or an outside click dismisses it. Notification preferences live
 under `/profile#notifications`, not on a separate notifications page.
 The bell badge shows the full unread notification count (displayed as `99+`
 above 99), including notifications beyond the popover's current page. It
-refreshes every 30 seconds and updates when a notification is marked read;
-no badge is shown when everything is read.
+refreshes every 30 seconds and updates immediately when a notification is marked
+read. Opening a companion or ticket conversation automatically reads your chat
+notifications for that thread, including when you follow a notification link.
+Other conversations and other users' notifications are left unchanged.
+No badge is shown when everything is read.
 
 Route changes reset resource-specific drafts. Notification refreshes and weather
 checks preserve unsaved settings and availability.

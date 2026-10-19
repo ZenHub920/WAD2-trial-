@@ -4,6 +4,10 @@
  * One place that knows about HTTP, so views deal in data and errors rather than
  * fetch options and status codes.
  */
+import { ref } from 'vue';
+
+export const notificationRevision = ref(0);
+
 
 const BASE = '/api';
 
@@ -36,6 +40,7 @@ async function request(path, options = {}) {
     error.body = body;
     throw error;
   }
+  if (body?.notificationsRead > 0) notificationRevision.value++;
   return body;
 }
 
