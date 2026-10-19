@@ -33,10 +33,14 @@ Open <http://localhost:5173>.
 
 ### Interface
 
-The product brand is **Encore**. Kaki Finder remains the name of the companion-finding
-feature. The interface keeps working controls and concise task guidance; project
-footers, opening overlays, disabled placeholder filters and implementation notes
-have been removed. Automatic-matching explanations are optional on `/method`.
+The product brand is **Encore**. The main navigation is **Concerts**, **Find a
+companion**, **Groups**, and the signed-in **Messages** hub. Concert browsing and
+fan ticket sales share `/concerts`; companion and ticket enquiries share
+`/messages` while retaining separate private threads. Group hosting/connection
+tools are linked from group pages rather than duplicated in the main navigation.
+Loading circles appear in the component or action button that is waiting, not
+in a global header overlay. They stop on success and failure; reduced-motion
+preferences are respected. Automatic-matching explanations are optional on `/method`.
 
 Route changes reset resource-specific drafts. Notification refreshes and weather
 checks preserve unsaved settings and availability.
@@ -71,7 +75,7 @@ point at the same database. Registration and profile editing cannot grant
 operator access. Existing database files are migrated in place; never run
 the destructive demo seed on accounts you want to keep.
 
-### Ticket marketplace
+### Concerts and ticket listings
 
 Ticket sales and companion groups are separate inventories. `POST /api/tickets`
 creates a concert and its ticket listing atomically for the signed-in seller;
@@ -87,14 +91,30 @@ image directory in backups. Existing priced party rows are copied to tickets
 once and removed from active companion matching without deleting historical
 round references. Neither a listing nor a seller is proof of ticket ownership.
 
-The `/marketplace` cards use the existing `/api/tickets` listings, including
-the seller, concert, section, quantity, price and optional image. Search and
-filters work on that inventory; “Saved only” bookmarks are stored in this
-browser's local storage, not in an account. Checkout records an order and transfers
-the listed inventory to its buyer; it does not integrate a real payment provider.
+The single browse page is `/concerts`; there is no separate Ticket market tab.
+Cards count tickets for sale by summing the quantities of active listings, not
+by counting listings. `/concerts/:id` shows each listing's seller, seating
+section, ticket quantity, verification state and total listing price, with links
+to the listing and seller enquiry. Prices apply to the entire listing, not each
+individual ticket.
+
+Group places and active group finders are separate from ticket inventory:
+places are openings in app groups, and finders are open group-matching requests
+for the displayed concerts, not total attendees or companion-finder participants.
+Unavailable or loading feeds are not presented as zero activity.
+The “Concerts with saved listings” filter uses this browser's local storage,
+not account-level bookmarks.
+
+Fake saved payment accounts and simulated purchases have been removed.
+Checkout is unavailable until a real
+payment provider is integrated: authenticated `POST /api/tickets/:id/orders`
+returns HTTP 503 `payment_provider_not_configured` without creating an order or
+changing inventory. Historical orders remain buyer-private and are labelled as
+previous simulated checkout, not proof of payment. The demo seed no longer
+creates ticket listings or fabricated issued-ticket numbers.
 
 
-### Kaki Finder
+### Find a companion
 
 The signed-in finder reads profiles of eligible concertgoers through
 `GET /api/kaki/pool`. Likes and skips are stored per account and concert, not
@@ -103,9 +123,9 @@ in browser storage. `GET /api/kaki/decisions` restores history; `PUT` or
 decision. A like is pending until both people like one another for the same
 concert. `GET /api/kaki/matches` reports only those mutual, currently eligible
 pairs. Joining a concert through `POST /api/concerts/:id/participation`
-enrolls you in Kaki Finder; it does **not** create a seeker request or enter
-the group-matching round. Hosting or creating an ordinary seeker request does
-not enroll an account in Kaki; participation must be explicit. Withdrawal removes
+enrolls you in the companion finder; it does **not** create a group-finding
+request or enter a group-matching round. Hosting or opening a group request does
+not enroll an account in the companion finder; participation must be explicit. Withdrawal removes
 outgoing Kaki decisions for that concert; blocking either direction hides
 the pair. The Profile tab edits matching preferences and vibe axes through
 `GET` / `PATCH /api/me/profile`; public user responses never expose email.
@@ -120,8 +140,22 @@ working directory. Explicit process environment values take precedence.
 
 `GET /api/concerts/external?keyword=...` searches the first 50 upcoming Singapore
 music events via Ticketmaster's Discovery API, without exposing the key to the
-browser. Its `events` are live discovery results, **not** matchable until imported.
-To save them as local concerts with stable IDs, run:
+browser. Each successful request upserts its events into SQLite before returning
+`events`, so concert detail links and seller listings use stable local IDs.
+The home page, concert browse page and seller concert selector request this live
+endpoint; seeded concerts are not substituted when discovery fails. Real
+fan-listed concerts from `/api/tickets` remain browsable independently, including
+seller-entered events that are outside the provider feed. Official purchase
+links open Ticketmaster, separate from local ticket availability. Group activity
+is fetched from local counts after provider event IDs have been persisted.
+Optional Ticketmaster text is stored in the existing concert `blurb` field and
+rendered as plain text on concert cards and concert detail pages. Selection
+prefers event `description`, `info`, then `additionalInfo`, followed by the
+primary embedded artist's `description` or `additionalInfo`. These artist fields
+are documented in the [Attraction Details API](https://developer.ticketmaster.com/products-and-docs/apis/discovery-api/v2/#attraction-details-v2),
+but are not guaranteed to be populated. No biography is invented when absent.
+
+The same import is also available from the command line:
 
 ```bash
 cd server
@@ -131,11 +165,12 @@ npm run sync:concerts
 Run the seed **before** syncing if you want demo users: `npm run seed` clears the
 database, including imported events. Syncing again updates imported event details
 without deleting local parties or match rounds. `GET /api/concerts` and
-`GET /api/concerts/:id` then include `source`, `source_event_id`, `official_url`,
-and `image_attribution` for imported events. The existing Vue client does not yet
-render these links; the frontend can use `official_url` for the event's official
-purchase page. Ticketmaster coverage in Singapore varies; events without a
-usable venue or date are skipped. Without a key, live discovery returns HTTP 503.
+`GET /api/concerts/:id` include `source`, `source_event_id`, `official_url`,
+and `image_attribution` for imported events. Ticketmaster coverage in Singapore
+varies; events without a usable venue or date are skipped. Without a key, live
+discovery returns HTTP 503; provider failures return HTTP 502 and a visible
+frontend error, not mock events. Seller-entered concert details remain supported
+as user input, not prefilled inventory. Existing non-ticket demo data is preserved.
 No ticket ownership, authenticity or availability is verified by this integration.
 
 AI-use disclosure: The Ticketmaster integration, MVC extraction, sessions,
@@ -297,7 +332,7 @@ server/
 client/
   src/assets/         design tokens and base stylesheet
   src/components/     navigation, cards, forms, chat and matching visualisations
-  src/views/          concerts, groups, Kaki, marketplace, planning and account pages
+  src/views/          concerts/tickets, companions, groups, messages, planning and accounts
 
 docs/ALGORITHM.md     the specification
 ```

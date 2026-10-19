@@ -1,16 +1,18 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { api, formatShortDate } from '../api.js';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 
 const concerts = ref([]);
 const loading = ref(true);
+const error = ref(false);
 
 onMounted(async () => {
   try {
-    const data = await api.concerts();
-    concerts.value = data.concerts.slice(0, 3);
+    const data = await api.externalConcerts();
+    concerts.value = data.events.slice(0, 3);
   } catch {
-    concerts.value = [];
+    error.value = true;
   } finally {
     loading.value = false;
   }
@@ -25,7 +27,7 @@ const steps = [
   {
     n: '02',
     title: 'Choose your company',
-    body: 'Find a Kaki or request a place in a group.',
+    body: 'Find a companion or request a place in a group.',
   },
   {
     n: '03',
@@ -41,7 +43,6 @@ const steps = [
     <section class="hero">
       <div class="hero__glow" aria-hidden="true" />
       <div class="container hero__inner">
-        <p class="eyebrow">Concert companion matching</p>
 
         <h1 class="hero__title">
           Nobody should skip a show
@@ -85,12 +86,15 @@ const steps = [
           <RouterLink to="/concerts" class="btn btn--ghost">See all concerts</RouterLink>
         </div>
 
-        <div v-if="loading" class="upcoming__grid">
-          <div v-for="n in 3" :key="n" class="skeleton-card" />
+        <div v-if="loading" class="loading-state">
+          <LoadingSpinner /> Loading concerts…
         </div>
 
+        <p v-else-if="error" class="empty-note" role="alert">
+          Concerts could not be loaded. Try again later.
+        </p>
         <p v-else-if="!concerts.length" class="empty-note">
-          No concerts are available right now. Check back soon.
+          No upcoming concerts are available.
         </p>
 
         <div v-else class="upcoming__grid">
@@ -103,10 +107,6 @@ const steps = [
             <p class="mini__date mono">{{ formatShortDate(concert.event_date) }}</p>
             <h3 class="mini__artist">{{ concert.artist }}</h3>
             <p class="mini__venue">{{ concert.venue }}</p>
-            <div class="mini__meta">
-              <span class="tag">{{ concert.open_slots }} slots</span>
-              <span class="tag tag--accent">{{ concert.open_seekers }} looking</span>
-            </div>
           </RouterLink>
         </div>
       </div>
@@ -238,7 +238,7 @@ const steps = [
 .upcoming__grid {
   display: grid;
   gap: var(--space-4);
-  grid-template-columns: repeat(auto-fill, minmax(255px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 255px), 1fr));
 }
 
 .mini {
@@ -263,30 +263,7 @@ const steps = [
   font-size: var(--step--1);
 }
 
-.mini__meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-4);
-}
 
-.skeleton-card {
-  height: 176px;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(
-    100deg,
-    var(--ink-800) 30%,
-    var(--ink-750) 50%,
-    var(--ink-800) 70%
-  );
-  background-size: 220% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
-}
-
-@keyframes shimmer {
-  from { background-position: 180% 0; }
-  to   { background-position: -80% 0; }
-}
 
 .empty-note {
   padding: var(--space-6);

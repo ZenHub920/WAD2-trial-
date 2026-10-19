@@ -33,7 +33,12 @@ onUnmounted(() => {
 });
 </script>
 <template>
-  <RouterLink to="/notifications"
-    >Notifications<span v-if="unread"> ({{ unread }})</span></RouterLink
-  >
+  <RouterLink to="/notifications" class="notifications-link" :aria-label="unread ? `Notifications, ${unread} unread` : 'Notifications'">
+    Notifications<span v-if="unread" class="notifications-link__count">{{ unread }}</span>
+  </RouterLink>
 </template>
+
+<style scoped>
+.notifications-link { display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
+.notifications-link__count { padding: 0 var(--space-2); border-radius: var(--radius-pill); background: var(--ink-700); color: var(--text-100); font-size: var(--step--2); font-variant-numeric: tabular-nums; }
+</style>

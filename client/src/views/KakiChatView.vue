@@ -22,6 +22,7 @@ import { useRouter } from 'vue-router';
 import { api } from '../api.js';
 import { onChatEvent, connectionState, refreshUnread } from '../chatLive.js';
 import UserAvatar from '../components/UserAvatar.vue';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 
 const props = defineProps({ id: { type: String, required: true } });
 const router = useRouter();
@@ -32,8 +33,10 @@ const backgrounds = ref(['default']);
 const loading = ref(true);
 const closed = ref(false);
 const error = ref(null);
+const signInRequired = ref(false);
 
 const draft = ref('');
+const sending = ref(false);
 const replyingTo = ref(null);
 const editing = ref(null);
 const openMenuId = ref(null);
@@ -43,6 +46,9 @@ const reportCategory = ref('harassment');
 const reportDetails = ref('');
 const reportBusy = ref(false);
 const notice = ref('');
+const deletingMessageId = ref(null);
+const backgroundPending = ref(null);
+const blocking = ref(false);
 
 const scroller = ref(null);
 const composer = ref(null);
@@ -84,22 +90,34 @@ const myId = computed(() => conversation.value?.me ?? null);
 const mine = (m) => m.senderId === myId.value;
 
 async function load({ quiet = false } = {}) {
-  if (!quiet) loading.value = true;
+  if (!quiet) {
+    loading.value = true;
+    conversation.value = null;
+    messages.value = [];
+    closed.value = false;
+    error.value = null;
+  }
   try {
     const data = await api.kakiConversation(props.id);
     conversation.value = data.conversation;
     messages.value = data.messages;
     closed.value = false;
     error.value = null;
+    signInRequired.value = false;
   } catch (err) {
     if (err.status === 403) {
       // Blocked, or the match was withdrawn. The server deliberately does not
       // say which, so neither does the interface.
       closed.value = true;
-    } else if (err.status === 404) {
-      error.value = 'This conversation no longer exists.';
+    } else if (err.status === 401 || err.status === 404) {
+      conversation.value = null;
+      messages.value = [];
+      signInRequired.value = err.status === 401;
+      error.value = signInRequired.value
+        ? 'Sign in to see this conversation.'
+        : 'This conversation no longer exists.';
     } else {
-      error.value = err.message;
+      error.value = 'Could not load this conversation. Please try again.';
     }
   } finally {
     loading.value = false;
@@ -108,35 +126,28 @@ async function load({ quiet = false } = {}) {
 
 async function send() {
   const body = draft.value.trim();
-  if (!body) return;
-
-  if (editing.value) {
-    const target = editing.value;
-    editing.value = null;
-    draft.value = '';
-    try {
-      const { message } = await api.editKakiMessage(props.id, target.id, body);
+  if (!body || sending.value || !conversation.value || closed.value) return;
+  sending.value = true;
+  error.value = null;
+  try {
+    if (editing.value) {
+      const { message } = await api.editKakiMessage(props.id, editing.value.id, body);
       const index = messages.value.findIndex((m) => m.id === message.id);
       if (index !== -1) messages.value[index] = message;
-    } catch (err) {
-      error.value = err.message;
+    } else {
+      const { message } = await api.sendKakiMessage(props.id, body, replyingTo.value?.id ?? null);
+      // The live event may arrive before this response.
+      if (!messages.value.some((m) => m.id === message.id)) messages.value.push(message);
     }
-    return;
-  }
-
-  const replyTo = replyingTo.value?.id ?? null;
-  draft.value = '';
-  replyingTo.value = null;
-  try {
-    const { message } = await api.sendKakiMessage(props.id, body, replyTo);
-    // The live stream delivers this same message to us as well, and it can
-    // arrive before this response does. Both paths must check, or the sender
-    // sees their own message twice.
-    if (!messages.value.some((m) => m.id === message.id)) messages.value.push(message);
+    draft.value = '';
+    replyingTo.value = null;
+    editing.value = null;
     await scrollToEnd();
   } catch (err) {
     if (err.status === 403) closed.value = true;
-    else error.value = err.message;
+    else error.value = 'Message not saved. Your draft is unchanged; please try again.';
+  } finally {
+    sending.value = false;
   }
 }
 
@@ -163,41 +174,53 @@ function cancelComposerState() {
 }
 
 async function remove(m) {
+  if (deletingMessageId.value !== null) return;
   openMenuId.value = null;
   // Destructive and not undoable, so it is confirmed rather than instant.
   if (!window.confirm('Delete this message? The other person will see that something was removed.')) return;
+  deletingMessageId.value = m.id;
   try {
     const { message } = await api.deleteKakiMessage(props.id, m.id);
     const index = messages.value.findIndex((x) => x.id === message.id);
     if (index !== -1) messages.value[index] = message;
   } catch (err) {
-    error.value = err.message;
+    error.value = 'Could not delete this message. Please try again.';
+  } finally {
+    deletingMessageId.value = null;
   }
 }
 
 async function chooseBackground(name) {
+  if (backgroundPending.value !== null) return;
+  backgroundPending.value = name;
   try {
     await api.setKakiBackground(props.id, name);
     conversation.value.background = name;
   } catch (err) {
-    error.value = err.message;
+    error.value = 'Could not change the conversation background. Please try again.';
+  } finally {
+    backgroundPending.value = null;
   }
 }
 
 async function blockOther() {
+  if (blocking.value) return;
   const name = conversation.value.other.displayName;
   if (!window.confirm(`Block ${name}? The conversation closes for both of you and they are not told.`)) return;
+  blocking.value = true;
   try {
     await api.blockUser(conversation.value.other.id);
-    router.push('/kaki/chat');
+    router.push('/messages');
   } catch (err) {
-    error.value = err.message;
+    error.value = 'Could not block this person. Please try again.';
+  } finally {
+    blocking.value = false;
   }
 }
 
 async function submitReport() {
   const details = reportDetails.value.trim();
-  if (!details) return;
+  if (!details || reportBusy.value) return;
   reportBusy.value = true;
   try {
     const result = await api.reportUser(conversation.value.other.id, {
@@ -210,9 +233,9 @@ async function submitReport() {
     notice.value = result.blocked
       ? 'Report sent, and this person is now blocked.'
       : 'Report sent. Our team will review it.';
-    if (result.blocked) setTimeout(() => router.push('/kaki/chat'), 1600);
+    if (result.blocked) setTimeout(() => router.push('/messages'), 1600);
   } catch (err) {
-    error.value = err.message;
+    error.value = 'Could not send your report. Please try again.';
   } finally {
     reportBusy.value = false;
   }
@@ -233,7 +256,7 @@ async function onVisibility() {
 
 /** Tell the server we have seen everything, so their ticks turn double. */
 async function acknowledgeRead() {
-  if (closed.value) return;
+  if (closed.value || !conversation.value) return;
   try {
     await api.markKakiRead(props.id);
     await refreshUnread();
@@ -318,14 +341,23 @@ onUnmounted(() => {
   document.removeEventListener('visibilitychange', onVisibility);
 });
 
-watch(() => props.id, () => load());
+watch(() => props.id, async () => {
+  cancelComposerState();
+  openMenuId.value = null;
+  showSettings.value = false;
+  showReport.value = false;
+  notice.value = '';
+  await load();
+  await scrollToEnd();
+  acknowledgeRead();
+});
 </script>
 
 <template>
   <div class="thread" :data-bg="conversation?.background ?? 'default'">
     <!-- ------------------------------------------------------------ header -->
     <header class="bar">
-      <RouterLink to="/kaki/chat" class="bar__back" aria-label="Back to conversations">←</RouterLink>
+      <RouterLink to="/messages" class="bar__back" aria-label="Back to messages">←</RouterLink>
 
       <div v-if="conversation" class="bar__who">
         <UserAvatar
@@ -334,17 +366,18 @@ watch(() => props.id, () => load());
           :size="36"
         />
         <div>
-          <p class="bar__name">{{ conversation.other.displayName }}</p>
+          <h1 class="bar__name">{{ conversation.other.displayName }}</h1>
           <p class="bar__sub">{{ conversation.concert.artist }}</p>
         </div>
       </div>
-      <div v-else class="bar__who"><span class="bar__name">Conversation</span></div>
-      <RouterLink v-if="conversation" :to="{path:'/meetups',query:{kakiConversationId:id}}">Plan meetup</RouterLink>
+      <div v-else class="bar__who"><h1 class="bar__name">Companion conversation</h1></div>
+      <RouterLink v-if="conversation && !closed" class="bar__meetup" :to="{path:'/meetups',query:{kakiConversationId:id}}">Plan meetup</RouterLink>
 
       <button
         class="bar__menu"
         type="button"
         aria-label="Conversation options"
+        :disabled="!conversation || closed"
         @click="showSettings = !showSettings"
       >⋯</button>
 
@@ -369,8 +402,12 @@ watch(() => props.id, () => load());
                 :class="{ 'swatch--on': conversation?.background === bg }"
                 :data-bg="bg"
                 :aria-pressed="conversation?.background === bg"
+                :disabled="backgroundPending !== null"
                 @click="chooseBackground(bg)"
-              >{{ bg }}</button>
+              >
+                <LoadingSpinner v-if="backgroundPending === bg" />
+                {{ bg }}
+              </button>
             </div>
           </section>
 
@@ -379,7 +416,8 @@ watch(() => props.id, () => load());
             <button class="danger" type="button" @click="showSettings = false; showReport = true">
               Report {{ conversation?.other.displayName }}
             </button>
-            <button class="danger" type="button" @click="blockOther">
+            <button class="danger" type="button" :disabled="blocking" @click="blockOther">
+              <LoadingSpinner v-if="blocking" />
               Block {{ conversation?.other.displayName }}
             </button>
           </section>
@@ -392,13 +430,19 @@ watch(() => props.id, () => load());
 
     <!-- ------------------------------------------------------------ states -->
     <p v-if="notice" class="notice notice--ok">{{ notice }}</p>
-    <p v-if="error" class="notice notice--error">{{ error }}</p>
+    <p v-if="error" class="notice notice--error" role="alert">{{ error }}</p>
 
-    <div v-if="loading" class="centered"><p>Loading…</p></div>
+    <div v-if="loading" class="centered"><p class="loading-state" role="status"><LoadingSpinner />Loading conversation…</p></div>
 
     <div v-else-if="closed" class="centered closed">
       <h2>This conversation is closed</h2>
-      <RouterLink to="/kaki/chat" class="btn btn--ghost">Back to messages</RouterLink>
+      <RouterLink to="/messages" class="btn btn--ghost">Back to messages</RouterLink>
+    </div>
+
+    <div v-else-if="!conversation" class="centered">
+      <h2>Conversation unavailable</h2>
+      <RouterLink v-if="signInRequired" :to="{ name: 'login', query: { redirect: $route.fullPath } }" class="btn btn--primary">Sign in</RouterLink>
+      <RouterLink to="/messages" class="btn btn--ghost">Back to messages</RouterLink>
     </div>
 
     <!-- ----------------------------------------------------------- bubbles -->
@@ -455,8 +499,12 @@ watch(() => props.id, () => load());
             class="row__more"
             type="button"
             :aria-label="`Options for this message`"
+            :disabled="deletingMessageId !== null"
             @click="openMenuId = openMenuId === row.id ? null : row.id"
-          >⋯</button>
+          >
+            <LoadingSpinner v-if="deletingMessageId === row.id" />
+            <span v-else>⋯</span>
+          </button>
 
           <div v-if="openMenuId === row.id" class="popover" role="menu">
             <button type="button" @click="startReply(row)">Reply</button>
@@ -464,7 +512,7 @@ watch(() => props.id, () => load());
                  enforces this too; hiding them is a courtesy, not the control. -->
             <template v-if="mine(row)">
               <button type="button" @click="startEdit(row)">Edit</button>
-              <button type="button" class="popover__danger" @click="remove(row)">Delete</button>
+              <button type="button" class="popover__danger" :disabled="deletingMessageId !== null" @click="remove(row)">Delete</button>
             </template>
           </div>
         </div>
@@ -472,7 +520,7 @@ watch(() => props.id, () => load());
     </div>
 
     <!-- ---------------------------------------------------------- composer -->
-    <form v-if="!closed && !loading" class="composer" @submit.prevent="send">
+    <form v-if="conversation && !closed && !loading" class="composer" @submit.prevent="send">
       <div v-if="replyingTo || editing" class="context">
         <div class="context__text">
           <span class="context__label">{{ editing ? 'Editing' : 'Replying to' }}</span>
@@ -487,12 +535,15 @@ watch(() => props.id, () => load());
           v-model="draft"
           class="composer__input"
           rows="1"
+          aria-label="Message"
+          :disabled="sending"
           maxlength="2000"
           :placeholder="editing ? 'Edit your message' : 'Message…'"
           @keydown.enter.exact.prevent="send"
         />
-        <button class="composer__send" type="submit" :disabled="!draft.trim()" aria-label="Send">
-          {{ editing ? '✓' : '↑' }}
+        <button class="composer__send" type="submit" :disabled="sending || !draft.trim()" :aria-label="sending ? 'Saving message' : 'Send'">
+          <LoadingSpinner v-if="sending" />
+          <span v-else>{{ editing ? '✓' : '↑' }}</span>
         </button>
       </div>
     </form>
@@ -534,7 +585,10 @@ watch(() => props.id, () => load());
             type="button"
             :disabled="!reportDetails.trim() || reportBusy"
             @click="submitReport"
-          >{{ reportBusy ? 'Sending…' : 'Send report' }}</button>
+          >
+            <LoadingSpinner v-if="reportBusy" />
+            {{ reportBusy ? 'Sending…' : 'Send report' }}
+          </button>
         </div>
       </div>
     </div>
@@ -544,10 +598,11 @@ watch(() => props.id, () => load());
 
 <style scoped>
 .thread {
-  display: grid;
-  grid-template-rows: auto 1fr auto;
+  display: flex;
+  flex-direction: column;
   height: calc(100dvh - var(--header-height));
   position: relative;
+  min-width: 0;
 }
 
 /* Backgrounds are a data attribute rather than inline style, so the set is
@@ -562,6 +617,9 @@ watch(() => props.id, () => load());
 .thread[data-bg='paper'] .bubble:not(.bubble--mine) { background: #fff; color: #1a1a1a; }
 .thread[data-bg='paper'] .day,
 .thread[data-bg='paper'] .empty { color: #5b5346; }
+.thread:is([data-bg='dusk'], [data-bg='neon'], [data-bg='forest'], [data-bg='mono']) .empty { color: #e3ddeb; }
+.thread:is([data-bg='dusk'], [data-bg='neon'], [data-bg='forest'], [data-bg='mono']) .day { background: #28222f; color: #e3ddeb; }
+.thread:is([data-bg='dusk'], [data-bg='neon'], [data-bg='forest'], [data-bg='mono']) .row__more { color: #e3ddeb; }
 
 /* ------------------------------------------------------------------- bar */
 
@@ -569,6 +627,8 @@ watch(() => props.id, () => load());
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  flex-shrink: 0;
+  flex-wrap: wrap;
   padding: var(--space-3) var(--gutter);
   border-bottom: var(--border-hairline);
   background: var(--glass-tint);
@@ -586,6 +646,8 @@ watch(() => props.id, () => load());
 }
 
 .bar__who { display: flex; align-items: center; gap: var(--space-3); flex: 1; min-width: 0; }
+.bar__who > div { min-width: 0; overflow-wrap: anywhere; }
+.bar__meetup { flex-shrink: 0; font-size: var(--step--1); }
 
 .avatar {
   display: grid;
@@ -615,6 +677,9 @@ watch(() => props.id, () => load());
 /* --------------------------------------------------------------- bubbles */
 
 .scroll {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
   overflow-y: auto;
   padding: var(--space-5) var(--gutter) var(--space-4);
   display: flex;
@@ -647,11 +712,14 @@ watch(() => props.id, () => load());
   gap: var(--space-2);
   position: relative;
   max-width: 78%;
+  min-width: 0;
 }
 
 .row--mine { align-self: flex-end; flex-direction: row-reverse; }
 
 .bubble {
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-lg);
   background: var(--ink-750);
@@ -782,7 +850,7 @@ watch(() => props.id, () => load());
 }
 
 .context__text { flex: 1; min-width: 0; display: grid; }
-.context__label { font-size: var(--step--2); color: var(--accent-300); }
+.context__label { font-size: var(--step--2); color: var(--accent-400); }
 .context__body {
   font-size: var(--step--1);
   color: var(--text-300);
@@ -796,6 +864,7 @@ watch(() => props.id, () => load());
 
 .composer__input {
   flex: 1;
+  min-width: 0;
   resize: none;
   max-height: 8rem;
   padding: var(--space-3) var(--space-4);
@@ -810,6 +879,7 @@ watch(() => props.id, () => load());
 
 .composer__send {
   display: grid;
+  flex-shrink: 0;
   place-items: center;
   width: 2.75rem;
   height: 2.75rem;
@@ -842,6 +912,7 @@ watch(() => props.id, () => load());
 
 .sheet__panel {
   width: min(28rem, 100%);
+  overflow-wrap: anywhere;
   max-height: 85vh;
   overflow-y: auto;
   padding: var(--space-6);
@@ -904,11 +975,13 @@ watch(() => props.id, () => load());
   cursor: pointer;
 }
 
-.sheet__actions { display: flex; gap: var(--space-3); justify-content: flex-end; margin-top: var(--space-4); }
+.sheet__actions { display: flex; flex-wrap: wrap; gap: var(--space-3); justify-content: flex-end; margin-top: var(--space-4); }
 
 .field { display: grid; gap: var(--space-2); margin-top: var(--space-4); }
 .field__label { font-size: var(--step--1); color: var(--text-300); }
 .field__input {
+  min-width: 0;
+  width: 100%;
   padding: var(--space-3);
   border-radius: var(--radius-md);
   border: var(--border-soft);
@@ -917,7 +990,7 @@ watch(() => props.id, () => load());
   font: inherit;
 }
 
-.centered { display: grid; place-content: center; gap: var(--space-3); text-align: center; padding: var(--space-8); }
+.centered { display: grid; flex: 1; place-content: center; gap: var(--space-3); text-align: center; padding: var(--space-6); }
 
 .notice--ok {
   margin: var(--space-3) var(--gutter) 0;
@@ -929,5 +1002,8 @@ watch(() => props.id, () => load());
 
 @media (max-width: 560px) {
   .row { max-width: 88%; }
+  .bar__who { flex-basis: calc(100% - 7rem); }
+  .bar__meetup { order: 1; margin-left: 2rem; }
+  .row__more { opacity: 1; }
 }
 </style>

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api.js';
 import { setCurrentUser } from '../auth.js';
 import AvatarPicker from '../components/AvatarPicker.vue';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -13,7 +14,7 @@ const redirect = computed(() => {
   const target = route.query.redirect;
   return typeof target === 'string' && target.startsWith('/') && !target.startsWith('//')
     ? target
-    : '/marketplace';
+    : '/concerts';
 });
 const mode = ref('login');
 const email = ref('');
@@ -89,7 +90,7 @@ async function submit() {
 <template>
   <div class="auth container">
     <div class="auth_intro">
-      <h1>{{ isRegistering ? "Let's Get Started" : 'Welcome back.' }}</h1>
+      <h1>{{ isRegistering ? 'Create your account' : 'Welcome back' }}</h1>
     </div>
 
     <section class="auth_card card" aria-labelledby="auth-title">
@@ -125,12 +126,13 @@ async function submit() {
         </label>
         <label for="password">
           Password
-          <input id="password" v-model="password" required type="password" :minlength="isRegistering ? 8 : 1" autocomplete="current-password" placeholder="At least 8 characters" />
+          <input id="password" v-model="password" required type="password" :minlength="isRegistering ? 8 : 1" :autocomplete="isRegistering ? 'new-password' : 'current-password'" :placeholder="isRegistering ? 'At least 8 characters' : 'Your password'" />
         </label>
 
         <p v-if="error" class="form-message form-message--error" role="alert">{{ error }}</p>
         <p v-if="success" class="form-message form-message--success" role="status">{{ success }}</p>
         <button class="btn btn--primary auth_submit" :disabled="loading">
+          <LoadingSpinner v-if="loading" />
           {{ loading ? 'Working…' : isRegistering ? 'Create account' : 'Sign in' }}
         </button>
       </form>
@@ -195,6 +197,7 @@ async function submit() {
 }
 
 .auth_form input {
+  min-width: 0;
   width: 100%;
   padding: var(--space-3) var(--space-4);
   border: var(--border-soft);
@@ -206,7 +209,7 @@ async function submit() {
 .auth_form input::placeholder { color: var(--text-400); }
 .auth_form input:focus { border-color: var(--accent-400); outline: none; }
 .auth_submit { width: 100%; margin-top: var(--space-2); }
-.form-message { font-size: var(--step--1); }
+.form-message { font-size: var(--step--1); overflow-wrap: anywhere; }
 .form-message--error { color: var(--rose-400); }
 .form-message--success { color: var(--mint-400); }
 

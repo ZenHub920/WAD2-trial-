@@ -15,6 +15,8 @@ defineProps({
 
 <style scoped>
 .mnotice {
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: var(--space-5);
   border-radius: var(--radius-lg);
   border: 1px dashed var(--ink-500);

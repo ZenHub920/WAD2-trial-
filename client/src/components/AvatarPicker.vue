@@ -15,6 +15,7 @@
 
 import { ref } from 'vue';
 import UserAvatar from './UserAvatar.vue';
+import LoadingSpinner from './LoadingSpinner.vue';
 
 const props = defineProps({
   src: { type: String, default: null },
@@ -27,6 +28,7 @@ const emit = defineEmits(['select', 'remove']);
 
 const input = ref(null);
 const error = ref('');
+const reading = ref(false);
 
 /** Matches the server's limit, so the failure is explained before upload. */
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -53,8 +55,10 @@ function onFile(event) {
   }
 
   const reader = new FileReader();
+  reading.value = true;
   reader.onload = () => emit('select', reader.result);
   reader.onerror = () => { error.value = 'Could not read that file.'; };
+  reader.onloadend = () => { reading.value = false; };
   reader.readAsDataURL(file);
 }
 </script>
@@ -64,21 +68,22 @@ function onFile(event) {
     <UserAvatar :src="src" :name="name" :size="size" />
 
     <div class="picker__actions">
-      <button class="btn btn--ghost" type="button" :disabled="busy" @click="choose">
+      <button class="btn btn--ghost" type="button" :disabled="busy || reading" @click="choose">
         {{ src ? 'Change picture' : 'Add a picture' }}
+        <LoadingSpinner v-if="busy || reading" />
       </button>
       <button
         v-if="src"
         class="picker__remove"
         type="button"
-        :disabled="busy"
+        :disabled="busy || reading"
         @click="emit('remove')"
       >Remove</button>
 
       <p class="picker__hint">
         Optional. PNG, JPEG, GIF or WebP, up to 2MB.
       </p>
-      <p v-if="error" class="picker__error">{{ error }}</p>
+      <p v-if="error" class="picker__error" role="alert">{{ error }}</p>
     </div>
 
     <input
@@ -86,6 +91,7 @@ function onFile(event) {
       class="sr-only"
       type="file"
       accept="image/png,image/jpeg,image/gif,image/webp"
+      :disabled="busy || reading"
       @change="onFile"
     />
   </div>
@@ -98,7 +104,7 @@ function onFile(event) {
   gap: var(--space-5);
 }
 
-.picker__actions { display: grid; gap: var(--space-2); justify-items: start; }
+.picker__actions { display: grid; min-width: 0; gap: var(--space-2); justify-items: start; overflow-wrap: anywhere; }
 
 .picker__remove {
   border: 0;

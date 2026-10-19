@@ -1,36 +1,34 @@
 <script setup>
-/**
- * Kaki conversations — the inbox.
- *
- * Two sections, as dating apps do it: the people you have matched with but
- * not yet messaged sit in a row at the top, and live threads sit below. The
- * split matters because an unstarted match is a prompt to act, while a thread
- * is something to return to, and mixing them buries the former.
- */
-
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api.js';
 import { onChatEvent, refreshUnread } from '../chatLive.js';
+import { formatMoney, formatRelative } from '../market.js';
 import UserAvatar from '../components/UserAvatar.vue';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 
 const router = useRouter();
-
 const conversations = ref([]);
+const ticketConversations = ref([]);
 const matches = ref([]);
 const blocked = ref([]);
 const loading = ref(true);
+const ticketLoading = ref(true);
 const error = ref(null);
+const ticketError = ref(null);
+const actionError = ref('');
 const showBlocked = ref(false);
+const blockedLoading = ref(false);
+const openingMatch = ref(null);
+const unblockingId = ref(null);
 
-/** Matches with no thread yet — the ones worth prompting about. */
 const unstarted = computed(() => {
   const talking = new Set(conversations.value.map((c) => `${c.concert.id}:${c.other.id}`));
   return matches.value.filter((m) => !talking.has(`${m.concertId}:${m.user.id}`));
 });
 
-async function load() {
-  loading.value = true;
+async function load({ quiet = false } = {}) {
+  if (!quiet) loading.value = true;
   try {
     const [threads, matched] = await Promise.all([
       api.kakiConversations(),
@@ -40,37 +38,62 @@ async function load() {
     matches.value = matched.matches;
     error.value = null;
   } catch (err) {
-    error.value = err.message;
+    error.value = err;
   } finally {
     loading.value = false;
   }
 }
 
+async function loadTickets() {
+  ticketLoading.value = true;
+  try {
+    ticketConversations.value = (await api.conversations()).conversations;
+    ticketError.value = null;
+  } catch (err) {
+    ticketError.value = err;
+  } finally {
+    ticketLoading.value = false;
+  }
+}
+
 async function loadBlocked() {
+  blockedLoading.value = true;
   try {
     blocked.value = (await api.blockedUsers()).blocked;
   } catch (err) {
-    error.value = err.message;
+    if (err.status !== 401) actionError.value = 'Could not load blocked people.';
+  } finally {
+    blockedLoading.value = false;
   }
 }
 
 async function openWith(match) {
+  if (openingMatch.value !== null) return;
+  openingMatch.value = `${match.concertId}:${match.user.id}`;
+  actionError.value = '';
   try {
     const { conversation } = await api.openKakiConversation(match.concertId, match.user.id);
     router.push(`/kaki/chat/${conversation.id}`);
   } catch (err) {
-    error.value = err.status === 403
+    actionError.value = err.status === 403
       ? 'You can no longer message this person.'
-      : err.message;
+      : 'Could not open this conversation. Please try again.';
+  } finally {
+    openingMatch.value = null;
   }
 }
 
 async function unblock(entry) {
+  if (unblockingId.value !== null) return;
+  unblockingId.value = entry.id;
+  actionError.value = '';
   try {
     await api.unblockUser(entry.id);
-    await Promise.all([loadBlocked(), load()]);
+    await Promise.all([loadBlocked(), load({ quiet: true })]);
   } catch (err) {
-    error.value = err.message;
+    actionError.value = 'Could not unblock this person. Please try again.';
+  } finally {
+    unblockingId.value = null;
   }
 }
 
@@ -83,238 +106,162 @@ function preview(c) {
 function when(iso) {
   if (!iso) return '';
   const d = new Date(iso);
-  const today = new Date();
-  if (d.toDateString() === today.toDateString()) {
+  if (d.toDateString() === new Date().toDateString()) {
     return d.toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' });
   }
   return d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short' });
 }
 
 let stopListening = null;
-
 onMounted(() => {
-  // A new message, an edit or a read receipt can all change what this list
-  // shows (preview text, ordering, unread count), and none of them are worth
-  // reasoning about individually — reload the list, which is one small query.
   stopListening = onChatEvent(() => {
-    load();
+    load({ quiet: true });
     refreshUnread();
   });
   load();
+  loadTickets();
   loadBlocked();
 });
-
 onUnmounted(() => stopListening?.());
 </script>
 
 <template>
-  <div class="container section">
+  <div class="container section inbox">
     <header class="head">
       <h1>Messages</h1>
-      <button
-        v-if="blocked.length"
-        class="head__blocked"
-        type="button"
-        @click="showBlocked = !showBlocked"
-      >
-        Blocked ({{ blocked.length }})
-      </button>
+      <p>Keep companion conversations and ticket enquiries in one place.</p>
     </header>
 
-    <p v-if="error" class="notice notice--error">{{ error }}</p>
+    <p v-if="actionError" class="notice notice--error" role="alert">{{ actionError }}</p>
 
-    <div v-if="showBlocked" class="blocked">
-      <h2 class="blocked__title">Blocked people</h2>
-      <p class="blocked__hint">
-        Blocking hides your chats and stops messages. Unblocking restores your chat history.
-      </p>
-      <ul class="blocked__list">
-        <li v-for="entry in blocked" :key="entry.id">
-          <span>{{ entry.displayName }}</span>
-          <button type="button" class="btn btn--ghost" @click="unblock(entry)">Unblock</button>
-        </li>
-      </ul>
-    </div>
+    <section class="inbox__section" aria-labelledby="companion-messages">
+      <div class="section-head">
+        <h2 id="companion-messages">Companion messages</h2>
+        <button v-if="blocked.length" class="btn btn--ghost" type="button" :aria-expanded="showBlocked" @click="showBlocked = !showBlocked">
+          Blocked people ({{ blocked.length }})
+        </button>
+      </div>
+      <p class="hint">Conversations start after you both like each other.</p>
 
-    <div v-if="loading" class="skeleton" />
-
-    <template v-else>
-      <!-- Matches with no thread yet -->
-      <section v-if="unstarted.length" class="fresh">
-        <h2 class="fresh__title">New matches</h2>
-        <ul class="fresh__row">
-          <li v-for="match in unstarted" :key="`${match.concertId}-${match.user.id}`">
-            <button type="button" class="fresh__item" @click="openWith(match)">
-              <UserAvatar
-                :src="match.user.avatarUrl"
-                :name="match.user.displayName"
-                :size="56"
-                ring
-              />
-              <span class="fresh__name">{{ match.user.displayName }}</span>
+      <div v-if="showBlocked" class="blocked">
+        <h3>Blocked people</h3>
+        <p class="hint">Blocking hides companion conversations and stops messages. Unblocking restores your chat history.</p>
+        <p v-if="blockedLoading" class="loading-state" role="status"><LoadingSpinner />Loading blocked people…</p>
+        <ul class="blocked__list">
+          <li v-for="entry in blocked" :key="entry.id">
+            <span>{{ entry.displayName }}</span>
+            <button type="button" class="btn btn--ghost" :disabled="unblockingId !== null" @click="unblock(entry)">
+              <LoadingSpinner v-if="unblockingId === entry.id" />
+              Unblock
             </button>
           </li>
         </ul>
-      </section>
+      </div>
 
-      <!-- Live threads -->
-      <ul v-if="conversations.length" class="threads">
-        <li v-for="c in conversations" :key="c.id">
-          <RouterLink :to="`/kaki/chat/${c.id}`" class="thread">
-            <UserAvatar :src="c.other.avatarUrl" :name="c.other.displayName" :size="48" />
+      <p v-if="loading" class="empty loading-state" role="status"><LoadingSpinner />Loading companion messages…</p>
+      <div v-else-if="error" class="notice notice--error" role="alert">
+        <p>{{ error.status === 401 ? 'Sign in to see your companion messages.' : 'Could not load companion messages.' }}</p>
+        <RouterLink v-if="error.status === 401" :to="{ name: 'login', query: { redirect: '/messages' } }">Sign in</RouterLink>
+        <button v-else class="btn btn--ghost" type="button" @click="load()">Retry</button>
+      </div>
+      <template v-else>
+        <div v-if="unstarted.length" class="fresh">
+          <h3>Mutual matches · ready to message</h3>
+          <ul class="fresh__row">
+            <li v-for="match in unstarted" :key="`${match.concertId}-${match.user.id}`">
+              <button type="button" class="fresh__item" :disabled="openingMatch !== null" @click="openWith(match)">
+                <UserAvatar :src="match.user.avatarUrl" :name="match.user.displayName" :size="48" ring />
+                <span class="fresh__text">
+                  <strong>{{ match.user.displayName }}</strong>
+                  <span>Start a conversation</span>
+                  <LoadingSpinner v-if="openingMatch === `${match.concertId}:${match.user.id}`" />
+                </span>
+              </button>
+            </li>
+          </ul>
+        </div>
+
+        <ul v-if="conversations.length" class="threads">
+          <li v-for="c in conversations" :key="c.id">
+            <RouterLink :to="`/kaki/chat/${c.id}`" class="thread">
+              <UserAvatar :src="c.other.avatarUrl" :name="c.other.displayName" :size="44" />
+              <span class="thread__text">
+                <span class="thread__top">
+                  <strong class="thread__name">{{ c.other.displayName }}</strong>
+                  <span class="thread__time">{{ when(c.lastMessage?.createdAt ?? c.createdAt) }}</span>
+                </span>
+                <span class="thread__preview" :class="{ 'thread__preview--muted': !c.lastMessage || c.lastMessage.deleted }">{{ preview(c) }}</span>
+                <span class="thread__context">{{ c.concert.artist }}</span>
+              </span>
+              <span v-if="c.unread > 0" class="thread__unread" :aria-label="`${c.unread} unread messages`">{{ c.unread > 9 ? '9+' : c.unread }}</span>
+            </RouterLink>
+          </li>
+        </ul>
+        <p v-else-if="!unstarted.length" class="empty">
+          No companion conversations yet. <RouterLink to="/kaki">Find a companion</RouterLink> to get started.
+        </p>
+      </template>
+    </section>
+
+    <section class="inbox__section" aria-labelledby="ticket-messages">
+      <h2 id="ticket-messages">Ticket messages</h2>
+      <p class="hint">Your enquiries as a ticket buyer or seller.</p>
+      <p v-if="ticketLoading" class="empty loading-state" role="status"><LoadingSpinner />Loading ticket messages…</p>
+      <div v-else-if="ticketError" class="notice notice--error" role="alert">
+        <p>{{ ticketError.status === 401 ? 'Sign in to see your ticket messages.' : 'Could not load ticket messages.' }}</p>
+        <RouterLink v-if="ticketError.status === 401" :to="{ name: 'login', query: { redirect: '/messages' } }">Sign in</RouterLink>
+        <button v-else class="btn btn--ghost" type="button" @click="loadTickets">Retry</button>
+      </div>
+      <ul v-else-if="ticketConversations.length" class="threads">
+        <li v-for="c in ticketConversations" :key="c.id">
+          <RouterLink :to="{ name: 'chat-thread', params: { id: c.id } }" class="thread">
+            <UserAvatar :src="c.other.avatarUrl" :name="c.other.displayName" :size="44" />
             <span class="thread__text">
               <span class="thread__top">
-                <span class="thread__name">{{ c.other.displayName }}</span>
-                <span class="thread__time">{{ when(c.lastMessage?.createdAt ?? c.createdAt) }}</span>
+                <strong class="thread__name">{{ c.other.displayName }}</strong>
+                <time v-if="c.lastMessage" class="thread__time" :datetime="c.lastMessage.createdAt">{{ formatRelative(c.lastMessage.createdAt) }}</time>
               </span>
-              <span class="thread__preview" :class="{ 'thread__preview--muted': !c.lastMessage || c.lastMessage.deleted }">
-                {{ preview(c) }}
-              </span>
-              <span class="thread__concert">{{ c.concert.artist }}</span>
-            </span>
-            <span
-              v-if="c.unread > 0"
-              class="thread__unread"
-              :aria-label="`${c.unread} unread`"
-            >{{ c.unread > 9 ? '9+' : c.unread }}</span>
-            <span v-else class="thread__spacer" aria-hidden="true">
+              <span class="thread__preview">{{ c.lastMessage?.body ?? 'No messages yet' }}</span>
+              <span class="thread__context">{{ c.role === 'buyer' ? 'Ticket enquiry' : 'Your listing' }}: {{ c.listing.title }} · {{ formatMoney(c.listing.priceCents) }} listing total</span>
             </span>
           </RouterLink>
         </li>
       </ul>
-
-      <p v-else-if="!unstarted.length" class="empty">
-        No conversations yet. Find your next concert companion in
-        <RouterLink to="/kaki">Kaki Finder</RouterLink>.
-      </p>
-    </template>
+      <p v-else class="empty">No ticket conversations yet. Message a seller from a listing in <RouterLink to="/concerts">Concerts</RouterLink>.</p>
+    </section>
   </div>
 </template>
 
 <style scoped>
-.head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
-.head h1 { margin: 0; }
-
-.head__blocked {
-  border: var(--border-hairline);
-  border-radius: var(--radius-pill);
-  background: var(--ink-800);
-  color: var(--text-300);
-  padding: var(--space-2) var(--space-4);
-  font: inherit;
-  font-size: var(--step--1);
-  cursor: pointer;
-}
-
-.blocked {
-  margin-top: var(--space-5);
-  padding: var(--space-5);
-  border-radius: var(--radius-lg);
-  border: var(--border-hairline);
-  background: var(--ink-850);
-}
-
-.blocked__title { margin: 0 0 var(--space-2); font-size: var(--step-1); }
-.blocked__hint { margin: 0 0 var(--space-4); font-size: var(--step--1); color: var(--text-400); max-width: 52ch; }
-.blocked__list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
-.blocked__list li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
-
-/* ------------------------------------------------------------ new matches */
-
-.fresh { margin-top: var(--space-6); }
-.fresh__title { margin: 0 0 var(--space-3); font-size: var(--step-0); color: var(--text-300); }
-
-.fresh__row {
-  display: flex;
-  gap: var(--space-4);
-  list-style: none;
-  margin: 0;
-  padding: 0 0 var(--space-2);
-  overflow-x: auto;
-}
-
-.fresh__item {
-  display: grid;
-  justify-items: center;
-  gap: var(--space-2);
-  border: 0;
-  background: none;
-  cursor: pointer;
-  padding: 0;
-  width: 4.5rem;
-}
-
-.fresh__name {
-  font-size: var(--step--2);
-  color: var(--text-300);
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* ---------------------------------------------------------------- threads */
-
-.threads { list-style: none; margin: var(--space-6) 0 0; padding: 0; }
-
-.thread {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-4) var(--space-2);
-  border-bottom: var(--border-hairline);
-  text-decoration: none;
-  color: inherit;
-  transition: background var(--dur-fast) var(--ease-glide);
-}
-
+.inbox { max-width: 800px; }
+.head h1 { margin: 0 0 var(--space-2); }
+.head p, .hint { color: var(--text-300); }
+.inbox__section { margin-top: var(--space-7); min-width: 0; }
+.inbox__section h2 { margin: 0; font-size: var(--step-1); }
+.section-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); }
+.hint { margin: var(--space-2) 0 var(--space-4); font-size: var(--step--1); }
+.blocked { margin-block: var(--space-4); padding: var(--space-4); border: var(--border-hairline); border-radius: var(--radius-md); background: var(--ink-850); }
+.blocked h3, .fresh h3 { margin: 0 0 var(--space-3); font-size: var(--step-0); }
+.blocked__list, .fresh__row, .threads { list-style: none; margin: 0; padding: 0; }
+.blocked__list { display: grid; gap: var(--space-3); }
+.blocked__list li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.blocked__list li span { min-width: 0; overflow-wrap: anywhere; }
+.blocked__list button { flex-shrink: 0; }
+.fresh { margin-block: var(--space-5); }
+.fresh__row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: var(--space-3); }
+.fresh__item { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3); width: 100%; min-width: 0; border: var(--border-hairline); border-radius: var(--radius-md); background: var(--ink-850); color: var(--text-100); text-align: left; cursor: pointer; }
+.fresh__text { display: grid; gap: var(--space-1); min-width: 0; overflow-wrap: anywhere; }
+.fresh__text span { color: var(--text-300); font-size: var(--step--2); }
+.threads { display: grid; }
+.thread { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4) var(--space-2); border-bottom: var(--border-hairline); color: inherit; text-decoration: none; }
 .thread:hover { background: var(--ink-850); }
-
-.thread__text { display: grid; gap: 2px; flex: 1; min-width: 0; }
-.thread__top { display: flex; justify-content: space-between; gap: var(--space-3); }
-.thread__name { font-weight: 600; }
-.thread__time { font-size: var(--step--2); color: var(--text-400); flex-shrink: 0; }
-
-.thread__preview {
-  font-size: var(--step--1);
-  color: var(--text-300);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
+.thread__text { display: grid; gap: var(--space-1); flex: 1; min-width: 0; }
+.thread__top { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: var(--space-1) var(--space-3); }
+.thread__name { min-width: 0; overflow-wrap: anywhere; }
+.thread__time { font-size: var(--step--2); color: var(--text-400); }
+.thread__preview { font-size: var(--step--1); color: var(--text-300); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread__preview--muted { color: var(--text-400); font-style: italic; }
-.thread__concert { font-size: var(--step--2); color: var(--text-400); }
-
-.empty { margin-top: var(--space-7); color: var(--text-300); }
-
-.skeleton {
-  margin-top: var(--space-6);
-  height: 18rem;
-  border-radius: var(--radius-lg);
-  background: var(--ink-850);
-}
-</style>
-
-<style scoped>
-/* Unread badge on a thread row. Mirrors the navbar dot so the two read as the
-   same signal at different scales. */
-.thread__unread {
-  display: grid;
-  place-items: center;
-  min-width: 1.35rem;
-  height: 1.35rem;
-  padding: 0 0.35em;
-  border-radius: var(--radius-pill);
-  background: var(--accent-500);
-  color: #fff;
-  font-size: 0.72rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
-}
-
-/* Keeps the row's right edge stable whether or not a badge is present, so
-   rows do not shift sideways as threads are read. */
-.thread__spacer { width: 1.35rem; flex-shrink: 0; }
+.thread__context { font-size: var(--step--2); color: var(--text-300); overflow-wrap: anywhere; }
+.thread__unread { display: grid; place-items: center; min-width: 1.5rem; height: 1.5rem; padding-inline: .35em; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--accent-600); color: #fff; font-size: var(--step--2); font-weight: 700; }
+.empty { margin-block: var(--space-5); color: var(--text-300); }
 </style>

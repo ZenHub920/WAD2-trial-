@@ -2,8 +2,10 @@
 /** Profile History — server-backed skipped profiles, likes and mutual matches. */
 import { ref, computed, onMounted } from 'vue';
 import { RouterLink } from 'vue-router';
-import { avatarFor, clearDecision, loadPool, readDecisions, relativeTime } from '../kaki.js';
+import { clearDecision, loadPool, readDecisions, relativeTime } from '../kaki.js';
 import { formatShortDate } from '../api.js';
+import UserAvatar from '../components/UserAvatar.vue';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 
 const loading = ref(true);
 const error = ref(null);
@@ -83,21 +85,22 @@ async function undo() {
 <template>
   <div class="hist">
     <header class="hist__head">
-      <RouterLink to="/kaki" class="hist__back" aria-label="Back to Kaki Finder">←</RouterLink>
-      <h1 class="hist__title">Profile History</h1>
+      <RouterLink to="/kaki" class="hist__back" aria-label="Back to Find a companion">←</RouterLink>
+      <h1 class="hist__title">Companion history</h1>
       <span />
     </header>
+    <p class="hist__intro">Your saved likes and skips for currently eligible profiles. Only mutual likes are matches.</p>
 
     <label class="hist__search">
       <span class="sr-only">Search by name or concert</span>
       <input v-model="query" type="search" placeholder="Search by name or concert" />
     </label>
 
-    <p v-if="loading" class="hist__state">Loading…</p>
+    <p v-if="loading" class="hist__state loading-state"><LoadingSpinner />Loading…</p>
 
     <div v-else-if="error" class="notice notice--error">
       <h3>{{ error.status === 401 ? 'Sign in to view your history' : 'Could not load history' }}</h3>
-      <p v-if="error.status !== 401" class="mono">{{ error.message }}</p>
+      <p v-if="error.status !== 401">Your liked and skipped profiles could not be loaded. Please refresh and try again.</p>
       <RouterLink v-if="error.status === 401" to="/login" class="btn btn--primary">Sign in</RouterLink>
     </div>
     <template v-else>
@@ -109,14 +112,7 @@ async function undo() {
         <h2 class="hist__h2">Skipped</h2>
         <ul class="hist__list">
           <li v-for="row in skipped" :key="row.person.id" class="hist__row">
-            <span
-              class="hist__avatar"
-              :style="{
-                background: avatarFor(row.person.user).bg,
-                color: avatarFor(row.person.user).fg,
-              }"
-              aria-hidden="true"
-            >{{ avatarFor(row.person.user).initials }}</span>
+            <UserAvatar :src="row.person.user.avatarUrl" :name="row.person.user.displayName" :size="46" />
 
             <span class="hist__who">
               <strong>{{ row.person.user.displayName }}</strong>
@@ -126,7 +122,7 @@ async function undo() {
               <span class="hist__time">{{ relativeTime(row.at) }}</span>
             </span>
 
-            <button class="hist__undo" @click="confirm(row)">↺ Undo Skip</button>
+            <button class="hist__undo" @click="confirm(row)">↺ Undo skip</button>
           </li>
         </ul>
       </section>
@@ -135,14 +131,7 @@ async function undo() {
         <h2 class="hist__h2">Likes and matches</h2>
         <ul class="hist__list">
           <li v-for="row in liked" :key="row.person.id" class="hist__row">
-            <span
-              class="hist__avatar"
-              :style="{
-                background: avatarFor(row.person.user).bg,
-                color: avatarFor(row.person.user).fg,
-              }"
-              aria-hidden="true"
-            >{{ avatarFor(row.person.user).initials }}</span>
+            <UserAvatar :src="row.person.user.avatarUrl" :name="row.person.user.displayName" :size="46" />
 
             <span class="hist__who">
               <strong>{{ row.person.user.displayName }}</strong>
@@ -151,7 +140,7 @@ async function undo() {
               </span>
               <span class="hist__time">{{ relativeTime(row.at) }}</span>
               <span class="hist__time">
-                {{ row.mutual ? 'Matched' : 'Waiting for their like' }}
+                {{ row.mutual ? 'Mutual match' : 'Like sent · waiting for their like' }}
               </span>
             </span>
 
@@ -180,6 +169,7 @@ async function undo() {
         <div class="sheet__buttons">
           <button class="btn btn--ghost" :disabled="undoing" @click="confirming = null">Cancel</button>
           <button class="btn btn--primary" :disabled="undoing" @click="undo">
+            <LoadingSpinner v-if="undoing" />
             {{ undoing ? 'Saving…' : 'Confirm' }}
           </button>
         </div>
@@ -209,6 +199,7 @@ async function undo() {
   font-size: var(--step-2);
   font-weight: 800;
   color: var(--text-100);
+  overflow-wrap: anywhere;
 }
 
 .hist__back {
@@ -251,8 +242,7 @@ async function undo() {
   margin: 0 0 var(--space-3);
   font-size: var(--step--1);
   font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  line-height: 1.4;
   color: var(--text-300);
 }
 
@@ -267,7 +257,7 @@ async function undo() {
 
 .hist__row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-3);
@@ -276,20 +266,12 @@ async function undo() {
   border-radius: var(--radius-md);
 }
 
-.hist__avatar {
-  display: grid;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
-  font-weight: 800;
-  font-size: var(--step--1);
-}
 
 .hist__who {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .hist__who strong {
@@ -329,7 +311,7 @@ async function undo() {
 .sheet {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: 200;
   display: grid;
   place-items: center;
   padding: var(--space-5);
@@ -338,6 +320,9 @@ async function undo() {
 
 .sheet__card {
   width: min(100%, 340px);
+  max-height: 85dvh;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
   padding: var(--space-5);
   background: var(--ink-800);
   border-radius: var(--radius-lg);
@@ -380,5 +365,11 @@ async function undo() {
 .btn--ghost {
   background: var(--ink-700);
   color: var(--text-100);
+}
+
+.hist__intro { color: var(--text-300); font-size: var(--step--1); margin-block: var(--space-3) var(--space-5); }
+@media (max-width: 440px) {
+  .hist__row { grid-template-columns: auto minmax(0, 1fr); }
+  .hist__undo { grid-column: 2; justify-self: start; }
 }
 </style>

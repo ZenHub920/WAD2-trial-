@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue';
 import { api, LABELS } from '../api.js';
 import { currentUser, refreshSession, setCurrentUser } from '../auth.js';
 import AvatarPicker from '../components/AvatarPicker.vue';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 
 const avatarBusy = ref(false);
 const avatarError = ref('');
@@ -121,12 +122,11 @@ async function save() {
 <template>
   <div class="profile container section">
     <header class="profile__head">
-      <p class="eyebrow">Your account</p>
       <h1>Edit profile</h1>
-      <p>Set the details and concert vibe people see in Kaki Finder.</p>
+      <p>Set the details and concert vibe people see when they find a companion.</p>
     </header>
 
-    <p v-if="loading" role="status">Loading your profile…</p>
+    <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading your profile…</p>
     <div v-else-if="loadError" class="profile__notice" role="alert">
       <p>{{ loadError.status === 401 ? 'Sign in to see your profile.' : 'Could not load your profile. Please try again.' }}</p>
       <RouterLink v-if="loadError.status === 401" to="/login" class="btn btn--primary">Sign in</RouterLink>
@@ -191,7 +191,7 @@ async function save() {
         </fieldset>
       </section>
       <p class="profile__hint">
-        {{ profile.verified ? 'Verified account' : 'Not verified' }}, Reliability {{ Math.round(profile.reliability * 100) }}%
+        {{ profile.verified ? 'Profile verified' : 'Profile not verified' }} · Reliability {{ Math.round(profile.reliability * 100) }}%
       </p>
 
       <section class="profile__card" aria-labelledby="profile-vibe">
@@ -209,12 +209,15 @@ async function save() {
       <p v-if="saveError" class="profile__error" role="alert">{{ saveError }} <RouterLink v-if="sessionExpired" to="/login">Sign in</RouterLink></p>
       <p v-if="saved" class="profile__success" role="status">Profile saved.</p>
       <div class="profile__actions">
-        <RouterLink to="/kaki" class="btn btn--ghost">Explore Kaki Finder</RouterLink>
+        <RouterLink to="/kaki" class="btn btn--ghost">Find a companion</RouterLink>
         <RouterLink to="/groups" class="btn btn--ghost">Group preferences</RouterLink>
         <RouterLink to="/groups/connect" class="btn btn--ghost">Invitations &amp; connections</RouterLink>
         <RouterLink to="/meetups" class="btn btn--ghost">Meetup planning</RouterLink>
         <RouterLink to="/feedback" class="btn btn--ghost">Post-concert feedback</RouterLink>
-        <button type="submit" class="btn btn--primary" :disabled="saving">{{ saving ? 'Saving…' : 'Save profile' }}</button>
+        <button type="submit" class="btn btn--primary" :disabled="saving">
+          <LoadingSpinner v-if="saving" />
+          {{ saving ? 'Saving…' : 'Save profile' }}
+        </button>
       </div>
     </form>
   </div>
@@ -229,19 +232,26 @@ async function save() {
 .profile__card { padding: var(--space-5); border: var(--border-soft); border-radius: var(--radius-lg); background: var(--ink-850); }
 .profile__card h2 { margin-bottom: var(--space-4); font-size: var(--step-1); }
 .profile__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
-.profile__field { display: grid; gap: var(--space-2); color: var(--text-300); font-size: var(--step--1); }
-.profile__field input, .profile__field select { width: 100%; min-width: 0; padding: var(--space-3); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-700); }
+.profile__field { display: grid; min-width: 0; gap: var(--space-2); color: var(--text-300); font-size: var(--step--1); }
+.profile__field input, .profile__field select { width: 100%; min-width: 0; padding: var(--space-3); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-700); color: var(--text-100); }
 .profile__field input[readonly] { opacity: .7; }
 .profile__choices { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-5); margin-top: var(--space-5); padding: 0; border: 0; }
 .profile__choices legend { margin-bottom: var(--space-3); color: var(--text-300); font-size: var(--step--1); }
 .profile__choices label { display: inline-flex; align-items: center; gap: var(--space-2); }
 .profile__vibes { display: grid; gap: var(--space-4); margin-top: var(--space-5); }
-.profile__vibe { display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(6rem, 2fr) 2ch; align-items: center; gap: var(--space-3); }
-.profile__vibe input { width: 100%; accent-color: var(--accent-500); }
+.profile__vibe { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) 2ch; align-items: center; gap: var(--space-3); }
+.profile__vibe input { width: 100%; min-width: 0; accent-color: var(--accent-500); }
 .profile__vibe output { font-variant-numeric: tabular-nums; }
 .profile__error { color: var(--rose-400); }
 .profile__success { color: var(--mint-400); }
 .profile__notice { display: grid; justify-items: start; gap: var(--space-3); }
 .profile__actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-3); }
-@media (max-width: 600px) { .profile__fields { grid-template-columns: 1fr; } }
+@media (max-width: 600px) {
+  .profile__fields { grid-template-columns: 1fr; }
+  .profile__card { padding: var(--space-4); }
+  .profile__vibe { grid-template-columns: minmax(0, 1fr) 2ch; }
+  .profile__vibe input { grid-row: 2; grid-column: 1 / -1; }
+  .profile__vibe output { grid-column: 2; grid-row: 1; text-align: right; }
+  .profile__actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+}
 </style>

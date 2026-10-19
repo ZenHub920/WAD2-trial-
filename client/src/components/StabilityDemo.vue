@@ -7,7 +7,7 @@ const swapped = ref(false);
 const people = {
   left: [
     { id: 'A', name: 'Amira', wants: 'Pit, queue early' },
-    { id: 'B', name: 'Bryan', wants: 'Pit, arrive at doors' },
+    { id: 'B', name: 'Bryan', wants: 'Pit, when doors open' },
   ],
   right: [
     { id: 'C', name: "Chloe's group", wants: 'Pit, 1 place' },
@@ -96,7 +96,7 @@ const lineFor = (seekerId) => {
       </svg>
 
       <div class="demo__column">
-        <p class="demo__heading">Groups with a spare ticket</p>
+        <p class="demo__heading">Groups with available places</p>
         <div
           v-for="person in people.right"
           :key="person.id"

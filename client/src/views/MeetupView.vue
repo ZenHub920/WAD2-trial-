@@ -3,6 +3,7 @@ import { reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api } from "../api.js";
 import { currentUser } from "../auth.js";
+import LoadingSpinner from "../components/LoadingSpinner.vue";
 import "../assets/groups.css";
 const props = defineProps({ id: String });
 const route = useRoute(),
@@ -11,6 +12,8 @@ const board = ref(null),
   boards = ref([]),
   error = ref(""),
   busy = ref(false),
+  loading = ref(true),
+  notice = ref(""),
   weather = ref(null),
   comment = ref(""),
   slots = ref({});
@@ -26,6 +29,7 @@ const place = reactive({
   sheltered: true,
 });
 const position = reactive({ latitude: 1.3, longitude: 103.85, label: "" });
+const statuses = { planning: "Collecting availability", proposed: "Awaiting required approvals", confirmed: "Meetup confirmed", cancelled: "Meetup cancelled" };
 const iso = (ms) => new Date(ms).toISOString();
 const time = (ms) =>
   new Date(ms).toLocaleString("en-SG", {
@@ -57,10 +61,17 @@ async function load() {
 watch(
   () => props.id,
   async () => {
+    error.value = "";
+    notice.value = "";
+    board.value = null;
+    weather.value = null;
+    loading.value = true;
     try {
       await load();
     } catch (e) {
-      error.value = e.message;
+      error.value = e.status === 404 ? "This meetup is unavailable, or you are no longer a participant." : "Could not load your meetup plans. Please try again.";
+    } finally {
+      loading.value = false;
     }
   },
   { immediate: true },
@@ -69,11 +80,20 @@ async function act(fn) {
   if (busy.value) return;
   busy.value = true;
   error.value = "";
+  notice.value = "";
   try {
     await fn();
     await load();
+    notice.value = "Meetup updated.";
   } catch (e) {
-    error.value = e.message;
+    error.value = ({
+      invalid_meetup_window: "Choose a window between 30 minutes and 7 days, starting and ending on a half-hour.",
+      stale_meetup_version: "This plan has changed. Reload it before proposing or approving a plan.",
+      scope_membership_required: "Only members of this group or conversation can create its meetup.",
+      meetup_cancelled: "This meetup has been cancelled and can no longer be changed.",
+      invalid_place: "Enter a place name and valid latitude and longitude.",
+      invalid_availability: "Check your selected times and location coordinates before saving.",
+    })[e.message] ?? "Could not update this meetup. Please try again.";
   } finally {
     busy.value = false;
   }
@@ -124,23 +144,26 @@ async function getWeather() {
   try {
     weather.value = (await api.meetupWeather(props.id)).weather;
   } catch (e) {
-    error.value = e.message;
+    error.value = "Could not load the weather forecast. Please try again.";
   } finally {
     busy.value = false;
   }
 }
 </script>
 <template>
-  <main class="container groups-page">
+  <div class="container groups-page">
     <h1>{{ board?.title ?? "Meetup planning" }}</h1>
     <nav class="group-actions">
-      <RouterLink to="/meetups">Your planning boards</RouterLink
-      ><RouterLink to="/groups/connect">Groups</RouterLink>
+      <RouterLink v-if="id" to="/meetups">All meetup plans</RouterLink>
+      <RouterLink to="/groups/connect">Host &amp; connect groups</RouterLink>
     </nav>
     <p v-if="error" class="group-error" role="alert">{{ error }}</p>
-    <template v-if="!id"
+    <p v-if="notice" class="group-success" role="status">{{ notice }}</p>
+    <p v-if="busy" class="loading-state" role="status"><LoadingSpinner />Updating your meetup plan…</p>
+    <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading meetup plans…</p>
+    <template v-else-if="!id"
       ><p>
-        Plan a meetup with your group or Kaki conversation.
+        Plan a meetup with your group or a mutual companion match.
       </p>
       <form
         v-if="
@@ -151,6 +174,8 @@ async function getWeather() {
         class="card group-panel"
         @submit.prevent="create"
       >
+        <h2>Create a meetup plan</h2>
+        <p>Choose a 30-minute to 7-day window, using half-hour increments. Your companions can then share their availability.</p>
         <label
           >Title<input v-model="form.title" maxlength="120" required /></label
         ><label
@@ -169,12 +194,12 @@ async function getWeather() {
           Create planning board
         </button>
       </form>
-      <RouterLink v-for="m in boards" :key="m.id" :to="`/meetups/${m.id}`"
-        >{{ m.title }}, {{ m.status }}</RouterLink
-      ></template
-    ><template v-else-if="board"
+      <div class="group-grid"><RouterLink v-for="m in boards" :key="m.id" :to="`/meetups/${m.id}`" class="card group-panel">{{ m.title }}<span class="group-muted">{{ statuses[m.status] ?? "Plan updated" }}</span></RouterLink></div>
+      <p v-if="!boards.length && !error">No meetup plans yet. Start a plan from your group or an active companion conversation.</p>
+      </template>
+    <template v-else-if="board"
       ><p>
-        {{ board.participantCount }} participants, {{ board.status }}
+        {{ board.participantCount }} participants — {{ statuses[board.status] ?? "Plan updated" }}
       </p>
       <button
         v-if="
@@ -191,7 +216,7 @@ async function getWeather() {
       <section class="card group-panel">
         <h2>When are you available?</h2>
         <p>
-          Select 30-minute slots. Your starting locations stay private.
+          Select 30-minute time periods. Your starting locations stay private.
         </p>
         <div class="group-controls">
           <label v-for="s in board.grid" :key="s.startsAt" class="group-check"
@@ -225,11 +250,11 @@ async function getWeather() {
           /></label>
         </div>
         <button class="btn btn--ghost" @click="assignLocation">
-          Apply this location to selected slots
+          Apply this location to selected times
         </button>
         <p>
           Starting locations are optional. Use an approximate public place;
-          adjust individual slots below if your location changes.
+          adjust individual time periods below if your location changes.
         </p>
         <details>
           <summary>Different locations during the day</summary>
@@ -295,6 +320,7 @@ async function getWeather() {
       </form>
       <section class="card group-panel">
         <h2>Recommended options</h2>
+        <p v-if="!board.suggestions.length">No meeting options yet. Add a public meeting place and ask participants to save their availability.</p>
         <article
           v-for="s in board.suggestions"
           :key="`${s.placeId}:${s.startsAt}`"
@@ -363,6 +389,7 @@ async function getWeather() {
         <p>
           Changes to the plan require fresh approvals.
         </p>
+        <p v-if="!board.comments.length">No discussion yet. Share a suggestion with the other participants.</p>
         <p v-for="c in board.comments" :key="c.id">
           <strong>{{ c.name }}:</strong> {{ c.body }}
         </p>
@@ -373,7 +400,7 @@ async function getWeather() {
               comment = '';
             })
           "
-        >
+        class="group-panel">
           <label
             >Message<textarea
               v-model="comment"
@@ -384,5 +411,5 @@ async function getWeather() {
         </form>
       </section></template
     >
-  </main>
+  </div>
 </template>

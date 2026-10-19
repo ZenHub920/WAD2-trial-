@@ -2,10 +2,8 @@
 /**
  * Swipe deck — the seeker's judgement surface.
  *
- * One group at a time: drag right to shortlist, left to pass. This is not a
- * decorative gesture layer over a list. It is how the preference data the
- * matching engine consumes would actually be gathered, which is why it earns
- * being the loudest interaction in the app.
+ * Used for both groups and people, with labels supplied by the caller.
+ * Persisted decisions advance the deck only after the API succeeds.
  *
  * What makes a drag feel physical rather than animated:
  *
@@ -30,6 +28,7 @@
 
 import { ref, computed, watch } from 'vue';
 import { useReducedMotion } from '../composables/useReducedMotion.js';
+import LoadingSpinner from './LoadingSpinner.vue';
 
 const props = defineProps({
   /** Items to judge. Each needs a stable `id`. */
@@ -297,7 +296,7 @@ function onKeydown(event) {
   } else if (event.key === 'ArrowLeft') {
     event.preventDefault();
     commit('left');
-  } else if (event.key === 'Enter' || event.key === ' ') {
+  } else if ((event.key === 'Enter' || event.key === ' ') && props.showProfile) {
     event.preventDefault();
     if (current.value) emit('open', current.value);
   } else if (event.key === 'Backspace') {
@@ -408,7 +407,7 @@ defineExpose({ undo, remaining });
       <div v-if="!current" class="deck__empty">
         <h3>That's everyone</h3>
         <slot name="empty">
-          <p>Your shortlist is ready for the next matching round.</p>
+          <p>You have reviewed all available {{ nounPlural }}.</p>
         </slot>
         <button v-if="history.length" class="btn btn--ghost" type="button" :disabled="pending" @click="undo">
           Back one
@@ -449,9 +448,10 @@ defineExpose({ undo, remaining });
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" /></svg>
       </button>
     </div>
+    <p v-if="pending" class="loading-state" role="status"><LoadingSpinner />Saving decision…</p>
 
     <p class="deck__hint">
-      Drag the card, or use <kbd>←</kbd> <kbd>→</kbd> to decide and <kbd>⌫</kbd> to undo.
+      {{ noLabel }} or {{ yesLabel.toLowerCase() }} using the buttons, a swipe, or <kbd>←</kbd> <kbd>→</kbd>. Use <kbd>⌫</kbd> to undo.
     </p>
 
     <p class="sr-only" role="status" aria-live="polite">{{ announcement }}</p>
@@ -462,6 +462,8 @@ defineExpose({ undo, remaining });
 .deck {
   display: grid;
   gap: var(--space-4);
+  min-width: 0;
+  overflow-x: clip;
 }
 
 /* ---------------------------------------------------------------- status */
@@ -495,11 +497,7 @@ defineExpose({ undo, remaining });
 
 .deck__stage {
   position: relative;
-  /* The stage is a fixed box so cards behind have somewhere to sit. Height is
-     driven by the card's own aspect rather than its content, which keeps the
-     stack from jumping as cards of different lengths reach the top. Tall enough
-     that the radar is never cropped — the chart row is the one that flexes, and
-     a clipped chart looks like a bug rather than a crop. */
+  /* The top card sets the height so longer profile text is not clipped. */
   min-height: 33rem;
   border-radius: var(--radius-xl);
   outline: none;
@@ -512,9 +510,7 @@ defineExpose({ undo, remaining });
 .deck__card {
   position: absolute;
   inset: 0;
-  /* Fixed rows rather than a flex column: the card's height is set by the stage,
-     so the content area must be told it may shrink (min-height: 0) or a tall
-     slot overflows and lands on top of the footer. */
+  /* The top card grows with its content; the other cards fill its footprint. */
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   gap: var(--space-4);
@@ -533,6 +529,9 @@ defineExpose({ undo, remaining });
 
 .deck__card--top {
   cursor: grab;
+  position: relative;
+  inset: auto;
+  min-height: 33rem;
   box-shadow: var(--shadow-lg);
 }
 
@@ -772,6 +771,7 @@ defineExpose({ undo, remaining });
   .deck__stage {
     min-height: 31rem;
   }
+  .deck__card--top { min-height: 31rem; }
 
   .deck__card {
     padding: var(--space-4);

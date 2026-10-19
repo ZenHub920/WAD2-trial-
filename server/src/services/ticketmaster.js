@@ -17,7 +17,8 @@ export function normalizeTicketmasterEvent(event) {
   const images = Array.isArray(event.images) ? event.images : [];
   const image = images.find((item) => item && item.ratio === '16_9' && !item.fallback)
     ?? images.find((item) => item && !item.fallback);
-  const artist = event._embedded?.attractions?.[0]?.name || event.name;
+  const attraction = event._embedded?.attractions?.[0];
+  const artist = attraction?.name || event.name;
   if (typeof artist !== 'string' || !artist.trim()) return null;
 
   return {
@@ -26,6 +27,8 @@ export function normalizeTicketmasterEvent(event) {
     source_event_id: id,
     artist,
     tour_name: event.name && event.name !== artist ? event.name : null,
+    blurb: [event.description, event.info, event.additionalInfo, attraction?.description, attraction?.additionalInfo]
+      .find((text) => typeof text === 'string' && text.trim())?.trim() ?? null,
     venue: venue.name,
     city: venue.city.name,
     event_date: date,

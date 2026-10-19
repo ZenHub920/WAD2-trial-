@@ -7,20 +7,17 @@ import App from './App.vue';
 import './assets/base.css';
 
 import HomeView from './views/HomeView.vue';
-import ConcertsView from './views/ConcertsView.vue';
 import ConcertView from './views/ConcertView.vue';
 import AlgorithmView from './views/AlgorithmView.vue';
 import RoundView from './views/RoundView.vue';
 import MethodView from './views/MethodView.vue';
 import LoginView from './views/LoginView.vue';
-import MarketplaceView from './views/MarketplaceView.vue';
+import ConcertsView from './views/ConcertsView.vue';
 import ListingView from './views/ListingView.vue';
 import MyListingsView from './views/MyListingsView.vue';
 import TicketDetailView from './views/TicketDetailView.vue';
-import OrderReviewView from './views/OrderReviewView.vue';
 import CheckoutView from './views/CheckoutView.vue';
 import OrderConfirmationView from './views/OrderConfirmationView.vue';
-import ChatView from './views/ChatView.vue';
 import ChatThreadView from './views/ChatThreadView.vue';
 import AdminVerificationsView from './views/AdminVerificationsView.vue';
 import KakiFinderView from './views/KakiFinderView.vue';
@@ -41,25 +38,23 @@ const router = createRouter({
   routes: [
     { path: '/', name: 'home', component: HomeView, meta: { title: 'Encore' } },
     { path: '/concerts', name: 'concerts', component: ConcertsView, meta: { title: 'Concerts' } },
-    { path: '/concerts/:id', name: 'concert', component: ConcertView, props: true },
+    { path: '/concerts/:id', name: 'concert', component: ConcertView, props: true, meta: { title: 'Concert details' } },
     {
       path: '/concerts/:id/algorithm',
       name: 'algorithm',
       component: AlgorithmView,
       props: true,
-      meta: { title: 'How the matching runs' },
+      meta: { title: 'Matching preview' },
     },
-    { path: '/rounds/:id', name: 'round', component: RoundView, props: true },
-    { path: '/method', name: 'method', component: MethodView, meta: { title: 'Method' } },
+    { path: '/rounds/:id', name: 'round', component: RoundView, props: true, meta: { title: 'Group matching results' } },
+    { path: '/method', name: 'method', component: MethodView, meta: { title: 'How it works' } },
     { path: '/login', name: 'login', component: LoginView, meta: { title: 'Sign in' } },
-    { path: '/marketplace', name: 'marketplace', component: MarketplaceView, meta: { title: 'Ticket Market' } },
-    { path: '/list-ticket', name: 'list-ticket', component: ListingView, meta: { title: 'List a Ticket' } },
-    { path: '/my-listings', name: 'my-listings', component: MyListingsView, meta: { title: 'My Listings' } },
-    { path: '/tickets/:id', name: 'ticket-detail', component: TicketDetailView, props: true, meta: { title: 'Ticket Details' } },
-    // Buying: listing → order review → checkout → receipt.
-    { path: '/tickets/:id/order', name: 'order-review', component: OrderReviewView, props: true, meta: { title: 'Order details' } },
+    { path: '/list-ticket', name: 'list-ticket', component: ListingView, meta: { title: 'List a ticket' } },
+    { path: '/my-listings', name: 'my-listings', component: MyListingsView, meta: { title: 'My listings' } },
+    { path: '/tickets/:id', name: 'ticket-detail', component: TicketDetailView, props: true, meta: { title: 'Ticket details' } },
+    // Checkout stays unavailable until a real payment provider is configured.
     { path: '/tickets/:id/checkout', name: 'checkout', component: CheckoutView, props: true, meta: { title: 'Checkout' } },
-    { path: '/orders/:id', name: 'order', component: OrderConfirmationView, props: true, meta: { title: 'Order confirmed' } },
+    { path: '/orders/:id', name: 'order', component: OrderConfirmationView, props: true, meta: { title: 'Historical order' } },
     {
       path: '/operator/verifications',
       name: 'operator-verifications',
@@ -67,9 +62,9 @@ const router = createRouter({
       meta: { title: 'Ticket verification' },
     },
 
-    { path: '/kaki', name: 'kaki', component: KakiFinderView, meta: { title: 'Kaki Finder' } },
-    { path: '/groups', name: 'groups', component: GroupExplorerView, meta: { title: 'Find a Group', requiresAuth: true } },
-    { path: '/groups/connect', name: 'group-connections', component: GroupConnectionsView, meta: { title: 'Connect Groups', requiresAuth: true } },
+    { path: '/kaki', name: 'kaki', component: KakiFinderView, meta: { title: 'Find a companion' } },
+    { path: '/groups', name: 'groups', component: GroupExplorerView, meta: { title: 'Groups', requiresAuth: true } },
+    { path: '/groups/connect', name: 'group-connections', component: GroupConnectionsView, meta: { title: 'Connect groups', requiresAuth: true } },
     { path:'/groups/invite/:token',component:GroupMembershipView,props:true,meta:{title:'Join your friends',requiresAuth:true} },
     { path:'/groups/:id/members',component:GroupMembershipView,props:true,meta:{title:'Group members',requiresAuth:true} },
     { path:'/notifications',component:NotificationsView,meta:{title:'Notifications',requiresAuth:true} },
@@ -80,13 +75,12 @@ const router = createRouter({
       path: '/kaki/history',
       name: 'kaki-history',
       component: ProfileHistoryView,
-      meta: { title: 'Profile History' },
+      meta: { title: 'Companion history' },
     },
 
-    // Kaki messaging. Separate from /chat, which is the buyer–seller thread on
-    // a ticket listing — different tables, different rules about who may talk.
+    // One inbox; companion and ticket conversations retain their own threads.
     {
-      path: '/kaki/chat',
+      path: '/messages',
       name: 'kaki-chat',
       component: KakiChatListView,
       meta: { title: 'Messages', requiresAuth: true },
@@ -96,13 +90,12 @@ const router = createRouter({
       name: 'kaki-chat-thread',
       component: KakiChatView,
       props: true,
-      meta: { title: 'Messages', requiresAuth: true },
+      meta: { title: 'Companion conversation', requiresAuth: true },
     },
 
-    { path: '/chat', name: 'chat', component: ChatView, meta: { title: 'Chat' } },
-    { path: '/chat/:id', name: 'chat-thread', component: ChatThreadView, props: true, meta: { title: 'Chat' } },
+    { path: '/chat/:id', name: 'chat-thread', component: ChatThreadView, props: true, meta: { title: 'Ticket conversation' } },
     { path: '/profile', name: 'profile', component: ProfileView, meta: { title: 'Profile' } },
-    { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView },
+    { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView, meta: { title: 'Page not found' } },
   ],
   scrollBehavior(to, from, saved) {
     if (saved) return saved;
