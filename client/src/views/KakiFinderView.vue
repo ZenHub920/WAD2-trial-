@@ -182,8 +182,10 @@ function backToDeck() {
           </svg>
         </RouterLink>
         <button
+          v-if="stage !== 'filters'"
           class="kaki__icon-btn"
-          aria-label="Filters"
+          aria-label="Edit filters"
+          title="Edit filters"
           :disabled="swipePending"
           @click="stage = 'filters'"
         >

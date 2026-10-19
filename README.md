@@ -41,6 +41,8 @@ fan ticket sales share `/concerts`; companion and ticket enquiries share
 tools are linked from group pages rather than duplicated in the main navigation.
 The Encore logo always links to `/`, whose concert preview shows up to five
 upcoming shows from the Ticketmaster API.
+The companion finder's Edit filters shortcut appears while browsing profiles,
+not while the filter form is already open.
 Loading circles appear in the component or action button that is waiting, not
 in a global header overlay. They stop on success and failure; reduced-motion
 preferences are respected. Automatic-matching explanations are optional on `/method`.
