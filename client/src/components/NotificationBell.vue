@@ -12,6 +12,7 @@ const trigger = ref(null);
 const panel = ref(null);
 const open = ref(false);
 const items = ref([]);
+const unreadCount = ref(0);
 const loading = ref(false);
 const readingId = ref('');
 const error = ref('');
@@ -28,11 +29,20 @@ async function load() {
   loading.value = true;
   error.value = '';
   try {
-    items.value = (await api.notifications()).notifications;
+    const [inbox, unread] = await Promise.all([api.notifications(), api.unreadNotifications()]);
+    items.value = inbox.notifications;
+    unreadCount.value = unread.unread;
   } catch {
     error.value = 'Could not load notifications. Please try again.';
   } finally {
     loading.value = false;
+  }
+}
+async function refreshUnread() {
+  try {
+    unreadCount.value = (await api.unreadNotifications()).unread;
+  } catch {
+    // Keep the last known count; the next poll or opening the inbox retries.
   }
 }
 async function markRead(id) {
@@ -61,11 +71,9 @@ function onKeydown(event) {
   }
 }
 watch(open, async (visible) => {
-  clearInterval(timer);
   if (!visible) return;
   emit('open');
   load();
-  timer = setInterval(load, 30000);
   await nextTick();
   panel.value?.focus();
 });
@@ -73,6 +81,8 @@ watch(() => route.fullPath, () => { open.value = false; });
 onMounted(() => {
   document.addEventListener('click', outside);
   document.addEventListener('keydown', onKeydown);
+  refreshUnread();
+  timer = setInterval(() => open.value ? load() : refreshUnread(), 30000);
 });
 onUnmounted(() => {
   clearInterval(timer);
@@ -83,12 +93,14 @@ onUnmounted(() => {
 
 <template>
   <div ref="root" class="notification-bell">
-    <button ref="trigger" type="button" class="notification-bell__button" aria-label="Notifications"
+    <button ref="trigger" type="button" class="notification-bell__button"
+      :aria-label="unreadCount ? `Notifications, ${unreadCount} unread` : 'Notifications'"
       aria-controls="notification-popover" :aria-expanded="open" @click="open = !open">
       <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M18 8a6 6 0 0 0-12 0v5l-2 3h16l-2-3V8Z" />
         <path d="M10 20a2 2 0 0 0 4 0" />
       </svg>
+      <span v-if="unreadCount" class="notification-bell__badge" aria-hidden="true">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
     </button>
     <section v-if="open" id="notification-popover" ref="panel" class="notification-popover" tabindex="-1" aria-labelledby="notification-popover-title">
       <header class="notification-popover__head">
@@ -118,6 +130,8 @@ onUnmounted(() => {
 <style scoped>
 .notification-bell { position: relative; }
 .notification-bell__button, .notification-popover__close { display: grid; place-items: center; width: 44px; height: 44px; border: var(--border-hairline); border-radius: var(--radius-sm); color: var(--text-200); }
+.notification-bell__button { position: relative; }
+.notification-bell__badge { position: absolute; top: -5px; right: -5px; display: grid; place-items: center; min-width: 20px; height: 20px; padding-inline: 4px; border-radius: 999px; background: var(--accent-400); color: var(--ink-900); font-size: 11px; font-weight: 700; line-height: 1; }
 .notification-bell__button:hover, .notification-bell__button[aria-expanded='true'] { border-color: var(--accent-400); color: var(--accent-400); background: var(--ink-800); }
 .notification-popover { position: absolute; top: calc(100% + var(--space-3)); right: 0; z-index: 120; width: min(380px, calc(100vw - 32px)); max-height: min(70dvh, 560px); overflow-y: auto; padding: var(--space-4); border: var(--border-soft); border-radius: var(--radius-lg); background: var(--ink-800); box-shadow: var(--shadow-lg); color: var(--text-200); }
 .notification-popover__head, .notification-popover__tools { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--space-2); }

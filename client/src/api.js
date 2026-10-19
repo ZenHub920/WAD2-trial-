@@ -54,6 +54,7 @@ export const api = {
   cancelMeetup: (id,version)=>request(`/meetups/${encodeURIComponent(id)}/cancel`,{method:'POST',body:JSON.stringify({version})}),
   meetupWeather: id=>request(`/meetups/${encodeURIComponent(id)}/weather`),
   notifications: ()=>request('/me/notifications'),
+  unreadNotifications: ()=>request('/me/notifications/unread'),
   readNotification: id=>request(`/me/notifications/${encodeURIComponent(id)}/read`,{method:'POST'}),
   notificationSettings: ()=>request('/me/notification-preferences'),
   saveNotificationSettings: data=>request('/me/notification-preferences',{method:'PUT',body:JSON.stringify(data)}),

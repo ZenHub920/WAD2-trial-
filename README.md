@@ -39,6 +39,8 @@ companion**, **Groups**, and the signed-in **Messages** hub. Concert browsing an
 fan ticket sales share `/concerts`; companion and ticket enquiries share
 `/messages` while retaining separate private threads. Group hosting/connection
 tools are linked from group pages rather than duplicated in the main navigation.
+The Encore logo always links to `/`, whose concert preview shows up to five
+upcoming shows from the Ticketmaster API.
 Loading circles appear in the component or action button that is waiting, not
 in a global header overlay. They stop on success and failure; reduced-motion
 preferences are respected. Automatic-matching explanations are optional on `/method`.
@@ -48,6 +50,10 @@ styles while keeping keyboard interaction and native option selection.
 The signed-in header's bell opens a small notification popover; Escape, its
 close button or an outside click dismisses it. Notification preferences live
 under `/profile#notifications`, not on a separate notifications page.
+The bell badge shows the full unread notification count (displayed as `99+`
+above 99), including notifications beyond the popover's current page. It
+refreshes every 30 seconds and updates when a notification is marked read;
+no badge is shown when everything is read.
 
 Route changes reset resource-specific drafts. Notification refreshes and weather
 checks preserve unsaved settings and availability.

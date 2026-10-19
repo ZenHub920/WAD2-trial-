@@ -10,7 +10,7 @@ const error = ref(false);
 onMounted(async () => {
   try {
     const data = await api.externalConcerts();
-    concerts.value = data.events.slice(0, 3);
+    concerts.value = data.events.slice(0, 5);
   } catch {
     error.value = true;
   } finally {
@@ -45,8 +45,8 @@ const steps = [
       <div class="container hero__inner">
 
         <h1 class="hero__title">
-          Nobody should skip a show
-          <span class="hero__accent">for want of company.</span>
+          Your next concert.
+          <span class="hero__accent">Your kind of people.</span>
         </h1>
 
         <p class="lede hero__lede">
