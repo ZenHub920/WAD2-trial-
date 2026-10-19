@@ -43,6 +43,8 @@ The Encore logo always links to `/`, whose concert preview shows up to five
 upcoming shows from the Ticketmaster API.
 The companion finder's Edit filters shortcut appears while browsing profiles,
 not while the filter form is already open.
+The theme toggle and notification bell share the header utility group with an
+8px gap on desktop and mobile; the theme toggle stays outside the mobile menu.
 Loading circles appear in the component or action button that is waiting, not
 in a global header overlay. They stop on success and failure; reduced-motion
 preferences are respected. Automatic-matching explanations are optional on `/method`.

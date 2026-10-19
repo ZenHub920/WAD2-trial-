@@ -60,13 +60,13 @@ onUnmounted(() => {
             <RouterLink to="/method">How it works</RouterLink>
             <RouterLink to="/login">Sign in</RouterLink>
           </template>
-          <button class="theme-btn" type="button" @click="$emit('toggle-theme')">
-            <span aria-hidden="true">{{ theme === 'dark' ? '☾' : '☀' }}</span>
-            <span class="sr-only">Switch to {{ theme === 'dark' ? 'light' : 'dark' }} theme</span>
-          </button>
         </div>
       </nav>
       <div class="header__utilities">
+        <button class="theme-btn" type="button" @click="$emit('toggle-theme')">
+          <span aria-hidden="true">{{ theme === 'dark' ? '☾' : '☀' }}</span>
+          <span class="sr-only">Switch to {{ theme === 'dark' ? 'light' : 'dark' }} theme</span>
+        </button>
         <NotificationBell v-if="currentUser" @open="menuOpen = false" />
       <button class="header__toggle" type="button" aria-controls="main-navigation" :aria-expanded="menuOpen" @click="menuOpen = !menuOpen">
         {{ menuOpen ? 'Close menu' : 'Menu' }}
@@ -148,6 +148,5 @@ onUnmounted(() => {
   .nav__account { border-top: var(--border-hairline); padding-top: var(--space-3); }
   .nav a { padding-inline: var(--space-3); white-space: normal; }
   .nav__primary a.router-link-active { box-shadow: inset 3px 0 var(--accent-400); background: var(--ink-800); }
-  .theme-btn { align-self: flex-start; }
 }
 </style>
