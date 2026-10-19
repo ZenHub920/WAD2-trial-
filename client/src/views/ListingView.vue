@@ -269,7 +269,7 @@ async function submitListing() {
 .listing-form__section h2 { grid-column: 1 / -1; font-size: var(--step-1); }
 .listing-form__field { display: grid; min-width: 0; gap: var(--space-2); color: var(--text-300); font-size: var(--step--1); }
 .listing-form__field--wide { grid-column: 1 / -1; }
-.listing-form input, .listing-form select, .listing-form textarea { width: 100%; min-width: 0; padding: var(--space-3); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-700); }
+.listing-form input, .listing-form textarea { width: 100%; min-width: 0; padding: var(--space-3); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-700); }
 .listing-form textarea { resize: vertical; }
 .image-picker { position: relative; display: grid; place-items: center; min-height: 170px; overflow: hidden; border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-700); color: var(--accent-400); font-size: 2rem; }
 .image-picker img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }

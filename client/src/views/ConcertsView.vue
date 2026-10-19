@@ -196,7 +196,6 @@ function clearFilters() {
 .concert-filters__input input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text-100); font: inherit; }
 .concert-filters__date :deep(.datefield) { min-height: 44px; }
 .concert-filters__saved { grid-column: 1 / -1; display: flex; align-items: center; gap: var(--space-2); min-height: 36px; font-size: var(--step--1); color: var(--text-300); }
-.concert-filters__saved input { width: 18px; height: 18px; accent-color: var(--accent-500); }
 .concert-results { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
 .concert-results h2 { font-size: var(--step-1); }
 .concert-results p { margin-top: var(--space-1); color: var(--text-300); font-size: var(--step--1); }

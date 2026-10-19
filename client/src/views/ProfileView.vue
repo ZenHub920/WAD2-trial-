@@ -4,6 +4,7 @@ import { api, LABELS } from '../api.js';
 import { currentUser, refreshSession, setCurrentUser } from '../auth.js';
 import AvatarPicker from '../components/AvatarPicker.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
+import ProfileNotifications from '../components/ProfileNotifications.vue';
 
 const avatarBusy = ref(false);
 const avatarError = ref('');
@@ -122,8 +123,8 @@ async function save() {
 <template>
   <div class="profile container section">
     <header class="profile__head">
-      <h1>Edit profile</h1>
-      <p>Set the details and concert vibe people see when they find a companion.</p>
+      <h1>Profile</h1>
+      <p>Manage your profile, concert preferences and notifications.</p>
     </header>
 
     <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading your profile…</p>
@@ -155,7 +156,7 @@ async function save() {
             <input v-model="form.displayName" type="text" autocomplete="nickname" required />
           </label>
           <label class="profile__field">
-            Email <span class="profile__hint">Only visible to you.</span>
+            <span>Email <span class="profile__hint">Only visible to you.</span></span>
             <input :value="profile.email" type="email" readonly />
           </label>
           <label class="profile__field">
@@ -220,6 +221,7 @@ async function save() {
         </button>
       </div>
     </form>
+    <ProfileNotifications v-if="currentUser" />
   </div>
 </template>
 
@@ -233,7 +235,7 @@ async function save() {
 .profile__card h2 { margin-bottom: var(--space-4); font-size: var(--step-1); }
 .profile__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
 .profile__field { display: grid; min-width: 0; gap: var(--space-2); color: var(--text-300); font-size: var(--step--1); }
-.profile__field input, .profile__field select { width: 100%; min-width: 0; padding: var(--space-3); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-700); color: var(--text-100); }
+.profile__field input { width: 100%; min-width: 0; padding: var(--space-3); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-700); color: var(--text-100); }
 .profile__field input[readonly] { opacity: .7; }
 .profile__choices { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-5); margin-top: var(--space-5); padding: 0; border: 0; }
 .profile__choices legend { margin-bottom: var(--space-3); color: var(--text-300); font-size: var(--step--1); }

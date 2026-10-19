@@ -20,7 +20,8 @@ Two processes. Backend first.
 # Terminal 1 — API on :3000
 cd server
 npm install
-npm run seed          # demo users and concerts; clears the existing database
+# Set TICKETMASTER_API_KEY in server/.env first (see Live concert discovery).
+npm run sync:concerts # import real concerts without resetting existing data
 npm start
 
 # Terminal 2 — Vue app on :5173
@@ -41,6 +42,12 @@ tools are linked from group pages rather than duplicated in the main navigation.
 Loading circles appear in the component or action button that is waiting, not
 in a global header overlay. They stop on success and failure; reduced-motion
 preferences are respected. Automatic-matching explanations are optional on `/method`.
+
+Checkboxes and native dropdowns share theme-aware checked, disabled and focus
+styles while keeping keyboard interaction and native option selection.
+The signed-in header's bell opens a small notification popover; Escape, its
+close button or an outside click dismisses it. Notification preferences live
+under `/profile#notifications`, not on a separate notifications page.
 
 Route changes reset resource-specific drafts. Notification refreshes and weather
 checks preserve unsaved settings and availability.
@@ -110,8 +117,8 @@ Checkout is unavailable until a real
 payment provider is integrated: authenticated `POST /api/tickets/:id/orders`
 returns HTTP 503 `payment_provider_not_configured` without creating an order or
 changing inventory. Historical orders remain buyer-private and are labelled as
-previous simulated checkout, not proof of payment. The demo seed no longer
-creates ticket listings or fabricated issued-ticket numbers.
+previous simulated checkout, not proof of payment. The destructive demo-seeding
+command and hardcoded application concerts have been removed.
 
 
 ### Find a companion
@@ -162,15 +169,14 @@ cd server
 npm run sync:concerts
 ```
 
-Run the seed **before** syncing if you want demo users: `npm run seed` clears the
-database, including imported events. Syncing again updates imported event details
-without deleting local parties or match rounds. `GET /api/concerts` and
+Syncing again updates imported event details without deleting existing accounts,
+user-created concerts, groups or match rounds. `GET /api/concerts` and
 `GET /api/concerts/:id` include `source`, `source_event_id`, `official_url`,
 and `image_attribution` for imported events. Ticketmaster coverage in Singapore
 varies; events without a usable venue or date are skipped. Without a key, live
 discovery returns HTTP 503; provider failures return HTTP 502 and a visible
 frontend error, not mock events. Seller-entered concert details remain supported
-as user input, not prefilled inventory. Existing non-ticket demo data is preserved.
+as user input, not prefilled inventory.
 No ticket ownership, authenticity or availability is verified by this integration.
 
 AI-use disclosure: The Ticketmaster integration, MVC extraction, sessions,
@@ -391,4 +397,4 @@ concert page still shows aggregate forecast metrics without personal results.
 - **Authentication exists; verification does not.** Sessions establish account
   ownership, but neither identity nor ticket authenticity has been verified.
 
-All people and events in the seed data are fictional.
+Synthetic data is confined to isolated tests and matching benchmarks, not application initialization.

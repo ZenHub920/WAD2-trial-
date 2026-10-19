@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router';
 import { currentUser } from '../auth.js';
 import { unreadTotal } from '../chatLive.js';
 import UserAvatar from './UserAvatar.vue';
-import NotificationsLink from './NotificationsLink.vue';
+import NotificationBell from './NotificationBell.vue';
 
 defineProps({ theme: { type: String, default: 'light' } });
 defineEmits(['toggle-theme']);
@@ -39,9 +39,6 @@ onUnmounted(() => {
         <span class="brand__mark" aria-hidden="true"><span v-for="n in 4" :key="n" :style="{ height: `${6 + n * 3}px` }" /></span>
         <span>Encore</span>
       </RouterLink>
-      <button class="header__toggle" type="button" aria-controls="main-navigation" :aria-expanded="menuOpen" @click="menuOpen = !menuOpen">
-        {{ menuOpen ? 'Close menu' : 'Menu' }}
-      </button>
       <nav id="main-navigation" class="nav" :class="{ 'nav--open': menuOpen }" aria-label="Main navigation">
         <div class="nav__primary">
           <RouterLink to="/concerts">Concerts</RouterLink>
@@ -54,7 +51,6 @@ onUnmounted(() => {
         </div>
         <div class="nav__account">
           <template v-if="currentUser">
-            <NotificationsLink />
             <RouterLink v-if="currentUser.isOperator" to="/operator/verifications">Ticket review</RouterLink>
             <RouterLink to="/profile" class="nav__profile">
               <UserAvatar :src="currentUser.avatarUrl" :name="currentUser.displayName" :size="30" />
@@ -71,6 +67,12 @@ onUnmounted(() => {
           </button>
         </div>
       </nav>
+      <div class="header__utilities">
+        <NotificationBell v-if="currentUser" @open="menuOpen = false" />
+      <button class="header__toggle" type="button" aria-controls="main-navigation" :aria-expanded="menuOpen" @click="menuOpen = !menuOpen">
+        {{ menuOpen ? 'Close menu' : 'Menu' }}
+      </button>
+      </div>
     </div>
   </header>
 </template>
@@ -104,8 +106,9 @@ onUnmounted(() => {
 }
 .brand__mark { display: flex; align-items: flex-end; gap: 2px; }
 .brand__mark span { width: 3px; background: var(--accent-400); border-radius: 2px; }
+.header__utilities { order: 2; display: flex; align-items: center; gap: var(--space-2); margin-left: auto; }
 .nav, .nav__primary, .nav__account { display: flex; align-items: center; gap: var(--space-4); }
-.nav { flex: 1; min-width: 0; justify-content: space-between; }
+.nav { order: 1; flex: 1; min-width: 0; justify-content: space-between; }
 .nav a {
   display: inline-flex;
   align-items: center;

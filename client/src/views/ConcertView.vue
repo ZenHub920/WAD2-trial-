@@ -484,7 +484,6 @@ const forecastFirstChoice = useCountUp(
 .kaki-join__joined { color: var(--mint-400); }
 .kaki-join__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
 .kaki-join__fields label { display: grid; gap: var(--space-2); color: var(--text-300); font-size: var(--step--1); }
-.kaki-join__fields select { min-width: 0; width: 100%; padding: var(--space-3); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-700); }
 .kaki-join__actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
 .kaki-join__error { color: var(--rose-400); }
 @media (max-width: 600px) { .kaki-join__fields { grid-template-columns: 1fr; } }

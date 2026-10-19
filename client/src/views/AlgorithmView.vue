@@ -506,12 +506,8 @@ const sortedParties = computed(() =>
 }
 
 .console__speed select {
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
-  border: var(--border-hairline);
-  background: var(--ink-750);
-  color: var(--text-200);
-  font-size: var(--step--1);
+  width: auto;
+  min-width: 5rem;
 }
 
 .progress {

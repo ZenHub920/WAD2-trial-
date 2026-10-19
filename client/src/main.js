@@ -29,7 +29,6 @@ import NotFoundView from './views/NotFoundView.vue';
 import GroupExplorerView from './views/GroupExplorerView.vue';
 import GroupConnectionsView from './views/GroupConnectionsView.vue';
 import GroupMembershipView from './views/GroupMembershipView.vue';
-import NotificationsView from './views/NotificationsView.vue';
 import MeetupView from './views/MeetupView.vue';
 import FeedbackView from './views/FeedbackView.vue';
 
@@ -67,7 +66,6 @@ const router = createRouter({
     { path: '/groups/connect', name: 'group-connections', component: GroupConnectionsView, meta: { title: 'Connect groups', requiresAuth: true } },
     { path:'/groups/invite/:token',component:GroupMembershipView,props:true,meta:{title:'Join your friends',requiresAuth:true} },
     { path:'/groups/:id/members',component:GroupMembershipView,props:true,meta:{title:'Group members',requiresAuth:true} },
-    { path:'/notifications',component:NotificationsView,meta:{title:'Notifications',requiresAuth:true} },
     { path:'/meetups',component:MeetupView,meta:{title:'Meetup planning',requiresAuth:true} },
     { path:'/meetups/:id',component:MeetupView,props:true,meta:{title:'Meetup planning',requiresAuth:true} },
     { path:'/feedback',component:FeedbackView,meta:{title:'Post-concert feedback',requiresAuth:true} },

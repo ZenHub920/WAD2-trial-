@@ -430,26 +430,6 @@ function backToDeck() {
 
 /* ---- Fields ------------------------------------------------------------ */
 
-.field select {
-  width: 100%;
-  min-width: 0;
-  padding: var(--space-3) 2.5rem var(--space-3) var(--space-4);
-  background: var(--ink-800);
-  border: var(--border-hairline);
-  border-radius: var(--radius-md);
-  color: var(--text-100);
-  font-family: var(--font-body);
-  font-size: var(--step-0);
-  font-weight: 600;
-  appearance: none;
-
-  /* Chevron, so the control matches the prototype without an icon font. */
-  background-image: linear-gradient(45deg, transparent 50%, var(--text-100) 50%),
-    linear-gradient(135deg, var(--text-100) 50%, transparent 50%);
-  background-position: calc(100% - 20px) 55%, calc(100% - 14px) 55%;
-  background-size: 6px 6px, 6px 6px;
-  background-repeat: no-repeat;
-}
 
 /* ---- Age range --------------------------------------------------------- */
 

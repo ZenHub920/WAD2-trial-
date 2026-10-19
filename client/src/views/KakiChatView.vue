@@ -559,7 +559,7 @@ watch(() => props.id, async () => {
 
         <label class="field">
           <span class="field__label">What happened</span>
-          <select v-model="reportCategory" class="field__input">
+          <select v-model="reportCategory">
             <option value="harassment">Harassment or abuse</option>
             <option value="misleading_profile">Misleading profile</option>
             <option value="spam">Spam or scam</option>

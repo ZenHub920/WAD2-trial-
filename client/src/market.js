@@ -28,7 +28,7 @@ export function sectionLabel(section) {
   return LABELS.section[section] ?? section;
 }
 
-/** A listing has no title of its own: it is the concert plus the section, e.g. "KIYOKO · Cat 1". */
+/** A listing title combines the concert artist and its seating section. */
 export function listingTitle(listing) {
   return `${listing.concert.artist}, ${sectionLabel(listing.section)}`;
 }
