@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { currentUser } from '../auth.js';
 import { unreadTotal } from '../chatLive.js';
@@ -12,7 +12,6 @@ defineEmits(['toggle-theme']);
 const route = useRoute();
 const scrolled = ref(false);
 const menuOpen = ref(false);
-const homeLink = computed(() => currentUser.value ? '/concerts' : '/');
 watch(() => route.fullPath, () => { menuOpen.value = false; });
 
 function onScroll() {
@@ -35,7 +34,7 @@ onUnmounted(() => {
 <template>
   <header class="header" :class="{ 'header--scrolled': scrolled }">
     <div class="header__inner container container--wide">
-      <RouterLink :to="homeLink" class="brand" @click="menuOpen = false">
+      <RouterLink to="/" class="brand" @click="menuOpen = false">
         <span class="brand__mark" aria-hidden="true"><span v-for="n in 4" :key="n" :style="{ height: `${6 + n * 3}px` }" /></span>
         <span>Encore</span>
       </RouterLink>

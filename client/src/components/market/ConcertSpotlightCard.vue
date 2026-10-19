@@ -29,10 +29,6 @@ const from = computed(() => {
 
 <template>
   <article class="spot card card--interactive">
-    <header class="spot__head">
-      <span class="spot__provider">{{ concert.source === 'ticketmaster' ? 'Ticketmaster' : 'Fan resale' }}</span>
-    </header>
-
     <h3 class="spot__artist">
       <RouterLink :to="`/concerts/${concert.id}`" class="spot__link">{{ concert.artist }}</RouterLink>
     </h3>
@@ -82,13 +78,6 @@ const from = computed(() => {
   gap: var(--space-2);
   padding: var(--space-5);
   overflow: hidden;
-}
-
-.spot__head {
-  min-height: 24px;
-  color: var(--accent-400);
-  font-size: var(--step--2);
-  font-weight: 600;
 }
 
 .spot__official {
