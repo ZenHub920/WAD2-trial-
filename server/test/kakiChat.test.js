@@ -140,6 +140,43 @@ test('opening a conversation is idempotent and symmetric', async (t) => {
   );
 });
 
+test('opening or acknowledging a thread clears only that user’s chat notifications', async (t) => {
+  const f = await fixture(t);
+  const { a, b } = await f.matchedPair('c_notification_read');
+  const id = (await f.openChat(a.cookie, 'c_notification_read', b)).body.conversation.id;
+  const path = `/kaki/chat/${id}`;
+  const send = (person, body) => f.api(`/kaki/conversations/${id}/messages`, {
+    method: 'POST', cookie: person.cookie, body: { body },
+  });
+  const notifications = async (person) => (await f.api('/me/notifications', { cookie: person.cookie })).body.notifications;
+  await send(a, 'Meet at the entrance?');
+  const unread = (await notifications(b)).find(n => n.path === path);
+  assert.equal(unread.readAt, null);
+  f.db.prepare(`INSERT INTO notifications(id,user_id,category,event_key,title,resource_path)
+    VALUES('unrelated',?,'meetup','unrelated','Meetup update','/meetups/other')`).run(b.id);
+
+  const outsider = await f.user('notification-outsider');
+  assert.equal((await f.api(`/kaki/conversations/${id}`, { cookie: outsider.cookie })).status, 404);
+  assert.equal((await notifications(b)).find(n => n.id === unread.id).readAt, null);
+
+  assert.equal((await f.api(`/kaki/conversations/${id}`, { cookie: b.cookie })).status, 200);
+  let inbox = await notifications(b);
+  assert.ok(inbox.find(n => n.id === unread.id).readAt);
+  assert.equal(inbox.find(n => n.id === 'unrelated').readAt, null);
+
+  await send(b, 'Yes, see you there.');
+  const otherSide = (await notifications(a)).find(n => n.path === path);
+  await f.api(`/kaki/conversations/${id}`, { cookie: b.cookie });
+  assert.equal((await notifications(a)).find(n => n.id === otherSide.id).readAt, null);
+
+  await send(a, 'I am on the way.');
+  assert.ok((await notifications(b)).some(n => n.path === path && !n.readAt));
+  assert.equal((await f.api(`/kaki/conversations/${id}/read`, { method: 'POST', cookie: b.cookie })).status, 200);
+  inbox = await notifications(b);
+  assert.ok(inbox.filter(n => n.path === path).every(n => n.readAt));
+  assert.equal(inbox.find(n => n.id === 'unrelated').readAt, null);
+});
+
 test('a non-participant gets 404, not 403, so ids cannot be probed', async (t) => {
   const f = await fixture(t);
   const { a, b } = await f.matchedPair('c_probe');

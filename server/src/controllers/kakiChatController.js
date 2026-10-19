@@ -112,6 +112,7 @@ export function createKakiChatController(repos, realtime = null) {
 
       const before = chat.lastReadRowid(ctx.conversation.id, req.user.id);
       const after = chat.markReadToLatest(ctx.conversation.id, req.user.id);
+      const notificationsRead = repos.notifications.readConversation(req.user.id, `/kaki/chat/${ctx.conversation.id}`);
       if (after > before) {
         push(ctx.conversation, 'read', {
           conversationId: ctx.conversation.id,
@@ -122,6 +123,7 @@ export function createKakiChatController(repos, realtime = null) {
 
       const theirLastRead = chat.lastReadRowid(ctx.conversation.id, ctx.other);
       return res.json({
+        notificationsRead,
         conversation: shapeConversation(ctx.conversation, req.user.id, chat),
         messages: chat.messages(ctx.conversation.id)
           .map((m) => shapeMessage(m, req.user.id, theirLastRead)),
@@ -135,6 +137,7 @@ export function createKakiChatController(repos, realtime = null) {
 
       const before = chat.lastReadRowid(ctx.conversation.id, req.user.id);
       const after = chat.markReadToLatest(ctx.conversation.id, req.user.id);
+      const notificationsRead = repos.notifications.readConversation(req.user.id, `/kaki/chat/${ctx.conversation.id}`);
       if (after > before) {
         push(ctx.conversation, 'read', {
           conversationId: ctx.conversation.id,
@@ -142,7 +145,7 @@ export function createKakiChatController(repos, realtime = null) {
           lastReadSeq: after,
         });
       }
-      return res.json({ lastReadSeq: after, unreadTotal: chat.unreadTotal(req.user.id) });
+      return res.json({ lastReadSeq: after, unreadTotal: chat.unreadTotal(req.user.id), notificationsRead });
     },
 
     /** Badge count for the navbar. Cheap enough to call on every page load. */
@@ -170,6 +173,7 @@ export function createKakiChatController(repos, realtime = null) {
       // The sender has by definition read their own message, so advance their
       // marker too — otherwise sending would leave the thread looking unread.
       const myLastRead = chat.markReadToLatest(ctx.conversation.id, req.user.id);
+      const notificationsRead = repos.notifications.readConversation(req.user.id, `/kaki/chat/${ctx.conversation.id}`);
 
       const theirLastRead = chat.lastReadRowid(ctx.conversation.id, ctx.other);
       const unreadFor = {
@@ -184,7 +188,7 @@ export function createKakiChatController(repos, realtime = null) {
         unreadFor,
       }));
 
-      return res.status(201).json({ message: shapeMessage(message, req.user.id, theirLastRead) });
+      return res.status(201).json({ message: shapeMessage(message, req.user.id, theirLastRead), notificationsRead });
     },
 
     /** Edit own message only. Enforced in SQL as well as here. */

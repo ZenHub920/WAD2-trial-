@@ -40,9 +40,12 @@ export function createChatController(repos) {
         return res.status(404).json({ error: 'conversation_not_found' });
       }
       const after = typeof req.query.after === 'string' ? req.query.after : null;
+      const messages = repos.conversations.messages(conversation.id, after).map(publicMessage);
+      const notificationsRead = repos.notifications.readConversation(req.user.id, `/chat/${conversation.id}`);
       res.json({
+        notificationsRead,
         conversation: publicConversation(conversation, req.user.id),
-        messages: repos.conversations.messages(conversation.id, after).map(publicMessage),
+        messages,
       });
     },
 
