@@ -5,25 +5,26 @@ import { listingTitle, priceParts, sectionLabel } from '../../market.js';
 import MarketIcon from './MarketIcon.vue';
 import TicketPoster from './TicketPoster.vue';
 import VerifiedBadge from './VerifiedBadge.vue';
+import UserAvatar from './UserAvatar.vue';
+import LoadingSpinner from '../LoadingSpinner.vue';
 
 /**
  * The full listing card: poster, title, verification, price, description and the
- * Chat / Buy actions. It only renders and emits — the view that hosts it decides
- * what buying or chatting means, which is what lets the same card be reused
- * anywhere a listing needs to be shown in full.
- *
+ * Chat and seller management actions. Online checkout is unavailable until a
+ * payment provider is connected.
  * Override the buttons with the `actions` slot if a host needs different ones.
  */
 const props = defineProps({
   listing: { type: Object, required: true },
   saved: { type: Boolean, default: false },
-  /** The viewer is the seller: offer managing the listing instead of Chat / Buy. */
+  /** The viewer is the seller: offer managing the listing instead of buyer actions. */
   own: { type: Boolean, default: false },
   /** Disables the action buttons while the host is working (e.g. opening a chat). */
   busy: { type: Boolean, default: false },
+  disabled: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['buy', 'chat', 'toggle-save', 'copy-link', 'remove', 'edit']);
+const emit = defineEmits(['chat', 'toggle-save', 'copy-link', 'remove', 'edit']);
 
 const price = computed(() => priceParts(props.listing.priceCents));
 const available = computed(() => props.listing.status === 'active');
@@ -90,8 +91,8 @@ function copyLink() {
 
     <div class="dcard__row">
       <VerifiedBadge v-if="listing.verified" />
-      <span v-else class="tag">Unverified</span>
-      <span v-if="!available" class="tag tag--rose">Sold</span>
+      <span v-else class="tag">Unverified ticket</span>
+      <span v-if="!available" class="tag tag--rose">{{ listing.status === 'sold' ? 'Sold' : 'Listing removed' }}</span>
 
       <div class="dcard__quick">
         <button
@@ -110,13 +111,19 @@ function copyLink() {
       <span class="dcard__symbol">{{ price.symbol }}</span>{{ price.whole }}<span
         v-if="price.fraction" class="dcard__fraction">{{ price.fraction }}</span>
     </p>
+    <p class="dcard__price-note">Total listing price · SGD</p>
 
     <ul class="dcard__facts" aria-label="Ticket details">
       <li v-for="fact in facts" :key="fact">{{ fact }}</li>
     </ul>
 
+    <div class="dcard__seller">
+      <UserAvatar :user="listing.seller" :size="32" />
+      <span>Seller: {{ listing.seller.displayName }}</span>
+    </div>
+
     <section v-if="listing.description" class="dcard__desc">
-      <h3>Ticket Description</h3>
+      <h3>Ticket description</h3>
       <p
         :id="`listing-${listing.id}-desc`"
         ref="descEl"
@@ -130,28 +137,30 @@ function copyLink() {
         :aria-controls="`listing-${listing.id}-desc`"
         @click="expanded = !expanded"
       >
-        {{ expanded ? 'Show less' : 'Read More' }}
+        {{ expanded ? 'Show less' : 'Read more' }}
       </button>
     </section>
 
     <div class="dcard__actions">
       <slot name="actions" :listing="listing" :available="available">
         <template v-if="own">
-          <button class="dcard__btn dcard__btn--ghost" :disabled="busy || !available" @click="emit('edit', listing)">
+          <button class="dcard__btn dcard__btn--ghost" :disabled="busy || disabled || !available" @click="emit('edit', listing)">
             Edit listing
           </button>
-          <button class="dcard__btn" :disabled="busy || !available" @click="emit('remove', listing)">
-            {{ available ? 'Remove listing' : 'Sold' }}
+          <button class="dcard__btn" :disabled="busy || disabled || !available" @click="emit('remove', listing)">
+            <LoadingSpinner v-if="busy" />
+            {{ available ? 'Remove listing' : 'Listing unavailable' }}
           </button>
         </template>
         <template v-else>
-          <button class="dcard__btn" :disabled="busy" @click="emit('chat', listing)">Chat</button>
-          <button class="dcard__btn" :disabled="busy || !available" @click="emit('buy', listing)">
-            {{ available ? 'Buy' : 'Sold' }}
+          <button class="dcard__btn" :disabled="busy || disabled" @click="emit('chat', listing)"><LoadingSpinner v-if="busy" /> Message seller</button>
+          <button class="dcard__btn dcard__btn--ghost" disabled>
+            {{ available ? 'Checkout unavailable' : 'Listing unavailable' }}
           </button>
         </template>
       </slot>
     </div>
+    <p v-if="!own" class="dcard__payment-note">No payment provider is connected. Online orders and payments are not available.</p>
   </article>
 </template>
 
@@ -160,6 +169,8 @@ function copyLink() {
   position: relative;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: var(--space-6) var(--space-5) var(--space-5);
   background: var(--ink-800);
   border: var(--border-hairline);
@@ -268,6 +279,10 @@ function copyLink() {
   font-size: 0.45em;
 }
 
+.dcard__price-note { margin-top: var(--space-2); color: var(--text-300); font-size: var(--step--1); }
+.dcard__payment-note { margin-top: var(--space-3); color: var(--text-400); font-size: var(--step--1); }
+.dcard__seller { display: flex; align-items: center; gap: var(--space-2); min-width: 0; margin-top: var(--space-4); color: var(--text-300); font-size: var(--step--1); }
+
 .dcard__facts {
   display: flex;
   flex-wrap: wrap;
@@ -300,6 +315,7 @@ function copyLink() {
   margin-top: var(--space-2);
   color: var(--text-200);
   white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 
 .dcard__text--clamped {
@@ -326,17 +342,23 @@ function copyLink() {
 
 .dcard__actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-4);
   margin-top: var(--space-6);
 }
 
 .dcard__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
   min-height: 56px;
+  min-width: 0;
+  padding: var(--space-3);
   border-radius: var(--radius-md);
   background: var(--accent-500);
   color: #fff;
-  font-size: var(--step-1);
+  font-size: var(--step--1);
   font-weight: 500;
   transition: background var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
 }
@@ -362,5 +384,9 @@ function copyLink() {
 .dcard__btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+@media (max-width: 440px) {
+  .dcard__actions { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
 }
 </style>

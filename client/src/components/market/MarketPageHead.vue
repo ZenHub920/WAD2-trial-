@@ -8,7 +8,7 @@ import MarketIcon from './MarketIcon.vue';
  */
 const props = defineProps({
   title: { type: String, required: true },
-  fallback: { type: [String, Object], default: () => ({ name: 'marketplace' }) },
+  fallback: { type: [String, Object], default: () => ({ name: 'concerts' }) },
 });
 
 const router = useRouter();
@@ -31,7 +31,7 @@ function back() {
 <style scoped>
 .mhead {
   display: grid;
-  grid-template-columns: 44px 1fr 44px;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
   align-items: center;
   margin-bottom: var(--space-5);
 }
@@ -52,6 +52,8 @@ function back() {
 
 .mhead__title {
   text-align: center;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: var(--step-2);
 }
 </style>

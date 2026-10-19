@@ -6,6 +6,7 @@ import { formatMoney } from '../market.js';
 import MarketIcon from '../components/market/MarketIcon.vue';
 import MarketNotice from '../components/market/MarketNotice.vue';
 import MarketPageHead from '../components/market/MarketPageHead.vue';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 
 /**
  * One buyer–seller conversation. New messages arrive by polling: every few
@@ -44,6 +45,9 @@ async function scrollToEnd() {
 async function load() {
   loading.value = true;
   error.value = null;
+  conversation.value = null;
+  draft.value = '';
+  sendError.value = '';
   messages.value = [];
   try {
     const body = await api.conversation(props.id);
@@ -105,18 +109,18 @@ function timeOf(value) {
 <template>
   <div class="container chat">
     <MarketPageHead
-      :title="conversation?.other.displayName ?? 'Chat'"
-      :fallback="{ name: 'chat' }"
+      :title="conversation?.other.displayName ?? 'Ticket conversation'"
+      :fallback="{ name: 'kaki-chat' }"
     />
 
-    <div v-if="loading" class="skeleton" aria-busy="true" />
+    <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading conversation…</p>
 
     <MarketNotice v-else-if="error?.status === 401" title="Sign in to see this conversation">
       <RouterLink :to="{ name: 'login', query: { redirect: $route.fullPath } }">Sign in</RouterLink>
     </MarketNotice>
 
     <MarketNotice v-else-if="error?.status === 404" title="Conversation not found">
-      <RouterLink :to="{ name: 'chat' }">Back to your messages</RouterLink>
+      <RouterLink :to="{ name: 'kaki-chat' }">Back to messages</RouterLink>
     </MarketNotice>
 
     <MarketNotice v-else-if="error" tone="error" title="Could not load this conversation">
@@ -128,13 +132,13 @@ function timeOf(value) {
         :to="{ name: 'ticket-detail', params: { id: conversation.listing.id } }"
         class="about"
       >
-        <span class="about__label">{{ conversation.role === 'buyer' ? 'Buying' : 'Selling' }}</span>
+        <span class="about__label">{{ conversation.role === 'buyer' ? 'Ticket enquiry' : 'Your listing' }}</span>
         <span class="about__title">{{ conversation.listing.title }}</span>
         <span class="about__price tabular">
-          {{ formatMoney(conversation.listing.priceCents) }}
+          {{ formatMoney(conversation.listing.priceCents) }} listing total
         </span>
         <span v-if="conversation.listing.status !== 'active'" class="tag tag--rose">
-          {{ conversation.listing.status }}
+          No longer listed
         </span>
       </RouterLink>
 
@@ -166,7 +170,8 @@ function timeOf(value) {
           @keydown="onKeydown"
         />
         <button class="composer__send" type="submit" :disabled="sending || !draft.trim()" aria-label="Send">
-          <MarketIcon name="send" :size="20" />
+          <LoadingSpinner v-if="sending" />
+          <MarketIcon v-else name="send" :size="20" />
         </button>
       </form>
       <p v-if="sendError" class="composer__error" role="alert">{{ sendError }}</p>
@@ -181,10 +186,10 @@ function timeOf(value) {
 }
 
 .about {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-1) var(--space-3);
   padding: var(--space-3) var(--space-4);
   border: var(--border-hairline);
   border-radius: var(--radius-md);
@@ -199,19 +204,25 @@ function timeOf(value) {
 }
 
 .about__label {
+  grid-column: 1 / -1;
   color: var(--text-400);
 }
 
 .about__title {
-  flex: 1;
+  align-self: start;
   min-width: 0;
   color: var(--text-100);
   font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 .about__price {
-  color: var(--accent-300);
+  color: var(--accent-400);
   font-weight: 600;
+}
+
+@media (max-width: 480px) {
+  .about { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* ---- Messages --------------------------------------------------------- */
@@ -281,6 +292,7 @@ function timeOf(value) {
 
 .composer textarea {
   flex: 1;
+  min-width: 0;
   min-height: 44px;
   max-height: 160px;
   padding: var(--space-2) var(--space-3);

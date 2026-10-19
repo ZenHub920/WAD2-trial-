@@ -1,13 +1,14 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api, LABELS, formatDate } from '../api.js';
 import { currentUser, sessionReady } from '../auth.js';
-import VibeChart from '../components/VibeChart.vue';
-import SwipeDeck from '../components/SwipeDeck.vue';
-import PartyCard from '../components/PartyCard.vue';
+import UserAvatar from '../components/market/UserAvatar.vue';
+import { formatMoney } from '../market.js';
+import '../assets/groups.css';
 import MatchProposalCard from '../components/MatchProposalCard.vue';
 import { useCountUp } from '../composables/useCountUp.js';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 
 const props = defineProps({ id: { type: String, required: true } });
 const router = useRouter();
@@ -20,7 +21,8 @@ const loading = ref(true);
 const running = ref(false);
 const error = ref(null);
 const runError = ref('');
-const tab = ref('parties');
+const runNotice = ref('');
+const matchingError = ref('');
 const participation = ref(null);
 const participationLoading = ref(false);
 const participationBusy = ref(false);
@@ -36,6 +38,26 @@ const resultLoading = ref(false);
 const resultError = ref(null);
 const resultRetry = ref(0);
 let resultRequest = 0;
+const tickets = ref([]);
+const ticketsLoading = ref(false);
+const ticketsError = ref('');
+let ticketRequest = 0;
+const ticketCount = computed(() => tickets.value.reduce((sum, listing) => sum + listing.quantity, 0));
+async function loadTickets() {
+  const requestId = ++ticketRequest;
+  ticketsLoading.value = true;
+  ticketsError.value = '';
+  tickets.value = [];
+  try {
+    const response = await api.tickets();
+    if (requestId === ticketRequest) tickets.value = response.listings.filter(listing => listing.concert.id === props.id && listing.status === 'active');
+  } catch {
+    if (requestId === ticketRequest) ticketsError.value = 'Could not load tickets for this concert. Please try again.';
+  } finally {
+    if (requestId === ticketRequest) ticketsLoading.value = false;
+  }
+}
+watch(() => props.id, loadTickets, { immediate: true });
 
 function refreshMyProposals() {
   resultRetry.value++;
@@ -92,7 +114,7 @@ watch(
       participationLoadError.value = err.status !== 401;
       participationError.value = err.status === 401
         ? 'Your session has expired. Sign in to join.'
-        : `Could not load your Kaki participation: ${err.message}`;
+        : 'Could not load your companion-finder preferences. Please try again.';
     } finally {
       if (requestId === participationRequest) participationLoading.value = false;
     }
@@ -116,7 +138,7 @@ async function saveParticipation() {
       participationNeedsSignIn.value = err.status === 401;
       participationError.value = err.status === 401
         ? 'Your session has expired. Sign in to join.'
-        : `Could not save your Kaki participation: ${err.message}`;
+        : 'Could not save your companion-finder preferences. Please try again.';
     }
   } finally {
     if (requestId === participationRequest) participationBusy.value = false;
@@ -136,7 +158,7 @@ async function leaveParticipation() {
       participationNeedsSignIn.value = err.status === 401;
       participationError.value = err.status === 401
         ? 'Your session has expired. Sign in to leave.'
-        : `Could not leave Kaki: ${err.message}`;
+        : 'Could not leave the companion finder. Please try again.';
     }
   } finally {
     if (requestId === participationRequest) participationBusy.value = false;
@@ -147,15 +169,23 @@ async function load() {
   loading.value = true;
   error.value = null;
   runError.value = '';
+  runNotice.value = '';
+  matchingError.value = '';
+  parties.value = [];
+  requests.value = [];
   try {
-    const [detail, partyData, requestData] = await Promise.all([
+    const [detail, matching] = await Promise.all([
       api.concert(props.id),
-      api.parties(props.id),
-      api.requests(props.id),
+      Promise.all([api.parties(props.id), api.requests(props.id)]).catch(() => {
+        matchingError.value = 'Could not load group-matching availability. Ticket listings are still available below.';
+        return null;
+      }),
     ]);
     concert.value = detail;
-    parties.value = partyData.parties;
-    requests.value = requestData.requests;
+    if (matching) {
+      parties.value = matching[0].parties;
+      requests.value = matching[1].requests;
+    }
 
     preview.value = null;
   } catch (err) {
@@ -192,7 +222,7 @@ async function runRound() {
         ? 'Your session has expired. Sign in as an operator.'
         : err.status === 409
           ? 'Matching cannot run yet. Check availability and existing assignments.'
-          : `Could not run this round: ${err.message}`;
+          : 'Could not run this matching round. Please try again.';
   } finally {
     running.value = false;
   }
@@ -201,7 +231,8 @@ async function runRound() {
 function newMatchingBatch() {
   // Only an explicit new operation replaces the retry key.
   sessionStorage.setItem(`encore-batch:${props.id}`, crypto.randomUUID());
-  runError.value = 'New matching batch prepared. You can run matching now.';
+  runError.value = '';
+  runNotice.value = 'New matching batch prepared. You can run matching now.';
 }
 
 const previewLoading = ref(false);
@@ -213,77 +244,19 @@ async function loadPreview() {
   try {
     preview.value = await api.preview(props.id, { baselines: false, trace: false });
   } catch (err) {
-    runError.value = `Could not calculate preview: ${err.message}`;
+    runError.value = 'Could not calculate a matching preview. Please try again.';
   } finally {
     previewLoading.value = false;
   }
 }
 
-const totalSlots = computed(() => parties.value.reduce((a, p) => a + p.capacity, 0));
+const totalPlaces = computed(() => parties.value.reduce((sum, party) => sum + party.capacity, 0));
 
 const canRun = computed(
   () => sessionReady.value && currentUser.value?.isOperator === true
     && parties.value.length > 0 && requests.value.length > 0 && !running.value,
 );
 
-// Remember browse mode, and keep decisions when switching between deck and list.
-const mode = ref(localStorage.getItem('encore-browse-mode') === 'list' ? 'list' : 'deck');
-
-watch(mode, (value) => localStorage.setItem('encore-browse-mode', value));
-
-const shortlisted = ref([]);
-const passed = ref([]);
-
-const undecided = computed(() => {
-  const seen = new Set([...shortlisted.value, ...passed.value]);
-  return parties.value.filter((p) => !seen.has(p.id));
-});
-
-function onShortlist(party) {
-  if (!shortlisted.value.includes(party.id)) shortlisted.value.push(party.id);
-}
-
-function onPass(party) {
-  if (!passed.value.includes(party.id)) passed.value.push(party.id);
-}
-
-const opened = ref(null);
-
-function openParty(party) {
-  opened.value = party;
-}
-
-function closeParty() {
-  opened.value = null;
-}
-
-// Bind Escape only while the dialog is open, leaving deck shortcuts alone.
-function onGlobalKeydown(event) {
-  if (event.key === 'Escape' && opened.value) {
-    event.stopPropagation();
-    closeParty();
-  }
-}
-
-watch(opened, (value) => {
-  if (value) {
-    window.addEventListener('keydown', onGlobalKeydown);
-    document.body.style.overflow = 'hidden';
-  } else {
-    window.removeEventListener('keydown', onGlobalKeydown);
-    document.body.style.overflow = '';
-  }
-});
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', onGlobalKeydown);
-  document.body.style.overflow = '';
-});
-
-function resetDecisions() {
-  shortlisted.value = [];
-  passed.value = [];
-}
 
 const forecastMatched = useCountUp(() => preview.value?.metrics?.matched ?? 0, {
   duration: 1000,
@@ -298,18 +271,19 @@ const forecastFirstChoice = useCountUp(
   <div class="container section">
     <RouterLink to="/concerts" class="back">← All concerts</RouterLink>
 
-    <div v-if="loading" class="skeleton-hero" />
+    <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading concert details…</p>
 
-    <div v-else-if="error" class="notice notice--error">
-      <h3>Could not load this concert</h3>
-      <p class="mono">{{ error.message }}</p>
+    <div v-else-if="error" class="notice notice--error" role="alert">
+      <h1>Could not load this concert</h1>
+      <p>{{ error.status === 404 ? 'This concert is no longer available.' : 'Please try again.' }}</p>
+      <button class="btn btn--ghost" @click="load">Try again</button>
     </div>
 
     <template v-else-if="concert">
       <!-- ------------------------------------------------------------ Head -->
       <header class="head">
         <div class="head__text">
-          <p class="eyebrow">{{ formatDate(concert.concert.event_date) }}</p>
+          <p>{{ formatDate(concert.concert.event_date) }}</p>
           <h1>{{ concert.concert.artist }}</h1>
           <p v-if="concert.concert.tour_name" class="head__tour">
             {{ concert.concert.tour_name }}
@@ -321,21 +295,23 @@ const forecastFirstChoice = useCountUp(
         </div>
 
         <aside class="head__panel">
-          <h2 class="head__panel-title">This round</h2>
-          <dl class="counts">
+          <h2 class="head__panel-title">Group matching</h2>
+          <p v-if="matchingError" class="group-error" role="alert">{{ matchingError }}</p>
+          <dl v-else class="counts">
             <div>
               <dt>Groups</dt>
               <dd class="tabular">{{ parties.length }}</dd>
             </div>
             <div>
-              <dt>Open slots</dt>
-              <dd class="tabular">{{ totalSlots }}</dd>
+              <dt>Group places</dt>
+              <dd class="tabular">{{ totalPlaces }}</dd>
             </div>
             <div>
-              <dt>Looking</dt>
+              <dt>Active group finders</dt>
               <dd class="tabular">{{ requests.length }}</dd>
             </div>
           </dl>
+          <p class="group-muted">Group places are not tickets. Open group requests are considered in matching rounds.</p>
 
           <div v-if="preview && !preview.empty" class="head__forecast">
             <p class="head__forecast-label">If the round ran now</p>
@@ -348,6 +324,7 @@ const forecastFirstChoice = useCountUp(
               <span class="tag tabular">{{ forecastFirstChoice }}% first choice</span>
             </p>
           </div>
+          <p v-if="preview?.empty" class="group-muted">No matching preview is available for the current groups and requests.</p>
 
           <div v-if="sessionReady && currentUser?.isOperator" class="head__actions">
             <button
@@ -356,12 +333,14 @@ const forecastFirstChoice = useCountUp(
               :disabled="previewLoading || running"
               @click="loadPreview"
             >
+              <LoadingSpinner v-if="previewLoading" />
               {{ previewLoading ? 'Calculating…' : 'Preview matching' }}
             </button>
             <button type="button" class="btn btn--ghost" :disabled="running" @click="newMatchingBatch">
               Prepare new batch
             </button>
             <button type="button" class="btn btn--primary" :disabled="!canRun" @click="runRound">
+              <LoadingSpinner v-if="running" />
               {{ running ? 'Running…' : 'Run matching round' }}
             </button>
             <RouterLink :to="`/concerts/${id}/algorithm`" class="btn btn--ghost">
@@ -369,6 +348,7 @@ const forecastFirstChoice = useCountUp(
             </RouterLink>
           </div>
           <p v-if="runError" class="kaki-join__error" role="alert">{{ runError }}</p>
+          <p v-if="runNotice" class="group-success" role="status">{{ runNotice }}</p>
 
           <RouterLink
             v-if="concert.latestRound && sessionReady && currentUser?.isOperator"
@@ -387,12 +367,12 @@ const forecastFirstChoice = useCountUp(
       </header>
       <section class="my-result card" aria-labelledby="my-result-title">
         <h2 id="my-result-title">Your match proposals</h2>
-        <p v-if="!sessionReady || resultLoading" role="status">Loading your proposals…</p>
+        <p v-if="!sessionReady || resultLoading" class="loading-state" role="status"><LoadingSpinner />Loading your proposals…</p>
         <p v-else-if="!currentUser">
           <RouterLink to="/login">Sign in</RouterLink> to see your matching offers.
         </p>
         <div v-else-if="resultError" role="alert">
-          <p>Could not load your current match information: {{ resultError.message }}</p>
+          <p>Could not load your current match proposals. Please try again.</p>
           <button type="button" class="btn btn--ghost" @click="refreshMyProposals">Try again</button>
         </div>
         <p v-else-if="!myProposals.length">No proposals for this concert yet.</p>
@@ -406,19 +386,52 @@ const forecastFirstChoice = useCountUp(
         </template>
       </section>
 
-      <nav class="group-actions" aria-label="Find concert companions" style="margin-bottom: var(--space-5)">
-        <RouterLink :to="{ path: '/kaki', query: { concertId: id } }" class="btn btn--ghost">Find a Kaki</RouterLink>
-        <RouterLink :to="{ path: '/groups', query: { concertId: id } }" class="btn btn--primary">Find a Group</RouterLink>
-        <RouterLink :to="{ path: '/groups/connect', query: { concertId: id } }" class="btn btn--ghost">Connect Groups</RouterLink>
-      </nav>
+      <section class="ticket-section" aria-labelledby="concert-tickets-title">
+        <header class="group-actions ticket-section__head">
+          <h2 id="concert-tickets-title">Tickets for sale</h2>
+          <span v-if="!ticketsLoading && !ticketsError">{{ ticketCount }} {{ ticketCount === 1 ? 'ticket' : 'tickets' }} across {{ tickets.length }} {{ tickets.length === 1 ? 'listing' : 'listings' }}</span>
+        </header>
+        <p v-if="ticketsLoading" class="loading-state" role="status"><LoadingSpinner />Loading ticket listings…</p>
+        <div v-else-if="ticketsError" role="alert" class="group-error">
+          <p>{{ ticketsError }}</p>
+          <button class="btn btn--ghost" @click="loadTickets">Try again</button>
+        </div>
+        <p v-else-if="!tickets.length">No tickets are listed for this concert yet.</p>
+        <div v-else class="group-grid">
+          <article v-for="listing in tickets" :key="listing.id" class="card group-panel ticket-listing">
+            <header class="ticket-listing__seller">
+              <UserAvatar :user="listing.seller" :size="40" />
+              <div><h3>{{ listing.seller.displayName }}</h3><p>Seller</p></div>
+              <span v-if="listing.seller.verified" class="tag">Verified profile</span>
+            </header>
+            <p>{{ LABELS.section[listing.section] ?? listing.section }}</p>
+            <div class="group-actions">
+              <strong>{{ formatMoney(listing.priceCents) }} total for this listing</strong>
+              <span>{{ listing.quantity }} {{ listing.quantity === 1 ? 'ticket' : 'tickets' }} available</span>
+            </div>
+            <p><span class="tag" :class="{ 'tag--mint': listing.verified }">{{ listing.verified ? 'Verified ticket listing' : 'Ticket listing not verified' }}</span></p>
+            <RouterLink :to="`/tickets/${encodeURIComponent(listing.id)}`" class="btn btn--primary">View listing &amp; contact seller</RouterLink>
+          </article>
+        </div>
+        <p class="group-muted">Online checkout is unavailable because no payment provider is configured.</p>
+      </section>
+      <section class="card group-panel companion-options">
+        <h2>Go with companions</h2>
+        <p>Already have a ticket? Join an existing group or create your own. Group places do not include concert tickets.</p>
+        <nav class="group-actions" aria-label="Group workflows">
+          <RouterLink :to="{ path: '/groups', query: { concertId: id } }" class="btn btn--primary">Join a group</RouterLink>
+          <RouterLink :to="{ path: '/groups/connect', query: { concertId: id } }" class="btn btn--ghost">Host or connect groups</RouterLink>
+        </nav>
+      </section>
       <section class="kaki-join card" aria-labelledby="kaki-join-title">
         <div class="kaki-join__intro">
-          <h2 id="kaki-join-title">Find a concert Kaki</h2>
+          <h2 id="kaki-join-title">Find a companion</h2>
+          <p>Join this concert's companion finder. Messaging opens after a mutual like; this is separate from group matching.</p>
         </div>
         <p v-if="!currentUser" class="kaki-join__state">
-          <RouterLink to="/login" class="btn btn--primary">Sign in to join Kaki</RouterLink>
+          <RouterLink to="/login" class="btn btn--primary">Sign in to find companions</RouterLink>
         </p>
-        <p v-else-if="participationLoading" class="kaki-join__state" role="status">Loading your participation…</p>
+        <p v-else-if="participationLoading" class="kaki-join__state loading-state" role="status"><LoadingSpinner />Loading your participation…</p>
         <div v-else-if="participationNeedsSignIn" class="kaki-join__state">
           <p role="alert">{{ participationError }}</p>
           <RouterLink to="/login" class="btn btn--primary">Sign in</RouterLink>
@@ -428,7 +441,7 @@ const forecastFirstChoice = useCountUp(
           <button class="btn btn--ghost" type="button" @click="participationRetry++">Retry loading participation</button>
         </div>
         <form v-else class="kaki-join__form" @submit.prevent="saveParticipation">
-          <p v-if="participation" class="kaki-join__joined">You have joined Kaki for this concert.</p>
+          <p v-if="participation" class="kaki-join__joined">You are in the companion finder for this concert.</p>
           <div class="kaki-join__fields">
             <label>
               Preferred section
@@ -445,210 +458,18 @@ const forecastFirstChoice = useCountUp(
           </div>
           <p v-if="participationError" class="kaki-join__error" role="alert">{{ participationError }}</p>
           <div class="kaki-join__actions">
-            <RouterLink v-if="participation" to="/kaki" class="btn btn--ghost">Explore Kaki Finder</RouterLink>
+            <span v-if="participationBusy" class="loading-state" role="status"><LoadingSpinner />Working…</span>
+            <RouterLink v-if="participation" :to="{ path: '/kaki', query: { concertId: id } }" class="btn btn--ghost">Browse companions</RouterLink>
             <button type="submit" class="btn btn--primary" :disabled="participationBusy">
-              {{ participationBusy ? 'Working…' : participation ? 'Save preferences' : 'Join Kaki' }}
+              {{ participationBusy ? 'Working…' : participation ? 'Save preferences' : 'Join companion finder' }}
             </button>
-            <button v-if="participation" type="button" class="btn btn--ghost" :disabled="participationBusy" @click="leaveParticipation">Leave Kaki</button>
+            <button v-if="participation" type="button" class="btn btn--ghost" :disabled="participationBusy" @click="leaveParticipation">Leave companion finder</button>
           </div>
         </form>
       </section>
 
-      <!-- ------------------------------------------------------------ Tabs -->
-      <div class="tabs" role="tablist">
-        <button
-          role="tab"
-          :aria-selected="tab === 'parties'"
-          class="tabs__btn"
-          :class="{ 'tabs__btn--on': tab === 'parties' }"
-          @click="tab = 'parties'"
-        >
-          Groups with spare tickets
-          <span class="tabs__count tabular">{{ parties.length }}</span>
-        </button>
-        <button
-          role="tab"
-          :aria-selected="tab === 'seekers'"
-          class="tabs__btn"
-          :class="{ 'tabs__btn--on': tab === 'seekers' }"
-          @click="tab = 'seekers'"
-        >
-          People looking
-          <span class="tabs__count tabular">{{ requests.length }}</span>
-        </button>
-      </div>
-
-      <!-- --------------------------------------------------------- Listings -->
-      <div v-if="tab === 'parties'" class="browse">
-        <div class="browse__bar">
-          <div class="segmented" role="group" aria-label="How to browse groups">
-            <button
-              type="button"
-              class="segmented__btn"
-              :class="{ 'segmented__btn--on': mode === 'deck' }"
-              :aria-pressed="mode === 'deck'"
-              @click="mode = 'deck'"
-            >
-              Decide
-            </button>
-            <button
-              type="button"
-              class="segmented__btn"
-              :class="{ 'segmented__btn--on': mode === 'list' }"
-              :aria-pressed="mode === 'list'"
-              @click="mode = 'list'"
-            >
-              Compare
-            </button>
-            <span class="segmented__thumb" :class="`segmented__thumb--${mode}`" aria-hidden="true" />
-          </div>
-
-          <div v-if="shortlisted.length || passed.length" class="browse__tally">
-            <span class="tag tag--mint tabular">{{ shortlisted.length }} shortlisted</span>
-            <span class="tag tabular">{{ passed.length }} passed</span>
-            <button type="button" class="browse__reset" @click="resetDecisions">Start over</button>
-          </div>
-        </div>
-
-        <!-- Deck mode --------------------------------------------------- -->
-        <div v-if="mode === 'deck'" class="judge">
-          <p v-if="!parties.length" class="notice">
-            No groups have listed spare tickets yet.
-          </p>
-          <template v-else>
-            <div class="judge__deck">
-              <SwipeDeck
-                :items="undecided"
-                @shortlist="onShortlist"
-                @pass="onPass"
-                @open="openParty"
-              >
-                <template #card="{ item, isTop }">
-                  <PartyCard :party="item" :show-chart="isTop" />
-                </template>
-              </SwipeDeck>
-            </div>
-
-            <aside class="judge__aside">
-
-              <div class="judge__shortlist">
-                <p class="judge__label">
-                  Your shortlist
-                  <span class="tabular judge__label-count">{{ shortlisted.length }}</span>
-                </p>
-                <TransitionGroup name="chip" tag="ul" class="judge__chips">
-                  <li v-for="id in shortlisted" :key="id" class="judge__chip">
-                    {{ parties.find((p) => p.id === id)?.host.displayName }}
-                  </li>
-                </TransitionGroup>
-                <p v-if="!shortlisted.length" class="judge__empty">
-                  Nothing yet. Drag a card right, or press →.
-                </p>
-              </div>
-            </aside>
-          </template>
-        </div>
-
-        <!-- Compare mode ------------------------------------------------ -->
-        <div v-else class="listing">
-        <p v-if="!parties.length" class="notice">No groups have listed spare tickets yet.</p>
-        <article v-for="party in parties" :key="party.id" class="card entry">
-          <div class="entry__main">
-            <div class="entry__head">
-              <h3>{{ party.host.displayName }}</h3>
-              <span v-if="party.host.verified" class="tag tag--mint">Verified</span>
-              <span class="tag">{{ party.capacity }} {{ party.capacity === 1 ? 'slot' : 'slots' }}</span>
-            </div>
-            <p class="entry__meta">
-              {{ party.host.ageBand }}, {{ party.host.homeRegion.replace('_', ' ') }},
-              {{ party.host.languages.join(', ') }}
-            </p>
-            <div class="entry__tags">
-              <span class="tag tag--accent">{{ LABELS.section[party.section] }}</span>
-              <span class="tag">{{ LABELS.spendBand[party.spendBand] }}</span>
-              <span class="tag">{{ LABELS.arrival[party.arrivalPlan] }}</span>
-              <span
-                v-for="(on, key) in party.plans"
-                v-show="on"
-                :key="key"
-                class="tag tag--cyan"
-              >{{ LABELS.plans[key] }}</span>
-            </div>
-            <div class="entry__reliability">
-              <span class="entry__reliability-label">Reliability</span>
-              <span class="meter">
-                <span class="meter__fill" :style="{ width: `${party.host.reliability * 100}%` }" />
-              </span>
-              <span class="tabular entry__reliability-value">
-                {{ Math.round(party.host.reliability * 100) }}%
-              </span>
-            </div>
-          </div>
-          <div class="entry__chart">
-            <VibeChart :vibe="party.host.vibe" :size="150" />
-          </div>
-        </article>
-        </div>
-      </div>
-
-      <div v-else class="listing">
-        <p v-if="!requests.length" class="notice">Nobody is looking for a group yet.</p>
-        <article v-for="request in requests" :key="request.id" class="card entry">
-          <div class="entry__main">
-            <div class="entry__head">
-              <h3>{{ request.user.displayName }}</h3>
-              <span v-if="request.user.verified" class="tag tag--mint">Verified</span>
-            </div>
-            <p class="entry__meta">
-              {{ request.user.ageBand }}, {{ request.user.homeRegion.replace('_', ' ') }},
-              {{ request.user.languages.join(', ') }}
-            </p>
-            <div class="entry__tags">
-              <span class="tag tag--accent">{{ LABELS.section[request.sectionPref] }}</span>
-              <span class="tag">up to {{ LABELS.spendBand[request.spendBandMax] }}</span>
-              <span class="tag">{{ LABELS.arrival[request.arrivalPref] }}</span>
-              <span
-                v-for="(on, key) in request.plansWanted"
-                v-show="on"
-                :key="key"
-                class="tag tag--cyan"
-              >{{ LABELS.plans[key] }}</span>
-            </div>
-            <div class="entry__reliability">
-              <span class="entry__reliability-label">Reliability</span>
-              <span class="meter">
-                <span class="meter__fill" :style="{ width: `${request.user.reliability * 100}%` }" />
-              </span>
-              <span class="tabular entry__reliability-value">
-                {{ Math.round(request.user.reliability * 100) }}%
-              </span>
-            </div>
-          </div>
-          <div class="entry__chart">
-            <VibeChart :vibe="request.user.vibe" :size="150" />
-          </div>
-        </article>
-      </div>
     </template>
 
-    <!-- ------------------------------------------------------ Expanded card -->
-    <Teleport to="body">
-      <Transition name="sheet">
-        <div v-if="opened" class="sheet" @click.self="closeParty">
-          <div
-            class="sheet__panel"
-            role="dialog"
-            aria-modal="true"
-            :aria-label="`${opened.host.displayName}'s group`"
-          >
-            <button class="sheet__close" type="button" aria-label="Close" @click="closeParty">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
-            </button>
-            <PartyCard :party="opened" />
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
   </div>
 </template>
 
@@ -656,8 +477,6 @@ const forecastFirstChoice = useCountUp(
 .my-result { display: grid; gap: var(--space-3); margin-bottom: var(--space-6); padding: var(--space-5); }
 .my-result h2 { font-size: var(--step-1); }
 .my-result p { margin: 0; color: var(--text-300); }
-.my-result__round { font-size: var(--step--1); }
-.my-result__members { margin: 0; padding-left: var(--space-5); }
 .kaki-join { display: grid; gap: var(--space-4); margin-bottom: var(--space-6); padding: var(--space-5); }
 .kaki-join__intro h2 { font-size: var(--step-1); }
 .kaki-join__intro p { margin-top: var(--space-2); color: var(--text-300); }
@@ -670,284 +489,6 @@ const forecastFirstChoice = useCountUp(
 .kaki-join__error { color: var(--rose-400); }
 @media (max-width: 600px) { .kaki-join__fields { grid-template-columns: 1fr; } }
 
-/* ---- Browse: mode switch ------------------------------------------------ */
-
-.browse {
-  display: grid;
-  gap: var(--space-5);
-}
-
-.browse__bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-/* A sliding thumb rather than two independently styled buttons: the movement
-   shows that these are two states of one control, and where you came from. */
-.segmented {
-  position: relative;
-  display: inline-flex;
-  padding: 3px;
-  border-radius: var(--radius-pill);
-  border: var(--border-hairline);
-  background: var(--ink-850);
-}
-
-.segmented__btn {
-  position: relative;
-  z-index: 1;
-  padding: var(--space-2) var(--space-5);
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: none;
-  color: var(--text-300);
-  font: inherit;
-  font-size: var(--step--1);
-  font-weight: 500;
-  cursor: pointer;
-  transition: color var(--dur-base) var(--ease-glide);
-}
-
-.segmented__btn--on {
-  color: var(--ink-900);
-}
-
-.segmented__btn:focus-visible {
-  outline: 2px solid var(--accent-500);
-  outline-offset: 2px;
-}
-
-.segmented__thumb {
-  position: absolute;
-  top: 3px;
-  bottom: 3px;
-  width: calc(50% - 3px);
-  border-radius: var(--radius-pill);
-  background: linear-gradient(180deg, var(--accent-400), var(--accent-500));
-  box-shadow: var(--shadow-accent);
-  transition: transform var(--dur-base) var(--ease-spring-soft);
-}
-
-.segmented__thumb--deck { transform: translateX(0); }
-.segmented__thumb--list { transform: translateX(100%); }
-
-.browse__tally {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.browse__reset {
-  border: 0;
-  background: none;
-  padding: 0;
-  color: var(--text-400);
-  font: inherit;
-  font-size: var(--step--2);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
-
-.browse__reset:hover { color: var(--text-200); }
-
-/* Deck and explanation share a row so the deck is anchored to the page's left
-   edge like everything else, instead of floating in the middle of the column. */
-.judge {
-  display: grid;
-  grid-template-columns: minmax(0, 26rem) minmax(0, 1fr);
-  gap: var(--space-7);
-  align-items: start;
-}
-
-.judge__deck {
-  min-width: 0;
-}
-
-.judge__aside {
-  position: sticky;
-  top: calc(var(--header-height) + var(--space-5));
-  display: grid;
-  gap: var(--space-4);
-  padding: var(--space-5);
-  border-radius: var(--radius-lg);
-  border: var(--border-hairline);
-  background: var(--ink-850);
-}
-
-
-.judge__label {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0 0 var(--space-3);
-  font-size: var(--step--2);
-  color: var(--text-400);
-}
-
-.judge__label-count {
-  padding: 1px var(--space-2);
-  border-radius: var(--radius-pill);
-  background: color-mix(in oklab, var(--mint-400) 16%, transparent);
-  color: var(--mint-400);
-}
-
-.judge__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.judge__chip {
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-pill);
-  border: 1px solid color-mix(in oklab, var(--mint-400) 28%, transparent);
-  background: color-mix(in oklab, var(--mint-400) 10%, transparent);
-  color: var(--text-200);
-  font-size: var(--step--2);
-}
-
-.judge__empty {
-  margin: 0;
-  font-size: var(--step--2);
-  color: var(--text-400);
-}
-
-/* A name arriving in the shortlist is the only confirmation that a swipe did
-   anything, so it gets a spring rather than a fade. */
-.chip-enter-active {
-  transition:
-    transform var(--dur-slow) var(--ease-spring),
-    opacity var(--dur-fast) linear;
-}
-
-.chip-leave-active {
-  transition:
-    transform var(--dur-fast) var(--ease-glide),
-    opacity var(--dur-fast) linear;
-  position: absolute;
-}
-
-.chip-enter-from {
-  opacity: 0;
-  transform: scale(0.6);
-}
-
-.chip-leave-to {
-  opacity: 0;
-  transform: scale(0.8);
-}
-
-@media (max-width: 900px) {
-  .judge {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-5);
-  }
-
-  .judge__aside {
-    position: static;
-  }
-}
-
-/* ---- Expanded card ------------------------------------------------------ */
-
-.sheet {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  display: grid;
-  place-items: center;
-  padding: var(--gutter);
-  background: rgba(4, 3, 8, 0.6);
-  backdrop-filter: blur(8px);
-}
-
-.sheet__panel {
-  position: relative;
-  width: min(32rem, 100%);
-  max-height: 85vh;
-  overflow-y: auto;
-  padding: var(--space-6);
-  border-radius: var(--radius-xl);
-  border: 1px solid var(--ink-500);
-  background: var(--ink-800);
-  box-shadow: var(--shadow-lg);
-}
-
-/* Keep the card's own badges clear of the close button, which sits over the
-   same corner. */
-.sheet__panel :deep(.face__head) {
-  padding-right: var(--space-7);
-}
-
-.sheet__close {
-  position: absolute;
-  top: var(--space-4);
-  right: var(--space-4);
-  z-index: 2;
-  display: grid;
-  place-items: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 50%;
-  border: var(--border-hairline);
-  background: var(--ink-700);
-  color: var(--text-300);
-  cursor: pointer;
-  transition:
-    background var(--dur-fast) var(--ease-glide),
-    transform var(--dur-fast) var(--ease-spring);
-}
-
-.sheet__close svg {
-  width: 0.95rem;
-  height: 0.95rem;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.5;
-  stroke-linecap: round;
-}
-
-.sheet__close:hover {
-  background: var(--ink-600);
-  color: var(--text-100);
-}
-
-.sheet__close:active { transform: scale(0.92); }
-
-/* The panel scales up from slightly small as it fades in, which reads as the
-   card you tapped growing rather than a new surface appearing over it. */
-.sheet-enter-active,
-.sheet-leave-active {
-  transition: opacity var(--dur-base) var(--ease-glide);
-}
-
-.sheet-enter-active .sheet__panel {
-  transition: transform var(--dur-slow) var(--ease-spring-soft);
-}
-
-.sheet-leave-active .sheet__panel {
-  transition: transform var(--dur-fast) var(--ease-glide);
-}
-
-.sheet-enter-from,
-.sheet-leave-to {
-  opacity: 0;
-}
-
-.sheet-enter-from .sheet__panel {
-  transform: scale(0.92) translateY(12px);
-}
-
-.sheet-leave-to .sheet__panel {
-  transform: scale(0.97);
-}
 
 .back {
   display: inline-block;
@@ -972,7 +513,7 @@ const forecastFirstChoice = useCountUp(
 
 @media (min-width: 960px) {
   .head {
-    grid-template-columns: 1fr 340px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 340px);
     gap: var(--space-8);
     align-items: start;
   }
@@ -1010,17 +551,14 @@ const forecastFirstChoice = useCountUp(
 }
 
 .head__panel-title {
-  font-family: var(--font-mono);
-  font-size: var(--step--2);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--text-400);
-  font-weight: 500;
+  font-size: var(--step-1);
+  color: var(--text-200);
+  font-weight: 600;
 }
 
 .counts {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-3);
   margin-top: var(--space-4);
   padding-bottom: var(--space-4);
@@ -1092,140 +630,6 @@ const forecastFirstChoice = useCountUp(
 .head__previous .ok { color: var(--mint-400); }
 .head__previous .bad { color: var(--rose-400); font-weight: 600; }
 
-/* ---- Tabs --------------------------------------------------------------- */
-
-.tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-bottom: var(--space-5);
-}
-
-.tabs__btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-  border: var(--border-hairline);
-  font-size: var(--step--1);
-  color: var(--text-300);
-  transition:
-    background var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out),
-    border-color var(--dur-fast) var(--ease-out);
-}
-
-.tabs__btn:hover { color: var(--text-100); border-color: var(--ink-500); }
-
-.tabs__btn--on {
-  background: var(--ink-750);
-  border-color: var(--accent-500);
-  color: var(--text-100);
-}
-
-.tabs__count {
-  padding: 1px var(--space-2);
-  border-radius: var(--radius-pill);
-  background: var(--ink-700);
-  font-size: var(--step--2);
-}
-
-.tabs__btn--on .tabs__count {
-  background: var(--accent-500);
-  color: #fff;
-}
-
-/* ---- Listings ----------------------------------------------------------- */
-
-.listing {
-  display: grid;
-  gap: var(--space-4);
-}
-
-@media (min-width: 1000px) {
-  .listing {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-.entry {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--space-4);
-}
-
-@media (min-width: 520px) {
-  .entry {
-    grid-template-columns: 1fr 150px;
-    align-items: center;
-  }
-}
-
-.entry__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.entry__head h3 {
-  font-size: var(--step-1);
-}
-
-.entry__meta {
-  margin-top: var(--space-1);
-  font-size: var(--step--2);
-  color: var(--text-400);
-  text-transform: capitalize;
-}
-
-.entry__tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-}
-
-.entry__reliability {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-top: var(--space-4);
-}
-
-.entry__reliability-label {
-  font-size: var(--step--2);
-  color: var(--text-400);
-  white-space: nowrap;
-}
-
-.entry__reliability-value {
-  font-size: var(--step--2);
-  color: var(--text-300);
-  min-width: 3ch;
-}
-
-/* .meter now lives in base.css — both this listing and the swipe card use it. */
-
-.entry__chart {
-  justify-self: center;
-}
-
-/* ---- States ------------------------------------------------------------- */
-
-.skeleton-hero {
-  height: 320px;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(100deg, var(--ink-800) 30%, var(--ink-750) 50%, var(--ink-800) 70%);
-  background-size: 220% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
-}
-
-@keyframes shimmer {
-  from { background-position: 180% 0; }
-  to   { background-position: -80% 0; }
-}
 
 .notice {
   grid-column: 1 / -1;
@@ -1241,5 +645,15 @@ const forecastFirstChoice = useCountUp(
   background: color-mix(in oklab, var(--rose-400) 7%, transparent);
 }
 
-.notice h3 { color: var(--rose-400); margin-bottom: var(--space-2); }
+.notice h2 { font-size: var(--step-1); color: var(--rose-400); margin-bottom: var(--space-2); }
+.head__text, .head__panel, .ticket-listing, .ticket-listing__seller > div { min-width: 0; overflow-wrap: anywhere; }
+.ticket-section { display: grid; gap: var(--space-4); margin-bottom: var(--space-6); }
+.ticket-section__head { justify-content: space-between; }
+.ticket-section h2, .companion-options h2 { font-size: var(--step-2); }
+.ticket-listing { align-content: start; }
+.ticket-listing h3 { font-size: var(--step-1); }
+.ticket-listing__seller { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.ticket-listing__seller p { color: var(--text-300); font-size: var(--step--1); }
+.ticket-listing > .btn { margin-top: auto; justify-self: start; white-space: normal; }
+.companion-options { margin-bottom: var(--space-6); }
 </style>

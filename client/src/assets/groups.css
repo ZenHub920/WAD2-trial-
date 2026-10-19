@@ -1,16 +1,29 @@
-.groups-page { padding-top: var(--space-8); padding-bottom: var(--space-8); display: grid; gap: var(--space-5); }
+.groups-page { padding-top: var(--space-8); padding-bottom: var(--space-8); display: grid; gap: var(--space-5); min-width: 0; overflow-wrap: anywhere; }
 .groups-page h1 { font-size: var(--step-4); }
 .groups-page h2 { font-size: var(--step-2); }
 .groups-page h3 { font-size: var(--step-1); }
-.group-panel, .group-card { padding: var(--space-5); display: grid; gap: var(--space-3); }
-.group-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--space-4); }
-.groups-page label { display: grid; gap: var(--space-2); font-size: var(--step--1); }
-.groups-page input:not([type=checkbox]), .groups-page select { width: 100%; min-width: 0; padding: var(--space-3); background: var(--ink-700); color: var(--text-100); border: var(--border-soft); border-radius: var(--radius-sm); }
+.group-panel, .group-card { padding: var(--space-5); display: grid; gap: var(--space-3); min-width: 0; align-content: start; }
+.group-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: var(--space-4); align-items: start; }
+.groups-page label, .group-panel label { display: grid; gap: var(--space-2); font-size: var(--step--1); min-width: 0; }
+.groups-page input:not([type=checkbox]), .groups-page select, .groups-page textarea, .group-panel input:not([type=checkbox]), .group-panel select, .group-panel textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: var(--space-3); background: var(--ink-700); color: var(--text-100); border: var(--border-soft); border-radius: var(--radius-sm); }
 .group-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: var(--space-5); }
 .group-actions, .group-tags { display: flex; gap: var(--space-3); flex-wrap: wrap; align-items: center; }
-.groups-page .group-check { display: flex; align-items: center; gap: var(--space-2); }
+.groups-page .group-check, .group-panel .group-check { display: flex; align-items: flex-start; gap: var(--space-2); }
 .group-tags { list-style: none; padding: 0; font-size: var(--step--1); color: var(--text-300); }
 .group-notes { white-space: pre-wrap; overflow-wrap: anywhere; }
 .group-error { color: var(--rose-400); }
 .group-success { color: var(--mint-400); }
 .group-muted { color: var(--text-300); }
+.groups-page > *, .group-panel > *, .group-card > *, .group-actions > * { min-width: 0; }
+.group-actions .btn, .group-panel > .btn, .group-panel > form > .btn { white-space: normal; }
+.group-panel > .btn, .group-panel > form > .btn { justify-self: start; }
+.groups-page textarea, .group-panel textarea { resize: vertical; min-height: 6rem; }
+.groups-page fieldset { min-width: 0; border: var(--border-soft); padding: var(--space-3); border-radius: var(--radius-sm); display: grid; gap: var(--space-2); }
+.groups-page details > summary, .group-panel details > summary { cursor: pointer; }
+.groups-page details[open] > summary, .group-panel details[open] > summary { margin-bottom: var(--space-3); }
+.group-check input[type=checkbox] { flex: none; margin-top: 0.2em; }
+.group-panel article + article { border-top: var(--border-hairline); padding-top: var(--space-4); }
+@media (max-width: 480px) {
+  .group-panel, .group-card { padding: var(--space-4); }
+  .group-actions .btn { flex: 1 1 auto; text-align: center; justify-content: center; }
+}

@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { api, LABELS } from '../api.js';
 import { useRoute } from 'vue-router';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 
 const props = defineProps({ id: { type: String, required: true } });
 const route = useRoute();
@@ -70,14 +71,14 @@ const rankHistogram = computed(() => {
 
 <template>
   <div class="container section">
-    <div v-if="loading" class="skeleton" />
+    <div v-if="loading" class="loading-state"><LoadingSpinner /> Loading matching results…</div>
 
     <div v-else-if="error" class="notice--error" role="alert">
-      <h3>{{ error.status === 403 ? 'Operator access required'
-        : error.status === 401 ? 'Sign in required' : 'Could not load this round' }}</h3>
+      <h1>{{ error.status === 403 ? 'Operator access required'
+        : error.status === 401 ? 'Sign in required' : 'Could not load this round' }}</h1>
       <p v-if="error.status === 403">Use an operator account to view this round.</p>
       <p v-else-if="error.status === 401">Sign in with an operator account to view this round.</p>
-      <p v-else class="mono">{{ error.message }}</p>
+      <p v-else>Return to the concert and try loading the matching results again.</p>
       <RouterLink v-if="error.status === 401" to="/login" class="btn btn--primary">Sign in</RouterLink>
       <RouterLink :to="concertLink" class="btn btn--ghost">{{ route.query.concertId ? 'Back to concert' : 'Browse concerts' }}</RouterLink>
     </div>
@@ -86,10 +87,9 @@ const rankHistogram = computed(() => {
       <RouterLink :to="`/concerts/${round.concertId}`" class="back">← Back to concert</RouterLink>
 
       <header class="head">
-        <p class="eyebrow">Round {{ round.id }}</p>
-        <h1>Matching results</h1>
+        <h1>Group matching results</h1>
         <p class="lede">
-          {{ round.metrics.matched }} of {{ round.metrics.eligibleSeekers }} seekers placed,
+          {{ round.metrics.matched }} of {{ round.metrics.eligibleSeekers }} group finders placed,
           computed by {{ round.algorithm.replace(/_/g, ' ') }} in
           {{ round.timings.totalMs }}ms.
         </p>
@@ -106,10 +106,11 @@ const rankHistogram = computed(() => {
             All acceptable pairs passed the stability check.
           </p>
           <p v-else>
-            Some seekers and groups would prefer another pairing.
+            Some group finders and groups would both prefer a different pairing.
           </p>
 
           <button class="btn btn--ghost stamp__btn" :disabled="verifying" @click="verify">
+            <LoadingSpinner v-if="verifying" />
             {{ verifying ? 'Checking…' : 'Re-check independently' }}
           </button>
 
@@ -117,7 +118,7 @@ const rankHistogram = computed(() => {
             <p v-if="verification" class="stamp__verdict mono">
               Checked {{ verification.pairsChecked }} acceptable pairs:
               <strong :class="verification.verified ? 'ok' : 'bad'">
-                {{ verification.blockingPairCount }} found
+                {{ verification.blockingPairCount }} blocking pairs found
               </strong>.
               {{ verification.agreesWithStoredClaim
                 ? 'Matches the saved result.'
@@ -139,7 +140,7 @@ const rankHistogram = computed(() => {
           { label: 'Mean rank', value: round.metrics.seekerRank.mean ?? 'N/A',
             note: `worst was ${round.metrics.seekerRank.worst ?? 'N/A'}` },
           { label: 'Capacity used', value: `${Math.round(round.metrics.capacityUtilisation * 100)}%`,
-            note: 'of all open slots' },
+            note: 'of available group places' },
           { label: 'Solve time', value: `${round.timings.solveMs}ms`,
             note: `prefs ${round.timings.preferencesMs}ms` },
         ]" :key="metric.label" class="metric">
@@ -151,9 +152,9 @@ const rankHistogram = computed(() => {
 
       <!-- ----------------------------------------------------- Histogram -->
       <section v-if="rankHistogram.length" class="histogram">
-        <h2 class="section-title">Where people landed on their own list</h2>
+        <h2 class="section-title">Group preference rankings</h2>
         <p class="section-note">
-          Rank 1 is the seeker's first choice.
+          Rank 1 is the group finder's first choice.
         </p>
         <div class="bars">
           <div v-for="bin in rankHistogram" :key="bin.rank" class="bar">
@@ -169,7 +170,7 @@ const rankHistogram = computed(() => {
 
       <!-- -------------------------------------------------------- Groups -->
       <section class="groups">
-        <h2 class="section-title">The groups</h2>
+        <h2 class="section-title">Matched groups</h2>
         <div class="groups__grid">
           <article v-for="[partyId, group] in groups" :key="partyId" class="card group">
             <header class="group__head">
@@ -192,8 +193,7 @@ const rankHistogram = computed(() => {
       <section v-if="unmatched.length" class="unmatched">
         <h2 class="section-title">Not placed this round</h2>
         <p class="section-note">
-          Demand exceeded the open slots, or their hard filters left nothing compatible.
-          They carry into the next round automatically.
+          No compatible group place was available for these requests in this round.
         </p>
         <div class="chips">
           <span v-for="row in unmatched" :key="row.seeker_request_id" class="tag">
@@ -266,6 +266,7 @@ const rankHistogram = computed(() => {
 
 .stamp--ok .stamp__mark { background: var(--mint-400); }
 .stamp--bad .stamp__mark { background: var(--rose-400); }
+.stamp__body { min-width: 0; }
 
 .stamp__body h2 {
   font-size: var(--step-1);
@@ -400,7 +401,7 @@ const rankHistogram = computed(() => {
 .groups__grid {
   display: grid;
   gap: var(--space-4);
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
 }
 
 .group__head {
@@ -450,18 +451,6 @@ const rankHistogram = computed(() => {
 
 /* ---- States ------------------------------------------------------------- */
 
-.skeleton {
-  height: 400px;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(100deg, var(--ink-800) 30%, var(--ink-750) 50%, var(--ink-800) 70%);
-  background-size: 220% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
-}
-
-@keyframes shimmer {
-  from { background-position: 180% 0; }
-  to   { background-position: -80% 0; }
-}
 
 .notice--error {
   padding: var(--space-6);
@@ -470,7 +459,7 @@ const rankHistogram = computed(() => {
   background: color-mix(in oklab, var(--rose-400) 7%, transparent);
 }
 
-.notice--error h3 { color: var(--rose-400); margin-bottom: var(--space-2); }
+.notice--error h1 { color: var(--rose-400); margin-bottom: var(--space-3); }
 
 .fade-enter-active { transition: opacity var(--dur-base) var(--ease-out); }
 .fade-enter-from { opacity: 0; }

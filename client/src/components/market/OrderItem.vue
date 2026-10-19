@@ -17,7 +17,7 @@ defineProps({
     <div class="item__body">
       <h2 class="item__title">{{ listingTitle(listing) }}</h2>
       <p class="item__seller">Seller: {{ listing.seller.displayName }}</p>
-      <VerifiedBadge v-if="listing.verified" label="Verified" />
+      <VerifiedBadge v-if="listing.verified" />
     </div>
   </div>
 </template>
@@ -25,9 +25,11 @@ defineProps({
 <style scoped>
 .item {
   display: grid;
-  grid-template-columns: minmax(96px, 30%) 1fr;
+  grid-template-columns: minmax(80px, 30%) minmax(0, 1fr);
   gap: var(--space-5);
   align-items: start;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .item__title {

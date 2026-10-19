@@ -2,17 +2,13 @@
 /**
  * One profile, as it appears in the swipe deck.
  *
- * Layout follows the prototype: portrait block, name, "age, gender", the
- * concert, then interest chips. Two honest substitutions, because the data
- * behind them does not exist yet:
- *
- *   - the portrait is generated initials, not a stock photo
- *   - "You both like" becomes "They're into" when there is no overlap to
- *     claim, which includes every signed-out viewer
+ * Shows real profile data and optional photos. Shared interests are only
+ * labelled as shared when both profiles have the relevant vibe scores.
  */
 import { computed } from 'vue';
 import { avatarFor, sharedInterests } from '../../kaki.js';
 import { LABELS, formatShortDate } from '../../api.js';
+import UserAvatar from '../UserAvatar.vue';
 
 const props = defineProps({
   person: { type: Object, required: true },
@@ -35,9 +31,9 @@ const interests = computed(() => {
     <div
       class="kaki-card__portrait"
       :style="{ background: avatar.bg, color: avatar.fg }"
-      aria-hidden="true"
+      role="presentation"
     >
-      <span class="kaki-card__initials">{{ avatar.initials }}</span>
+      <UserAvatar :src="person.user.avatarUrl" :name="person.user.displayName" :size="112" />
     </div>
 
     <div class="kaki-card__body">
@@ -45,8 +41,8 @@ const interests = computed(() => {
 
       <p class="kaki-card__meta">
         {{ person.user.ageBand }}, {{ person.user.homeRegion.replace('_', ' ') }}
-        <span v-if="person.user.verified" class="kaki-card__verified" title="Verified account">
-          ✓ verified
+        <span v-if="person.user.verified" class="kaki-card__verified" title="Profile verified">
+          ✓ Profile verified
         </span>
       </p>
 
@@ -85,18 +81,11 @@ const interests = computed(() => {
 .kaki-card__portrait {
   display: grid;
   place-items: center;
-  /* Fixed ratio so every card in the stack is the same height regardless of
-     how many interest chips the person has. */
+  /* A consistent portrait area keeps the profile details easy to scan. */
   aspect-ratio: 4 / 3;
   flex-shrink: 0;
 }
 
-.kaki-card__initials {
-  font-family: var(--font-display);
-  font-size: var(--step-5);
-  font-weight: 800;
-  letter-spacing: 0.02em;
-}
 
 .kaki-card__body {
   padding: var(--space-4);
@@ -104,6 +93,7 @@ const interests = computed(() => {
   flex-direction: column;
   gap: var(--space-1);
   min-height: 0;
+  overflow-wrap: anywhere;
 }
 
 .kaki-card__name {

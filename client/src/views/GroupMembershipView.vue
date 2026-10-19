@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { api } from "../api.js";
 import { currentUser } from "../auth.js";
 import PreferenceEditor from "../components/PreferenceEditor.vue";
+import LoadingSpinner from "../components/LoadingSpinner.vue";
 import "../assets/groups.css";
 const props = defineProps({ id: String, token: String });
 const router = useRouter();
@@ -11,6 +12,8 @@ const group = ref(null),
   error = ref(""),
   notice = ref(""),
   busy = ref(false),
+  savingPreferences = ref(false),
+  loading = ref(false),
   link = ref(""),
   friends = ref(0),
   strangerPlaces = ref(0),
@@ -20,24 +23,30 @@ async function load() {
   if (props.id) {
     group.value = (await api.groupMembership(props.id)).group;
     friends.value = group.value.settings?.expected_friends ?? 0;
-    strangerPlaces.value = group.value.strangerPlaces;
+    strangerPlaces.value = group.value.settings?.stranger_slots ?? group.value.strangerPlaces;
     connect.value = Boolean(group.value.settings?.connect_open);
   }
 }
 watch(
   () => props.id,
   async () => {
+    group.value = null;
+    error.value = "";
+    loading.value = Boolean(props.id);
     try {
       await load();
     } catch (e) {
-      error.value = e.message;
+      error.value = e.status === 403 ? "Only members can view this group. Use your invitation link to join." : "Could not load this group. It may no longer be available.";
+    } finally {
+      loading.value = false;
     }
   },
   { immediate: true },
 );
-async function act(fn) {
+async function act(fn, preferences = false) {
   if (busy.value) return;
   busy.value = true;
+  savingPreferences.value = preferences;
   error.value = "";
   notice.value = "";
   try {
@@ -45,9 +54,18 @@ async function act(fn) {
     await load();
     notice.value = "Saved.";
   } catch (e) {
-    error.value = e.message;
+    error.value = ({
+      members_or_preferences_incomplete: "Invite the expected number of friends and ask every member to save their preferences before publishing.",
+      expected_friends_below_current_members: "The expected friend count cannot be lower than the friends already in your group.",
+      configure_group_first: "Save your group settings before creating an invitation.",
+      invitation_unavailable: "This invitation has expired or is no longer available. Ask the host for a new link.",
+      invitation_used: "This single-use invitation has already been accepted. Ask the host for a new link.",
+      already_in_concert_group: "You already belong to or host a group for this concert.",
+      active_matching_proposal_exists: "Review your active matching proposal before joining another group.",
+    })[e.message] ?? (e.status === 401 ? "Sign in to manage your group." : "Could not save this change. Review your group settings and try again.");
   } finally {
     busy.value = false;
+    savingPreferences.value = false;
   }
 }
 async function accept() {
@@ -66,14 +84,17 @@ async function invite() {
 }
 </script>
 <template>
-  <main class="container groups-page">
-    <h1>Your group</h1>
-    <nav class="group-actions">
-      <RouterLink to="/groups">Find a Group</RouterLink
-      ><RouterLink to="/groups/connect">Connect Groups</RouterLink>
+  <div class="container groups-page">
+    <h1>{{ token ? "Join a friend's group" : "Your group" }}</h1>
+    <nav class="group-actions" aria-label="Group pages">
+      <RouterLink to="/groups">Join a group</RouterLink>
+      <RouterLink to="/groups/connect">Host &amp; connect groups</RouterLink>
+      <RouterLink v-if="group" :to="`/concerts/${encodeURIComponent(group.concertId)}`">Concert details</RouterLink>
     </nav>
     <p v-if="error" role="alert" class="group-error">{{ error }}</p>
-    <p v-if="notice" role="status">{{ notice }}</p>
+    <p v-if="notice" role="status" class="group-success">{{ notice }}</p>
+    <p v-if="busy && !savingPreferences" class="loading-state" role="status"><LoadingSpinner />Updating your group…</p>
+    <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading your group…</p>
     <section v-if="token && !group" class="card group-panel">
       <p>
         Join your friend's group using this invitation.
@@ -82,17 +103,15 @@ async function invite() {
         Accept invitation
       </button>
     </section>
-    <template v-if="group"
-      ><p>
-        {{ group.members.filter((m) => m.answered).length }} of
-        {{ group.members.length }} members answered.
-      </p>
-      <ul>
-        <li v-for="m in group.members" :key="m.id">
-          {{ m.name }},
-          {{ m.answered ? "Answered" : "Preferences pending" }}
-        </li>
-      </ul>
+    <template v-if="group">
+      <section class="card group-panel">
+        <h2>{{ group.settings?.published ? "Published group" : "Draft group" }}</h2>
+        <p>{{ group.settings?.published ? "Your group is published for discovery." : "Your group is not published. Complete the member preferences before publishing." }}</p>
+        <p>{{ group.members.filter((m) => m.answered).length }} of {{ group.members.length }} members have saved preferences.</p>
+        <ul>
+          <li v-for="m in group.members" :key="m.id">{{ m.name }} — {{ m.answered ? "Preferences saved" : "Preferences pending" }}{{ m.id === group.hostId ? " (host)" : "" }}</li>
+        </ul>
+      </section>
       <form
         v-if="isHost"
         class="card group-panel"
@@ -105,6 +124,7 @@ async function invite() {
           )
         "
       >
+        <h2>Group places &amp; friends</h2>
         <label
           >Number of existing friends to invite (excluding you)<input
             v-model.number="friends"
@@ -118,7 +138,7 @@ async function invite() {
             min="0"
             max="1000"
         /></label>
-        <p>These places exclude you and your invited friends.</p>
+        <p>These group places exclude you and your invited friends. Saving changes returns a published group to draft; it does not supply concert tickets.</p>
         <button class="btn btn--ghost" :disabled="busy">
           Save and return to draft
         </button>
@@ -128,9 +148,11 @@ async function invite() {
         :key="id"
         :initial="group.myAnswers"
         :busy="busy"
-        @save="(answers) => act(() => api.saveMemberPreferences(id, answers))"
+        :saving="savingPreferences"
+        @save="(answers) => act(() => api.saveMemberPreferences(id, answers), true)"
       />
       <section v-if="isHost" class="card group-panel">
+        <h2>Invitations &amp; publishing</h2>
         <button
           class="btn btn--ghost"
           :disabled="busy || !group.settings"
@@ -152,8 +174,7 @@ async function invite() {
         >
           Publish group
         </button>
-        <p>Everyone must answer before publishing.</p>
-        <p>{{ group.settings?.published ? "Published" : "Draft" }}</p>
+        <p>All expected friends must join and every member must save their preferences before publishing.</p>
         <button
           class="btn btn--ghost"
           :disabled="busy"
@@ -171,5 +192,5 @@ async function invite() {
         Leave group
       </button></template
     >
-  </main>
+  </div>
 </template>

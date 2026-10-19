@@ -1,33 +1,10 @@
-/** Buying a ticket listing, and the buyer's receipt. Payment is simulated. */
+/** Checkout is unavailable until a payment provider is configured; historical orders remain readable. */
 import { cleanListing } from './ticketController.js';
-
-const PAYMENT_METHODS = ['visa', 'mastercard', 'paypal', 'apple_pay'];
-
-const ORDER_ERROR_STATUS = {
-  listing_not_found: 404,
-  listing_unavailable: 409,
-  cannot_buy_own_listing: 409,
-};
 
 export function createOrderController(repos) {
   return {
-    /** The buyer is the signed-in user; the price comes from the listing, never the request. */
     buy(req, res) {
-      if (!PAYMENT_METHODS.includes(req.body?.paymentMethod)) {
-        return res.status(400).json({ error: 'invalid_payment_method' });
-      }
-      try {
-        const order = repos.orders.purchase({
-          ticket_id: req.params.id,
-          buyer_user_id: req.user.id,
-          payment_method: req.body.paymentMethod,
-        });
-        res.status(201).json({ order: publicOrder(order, repos) });
-      } catch (err) {
-        const status = ORDER_ERROR_STATUS[err.code];
-        if (!status) throw err;
-        res.status(status).json({ error: err.code });
-      }
+      res.status(503).json({ error: 'payment_provider_not_configured' });
     },
 
     /** Only the buyer can see their own order; anyone else gets 404. */

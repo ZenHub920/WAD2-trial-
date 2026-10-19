@@ -17,6 +17,7 @@
 html {
   -webkit-text-size-adjust: 100%;
   scroll-behavior: smooth;
+  scroll-padding-top: calc(var(--header-height) + var(--space-4));
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -65,6 +66,15 @@ button {
   border: none;
 }
 
+button:disabled {
+  cursor: not-allowed;
+}
+
+:where(input, select, textarea) {
+  min-width: 0;
+  max-width: 100%;
+}
+
 /* ---------------------------------------------------------------------------
    Typography
    --------------------------------------------------------------------------- */
@@ -78,13 +88,14 @@ h1, h2, h3, h4, h5 {
   text-wrap: balance;
 }
 
-h1 { font-size: var(--step-5); letter-spacing: -0.035em; }
+h1 { font-size: var(--step-4); letter-spacing: -0.035em; }
 h2 { font-size: var(--step-3); letter-spacing: -0.025em; }
 h3 { font-size: var(--step-2); }
 h4 { font-size: var(--step-1); }
 
 p {
   text-wrap: pretty;
+  overflow-wrap: anywhere;
 }
 
 a {
@@ -156,12 +167,12 @@ code, pre, .mono {
 }
 
 .section {
-  padding-block: var(--space-8);
+  padding-block: var(--space-6);
 }
 
 @media (min-width: 900px) {
   .section {
-    padding-block: var(--space-9);
+    padding-block: var(--space-7);
   }
 }
 
@@ -169,33 +180,24 @@ code, pre, .mono {
    Shared components
    --------------------------------------------------------------------------- */
 
-.eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-family: var(--font-mono);
-  font-size: var(--step--2);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--accent-400);
-}
-
-.eyebrow::before {
-  content: '';
-  width: 22px;
-  height: 1px;
-  background: currentColor;
-  opacity: 0.6;
-}
-
 .lede {
   font-size: var(--step-1);
   color: var(--text-300);
   line-height: 1.55;
 }
 
+.loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  color: var(--text-300);
+}
+
 .card {
   background: var(--ink-800);
+  min-width: 0;
   border: var(--border-hairline);
   border-radius: var(--radius-lg);
   padding: var(--space-5);
@@ -222,7 +224,11 @@ code, pre, .mono {
   font-size: var(--step--1);
   letter-spacing: 0.01em;
   text-decoration: none;
-  white-space: nowrap;
+  min-height: 44px;
+  max-width: 100%;
+  line-height: 1.4;
+  text-align: center;
+  white-space: normal;
   transition:
     background var(--dur-fast) var(--ease-out),
     color var(--dur-fast) var(--ease-out),

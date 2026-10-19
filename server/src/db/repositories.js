@@ -1437,33 +1437,8 @@ export function createKakiRepo(db) {
 export function createOrderRepo(db) {
   const findById = (id) => db.prepare('SELECT * FROM orders WHERE id = ?').get(id) ?? null;
 
-  /**
-   * Buy a ticket listing. The status flip and the order insert share one transaction,
-   * and the UPDATE only succeeds while the listing is still active — so two buyers
-   * racing for the same ticket cannot both win. The price comes from the database,
-   * never the request.
-   */
-  const purchase = db.transaction(({ ticket_id, buyer_user_id, payment_method }) => {
-    const ticket = db.prepare("SELECT * FROM tickets WHERE id = ? AND status <> 'deleted'").get(ticket_id);
-    if (!ticket) throw marketError('listing_not_found');
-    if (ticket.seller_user_id === buyer_user_id) throw marketError('cannot_buy_own_listing');
 
-    const claimed = db.prepare("UPDATE tickets SET status = 'sold' WHERE id = ? AND status = 'active'")
-      .run(ticket_id);
-    if (claimed.changes !== 1) throw marketError('listing_unavailable');
-
-    const deliveryFee = 0;
-    const id = `o_${randomUUID().slice(0, 8)}`;
-    db.prepare(`
-      INSERT INTO orders (id, ticket_id, buyer_user_id, subtotal_cents, delivery_fee_cents,
-                          total_cents, payment_method)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, ticket_id, buyer_user_id, ticket.price_cents, deliveryFee,
-      ticket.price_cents + deliveryFee, payment_method);
-    return findById(id);
-  });
-
-  return { findById, purchase };
+  return { findById };
 }
 
 export function createIssuedTicketRepo(db) {

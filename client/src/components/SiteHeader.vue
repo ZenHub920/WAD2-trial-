@@ -1,102 +1,75 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { currentUser } from '../auth.js';
 import { unreadTotal } from '../chatLive.js';
 import UserAvatar from './UserAvatar.vue';
 import NotificationsLink from './NotificationsLink.vue';
 
-defineProps({
-  theme: { type: String, default: 'light' },
-  fixed: { type: Boolean, default: false },
-});
+defineProps({ theme: { type: String, default: 'light' } });
 defineEmits(['toggle-theme']);
 
+const route = useRoute();
 const scrolled = ref(false);
 const menuOpen = ref(false);
-const homeLink = computed(() => (currentUser.value ? '/marketplace' : '/'));
-const isLoggedIn = computed(() => Boolean(currentUser.value));
+const homeLink = computed(() => currentUser.value ? '/concerts' : '/');
+watch(() => route.fullPath, () => { menuOpen.value = false; });
 
 function onScroll() {
   scrolled.value = window.scrollY > 12;
 }
-
+function onKeydown(event) {
+  if (event.key === 'Escape') menuOpen.value = false;
+}
 onMounted(() => {
   window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('keydown', onKeydown);
   onScroll();
 });
-onUnmounted(() => window.removeEventListener('scroll', onScroll));
-
+onUnmounted(() => {
+  window.removeEventListener('scroll', onScroll);
+  window.removeEventListener('keydown', onKeydown);
+});
 </script>
 
 <template>
-  <header class="header" :class="{ 'header--scrolled': scrolled, 'header--fixed': fixed }">
+  <header class="header" :class="{ 'header--scrolled': scrolled }">
     <div class="header__inner container container--wide">
-      <RouterLink
-        :to="homeLink"
-        class="brand"
-        @click="menuOpen = false"
-      >
-        <span class="brand__mark" aria-hidden="true">
-          <span class="brand__bar" v-for="n in 4" :key="n" :style="{ '--i': n }" />
-        </span>
-        <span class="brand__word">Encore</span>
+      <RouterLink :to="homeLink" class="brand" @click="menuOpen = false">
+        <span class="brand__mark" aria-hidden="true"><span v-for="n in 4" :key="n" :style="{ height: `${6 + n * 3}px` }" /></span>
+        <span>Encore</span>
       </RouterLink>
-
-      <button
-        class="header__toggle"
-        :aria-expanded="menuOpen"
-        aria-label="Toggle navigation"
-        @click="menuOpen = !menuOpen"
-      >
-        <span :class="{ open: menuOpen }" />
+      <button class="header__toggle" type="button" aria-controls="main-navigation" :aria-expanded="menuOpen" @click="menuOpen = !menuOpen">
+        {{ menuOpen ? 'Close menu' : 'Menu' }}
       </button>
-
-      <nav class="nav" :class="{ 'nav--open': menuOpen }" aria-label="Main">
-        <template v-if="isLoggedIn">
-          <RouterLink to="/list-ticket" class="list-ticket-btn" @click="menuOpen = false">+ List a ticket</RouterLink>
-          <RouterLink to="/marketplace" @click="menuOpen = false">Ticket Market</RouterLink>
-          <RouterLink to="/concerts" @click="menuOpen = false">Concerts</RouterLink>
-          <RouterLink to="/kaki" @click="menuOpen = false">Find a Kaki</RouterLink>
-          <RouterLink to="/groups" @click="menuOpen = false">Find a Group</RouterLink>
-          <RouterLink to="/groups/connect" @click="menuOpen = false">Connect Groups</RouterLink>
-          <NotificationsLink @click="menuOpen = false" />
-          <!-- Kaki messages. The dot is the only thing competing for attention
-               in the navbar, so it is reserved for genuinely new activity and
-               carries a count rather than a bare mark. -->
-          <RouterLink to="/kaki/chat" class="nav__chats" @click="menuOpen = false">
-            Chats
-            <span v-if="unreadTotal > 0" class="nav__dot" :aria-label="`${unreadTotal} unread`">
-              {{ unreadTotal > 9 ? '9+' : unreadTotal }}
-            </span>
+      <nav id="main-navigation" class="nav" :class="{ 'nav--open': menuOpen }" aria-label="Main navigation">
+        <div class="nav__primary">
+          <RouterLink to="/concerts">Concerts</RouterLink>
+          <RouterLink to="/kaki">Find a companion</RouterLink>
+          <RouterLink to="/groups">Groups</RouterLink>
+          <RouterLink v-if="currentUser" to="/messages" class="nav__messages">
+            Messages
+            <span v-if="unreadTotal > 0" class="nav__badge" :aria-label="`${unreadTotal} unread companion messages`">{{ unreadTotal > 99 ? '99+' : unreadTotal }}</span>
           </RouterLink>
-          <RouterLink to="/chat" @click="menuOpen = false">Sellers</RouterLink>
-          <RouterLink v-if="currentUser?.isOperator" to="/operator/verifications" @click="menuOpen = false">Verify tickets</RouterLink>
-          <RouterLink to="/my-listings" class="my-listings-btn" @click="menuOpen = false">My listings</RouterLink>
-          <!-- The profile picture doubles as the link to Profile: it is the
-               clearest signal of who is signed in. -->
-          <RouterLink to="/profile" class="nav__me" aria-label="Your profile" @click="menuOpen = false">
-            <UserAvatar
-              :src="currentUser?.avatarUrl"
-              :name="currentUser?.displayName"
-              :size="32"
-            />
-          </RouterLink>
-        </template>
-        <template v-else>
-          <RouterLink to="/marketplace" @click="menuOpen = false">Ticket Market</RouterLink>
-          <RouterLink to="/kaki" @click="menuOpen = false">Find a Kaki</RouterLink>
-          <RouterLink to="/groups/connect" @click="menuOpen = false">Connect Groups</RouterLink>
-          <RouterLink to="/concerts" @click="menuOpen = false">Concerts</RouterLink>
-          <RouterLink to="/method" @click="menuOpen = false">How it works</RouterLink>
-          <RouterLink to="/login" @click="menuOpen = false">Sign in</RouterLink>
-        </template>
-        <button class="theme-btn" @click="$emit('toggle-theme')">
-          <span aria-hidden="true">{{ theme === 'dark' ? '☾' : '☀' }}</span>
-          <span class="sr-only">Switch to {{ theme === 'dark' ? 'light' : 'dark' }} theme</span>
-        </button>
-        <RouterLink v-if="!isLoggedIn" to="/groups" class="btn btn--primary nav__cta" @click="menuOpen = false">
-          Find a group
-        </RouterLink>
+        </div>
+        <div class="nav__account">
+          <template v-if="currentUser">
+            <NotificationsLink />
+            <RouterLink v-if="currentUser.isOperator" to="/operator/verifications">Ticket review</RouterLink>
+            <RouterLink to="/profile" class="nav__profile">
+              <UserAvatar :src="currentUser.avatarUrl" :name="currentUser.displayName" :size="30" />
+              <span>Profile</span>
+            </RouterLink>
+          </template>
+          <template v-else>
+            <RouterLink to="/method">How it works</RouterLink>
+            <RouterLink to="/login">Sign in</RouterLink>
+          </template>
+          <button class="theme-btn" type="button" @click="$emit('toggle-theme')">
+            <span aria-hidden="true">{{ theme === 'dark' ? '☾' : '☀' }}</span>
+            <span class="sr-only">Switch to {{ theme === 'dark' ? 'light' : 'dark' }} theme</span>
+          </button>
+        </div>
       </nav>
     </div>
   </header>
@@ -107,287 +80,72 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
   position: sticky;
   top: 0;
   z-index: 100;
-  height: var(--header-height);
-  display: flex;
-  align-items: center;
-  background: color-mix(in oklab, var(--ink-900) 78%, transparent);
-  backdrop-filter: blur(14px) saturate(140%);
-  border-bottom: 1px solid transparent;
-  transition:
-    border-color var(--dur-base) var(--ease-out),
-    background var(--dur-base) var(--ease-out);
+  min-height: var(--header-height);
+  background: var(--ink-900);
+  border-bottom: var(--border-hairline);
 }
-
-.header--scrolled {
-  border-bottom-color: var(--ink-600);
-  background: color-mix(in oklab, var(--ink-900) 92%, transparent);
-}
-
-.header--fixed {
-  position: fixed;
-  width: 100%;
-}
-
+.header--scrolled { box-shadow: var(--shadow-sm); }
 .header__inner {
+  min-height: var(--header-height);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-5);
+  gap: var(--space-6);
 }
-
-/* ---- Brand: four bars, like a level meter ------------------------------- */
-
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-3);
-  text-decoration: none;
+  gap: var(--space-2);
   color: var(--text-100);
-}
-
-
-.brand__mark {
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 20px;
-}
-
-.brand__bar {
-  width: 3px;
-  border-radius: 2px;
-  background: var(--accent-500);
-  height: calc(6px + var(--i) * 3px);
-  transform-origin: bottom;
-  transition: height var(--dur-base) var(--ease-spring);
-}
-
-.brand:hover .brand__bar {
-  animation: pulse 900ms var(--ease-out) infinite;
-  animation-delay: calc(var(--i) * 80ms);
-}
-
-@keyframes pulse {
-  0%, 100% { transform: scaleY(1); }
-  50% { transform: scaleY(1.7); }
-}
-
-.brand__word {
   font-family: var(--font-display);
   font-size: var(--step-1);
   font-weight: 700;
-  letter-spacing: -0.03em;
-}
-
-/* ---- Navigation --------------------------------------------------------- */
-
-.nav {
-  display: flex;
-  align-items: center;
-  gap: var(--space-5);
-}
-
-.nav a:not(.nav__cta),
-.nav .signout-btn {
-  color: var(--text-300);
   text-decoration: none;
+  flex-shrink: 0;
+}
+.brand__mark { display: flex; align-items: flex-end; gap: 2px; }
+.brand__mark span { width: 3px; background: var(--accent-400); border-radius: 2px; }
+.nav, .nav__primary, .nav__account { display: flex; align-items: center; gap: var(--space-4); }
+.nav { flex: 1; min-width: 0; justify-content: space-between; }
+.nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  gap: var(--space-2);
+  color: var(--text-300);
   font-size: var(--step--1);
   font-weight: 500;
-  position: relative;
-  padding-block: var(--space-2);
-  transition: color var(--dur-fast) var(--ease-out);
-}
-
-
-.nav a:not(.nav__cta):hover,
-.nav a.router-link-active:not(.nav__cta),
-.nav .signout-btn:hover {
-  color: var(--text-100);
-}
-
-.theme-btn {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-pill);
-  border: var(--border-hairline);
-  color: var(--text-300);
-  font-size: var(--step-0);
-  transition:
-    color var(--dur-fast) var(--ease-out),
-    border-color var(--dur-fast) var(--ease-out),
-    transform var(--dur-base) var(--ease-spring);
-}
-
-.theme-btn:hover {
-  color: var(--accent-400);
-  border-color: var(--accent-500);
-  transform: rotate(-20deg);
-}
-
-.nav-market-tools {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
-}
-
-.list-ticket-btn {
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-pill);
-  background: var(--accent-500);
-  color: white !important;
-  font-size: var(--step--2);
-  font-weight: 700;
   text-decoration: none;
   white-space: nowrap;
 }
-
-.list-ticket-btn:hover {
-  background: var(--accent-400);
-}
-
-.my-listings-btn {
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--accent-500);
-  border-radius: var(--radius-pill);
-  color: var(--accent-300) !important;
-  font-size: var(--step--2) !important;
-  font-weight: 700 !important;
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.my-listings-btn:hover,
-.my-listings-btn.router-link-active {
-  background: var(--accent-500);
-  color: white !important;
-}
-
-/* ---- Mobile ------------------------------------------------------------- */
-
-.header__toggle {
-  display: none;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  border-radius: var(--radius-sm);
-}
-
-.header__toggle span {
-  position: relative;
-  display: block;
-  width: 20px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--text-100);
-  transition: background var(--dur-fast) var(--ease-out);
-}
-
-.header__toggle span::before,
-.header__toggle span::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  width: 20px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--text-100);
-  transition: transform var(--dur-base) var(--ease-out);
-}
-
-.header__toggle span::before { transform: translateY(-6px); }
-.header__toggle span::after { transform: translateY(6px); }
-
-.header__toggle span.open { background: transparent; }
-.header__toggle span.open::before { transform: rotate(45deg); }
-.header__toggle span.open::after { transform: rotate(-45deg); }
-
-@media (max-width: 1480px) {
-  .header__toggle {
-    display: grid;
-  }
-
+.nav a:hover, .nav a.router-link-active { color: var(--accent-400); }
+.nav__primary a.router-link-active { box-shadow: inset 0 -2px var(--accent-400); }
+.nav__badge { padding: 0.1em 0.45em; border-radius: var(--radius-pill); background: var(--accent-500); color: #fff; font-size: var(--step--2); }
+.theme-btn, .header__toggle { min-width: 44px; min-height: 44px; border: var(--border-hairline); border-radius: var(--radius-sm); color: var(--text-200); }
+.theme-btn { display: grid; place-items: center; }
+.header__toggle { display: none; padding-inline: var(--space-3); margin-left: auto; }
+@media (max-width: 1100px) {
+  .header__toggle { display: block; }
   .nav {
-    position: fixed;
+    position: absolute;
+    inset: 100% 0 auto;
     max-height: calc(100dvh - var(--header-height));
     overflow-y: auto;
-    inset: var(--header-height) 0 auto 0;
     flex-direction: column;
     align-items: stretch;
-    gap: var(--space-4);
-    padding: var(--space-5) var(--gutter) var(--space-6);
-    background: var(--ink-850);
+    gap: var(--space-3);
+    padding: var(--space-4) var(--gutter);
+    background: var(--ink-900);
     border-bottom: var(--border-hairline);
-    box-shadow: var(--shadow-lg);
-    transform: translateY(-120%);
+    box-shadow: var(--shadow-md);
+    visibility: hidden;
     opacity: 0;
     pointer-events: none;
-    transition:
-      transform var(--dur-base) var(--ease-out),
-      opacity var(--dur-fast) var(--ease-out);
   }
-
-  .nav-market-tools {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .nav--open {
-    transform: translateY(0);
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .nav a:not(.nav__cta) {
-    font-size: var(--step-1);
-  }
-
-  .theme-btn {
-    align-self: flex-start;
-  }
-}
-</style>
-
-<style scoped>
-/* ---- Chats link and unread badge --------------------------------------- */
-
-.nav__chats {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-/* A count, not a bare dot: "you have messages" is less useful than how many,
-   and the number is what stops it reading as decoration. */
-.nav__dot {
-  display: inline-grid;
-  place-items: center;
-  min-width: 1.15rem;
-  height: 1.15rem;
-  padding: 0 0.3em;
-  border-radius: var(--radius-pill);
-  background: var(--accent-500);
-  color: #fff;
-  font-size: 0.68rem;
-  font-weight: 700;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-.nav__me {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 50%;
-  transition: transform var(--dur-fast) var(--ease-spring);
-}
-
-.nav__me:hover { transform: scale(1.08); }
-
-.nav__me:focus-visible {
-  outline: 2px solid var(--accent-500);
-  outline-offset: 2px;
+  .nav--open { visibility: visible; opacity: 1; pointer-events: auto; }
+  .nav__primary, .nav__account { flex-direction: column; align-items: stretch; gap: var(--space-1); }
+  .nav__account { border-top: var(--border-hairline); padding-top: var(--space-3); }
+  .nav a { padding-inline: var(--space-3); white-space: normal; }
+  .nav__primary a.router-link-active { box-shadow: inset 3px 0 var(--accent-400); background: var(--ink-800); }
+  .theme-btn { align-self: flex-start; }
 }
 </style>

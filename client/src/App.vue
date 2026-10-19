@@ -1,18 +1,12 @@
 <script setup>
-import { computed, ref, onMounted } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import SiteHeader from './components/SiteHeader.vue';
-import { currentUser, refreshSession } from './auth.js';
+import { refreshSession } from './auth.js';
 
 // Encore starts in light mode; dark mode is optional.
 const theme = ref('light');
 const route = useRoute();
-const hasFixedHeader = computed(() =>
-  Boolean(currentUser.value) || [
-    'marketplace', 'list-ticket', 'my-listings', 'ticket-detail',
-    'kaki-chat', 'kaki-chat-thread',
-  ].includes(route.name),
-);
 refreshSession().catch((error) => console.error('Could not load session', error));
 
 onMounted(() => {
@@ -32,8 +26,8 @@ function toggleTheme() {
 
 <template>
   <a class="skip-link" href="#main">Skip to content</a>
-  <SiteHeader :theme="theme" :fixed="hasFixedHeader" @toggle-theme="toggleTheme" />
-  <main id="main" :class="{ 'main--with-fixed-header': hasFixedHeader }">
+  <SiteHeader :theme="theme" @toggle-theme="toggleTheme" />
+  <main id="main">
     <RouterView v-slot="{ Component }">
       <Transition name="page" mode="out-in">
         <component :is="Component" :key="route.path" />
@@ -50,9 +44,6 @@ function toggleTheme() {
     transform var(--dur-base) var(--ease-out);
 }
 
-.main--with-fixed-header {
-  padding-top: var(--header-height);
-}
 
 .page-enter-from {
   opacity: 0;

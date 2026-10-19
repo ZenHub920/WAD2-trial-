@@ -1,5 +1,6 @@
 <script setup>
 import { nextTick, ref, watch } from 'vue';
+import LoadingSpinner from './LoadingSpinner.vue';
 
 /**
  * A confirmation step for actions that cannot be undone.
@@ -56,6 +57,7 @@ watch(() => props.open, async (open) => {
             :disabled="busy"
             @click="emit('confirm')"
           >
+            <LoadingSpinner v-if="busy" />
             {{ busy ? 'Working…' : confirmLabel }}
           </button>
         </div>
@@ -71,6 +73,7 @@ watch(() => props.open, async (open) => {
   z-index: 400;
   display: grid;
   place-items: center;
+  overflow-y: auto;
   padding: var(--space-5);
   background: color-mix(in oklab, var(--ink-900) 62%, transparent);
   backdrop-filter: blur(3px);
@@ -79,6 +82,11 @@ watch(() => props.open, async (open) => {
 
 .confirm__panel {
   width: min(420px, 100%);
+  box-sizing: border-box;
+  min-width: 0;
+  max-height: calc(100dvh - var(--space-5) * 2);
+  overflow-y: auto;
+  overflow-wrap: anywhere;
   padding: var(--space-6);
   border: var(--border-soft);
   border-radius: var(--radius-lg);
@@ -97,6 +105,7 @@ watch(() => props.open, async (open) => {
   gap: var(--space-3);
   margin-top: var(--space-6);
 }
+.confirm__actions .btn { white-space: normal; }
 
 .confirm__danger {
   border: 1px solid var(--rose-400);

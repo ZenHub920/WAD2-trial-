@@ -4,6 +4,7 @@ import { api, formatDate } from '../api.js';
 import { formatMoney, formatRelative, listingTitle, sectionLabel } from '../market.js';
 import IssuedTicketLists from '../components/market/IssuedTicketLists.vue';
 import MarketNotice from '../components/market/MarketNotice.vue';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 
 /**
  * Ticket verification queue. Each pending listing shows its proof of purchase;
@@ -12,6 +13,7 @@ import MarketNotice from '../components/market/MarketNotice.vue';
  */
 const listings = ref([]);
 const loading = ref(true);
+const hasLoaded = ref(false);
 const error = ref(null);
 const notes = ref({});
 const working = ref('');
@@ -22,6 +24,7 @@ async function load() {
   error.value = null;
   try {
     listings.value = (await api.verificationQueue()).listings;
+    hasLoaded.value = true;
   } catch (err) {
     error.value = err;
   } finally {
@@ -61,24 +64,23 @@ onMounted(load);
   <div class="container admin">
     <header class="admin__head">
       <div>
-        <p class="eyebrow">Operator</p>
         <h1>Ticket verification</h1>
       </div>
-      <button class="btn btn--ghost" type="button" :disabled="loading" @click="load">Refresh</button>
+      <button class="btn btn--ghost" type="button" :disabled="loading" @click="load"><LoadingSpinner v-if="loading" /> Refresh</button>
     </header>
 
-    <div v-if="loading" class="skeleton" aria-busy="true" />
+    <div v-if="loading" class="loading-state" aria-busy="true"><LoadingSpinner /> Loading verification queue…</div>
 
-    <MarketNotice v-else-if="error?.status === 401 || error?.status === 403" title="Operators only">
+    <MarketNotice v-if="error?.status === 401 || error?.status === 403" title="Operators only">
       A reviewer account is required to access this page.
-      <RouterLink :to="{ name: 'marketplace' }">Back to the market</RouterLink>
+      <RouterLink to="/concerts">Back to concerts</RouterLink>
     </MarketNotice>
 
     <MarketNotice v-else-if="error" tone="error" title="Could not load the queue">
       <p>Use Refresh to try again.</p>
     </MarketNotice>
 
-    <template v-else>
+    <template v-if="!error && hasLoaded">
       <IssuedTicketLists />
       <h2 class="admin__queue-title">Proof review queue</h2>
     </template>
@@ -87,7 +89,7 @@ onMounted(load);
       New proofs of purchase will appear here.
     </MarketNotice>
 
-    <ul v-else-if="!loading && !error" class="queue">
+    <ul v-else-if="!error && listings.length" class="queue">
       <li v-for="listing in listings" :key="listing.id" class="item">
         <div class="item__proof">
           <iframe
@@ -122,6 +124,7 @@ onMounted(load);
           <p v-if="actionError[listing.id]" class="item__error" role="alert">{{ actionError[listing.id] }}</p>
 
           <div class="item__actions">
+            <LoadingSpinner v-if="working === listing.id" />
             <button class="btn btn--ghost" type="button" :disabled="working === listing.id" @click="decide(listing, 'reject')">
               Reject
             </button>
@@ -151,7 +154,7 @@ onMounted(load);
 
 .admin__head h1 {
   margin-top: var(--space-2);
-  font-size: var(--step-4);
+  font-size: var(--step-3);
 }
 
 .admin__queue-title {
@@ -167,6 +170,7 @@ onMounted(load);
 }
 
 .item {
+  min-width: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
   gap: var(--space-5);
@@ -204,6 +208,7 @@ onMounted(load);
 }
 
 .item__facts {
+  overflow-wrap: anywhere;
   display: grid;
   gap: var(--space-1);
   margin-top: var(--space-3);
@@ -212,7 +217,7 @@ onMounted(load);
 
 .item__facts div {
   display: grid;
-  grid-template-columns: 70px 1fr;
+  grid-template-columns: 70px minmax(0, 1fr);
   gap: var(--space-3);
 }
 
@@ -259,6 +264,7 @@ onMounted(load);
 .item__actions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: var(--space-3);
   margin-top: var(--space-4);
 }

@@ -1,4 +1,4 @@
-/** Kaki Finder data and display helpers. Decisions are owned by the API. */
+/** Companion finder data and display helpers. Decisions are owned by the API. */
 
 import { api, LABELS } from './api.js';
 
@@ -47,10 +47,8 @@ export function interestsOf(user) {
 /**
  * Interests the two of you share, best first.
  *
- * Returns `{ shared, theirs }` so the card can say "You both like" when there
- * is an overlap and fall back to "They're into" when there is not — or when
- * the viewer is signed out, or registered without ever setting a vibe, which
- * is currently every real account.
+ * Returns `{ shared, theirs }` so the card can say "You both like" only when
+ * both profiles have those interests, and "They're into" otherwise.
  */
 export function sharedInterests(viewer, candidate) {
   const theirs = interestsOf(candidate);
@@ -62,9 +60,8 @@ export function sharedInterests(viewer, candidate) {
 /* ---------------------------------------------------------------------------
  * Avatars
  *
- * There are no profile photos in the schema. Rather than ship stock faces that
- * imply real people, each profile gets initials on a tint derived from its id,
- * so the same person is always the same colour.
+ * Optional photos are displayed by UserAvatar. This stable tint decorates the
+ * profile card without implying that a generated portrait is a real person.
  * ------------------------------------------------------------------------ */
 
 const AVATAR_TINTS = [
@@ -78,18 +75,12 @@ const AVATAR_TINTS = [
 
 export function avatarFor(user) {
   const name = user?.displayName ?? '?';
-  const initials = name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0] ?? '')
-    .join('')
-    .toUpperCase();
 
   let hash = 0;
   for (const char of user?.id ?? name) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   const [bg, fg] = AVATAR_TINTS[hash % AVATAR_TINTS.length];
 
-  return { initials, bg, fg };
+  return { bg, fg };
 }
 
 /* ---------------------------------------------------------------------------

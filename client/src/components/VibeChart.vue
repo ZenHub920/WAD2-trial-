@@ -6,7 +6,7 @@ import { LABELS } from '../api.js';
 const props = defineProps({
   vibe: { type: Object, required: true },
   size: { type: Number, default: 160 },
-  max: { type: Number, default: 5 },
+  max: { type: Number, default: 4 },
 });
 
 const AXES = ['singalong', 'photography', 'dancing', 'quiet', 'queue_early', 'merch'];
@@ -110,6 +110,8 @@ const labelPositions = computed(() =>
 <style scoped>
 .radar {
   width: 100%;
+  display: block;
+  min-width: 0;
   overflow: visible;
 }
 

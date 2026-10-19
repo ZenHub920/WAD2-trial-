@@ -155,8 +155,8 @@ CREATE TABLE IF NOT EXISTS ticket_numbers (
 
 CREATE INDEX IF NOT EXISTS idx_ticket_numbers_number ON ticket_numbers(concert_id, ticket_number);
 
--- Amounts are copied onto the order at purchase time, so a later price edit on the
--- listing can never change what the buyer was charged. Money is in integer cents.
+-- Historical simulated checkout records. Amounts remain as originally stored;
+-- these records do not prove a charge. Money is in integer cents.
 CREATE TABLE IF NOT EXISTS orders (
   id                 TEXT    PRIMARY KEY,
   ticket_id          TEXT    NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,

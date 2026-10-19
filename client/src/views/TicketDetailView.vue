@@ -7,10 +7,11 @@ import { SECTION_SUGGESTIONS, sectionLabel, useSavedListings, useTicket } from '
 import ListingDetailCard from '../components/market/ListingDetailCard.vue';
 import MarketNotice from '../components/market/MarketNotice.vue';
 import MarketPageHead from '../components/market/MarketPageHead.vue';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 
 /**
- * One ticket listing, as the full listing card. Buyers can chat with the seller
- * or buy; the seller can edit or remove their own listing instead.
+ * One ticket listing, as the full listing card. Buyers can chat with the seller;
+ * the seller can edit or remove their own listing. Online checkout is unavailable.
  */
 const props = defineProps({ id: { type: String, required: true } });
 
@@ -36,10 +37,6 @@ onUnmounted(() => clearTimeout(clear));
 
 function signInFirst() {
   router.push({ name: 'login', query: { redirect: route.fullPath } });
-}
-
-function buy() {
-  router.push({ name: 'order-review', params: { id: props.id } });
 }
 
 /** Open (or reopen) this buyer's conversation with the seller about this listing. */
@@ -73,7 +70,7 @@ async function removeListing() {
     await api.deleteTicket(listing.value.id);
     await router.push('/my-listings');
   } catch (err) {
-    announce(err.body?.error ?? err.message);
+    announce('Could not remove this listing. Please try again.');
   } finally {
     busy.value = false;
   }
@@ -83,6 +80,7 @@ async function removeListing() {
 const editing = ref(false);
 const saving = ref(false);
 const editImage = ref('');
+const readingImage = ref(false);
 const editError = ref('');
 const draft = ref({ price: 0, quantity: 1, section: '', description: '' });
 
@@ -102,9 +100,11 @@ function previewEditImage(event) {
   const [file] = event.target.files;
   if (!file) return;
   editError.value = '';
+  readingImage.value = true;
   const reader = new FileReader();
   reader.onload = () => { editImage.value = String(reader.result); };
   reader.onerror = () => { editError.value = 'Could not read the selected image.'; };
+  reader.onloadend = () => { readingImage.value = false; };
   reader.readAsDataURL(file);
 }
 
@@ -126,7 +126,7 @@ async function saveListing() {
     const code = err.body?.error ?? err.message;
     editError.value = code === 'quantity_locked_by_ticket_numbers'
       ? 'The number of tickets is fixed once ticket numbers are attached.'
-      : code;
+      : 'Could not save this listing. Check the details and try again.';
   } finally {
     saving.value = false;
   }
@@ -137,10 +137,10 @@ async function saveListing() {
   <div class="container flow">
     <MarketPageHead title="Listing details" />
 
-    <div v-if="loading" class="skeleton" aria-busy="true" />
+    <div v-if="loading" class="loading-state" aria-busy="true"><LoadingSpinner /> Loading listing…</div>
 
     <MarketNotice v-else-if="error?.status === 404" title="Listing not found">
-      It may have been removed. <RouterLink :to="{ name: 'marketplace' }">Back to the market</RouterLink>
+      It may have been removed. <RouterLink to="/concerts">Back to concerts</RouterLink>
     </MarketNotice>
 
     <MarketNotice v-else-if="error" tone="error" title="Could not load this listing">
@@ -152,9 +152,9 @@ async function saveListing() {
         :listing="listing"
         :saved="isSaved(listing.id)"
         :own="isOwnListing"
-        :busy="busy || editing"
+        :busy="busy"
+        :disabled="editing"
         @toggle-save="toggle"
-        @buy="buy"
         @chat="chat"
         @edit="startEditing"
         @remove="removeListing"
@@ -163,7 +163,7 @@ async function saveListing() {
 
       <form v-if="isOwnListing && editing" class="edit" @submit.prevent="saveListing">
         <h2>Edit listing</h2>
-        <label>Ticket price
+        <label>Total listing price (SGD)
           <input v-model.number="draft.price" type="number" min="0" step="0.01" required />
         </label>
         <label>Number of tickets
@@ -176,16 +176,17 @@ async function saveListing() {
           </datalist>
         </label>
         <label>Description
-          <textarea v-model.trim="draft.description" rows="4" />
+          <textarea v-model.trim="draft.description" rows="4" maxlength="2000" />
         </label>
         <label>Replace image
           <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" @change="previewEditImage" />
         </label>
+        <p v-if="readingImage" class="loading-state"><LoadingSpinner /> Loading image…</p>
         <img v-if="editImage" class="edit__preview" :src="editImage" alt="New listing image preview" />
         <p v-if="editError" class="edit__error" role="alert">{{ editError }}</p>
         <div class="edit__actions">
           <button class="btn btn--ghost" type="button" :disabled="saving" @click="editing = false">Cancel</button>
-          <button class="btn btn--primary" type="submit" :disabled="saving">{{ saving ? 'Saving…' : 'Save changes' }}</button>
+          <button class="btn btn--primary" type="submit" :disabled="saving"><LoadingSpinner v-if="saving" /> {{ saving ? 'Saving…' : 'Save changes' }}</button>
         </div>
       </form>
     </template>
@@ -202,9 +203,6 @@ async function saveListing() {
   padding-block: var(--space-5) var(--space-8);
 }
 
-.skeleton {
-  height: 720px;
-}
 
 .edit {
   display: grid;
@@ -222,6 +220,7 @@ async function saveListing() {
 
 .edit label {
   display: grid;
+  min-width: 0;
   gap: var(--space-2);
   color: var(--text-300);
   font-size: var(--step--1);
@@ -230,6 +229,7 @@ async function saveListing() {
 .edit input,
 .edit textarea {
   width: 100%;
+  min-width: 0;
   padding: var(--space-3);
   border: var(--border-soft);
   border-radius: var(--radius-md);
@@ -249,6 +249,7 @@ async function saveListing() {
 
 .edit__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-3);
 }
 

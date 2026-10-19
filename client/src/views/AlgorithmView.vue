@@ -3,6 +3,7 @@
 import { ref, computed, onUnmounted, watch } from 'vue';
 import { api, LABELS } from '../api.js';
 import { currentUser, sessionReady } from '../auth.js';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 
 const props = defineProps({ id: { type: String, required: true } });
 
@@ -174,7 +175,7 @@ const partyLabel = (id) => partyNames.value.get(id)?.name ?? id;
 
 const EVENT_COPY = {
   accept: (e) =>
-    `${seekerLabel(e.seekerId)} proposed to ${partyLabel(e.partyId)}, who had a free slot and accepted.`,
+    `${seekerLabel(e.seekerId)} proposed to ${partyLabel(e.partyId)}, which had a group place available and held the offer.`,
   reject: (e) =>
     `${seekerLabel(e.seekerId)} was rejected by ${partyLabel(e.partyId)} and moves to their next choice.`,
   evict: (e) =>
@@ -196,14 +197,14 @@ const sortedParties = computed(() =>
 
     <header class="head">
       <div>
-        <h1>Watch the matching run</h1>
+        <h1>Matching preview</h1>
         <p class="lede">
-          Replay the recorded proposals<template v-if="concert"> for {{ concert.artist }}</template>.
+          Step through automatic group matching<template v-if="concert"> for {{ concert.artist }}</template>. This preview does not send invitations or reserve places.
         </p>
       </div>
     </header>
 
-    <div v-if="loading" class="skeleton" />
+    <div v-if="loading" class="loading-state"><LoadingSpinner /> Loading matching preview…</div>
 
     <div v-else-if="error" class="notice notice--error" role="alert">
       <h3>{{ error.status === 403 ? 'Operator access required'
@@ -212,7 +213,7 @@ const sortedParties = computed(() =>
         ? 'Use an operator account to view the replay.'
         : error.status === 401
           ? 'Sign in with an operator account to view the replay.'
-          : error.message }}</p>
+          : 'The matching preview could not be loaded. Return to the concert and try again.' }}</p>
       <RouterLink v-if="error.status === 401" to="/login" class="btn btn--primary">Sign in</RouterLink>
       <RouterLink :to="`/concerts/${id}`" class="btn btn--ghost">Back to concert</RouterLink>
     </div>
@@ -246,7 +247,7 @@ const sortedParties = computed(() =>
             @input="onScrub"
           />
           <p class="console__position mono tabular">
-            {{ step }} / {{ trace.length }} proposals
+            {{ step }} / {{ trace.length }} matching steps
           </p>
         </div>
 
@@ -271,7 +272,7 @@ const sortedParties = computed(() =>
         :class="currentEvent ? `event--${currentEvent.type}` : 'event--idle'"
       >
         <span class="event__badge">
-          {{ currentEvent ? currentEvent.type : 'ready' }}
+          {{ currentEvent ? ({ accept: 'Offer held', reject: 'Offer declined', evict: 'Offer replaced' }[currentEvent.type] ?? 'Matching step') : 'Ready' }}
         </span>
         <p class="event__text">
           <template v-if="currentEvent">{{ EVENT_COPY[currentEvent.type](currentEvent) }}</template>
@@ -284,11 +285,11 @@ const sortedParties = computed(() =>
       <!-- --------------------------------------------------------- Tallies -->
       <dl class="tallies">
         <div>
-          <dt>Accepted</dt>
+          <dt>Offers held</dt>
           <dd class="tabular is-mint">{{ state.accepts }}</dd>
         </div>
         <div>
-          <dt>Rejected</dt>
+          <dt>Offers declined</dt>
           <dd class="tabular is-rose">{{ state.rejects }}</dd>
         </div>
         <div>
@@ -296,11 +297,11 @@ const sortedParties = computed(() =>
           <dd class="tabular is-amber">{{ state.evictions }}</dd>
         </div>
         <div>
-          <dt>Placed now</dt>
+          <dt>Placed in preview</dt>
           <dd class="tabular">{{ state.assigned.size }}</dd>
         </div>
         <div>
-          <dt>Still proposing</dt>
+          <dt>Unassigned in preview</dt>
           <dd class="tabular">{{ floating.length }}</dd>
         </div>
       </dl>
@@ -309,7 +310,7 @@ const sortedParties = computed(() =>
       <div class="board">
         <section class="board__side">
           <h2 class="board__title">
-            Still proposing
+            Unassigned in preview
             <span class="board__count tabular">{{ floating.length }}</span>
           </h2>
           <TransitionGroup name="chip" tag="div" class="chips">
@@ -321,12 +322,12 @@ const sortedParties = computed(() =>
             >{{ seekerLabel(seekerId) }}</span>
           </TransitionGroup>
           <p v-if="!floating.length" class="board__empty">
-            Everyone has been placed or exhausted their list.
+            Everyone is currently placed in this preview.
           </p>
         </section>
 
         <section class="board__main">
-          <h2 class="board__title">Groups and their held offers</h2>
+          <h2 class="board__title">Groups and provisional placements</h2>
           <div class="parties">
             <article
               v-for="[partyId, info] in sortedParties"
@@ -354,7 +355,7 @@ const sortedParties = computed(() =>
                       v-if="(state.held.get(partyId) ?? [])[n - 1]"
                       class="slot__name"
                     >{{ seekerLabel((state.held.get(partyId) ?? [])[n - 1]) }}</span>
-                    <span v-else class="slot__empty">open</span>
+                    <span v-else class="slot__empty">Available</span>
                   </Transition>
                 </div>
               </div>
@@ -368,10 +369,10 @@ const sortedParties = computed(() =>
         <div v-if="finished && metrics" class="verdict">
           <div class="verdict__mark">✓</div>
           <div>
-            <h2>Matching complete</h2>
+            <h2>Preview complete</h2>
             <p>
-              {{ metrics.matched }} of {{ metrics.eligibleSeekers }} seekers placed after
-              {{ trace.length }} proposals.
+              {{ metrics.matched }} of {{ metrics.eligibleSeekers }} group finders placed after
+              {{ trace.length }} matching steps.
               <strong>{{ metrics.blockingPairs }} blocking pairs.</strong>
               {{ Math.round(metrics.firstChoiceRate * 100) }}% got their first choice.
             </p>
@@ -467,7 +468,7 @@ const sortedParties = computed(() =>
 
 .console__scrub {
   flex: 1;
-  min-width: 220px;
+  min-width: min(100%, 220px);
 }
 
 .scrubber {
@@ -682,7 +683,7 @@ const sortedParties = computed(() =>
 .parties {
   display: grid;
   gap: var(--space-3);
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
 }
 
 .party {
@@ -718,6 +719,7 @@ const sortedParties = computed(() =>
 .party__head {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: var(--space-2);
   margin-bottom: var(--space-3);
@@ -854,20 +856,17 @@ const sortedParties = computed(() =>
   transform: translateY(16px);
 }
 
+@media (max-width: 999px) {
+  .board__side { position: static; max-height: none; }
+}
+
+@media (max-width: 480px) {
+  .event, .verdict { flex-direction: column; }
+  .verdict { padding: var(--space-4); }
+}
+
 /* ---- States ------------------------------------------------------------- */
 
-.skeleton {
-  height: 420px;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(100deg, var(--ink-800) 30%, var(--ink-750) 50%, var(--ink-800) 70%);
-  background-size: 220% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
-}
-
-@keyframes shimmer {
-  from { background-position: 180% 0; }
-  to   { background-position: -80% 0; }
-}
 
 .notice--error {
   padding: var(--space-6);

@@ -21,18 +21,14 @@ async function request(path, options = {}) {
 
   const res = await fetch(`${BASE}${path}`, {
     credentials: 'same-origin',
-
     ...fetchOptions,
-
     headers: {
       'content-type': 'application/json',
       ...extraHeaders
     }
   });
-
   const isJson = res.headers.get('content-type')?.includes('application/json');
   const body = isJson ? await res.json() : null;
-
   if (!res.ok) {
     const error = new Error(body?.error ?? `request_failed_${res.status}`);
     error.status = res.status;
@@ -100,9 +96,6 @@ export const api = {
   submitProof: (id, proofData) =>
     request(`/me/tickets/${encodeURIComponent(id)}/proof`, { method: 'POST', body: JSON.stringify({ proofData }) }),
 
-  /** The buyer is the session's user and the price comes from the listing; only the method is sent. */
-  buyTicket: (id, { paymentMethod }) =>
-    request(`/tickets/${encodeURIComponent(id)}/orders`, { method: 'POST', body: JSON.stringify({ paymentMethod }) }),
   order: (id) => request(`/orders/${encodeURIComponent(id)}`),
 
   /** Open (or reopen) the signed-in buyer's chat with a listing's seller. */
@@ -185,6 +178,7 @@ export const api = {
   health: () => request('/health'),
 
   concerts: () => request('/concerts'),
+  externalConcerts: (keyword = '') => request(`/concerts/external${keyword ? `?keyword=${encodeURIComponent(keyword)}` : ''}`),
   concert: (id) => request(`/concerts/${id}`),
 
   parties: (concertId) => request(`/concerts/${concertId}/parties`),
@@ -291,20 +285,20 @@ export const api = {
 export const LABELS = {
   section: {
     pit: 'Pit',
-    ga_standing: 'GA standing',
+    ga_standing: 'General admission standing',
     lower_bowl: 'Lower bowl',
     upper_bowl: 'Upper bowl',
-    seated_any: 'Seated (any)',
+    seated_any: 'Any seated section',
   },
   arrival: {
     early_queue: 'Queue early',
     mid: 'Arrive midday',
-    doors: 'Arrive at doors',
+    doors: 'When doors open',
   },
   plans: {
     pre_meetup: 'Pre-show meetup',
     post_supper: 'Supper after',
-    merch_run: 'Merch queue',
+    merch_run: 'Merchandise queue',
     transport_share: 'Share transport',
   },
   vibe: {
@@ -313,7 +307,7 @@ export const LABELS = {
     dancing: 'Dancing',
     quiet: 'Quiet listening',
     queue_early: 'Early queueing',
-    merch: 'Merch hunting',
+    merch: 'Merchandise',
   },
   spendBand: ['', 'Budget', 'Moderate', 'Comfortable', 'Premium'],
 };

@@ -3,8 +3,7 @@ import { computed } from 'vue';
 import { formatMoney } from '../../market.js';
 
 /**
- * The price breakdown shown at every step of checkout. Display only: the server
- * computes the amount actually charged from the listing.
+ * The stored price breakdown of an order. It is not a payment receipt.
  */
 const props = defineProps({
   subtotalCents: { type: Number, required: true },
@@ -47,6 +46,7 @@ const money = (cents) => formatMoney(cents, { withCode: true });
 
 .summary__line {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: var(--space-4);
   padding-block: var(--space-2);
@@ -54,6 +54,8 @@ const money = (cents) => formatMoney(cents, { withCode: true });
 }
 
 .summary__line dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--text-100);
   font-weight: 600;
 }

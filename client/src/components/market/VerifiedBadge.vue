@@ -2,7 +2,7 @@
 import MarketIcon from './MarketIcon.vue';
 
 defineProps({
-  label: { type: String, default: 'Verified Ticket' },
+  label: { type: String, default: 'Ticket verified' },
 });
 </script>
 
@@ -24,6 +24,6 @@ defineProps({
   color: var(--text-100);
   font-size: var(--step--1);
   font-weight: 500;
-  white-space: nowrap;
+  max-width: 100%;
 }
 </style>

@@ -1,13 +1,17 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from "vue";
 import { api } from "../api.js";
+import LoadingSpinner from "./LoadingSpinner.vue";
 const props = defineProps({
   initial: { type: Object, default: () => ({}) },
   busy: Boolean,
+  saving: Boolean,
 });
 const emit = defineEmits(["save"]);
 const concepts = ref([]),
   error = ref("");
+const loading = ref(true);
+const suggestionsLoading = ref({ about: false, wants: false, avoid: false });
 const drafts = ref({ about: "", wants: "", avoid: "" });
 const matches = ref({ about: [], wants: [], avoid: [] });
 const originalText = ref({}), selected = ref({}), custom = ref({});
@@ -32,15 +36,19 @@ function suggest(intent) {
   clearTimeout(timers[intent]);
   const current = ++generations[intent];
   matches.value[intent] = [];
+  suggestionsLoading.value[intent] = false;
   const text = drafts.value[intent].trim();
   if (!text) return;
   timers[intent] = setTimeout(async () => {
+    suggestionsLoading.value[intent] = true;
     try {
       const result = await api.preferenceConcepts(text);
       if (alive && current === generations[intent])
         matches.value[intent] = result.concepts;
     } catch (e) {
-      if (alive && current === generations[intent]) error.value = e.message;
+      if (alive && current === generations[intent]) error.value = "Could not load preference suggestions. You can keep your own wording.";
+    } finally {
+      if (alive && current === generations[intent]) suggestionsLoading.value[intent] = false;
     }
   }, 250);
 }
@@ -73,7 +81,9 @@ onMounted(async () => {
   try {
     concepts.value = (await api.preferenceConcepts()).concepts;
   } catch (e) {
-    error.value = e.message;
+    error.value = "Could not load the preference choices. Please reopen this page to try again.";
+  } finally {
+    loading.value = false;
   }
 });
 function save() {
@@ -102,7 +112,9 @@ function save() {
 </script>
 <template>
   <form class="group-panel" @submit.prevent="save">
-    <p v-if="error" role="alert">{{ error }}</p>
+    <h2>Your companion preferences</h2>
+    <p v-if="error" role="alert" class="group-error">{{ error }}</p>
+    <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading preference choices…</p>
     <details
       v-for="(label, intent) in labels"
       :key="intent"
@@ -127,6 +139,7 @@ function save() {
           placeholder="e.g. late-night makan"
           @input="suggest(intent)"
       /></label>
+      <p v-if="suggestionsLoading[intent]" class="loading-state" role="status"><LoadingSpinner />Loading preference suggestions…</p>
       <div v-if="drafts[intent].trim()" class="group-panel" aria-live="polite">
         <p>Does one of these meanings fit?</p>
         <button
@@ -157,7 +170,8 @@ function save() {
       </label>
     </details>
     <button class="btn btn--primary" :disabled="busy || !concepts.length">
-      Save preferences
+      <LoadingSpinner v-if="saving" />
+      {{ busy ? 'Saving…' : 'Save companion preferences' }}
     </button>
   </form>
 </template>

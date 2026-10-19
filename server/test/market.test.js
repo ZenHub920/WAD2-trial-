@@ -1,10 +1,9 @@
 /**
- * Integration tests for buying, chatting and verifying ticket listings, on top of
- * the ticket inventory covered by tickets.test.js.
+ * Integration tests for unavailable checkout, historical orders, chatting and
+ * verifying ticket listings, on top of the inventory covered by tickets.test.js.
  *
- * What matters most: a ticket never sells twice, the price comes from the listing,
- * private data (ticket numbers, proofs, chats, orders) only reaches the people it
- * belongs to, and `verified` can only be earned, never asserted.
+ * An unconfigured payment provider must never create an order or sell a ticket.
+ * Historical orders and ticket numbers stay private, and verification is earned.
  */
 
 import { test } from 'node:test';
@@ -65,35 +64,51 @@ async function fixture(t) {
     ...overrides,
   } });
 
-  return { db, api, people, sell };
+  function previousOrder(ticketId, buyer) {
+    const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(ticketId);
+    const id = `o_test_${ticketId}`;
+    db.prepare("UPDATE tickets SET status = 'sold' WHERE id = ?").run(ticketId);
+    db.prepare(`
+      INSERT INTO orders (id, ticket_id, buyer_user_id, subtotal_cents, total_cents, payment_method)
+      VALUES (?, ?, ?, ?, ?, 'visa')
+    `).run(id, ticketId, people[buyer].id, ticket.price_cents, ticket.price_cents);
+    return id;
+  }
+
+  return { db, api, people, sell, previousOrder };
 }
 
-test('buying: signed in only, stored price, one buyer wins, and the order is private', async (t) => {
+test('checkout: signed in only and no inventory changes without a payment provider', async (t) => {
   const { db, api, sell } = await fixture(t);
   const id = (await sell('seller')).body.listing.id;
-  const buy = (as, body = { paymentMethod: 'visa' }) => api(`/tickets/${id}/orders`, { method: 'POST', as, body });
+  const buy = (as, body = {}) => api(`/tickets/${id}/orders`, { method: 'POST', as, body });
 
   assert.equal((await buy(null)).status, 401);
-  assert.equal((await buy('buyer', { paymentMethod: 'cash' })).body.error, 'invalid_payment_method');
-  assert.equal((await buy('seller')).body.error, 'cannot_buy_own_listing');
+  for (const [as, body] of [
+    ['buyer', {}],
+    ['buyer2', { paymentMethod: 'visa', priceCents: 1 }],
+    ['seller', { paymentMethod: 'paypal' }],
+  ]) {
+    const response = await buy(as, body);
+    assert.deepEqual([response.status, response.body], [503, { error: 'payment_provider_not_configured' }]);
+  }
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM orders WHERE ticket_id = ?').get(id).n, 0);
+  const listing = (await api(`/tickets/${id}`)).body.listing;
+  assert.equal(listing.status, 'active');
+  assert.equal(listing.priceCents, 31000);
+  assert.ok((await api('/tickets')).body.listings.some((l) => l.id === id));
+});
 
-  const results = await Promise.all([
-    buy('buyer', { paymentMethod: 'paypal', priceCents: 1 }),
-    buy('buyer2'),
-  ]);
-  assert.deepEqual(results.map((r) => r.status).sort(), [201, 409], 'exactly one buyer wins');
-  const won = results.find((r) => r.status === 201);
-  assert.equal(won.body.order.totalCents, 31000, 'price comes from the listing, not the request');
-  assert.equal(won.body.order.listing.status, 'sold');
-  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM orders WHERE ticket_id = ?').get(id).n, 1);
-  assert.ok(!(await api('/tickets')).body.listings.some((l) => l.id === id), 'sold tickets leave the market');
-
-  const orderId = won.body.order.id;
-  const winner = won.body.order.paymentMethod === 'paypal' ? 'buyer' : 'buyer2';
-  const loser = winner === 'buyer' ? 'buyer2' : 'buyer';
-  assert.equal((await api(`/orders/${orderId}`, { as: winner })).status, 200);
-  assert.equal((await api(`/orders/${orderId}`, { as: loser })).status, 404);
-  assert.equal((await api('/tickets/nope/orders', { method: 'POST', as: 'buyer', body: { paymentMethod: 'visa' } })).status, 404);
+test('historical orders remain readable only by their recorded buyer', async (t) => {
+  const { api, sell, previousOrder } = await fixture(t);
+  const id = (await sell('seller')).body.listing.id;
+  const orderId = previousOrder(id, 'buyer');
+  const response = await api(`/orders/${orderId}`, { as: 'buyer' });
+  assert.equal(response.status, 200);
+  assert.equal(response.body.order.totalCents, 31000);
+  assert.equal((await api(`/orders/${orderId}`)).status, 401);
+  assert.equal((await api(`/orders/${orderId}`, { as: 'buyer2' })).status, 404);
+  assert.equal((await api(`/orders/${orderId}`, { as: 'seller' })).status, 404);
 });
 
 test('chat: one thread per buyer and listing, readable only by its two people', async (t) => {
@@ -159,7 +174,7 @@ test('proof review: pending until an operator decides; rejection needs a note; a
 });
 
 test('ticket numbers: issued-list matches verify outright; numbers stay private and unique', async (t) => {
-  const { api, sell } = await fixture(t);
+  const { api, sell, previousOrder } = await fixture(t);
   const importList = (as, csv) => api('/operator/concerts/c_market/issued-tickets', { method: 'POST', as, body: { csv } });
 
   assert.equal((await importList('seller', 'TA-0001')).status, 403);
@@ -192,8 +207,9 @@ test('ticket numbers: issued-list matches verify outright; numbers stay private 
   assert.equal((await api(`/tickets/${id}`, { method: 'PATCH', as: 'seller', body: { quantity: 2 } })).body.error,
     'quantity_locked_by_ticket_numbers');
 
-  const bought = await api(`/tickets/${id}/orders`, { method: 'POST', as: 'buyer2', body: { paymentMethod: 'visa' } });
-  assert.deepEqual(bought.body.order.ticketNumbers, ['TA-0001'], 'the buyer receives the numbers');
+  const orderId = previousOrder(id, 'buyer2');
+  const bought = await api(`/orders/${orderId}`, { as: 'buyer2' });
+  assert.deepEqual(bought.body.order.ticketNumbers, ['TA-0001'], 'historical buyers retain access to their numbers');
   const resale = await sell('buyer2', { ticketNumbers: ['TA-0001'] });
   assert.equal(resale.body.listing.verified, true, 'once sold, the new owner can resell it');
 });
@@ -248,11 +264,9 @@ test('proof approval is invalidated when the seller changes the reviewed quantit
 });
 
 test('only the recorded buyer can relist a previously sold ticket number', async (t) => {
-  const { api, sell } = await fixture(t);
+  const { api, sell, previousOrder } = await fixture(t);
   const id = (await sell('seller', { ticketNumbers: ['TA-0001'] })).body.listing.id;
-  assert.equal((await api(`/tickets/${id}/orders`, {
-    method: 'POST', as: 'buyer', body: { paymentMethod: 'visa' },
-  })).status, 201);
+  previousOrder(id, 'buyer');
   for (const as of ['seller', 'buyer2']) {
     const denied = await sell(as, { ticketNumbers: ['TA-0001'] });
     assert.equal(denied.status, 409);
@@ -262,11 +276,11 @@ test('only the recorded buyer can relist a previously sold ticket number', async
 });
 
 test('operators cannot approve proof after the listing is sold or deleted', async (t) => {
-  const { api, sell } = await fixture(t);
+  const { api, sell, previousOrder } = await fixture(t);
   for (const status of ['sold', 'deleted']) {
     const id = (await sell('seller', { proofData: PROOF })).body.listing.id;
     if (status === 'sold') {
-      await api(`/tickets/${id}/orders`, { method: 'POST', as: 'buyer', body: { paymentMethod: 'visa' } });
+      previousOrder(id, 'buyer');
     } else {
       await api(`/tickets/${id}`, { method: 'DELETE', as: 'seller' });
     }

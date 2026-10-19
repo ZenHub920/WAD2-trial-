@@ -7,12 +7,13 @@ import { ref, computed, onMounted } from 'vue';
 import { RouterLink } from 'vue-router';
 import SwipeDeck from '../components/SwipeDeck.vue';
 import KakiCard from '../components/kaki/KakiCard.vue';
+import UserAvatar from '../components/UserAvatar.vue';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 import { currentUser } from '../auth.js';
 import { LABELS, formatDate } from '../api.js';
 import {
   EMPTY_FILTERS,
   applyFilters,
-  avatarFor,
   clearDecision,
   loadPool,
   readDecisions,
@@ -154,13 +155,6 @@ function backToDeck() {
   stage.value = 'deck';
 }
 
-const matchAvatars = computed(() => {
-  if (!matchedWith.value) return null;
-  return {
-    them: avatarFor(matchedWith.value.user),
-    you: avatarFor(currentUser.value ?? { displayName: 'You', id: 'you' }),
-  };
-});
 </script>
 
 <template>
@@ -176,10 +170,10 @@ const matchAvatars = computed(() => {
       >
         ←
       </button>
-      <h1 class="kaki__title">Kaki Finder</h1>
+      <h1 class="kaki__title">Find a companion</h1>
       <div class="kaki__actions">
         <RouterLink
-          to="/kaki/history" class="kaki__icon-btn" aria-label="Profile history"
+          to="/kaki/history" class="kaki__icon-btn" aria-label="Companion history"
           :aria-disabled="swipePending" @click="swipePending && $event.preventDefault()"
         >
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -200,16 +194,17 @@ const matchAvatars = computed(() => {
       </div>
     </header>
 
-    <div v-if="loading" class="kaki__state">Loading people…</div>
+    <div v-if="loading" class="kaki__state loading-state"><LoadingSpinner />Loading people…</div>
 
     <div v-else-if="error" class="notice notice--error">
-      <h3>{{ error.status === 401 ? 'Sign in to find a Kaki' : 'Could not load the finder' }}</h3>
-      <p v-if="error.status !== 401" class="mono">{{ error.message }}</p>
+      <h3>{{ error.status === 401 ? 'Sign in to find a companion' : 'Could not load the finder' }}</h3>
+      <p v-if="error.status !== 401">Companion profiles could not be loaded. Please refresh and try again.</p>
       <RouterLink v-if="error.status === 401" to="/login" class="btn btn--primary">Sign in</RouterLink>
     </div>
     <!-- --------------------------------------------------------- Filters -->
     <section v-else-if="stage === 'filters'" class="kaki__panel">
-      <h2 class="kaki__h2">Find your Kaki</h2>
+      <h2 class="kaki__h2">Filter people</h2>
+      <p class="kaki__hint">People appear at concerts you have joined. A like becomes a match only when you both like each other.</p>
 
       <label class="field">
         <span class="sr-only">Artist</span>
@@ -259,6 +254,7 @@ const matchAvatars = computed(() => {
 
       <p class="kaki__count">
         {{ previewCount }} {{ previewCount === 1 ? 'person matches' : 'people match' }} these filters
+        <span v-if="!people.length">. Join a concert from <RouterLink to="/concerts">Concerts</RouterLink> to find eligible companions.</span>
       </p>
 
       <div class="kaki__buttons">
@@ -314,12 +310,8 @@ const matchAvatars = computed(() => {
       </h2>
 
       <div class="match__avatars">
-        <span class="match__avatar" :style="{ background: matchAvatars.you.bg, color: matchAvatars.you.fg }">
-          {{ matchAvatars.you.initials }}
-        </span>
-        <span class="match__avatar" :style="{ background: matchAvatars.them.bg, color: matchAvatars.them.fg }">
-          {{ matchAvatars.them.initials }}
-        </span>
+        <UserAvatar :src="currentUser?.avatarUrl" :name="currentUser?.displayName ?? 'You'" :size="86" />
+        <UserAvatar :src="matchedWith.user.avatarUrl" :name="matchedWith.user.displayName" :size="86" />
       </div>
 
       <p class="match__note">
@@ -327,7 +319,7 @@ const matchAvatars = computed(() => {
           ? 'You both liked each other.'
           : 'Waiting for them to like you back.' }}
       </p>
-      <RouterLink v-if="matchedDecision?.mutual" to="/kaki/chat" class="btn btn--primary">
+      <RouterLink v-if="matchedDecision?.mutual" to="/messages" class="btn btn--primary">
         Messages
       </RouterLink>
 
@@ -348,7 +340,7 @@ const matchAvatars = computed(() => {
 
 .kaki__head {
   display: grid;
-  grid-template-columns: 2.5rem 1fr auto;
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-2);
   margin-bottom: var(--space-5);
@@ -362,6 +354,7 @@ const matchAvatars = computed(() => {
   font-size: var(--step-2);
   font-weight: 800;
   color: var(--text-100);
+  overflow-wrap: anywhere;
 }
 
 .kaki__back,
@@ -393,6 +386,8 @@ const matchAvatars = computed(() => {
   gap: var(--space-1);
 }
 
+.kaki__hint { margin: 0 0 var(--space-3); color: var(--text-300); font-size: var(--step--1); }
+
 .kaki__panel {
   display: flex;
   flex-direction: column;
@@ -408,6 +403,7 @@ const matchAvatars = computed(() => {
 
 .kaki__h2 {
   margin: 0 0 var(--space-2);
+  overflow-wrap: anywhere;
   font-family: var(--font-display);
   font-size: var(--step-2);
   font-weight: 800;
@@ -436,7 +432,8 @@ const matchAvatars = computed(() => {
 
 .field select {
   width: 100%;
-  padding: var(--space-3) var(--space-4);
+  min-width: 0;
+  padding: var(--space-3) 2.5rem var(--space-3) var(--space-4);
   background: var(--ink-800);
   border: var(--border-hairline);
   border-radius: var(--radius-md);
@@ -568,12 +565,13 @@ const matchAvatars = computed(() => {
 }
 
 .btn--ghost {
-  background: var(--accent-600);
-  color: #fff;
+  background: var(--ink-800);
+  color: var(--text-100);
+  border: var(--border-hairline);
 }
 
 .btn--ghost:hover {
-  background: var(--accent-500);
+  background: var(--ink-700);
 }
 
 .btn--text {
@@ -590,16 +588,6 @@ const matchAvatars = computed(() => {
   gap: var(--space-4);
 }
 
-.match__avatar {
-  display: grid;
-  place-items: center;
-  width: 86px;
-  height: 86px;
-  border-radius: 50%;
-  font-family: var(--font-display);
-  font-size: var(--step-2);
-  font-weight: 800;
-}
 
 .match__note {
   margin: 0;

@@ -6,12 +6,16 @@ import { filterGroups } from '../groupFilters.js';
 import GroupFilters from '../components/GroupFilters.vue';
 import GroupListingCard from '../components/GroupListingCard.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 import '../assets/groups.css';
 import { currentUser } from '../auth.js';
+const groupsLoading = ref(true);
 
 const route = useRoute(), router = useRouter();
 const hosted = ref([]), candidates = ref([]), connections = ref([]);
 const joins=ref([]);
+const sourceGroup = ref(null);
+const joinStatus = { pending: 'Awaiting your approval', accepted: 'Approved', rejected: 'Not approved', withdrawn: 'Withdrawn', expired: 'Expired' };
 const offset=ref(0),total=ref(0);let filterTimer;
 const allConcerts = ref([]), hostConcertId = ref('');
 const hostForm = reactive({ capacity: 2, section: 'ga_standing', spend_band: 2, arrival_plan: 'mid', plans: {}, notes: '' });
@@ -81,12 +85,16 @@ async function runConfirmed() {
 async function loadCandidates() {
   const current = ++generation, id = sourceId.value;
   candidates.value = []; error.value = '';
+  sourceGroup.value = null;
   if (!id) { loading.value = false; return; }
   loading.value = true;
   try {
-    const result = await api.connectionCandidates(concertId.value, id,{offset:offset.value,q:filters.query,section:filters.section,arrival:filters.arrival,spendBand:filters.spendBand,minCapacity:filters.minCapacity,activity:filters.activity,vibe:filters.vibe,sort:filters.sort});
-    if (alive && current === generation) {candidates.value = result.groups;total.value=result.total;}
-  } catch (e) { if (alive && current === generation) error.value = e.message; }
+    const [result, membership] = await Promise.all([
+      api.connectionCandidates(concertId.value, id,{offset:offset.value,q:filters.query,section:filters.section,arrival:filters.arrival,spendBand:filters.spendBand,minCapacity:filters.minCapacity,activity:filters.activity,vibe:filters.vibe,sort:filters.sort}),
+      api.groupMembership(id),
+    ]);
+    if (alive && current === generation) {candidates.value = result.groups;total.value=result.total;sourceGroup.value=membership.group;}
+  } catch (e) { if (alive && current === generation) error.value = 'Could not load groups to connect with. Please try again.'; }
   finally { if (alive && current === generation) loading.value = false; }
 }
 async function refresh() {
@@ -116,16 +124,17 @@ onMounted(async () => { try {
   allConcerts.value = result.concerts;
   hostConcertId.value = concertId.value || allConcerts.value[0]?.id || '';
   await refresh();
-} catch (e) { if (alive) error.value = e.message; } });
+} catch (e) { if (alive) error.value = e.status === 401 ? 'Sign in to host groups and manage connections.' : 'Could not load your groups. Please try again.'; }
+finally { groupsLoading.value = false; } });
 onUnmounted(() => { alive = false; generation++;clearTimeout(filterTimer); });
 async function act(operation) {
   if (busy.value) return;
   busy.value = true; error.value = ''; message.value = '';
-  try { await operation(); await refresh(); if (alive) message.value = 'Invitation updated.'; }
-  catch (e) { try { await refresh(); } catch {} if (alive) error.value = e.message; }
+  try { await operation(); await refresh(); if (alive) message.value = 'Group updated.'; }
+  catch (e) { try { await refresh(); } catch {} if (alive) error.value = e.message === 'group_not_open_to_connections' ? 'Both groups must be published and open to meeting other groups. Update your group settings first.' : e.status === 409 ? 'This group or request has changed. Review the latest information before trying again.' : 'Could not update the group. Please try again.'; }
   finally { busy.value = false; }
 }
-async function retry() { try { await refresh(); } catch (e) { error.value = e.message; } }
+async function retry() { groupsLoading.value=true;try { error.value='';await refresh(); } catch (e) { error.value = 'Could not load your groups. Please try again.'; } finally { groupsLoading.value=false; } }
 async function host() {
   const id = hostConcertId.value;
   await act(async () => {
@@ -141,25 +150,44 @@ async function host() {
 </script>
 
 <template>
-  <main class="container groups-page">
-    <h1>Connect Groups</h1><p>Meet another group going to the same concert.</p>
-    <nav class="group-actions"><RouterLink to="/groups">Find a Group</RouterLink><RouterLink to="/kaki">Find a Kaki</RouterLink><RouterLink :to="concertId ? `/concerts/${encodeURIComponent(concertId)}` : '/concerts'">Host a group</RouterLink></nav>
+  <div class="container groups-page">
+    <h1>Host &amp; connect groups</h1><p>Create a concert group, manage join requests, or invite another published group to meet yours. Connecting groups does not merge their members.</p>
+    <nav class="group-actions" aria-label="Related group pages"><RouterLink to="/groups">Join a group</RouterLink><RouterLink :to="concertId ? `/concerts/${encodeURIComponent(concertId)}` : '/concerts'">Concert details</RouterLink></nav>
     <p v-if="error" class="group-error" role="alert">{{ error }} <button class="btn btn--ghost" :disabled="busy" @click="retry">Retry</button></p>
     <p v-if="message" class="group-success" role="status">{{ message }}</p>
+    <p v-if="busy && !confirming" class="loading-state" role="status"><LoadingSpinner />Updating your groups and connections…</p>
+    <p v-if="groupsLoading" class="loading-state" role="status"><LoadingSpinner />Loading your groups and connections…</p>
+        <details class="create">
+          <summary class="create__summary">Host a new group</summary>
+          <form class="group-panel" @submit.prevent="host">
+            <p>Create a draft first, invite friends and collect everyone's preferences, then publish it from group settings.</p>
+            <div class="group-controls">
+              <label>Concert<select v-model="hostConcertId" required :disabled="busy"><option v-for="c in allConcerts" :key="c.id" :value="c.id">{{ c.artist }}, {{ c.event_date }}</option></select></label>
+              <label>Group places for new companions<input v-model.number="hostForm.capacity" type="number" min="1" step="1" required :disabled="busy"></label>
+              <label>Seating<select v-model="hostForm.section" :disabled="busy"><option v-for="(name, id) in LABELS.section" :key="id" :value="id">{{ name }}</option></select></label>
+              <label>Spending<select v-model.number="hostForm.spend_band" :disabled="busy"><option v-for="n in 4" :key="n" :value="n">{{ LABELS.spendBand[n] }}</option></select></label>
+              <label>Arrival<select v-model="hostForm.arrival_plan" :disabled="busy"><option v-for="(name, id) in LABELS.arrival" :key="id" :value="id">{{ name }}</option></select></label>
+              <label>Group notes (visible after publishing)<input v-model="hostForm.notes" maxlength="2000" :disabled="busy"></label>
+            </div>
+            <fieldset><legend>Group activities</legend><label v-for="(name, id) in LABELS.plans" :key="id" class="group-check"><input v-model="hostForm.plans[id]" type="checkbox" :disabled="busy">{{ name }}</label></fieldset>
+            <button class="btn btn--primary" :disabled="busy || !hostConcertId">{{ busy ? 'Creating…' : 'Create draft group' }}</button>
+          </form>
+        </details>
     <section v-if="hosted.length" class="card group-panel">
-      <h2>Your group</h2>
-      <div class="group-controls"><label>Concert<select v-model="concertId" :disabled="busy"><option value="">Choose concert</option><option v-for="c in concerts" :key="c.id" :value="c.id">{{ c.artist }}, {{ c.date }}</option></select></label><label>Hosted group<select v-model="sourceId" :disabled="busy"><option value="">Choose group</option><option v-for="g in sources" :key="g.id" :value="g.id">{{ g.hostName }}, {{ sectionName(g.section) }}, {{ g.id }}</option></select></label></div>
-      <p v-if="!sources.length">No active hosted groups for this concert. Open the concert page to host one.</p>
+      <h2>Choose your hosted group</h2>
+      <div class="group-controls"><label>Concert<select v-model="concertId" :disabled="busy"><option value="">Choose concert</option><option v-for="c in concerts" :key="c.id" :value="c.id">{{ c.artist }}, {{ c.date }}</option></select></label><label>Hosted group<select v-model="sourceId" :disabled="busy"><option value="">Choose group</option><option v-for="g in sources" :key="g.id" :value="g.id">{{ g.hostName }}, {{ sectionName(g.section) }}</option></select></label></div>
+      <p v-if="!sources.length">No active hosted group for this concert. Create a draft below.</p>
+      <p v-if="sourceGroup">{{ sourceGroup.settings?.published ? 'Published group' : 'Draft group' }}<template v-if="sourceGroup.settings?.published"> — {{ sourceGroup.settings.connect_open ? 'Open to group connections' : 'Not open to group connections' }}</template>.</p>
+      <p v-if="sourceGroup && (!sourceGroup.settings?.published || !sourceGroup.settings?.connect_open)">Publish your group and enable “Open to meeting other groups” in group settings before sending invitations.</p>
     </section>
     <p v-else>Host a concert group to start sending invitations.</p>
-    <RouterLink v-if="sourceId" :to="`/groups/${sourceId}/members`" class="btn btn--ghost">Manage group</RouterLink>
-    <RouterLink v-if="sourceId" :to="{path:'/meetups',query:{partyId:sourceId}}" class="btn btn--ghost">Plan your group meetup</RouterLink>
-    <section v-if="joins.length" class="card group-panel"><h2>Join requests</h2><article v-for="j in joins" :key="j.id"><p>{{j.seekerName}}, {{j.artist}}, {{j.status}}</p><p v-if="j.preferences">Enjoys: {{j.preferences.about.map(p=>p.text).join(", ") || "No preferences specified"}}. Companions: {{j.preferences.wants.map(p=>p.text).join(", ") || "Flexible"}}.</p><p v-if="j.seeker">{{j.seeker.ageBand}}, {{j.seeker.languages.join(", ")}}</p><div v-if="j.status==='pending'" class="group-actions"><button class="btn btn--primary" :disabled="busy" @click="act(()=>api.respondGroupJoin(j.id,'accept'))">Approve</button><button class="btn btn--ghost" :disabled="busy" @click="act(()=>api.respondGroupJoin(j.id,'reject'))">Reject</button></div></article></section>
+    <div v-if="sourceId" class="group-actions"><RouterLink :to="`/groups/${sourceId}/members`" class="btn btn--ghost">Manage group &amp; publishing</RouterLink><RouterLink :to="{path:'/meetups',query:{partyId:sourceId}}" class="btn btn--ghost">Plan your group meetup</RouterLink></div>
+    <section v-if="joins.length" class="card group-panel"><h2>Requests to join your groups</h2><article v-for="j in joins" :key="j.id"><p>{{j.seekerName}}, {{j.artist}} — {{joinStatus[j.status] ?? 'Request updated'}}</p><p v-if="j.preferences">Enjoys: {{j.preferences.about.map(p=>p.text).join(", ") || "No preferences specified"}}. Companion preferences: {{j.preferences.wants.map(p=>p.text).join(", ") || "Flexible"}}.</p><p v-if="j.seeker">{{j.seeker.ageBand}}, {{j.seeker.languages.join(", ")}}</p><div v-if="j.status==='pending'" class="group-actions"><button class="btn btn--primary" :disabled="busy" @click="act(()=>api.respondGroupJoin(j.id,'accept'))">Approve group place</button><button class="btn btn--ghost" :disabled="busy" @click="act(()=>api.respondGroupJoin(j.id,'reject'))">Decline request</button></div></article></section>
     <template v-if="sourceId">
-      <section class="card group-panel"><h2>Discover groups</h2><GroupFilters :filters="filters" /></section>
-      <p v-if="loading" role="status">Loading groups…</p>
-      <div v-else class="group-grid"><GroupListingCard v-for="g in visible" :key="g.id" :group="g"><p v-if="g.invitation">Invitation: {{ g.invitation.status }}</p><button v-else class="btn btn--primary" :disabled="busy" @click="act(() => api.inviteGroup(sourceId, g.id))">Send Invitation</button></GroupListingCard></div>
-      <p v-if="!loading && !visible.length">No other eligible groups match these filters.</p>
+      <section class="card group-panel"><h2>Find another group to connect with</h2><GroupFilters :filters="filters" /></section>
+      <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading groups…</p>
+      <div v-else class="group-grid"><GroupListingCard v-for="g in visible" :key="g.id" :group="g"><p v-if="g.invitation">Invitation: {{ g.invitation.status === 'pending' ? 'Awaiting a response' : g.invitation.status === 'accepted' ? 'Groups connected' : 'Declined' }}</p><button v-else class="btn btn--primary" :disabled="busy" @click="act(() => api.inviteGroup(sourceId, g.id))">Invite group to connect</button></GroupListingCard></div>
+      <p v-if="!loading && !visible.length && sourceGroup?.settings?.published && sourceGroup.settings.connect_open">No other published groups open to connections match these filters.</p>
       <nav class="group-actions"><button class="btn btn--ghost" :disabled="busy||loading||offset===0" @click="offset=Math.max(0,offset-20);loadCandidates()">Previous 20</button><span>{{total}} results</span><button class="btn btn--ghost" :disabled="busy||loading||offset+20>=total" @click="offset+=20;loadCandidates()">Next 20</button></nav>
     </template>
     <!-- One feature, not three panels. What is live is always here; the two
@@ -177,18 +205,18 @@ async function host() {
           <div class="invite__actions">
             <button
               type="button"
-              class="mark mark--yes"
+              class="btn btn--ghost"
               :disabled="busy"
               :aria-label="`Accept the invitation from ${otherParty(c).hostName}`"
               @click="act(() => api.respondToGroup(c.id, 'accept'))"
-            >✓</button>
+            >Accept</button>
             <button
               type="button"
-              class="mark mark--no"
+              class="btn btn--ghost"
               :disabled="busy"
               :aria-label="`Decline the invitation from ${otherParty(c).hostName}`"
               @click="confirming = { kind: 'decline', connection: c }"
-            >✕</button>
+            >Decline</button>
           </div>
         </article>
       </div>
@@ -197,18 +225,14 @@ async function host() {
         <h3 class="invites__title">Sent <span class="invites__count tabular">{{ outgoing.length }}</span></h3>
         <article v-for="c in outgoing" :key="c.id" class="invite">
           <p class="invite__who">{{ describe(c) }}</p>
-          <!-- Reads "Pending" at rest and "Cancel" under the cursor: one
-               control that states the status and offers the only action. -->
           <button
             type="button"
-            class="pending"
+            class="btn btn--ghost"
             :disabled="busy"
             :aria-label="`Cancel your invitation to ${otherParty(c).hostName}`"
             @click="confirming = { kind: 'cancel', connection: c }"
           >
-            <span class="pending__dot" aria-hidden="true" />
-            <span class="pending__rest" aria-hidden="true">Pending</span>
-            <span class="pending__hover" aria-hidden="true">Cancel</span>
+            Withdraw pending invitation
           </button>
         </article>
       </div>
@@ -216,7 +240,7 @@ async function host() {
       <div class="connected">
         <h3 class="invites__title">Connected</h3>
         <p v-if="!accepted.length" class="connections__empty">
-          No connections yet. Invite a group above, or create one of your own below.
+          No connected groups yet. Publish your group and invite another group to connect.
         </p>
         <article v-for="c in accepted" :key="c.id" class="connection">
           <p class="invite__who">{{ describe(c) }}</p>
@@ -230,23 +254,6 @@ async function host() {
           </div>
         </article>
 
-        <!-- Hosting sits here because a new group is what you connect FROM:
-             with nothing of your own there is nothing to invite anybody to. -->
-        <details class="create">
-          <summary class="create__summary">Create</summary>
-          <form class="group-panel" @submit.prevent="host">
-            <div class="group-controls">
-              <label>Concert<select v-model="hostConcertId" required :disabled="busy"><option v-for="c in allConcerts" :key="c.id" :value="c.id">{{ c.artist }}, {{ c.event_date }}</option></select></label>
-              <label>Available places<input v-model.number="hostForm.capacity" type="number" min="1" step="1" required :disabled="busy"></label>
-              <label>Seating<select v-model="hostForm.section" :disabled="busy"><option v-for="(name, id) in LABELS.section" :key="id" :value="id">{{ name }}</option></select></label>
-              <label>Spending<select v-model.number="hostForm.spend_band" :disabled="busy"><option v-for="n in 4" :key="n" :value="n">{{ LABELS.spendBand[n] }}</option></select></label>
-              <label>Arrival<select v-model="hostForm.arrival_plan" :disabled="busy"><option v-for="(name, id) in LABELS.arrival" :key="id" :value="id">{{ name }}</option></select></label>
-              <label>Published notes<input v-model="hostForm.notes" maxlength="2000" :disabled="busy"></label>
-            </div>
-            <fieldset><legend>Group activities</legend><label v-for="(name, id) in LABELS.plans" :key="id" class="group-check"><input v-model="hostForm.plans[id]" type="checkbox" :disabled="busy">{{ name }}</label></fieldset>
-            <button class="btn btn--primary" :disabled="busy || !hostConcertId">Create group</button>
-          </form>
-        </details>
       </div>
     </section>
 
@@ -261,7 +268,7 @@ async function host() {
       @confirm="runConfirmed"
       @cancel="confirming = null"
     />
-  </main>
+  </div>
 </template>
 
 <style scoped>
@@ -313,86 +320,6 @@ async function host() {
 .invite__who { min-width: 0; color: var(--text-200); font-size: var(--step--1); }
 .invite__actions { display: flex; flex: none; gap: var(--space-2); }
 
-/* ---- Accept / decline ---------------------------------------------------- */
-
-.mark {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border: var(--border-soft);
-  border-radius: var(--radius-pill);
-  background: var(--ink-800);
-  font-size: var(--step-0);
-  line-height: 1;
-  transition:
-    background var(--dur-fast) var(--ease-out),
-    border-color var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-spring);
-}
-
-.mark:hover:not(:disabled) { transform: scale(1.08); }
-.mark:disabled { opacity: 0.5; }
-.mark--yes { color: var(--mint-400); }
-.mark--yes:hover:not(:disabled) { background: var(--mint-400); border-color: var(--mint-400); color: #fff; }
-.mark--no { color: var(--rose-400); }
-.mark--no:hover:not(:disabled) { background: var(--rose-400); border-color: var(--rose-400); color: #fff; }
-
-/* ---- Pending / cancel ---------------------------------------------------- */
-
-.pending {
-  position: relative;
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 7.5rem;
-  padding: var(--space-2) var(--space-4);
-  border: var(--border-soft);
-  border-radius: var(--radius-pill);
-  background: var(--ink-800);
-  color: var(--text-300);
-  font-size: var(--step--1);
-  transition:
-    background var(--dur-fast) var(--ease-out),
-    border-color var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out);
-}
-
-.pending__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--amber-400);
-  animation: pending-pulse 1.8s var(--ease-glide) infinite;
-}
-
-@keyframes pending-pulse { 50% { opacity: 0.25; } }
-
-/* The label swaps on hover; the button's aria-label states the action outright,
-   so the swap is decoration rather than the only way to know what it does. */
-.pending__hover { position: absolute; left: 0; right: 0; opacity: 0; }
-.pending__rest, .pending__hover { transition: opacity var(--dur-fast) var(--ease-out); }
-
-.pending:hover:not(:disabled),
-.pending:focus-visible {
-  border-color: var(--rose-400);
-  background: color-mix(in oklab, var(--rose-400) 10%, transparent);
-  color: var(--rose-400);
-}
-
-.pending:hover:not(:disabled) .pending__rest,
-.pending:focus-visible .pending__rest { opacity: 0; }
-.pending:hover:not(:disabled) .pending__hover,
-.pending:focus-visible .pending__hover { opacity: 1; }
-.pending:hover:not(:disabled) .pending__dot { animation: none; background: var(--rose-400); }
-.pending:disabled { opacity: 0.5; }
-
-@media (prefers-reduced-motion: reduce) {
-  .pending__dot { animation: none; }
-  .mark:hover:not(:disabled) { transform: none; }
-}
 
 /* ---- Connected ----------------------------------------------------------- */
 
@@ -445,7 +372,7 @@ async function host() {
 
 @media (max-width: 600px) {
   .invite { align-items: flex-start; flex-direction: column; }
-  .invite__actions, .pending { width: 100%; }
-  .pending { justify-content: center; }
+  .invite__actions { width: 100%; flex-wrap: wrap; }
+  .invite__actions .btn { flex: 1; }
 }
 </style>

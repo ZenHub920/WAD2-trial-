@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { api, formatDate } from '../../api.js';
+import LoadingSpinner from '../LoadingSpinner.vue';
 
 /**
  * Operator: the official issued-ticket list for each concert. A seller's ticket
@@ -8,17 +9,21 @@ import { api, formatDate } from '../../api.js';
  * before its listings can verify without proof review.
  */
 const concerts = ref([]);
+const loading = ref(true);
 const error = ref('');
 const openId = ref('');
 const csv = ref('');
 const importing = ref(false);
+const reading = ref(false);
 const result = ref({});
 
 async function load() {
   try {
     concerts.value = (await api.issuedTicketSummary()).concerts;
   } catch (err) {
-    error.value = err.message;
+    error.value = 'Could not load issued ticket lists. Refresh the page to try again.';
+  } finally {
+    loading.value = false;
   }
 }
 
@@ -30,7 +35,13 @@ function toggle(id) {
 async function readFile(event) {
   const [file] = event.target.files;
   event.target.value = '';
-  if (file) csv.value = await file.text();
+  if (!file) return;
+  reading.value = true;
+  try {
+    csv.value = await file.text();
+  } finally {
+    reading.value = false;
+  }
 }
 
 async function importList(concert) {
@@ -64,11 +75,14 @@ onMounted(load);
   <section class="issued">
     <h2>Issued ticket lists</h2>
     <p class="issued__lede">
-      Import each concert’s official ticket numbers. Listings whose numbers are on the list
-      are verified automatically; the rest come to the review queue below.
+      Import the ticket numbers issued for each concert. Matching numbers verify a ticket
+      listing, not a seller or a completed transfer. Uploaded proofs appear in the review queue.
     </p>
+    <p v-if="importing && !openId" class="loading-state"><LoadingSpinner /> Importing…</p>
 
     <p v-if="error" class="issued__error" role="alert">{{ error }}</p>
+    <p v-else-if="loading" class="loading-state" role="status"><LoadingSpinner /> Loading issued ticket lists…</p>
+    <p v-else-if="!concerts.length" class="issued__lede">No concerts are available for ticket number imports.</p>
 
     <ul v-else class="issued__list">
       <li v-for="concert in concerts" :key="concert.id" class="row">
@@ -95,8 +109,10 @@ onMounted(load);
             <label class="row__file">
               Or choose a .csv file
               <input type="file" accept=".csv,text/csv,text/plain" @change="readFile" />
+              <span v-if="reading" class="loading-state"><LoadingSpinner /> Loading file…</span>
             </label>
             <button class="btn btn--primary" type="submit" :disabled="importing || !csv.trim()">
+              <LoadingSpinner v-if="importing" />
               {{ importing ? 'Importing…' : 'Import list' }}
             </button>
           </div>
@@ -139,6 +155,8 @@ onMounted(load);
 
 .row {
   padding-block: var(--space-3);
+  min-width: 0;
+  overflow-wrap: anywhere;
   border-top: var(--border-hairline);
 }
 
@@ -151,7 +169,7 @@ onMounted(load);
 
 .row__name {
   flex: 1;
-  min-width: 200px;
+  min-width: min(200px, 100%);
   display: grid;
 }
 
@@ -191,6 +209,7 @@ onMounted(load);
 
 .row__import label {
   display: grid;
+  min-width: 0;
   gap: var(--space-2);
   color: var(--text-300);
   font-size: var(--step--1);
@@ -215,6 +234,7 @@ onMounted(load);
 }
 
 .row__file input {
+  max-width: 100%;
   font-size: var(--step--2);
 }
 </style>

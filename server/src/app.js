@@ -39,7 +39,7 @@ export function createApp({
 
   app.use('/api/ticket-images', express.static(imageDir));
   app.use('/api/avatars', express.static(avatarDir));
-  app.use('/api', createTicketmasterRoutes());
+  app.use('/api', createTicketmasterRoutes(db));
   app.use('/api', createRoutes({
     db,
     repos,
