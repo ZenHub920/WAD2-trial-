@@ -11,6 +11,7 @@ const providerEvent = {
   name: 'Example Artist Live',
   url: 'https://www.ticketmaster.sg/event/42',
   info: 'Provider concert information.',
+  seatmap: { staticUrl: 'https://example.test/concert-seating.png' },
   dates: { start: { localDate: '2027-03-21', localTime: '20:00:00' } },
   _embedded: {
     attractions: [{ name: 'Example Artist' }],
@@ -45,7 +46,7 @@ test('searches SG music and imports a stable, linked concert without erasing loc
     db.prepare(`INSERT INTO parties (id, host_user_id, concert_id, capacity, section, spend_band, arrival_plan)
       VALUES ('party', 'host', ?, 1, 'pit', 2, 'mid')`).run(concerts[0].id);
 
-    importTicketmasterConcerts(db, [{ ...concerts[0], venue: 'New Hall', official_url: 'https://www.ticketmaster.sg/event/42-updated' }]);
+    importTicketmasterConcerts(db, [{ ...concerts[0], venue: 'New Hall', official_url: 'https://www.ticketmaster.sg/event/42-updated', seatmap_url: 'https://example.test/updated-seating.png' }]);
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM concerts').get().n, 1);
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM parties').get().n, 1);
 
@@ -58,6 +59,7 @@ test('searches SG music and imports a stable, linked concert without erasing loc
     assert.equal(body.concert.venue, 'New Hall');
     assert.equal(body.concert.official_url, 'https://www.ticketmaster.sg/event/42-updated');
     assert.equal(body.concert.blurb, providerEvent.info);
+    assert.equal(body.concert.seatmap_url, 'https://example.test/updated-seating.png');
     assert.equal(body.openParties, 1);
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
@@ -87,6 +89,29 @@ test('provider normalization rejects impossible dates and tolerates absent image
   assert.equal(concerts.length, 1);
   assert.equal(concerts[0].source_event_id, 'image-less');
   assert.equal(concerts[0].hero_image_url, null);
+});
+
+test('seat maps stay absent without a safe provider URL and clear when the provider removes a layout', async () => {
+  const concerts = await searchTicketmaster({
+    apiKey: 'test-key',
+    fetchImpl: async () => new Response(JSON.stringify({ _embedded: { events: [
+      { ...providerEvent, id: 'layout' },
+      { ...providerEvent, id: 'missing-layout', seatmap: undefined },
+      { ...providerEvent, id: 'unsafe-layout', seatmap: { staticUrl: 'javascript:alert(1)' } },
+      { ...providerEvent, id: 'http-layout', seatmap: { staticUrl: 'http://example.test/layout.png' } },
+    ] } }), { status: 200 }),
+  });
+  assert.deepEqual(concerts.map(concert => concert.seatmap_url), [
+    providerEvent.seatmap.staticUrl, null, null, null,
+  ]);
+  const db = createTestDb();
+  try {
+    importTicketmasterConcerts(db, concerts);
+    importTicketmasterConcerts(db, [{ ...concerts[0], seatmap_url: null }]);
+    assert.equal(db.prepare('SELECT seatmap_url FROM concerts WHERE id=?').get(concerts[0].id).seatmap_url, null);
+  } finally {
+    db.close();
+  }
 });
 
 test('provider text prefers event descriptions, falls back to artist biography, and stays absent without text', async () => {

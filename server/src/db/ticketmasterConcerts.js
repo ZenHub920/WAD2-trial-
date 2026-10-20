@@ -3,10 +3,10 @@ export function importTicketmasterConcerts(db, concerts) {
   const upsert = db.prepare(`
     INSERT INTO concerts (
       id, artist, tour_name, venue, city, event_date, hero_image_url,
-      source, source_event_id, official_url, image_attribution, blurb
+      source, source_event_id, official_url, image_attribution, blurb, seatmap_url
     ) VALUES (
       @id, @artist, @tour_name, @venue, @city, @event_date, @hero_image_url,
-      @source, @source_event_id, @official_url, @image_attribution, @blurb
+      @source, @source_event_id, @official_url, @image_attribution, @blurb, @seatmap_url
     )
     ON CONFLICT(source, source_event_id) DO UPDATE SET
       artist = excluded.artist,
@@ -17,7 +17,8 @@ export function importTicketmasterConcerts(db, concerts) {
       hero_image_url = excluded.hero_image_url,
       official_url = excluded.official_url,
       image_attribution = excluded.image_attribution,
-      blurb = excluded.blurb
+      blurb = excluded.blurb,
+      seatmap_url = excluded.seatmap_url
   `);
   db.transaction(() => {
     for (const concert of concerts) upsert.run(concert);

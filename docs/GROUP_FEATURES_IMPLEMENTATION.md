@@ -34,7 +34,7 @@ For feasible pairs, seeker ranking is **preferred first → compatibility descen
 
 ## Feature B: Connect Groups
 
-`/groups/connect?concertId=...` loads all groups hosted by the session's account, supports concert and source-group selection, and provides a host-group form using the existing party creation endpoint. Groups can discover other hosts' groups at the same concert, including groups with all matching places reserved. Capacity is not a group-connection eligibility condition.
+`/groups/connect` is the My groups dashboard, listing all owned groups across concerts and active joined groups. Owned cards expose Manage group, Plan meetup and Connect groups. `/groups/connect?view=create&concertId=...` shows the creation form using the existing party endpoint; successful creation opens membership and publishing settings. `/groups/connect?view=connections&groupId=...` shows the selected owned group's context, candidate filters and invitations without paired concert/source dropdowns. Invalid or non-owned group IDs return the user to an active-owned-group choice. Pending join requests are actionable on the dashboard; old requests and cancelled groups remain in history. Groups can discover other hosts' groups at the same concert, including groups with all matching places reserved. Capacity is not a group-connection eligibility condition.
 
 Hosts can send invitations, view incoming and outgoing pending invitations, accept/decline incoming invitations, and view accepted and declined connections. Discovery includes the invitation state for the selected pair. The inbox contains the account's invitations across all hosted groups.
 
@@ -44,7 +44,7 @@ Connections store canonical party ordering, require the initiator to be one of t
 
 ## Data flow and database integration
 
-Feature A: **Vue → existing API client → session-authenticated Express routes → registered group repository → SQLite preferences → matching service → existing preference builder/Gale–Shapley → immutable round snapshot/results and operational proposals**.
+Feature A: **Vue → existing API client → session-authenticated managed matching endpoint → explicit opt-in pool → directional preference builder/Gale–Shapley and stability verification → immutable round/results/trace plus reserved managed join requests → receiving-host approval**. The separate legacy operator path retains operational proposal confirmation; manual group selection retains direct join requests.
 
 Feature B: **Vue → existing API client → authenticated Express routes → source/recipient authorization → SQLite pending invitation → authorized recipient response → accepted/declined connection visible to both hosts**.
 
@@ -175,24 +175,30 @@ npm.cmd run operator:grant -- operator@example.com
 
 Replace the example with an existing local account email; no operator account was granted during implementation.
 
-## Manual browser acceptance checklist — not yet executed
+## Manual browser acceptance checklist
+
+The managed matching seeker/host/withdrawal/queue flow was checked on desktop and mobile on 20 October 2026, alongside 284 passing backend tests and a passing frontend build. The rest of this checklist is not claimed as a complete application browser audit.
 
 1. Start backend/frontend with the commands above. Register or sign in as host A, host B, and a seeker in separate browser profiles. Expected: sessions are independent; profile/onboarding flows remain available.
 2. Open a concert and follow Find a Group. Expected: `/groups?concertId=...` retains the selected concert. Signed-out visitors are directed to sign-in and returned to the page.
-3. As host A, open Connect Groups, expand “Host a new group,” choose that concert and publish a group with seating, budget, arrival, activities and notes. Repeat as host B. Expected: hosted-group selectors and candidate cards show the created groups.
-4. As the seeker, open Find a Group and create a request. Expected: valid fields are required, status becomes open, compatibility is shown, and Kaki participation is unchanged.
+3. As host A, open Create group, choose the concert and create a draft with seating, budget, arrival, activities and notes. Save member preferences and publish from Manage group. Repeat as host B. Expected: My groups lists both drafts and published groups for each account; each owned card opens management, meetup planning or connection candidates directly.
+4. As the seeker, open Browse groups, choose Set up group request and save the request. Expected: valid fields are required, status becomes open, compatibility is shown, and Kaki participation is unchanged.
 5. Search by host/artist and exercise seating, capacity, spending, arrival, activity and vibe filters and each sort. Expected: displayed groups match the selected controls, with a clear empty state when none qualify.
 6. Prefer one or more groups. Expected: button changes to Remove Preference and saved list updates; available capacity does not change. Refresh, navigate away/back, and log out/in. Expected: preferences persist.
 7. Switch concerts quickly. Expected: only the latest concert's groups/request/preferences appear. Try repeated clicks while saving. Expected: one mutation at a time.
-8. Use an existing operator account on the concert page to preview, then prepare a new batch and run a matching round. Expected: operator-only execution, stable results relative to the saved final lists, capacity-respecting proposals, and immutable round history. Retrying the same batch returns the original round; preparing a new batch starts a new logical operation.
-9. As the seeker, review the proposal on the concert page, then confirm it. Expected: status is confirmed, capacity remains reserved, and a later round leaves the confirmation intact. Use another request/proposal to decline. Expected: request/space reopen and that exact declined group is excluded from later matching.
+8. As an ordinary seeker, choose Find my group. Expected: only opted-in eligible seekers enter the batch; published managed groups participate; the verified round and reserved algorithmic join requests persist together. Retrying the same operation cannot create another reservation or round.
+9. As the selected host, approve the algorithmic request from My groups. Expected: the seeker can refresh status and open the confirmed group, and the reservation becomes one membership without double counting. Withdraw, reject and expire other algorithmic requests; places are released and rejected pairs are excluded from later matching.
 10. Fill a saved group or close it through an established workflow. Expected: it disappears from eligible results but its saved preference remains removable from the saved list. A stale Prefer action refreshes and reports the server error.
 11. As host A, select one source group in Connect Groups and send an invitation to host B's group. Expected: pending outgoing entry for A and pending incoming entry for B; no immediate connection or capacity change.
+
 12. Refresh/log in as host B and accept. Expected: only B can respond, both hosts see the accepted connection, repeat responses are rejected, and neither direction can create a duplicate invitation.
 13. Use a different pair of groups to decline. Expected: declined history is visible and that pair cannot be reinvited. With multiple groups owned by A, select another source. Expected: invitation state belongs to that selected pair rather than the first group.
 14. Between sending and accepting, block a host or cancel a group through an existing supported workflow. Expected: acceptance is rejected against current state. An unrelated account's connection list contains no entries for this pair.
 15. Compare capacities, matching proposals, round history/results, and ticket ownership before/after sending/accepting/declining invitations. Expected: all stay unchanged by connection actions.
 16. Check Find a Kaki mutual swipes/history/chat, ticket listings/purchase/seller conversations, profile changes, proposal confirmation/decline, and mobile navigation. Expected: existing experiences work; group pages reflow without horizontal overflow and navigation can scroll on short screens.
+
+Legacy operator preview/run/proposal-confirmation checks use unconfigured legacy listings, not published member-managed groups. Full round details and trace routes remain operator-only.
+
 
 ## Limitations and roadmap status
 

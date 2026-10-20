@@ -24,7 +24,7 @@ import StabilityDemo from '../components/StabilityDemo.vue';
     <section class="block">
       <h2>Bring your friends</h2>
       <p>Create a group, invite your friends and add everyone's preferences. Open places to new people or connect with another group at the same show.</p>
-      <RouterLink to="/groups/connect" class="btn btn--ghost">Connect with another group</RouterLink>
+      <RouterLink to="/groups/connect" class="btn btn--ghost">Manage my groups</RouterLink>
     </section>
 
     <details id="gale-shapley" class="block">

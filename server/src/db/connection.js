@@ -16,6 +16,7 @@ import { migrateCommunity } from './communityMigrations.js';
 import { migrateNotifications } from './notificationRepository.js';
 import { migrateMeetups } from './meetupRepository.js';
 import { migrateFeedback } from './feedbackRepository.js';
+import { migrateSeating } from './seatingMigrations.js';
 const here = dirname(fileURLToPath(import.meta.url));
 
 let db = null;
@@ -34,6 +35,7 @@ export function getDb() {
   db.exec(schema);
   migrate(db);
   migrateGroups(db);
+  migrateSeating(db);
   migrateLegacyTickets(db);
   migrateCommunity(db);
   migrateNotifications(db);
@@ -60,8 +62,10 @@ const ADDED_COLUMNS = [
   ['concerts', 'source_event_id', 'TEXT'],
   ['concerts', 'official_url', 'TEXT'],
   ['concerts', 'image_attribution', 'TEXT'],
+  ['concerts', 'seatmap_url', 'TEXT'],
   ['parties', 'min_size', 'INTEGER'],
   ['seeker_requests', 'linked_request_id', 'TEXT'],
+  ['seeker_requests', 'matching_opt_in', 'INTEGER NOT NULL DEFAULT 0 CHECK (matching_opt_in IN (0,1))'],
   ['match_rounds', 'solver_id', 'TEXT'],
   ['match_rounds', 'instance_class', 'TEXT'],
   ['match_rounds', 'stability_promise', 'TEXT'],
@@ -221,6 +225,7 @@ export function createTestDb() {
   testDb.exec(readFileSync(join(here, 'schema.sql'), 'utf8'));
   migrate(testDb);
   migrateGroups(testDb);
+  migrateSeating(testDb);
   migrateLegacyTickets(testDb);
   migrateCommunity(testDb);
   migrateNotifications(testDb);

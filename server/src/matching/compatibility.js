@@ -8,9 +8,12 @@
  * See docs/ALGORITHM.md §3 and §4.
  */
 
-export const SECTIONS = ['pit', 'ga_standing', 'lower_bowl', 'upper_bowl', 'seated_any'];
+export const SECTIONS = [
+  'vip', 'standing_pen', 'category_1', 'category_2', 'category_3', 'category_4', 'category_5', 'category_6',
+  'pit', 'ga_standing', 'lower_bowl', 'upper_bowl', 'seated_any',
+];
 
-/** Ordinal proximity of seating sections. Index distance 1 counts as "adjacent". */
+/** Preserve legacy section proximity; category numbers do not imply physical adjacency. */
 const SECTION_ORDER = {
   pit: 0,
   ga_standing: 1,

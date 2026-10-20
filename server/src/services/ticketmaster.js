@@ -35,6 +35,7 @@ export function normalizeTicketmasterEvent(event) {
     hero_image_url: httpsUrl(image?.url),
     image_attribution: image?.attribution || null,
     official_url: httpsUrl(event.url),
+    seatmap_url: httpsUrl(event.seatmap?.staticUrl),
   };
 }
 
