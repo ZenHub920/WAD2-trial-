@@ -5,6 +5,7 @@ import { api } from "../api.js";
 import { currentUser } from "../auth.js";
 import PreferenceEditor from "../components/PreferenceEditor.vue";
 import LoadingSpinner from "../components/LoadingSpinner.vue";
+import GroupNavigation from "../components/GroupNavigation.vue";
 import "../assets/groups.css";
 const props = defineProps({ id: String, token: String });
 const router = useRouter();
@@ -85,11 +86,15 @@ async function invite() {
 </script>
 <template>
   <div class="container groups-page">
-    <h1>{{ token ? "Join a friend's group" : "Your group" }}</h1>
-    <nav class="group-actions" aria-label="Group pages">
-      <RouterLink to="/groups">Join a group</RouterLink>
-      <RouterLink to="/groups/connect">Host &amp; connect groups</RouterLink>
-      <RouterLink v-if="group" :to="`/concerts/${encodeURIComponent(group.concertId)}`">Concert details</RouterLink>
+    <header class="group-management-heading">
+      <h1>{{ token ? "Join a friend's group" : "Manage group" }}</h1>
+      <p v-if="!token" class="group-muted">Manage your members, preferences, invitations and publishing settings.</p>
+    </header>
+    <GroupNavigation />
+    <nav v-if="group" class="group-actions" aria-label="Selected group links">
+      <RouterLink :to="`/concerts/${encodeURIComponent(group.concertId)}`">Concert details</RouterLink>
+      <RouterLink :to="{path:'/meetups',query:{partyId:id}}">Plan meetup</RouterLink>
+      <RouterLink v-if="isHost" :to="{path:'/groups/connect',query:{view:'connections',groupId:id,concertId:group.concertId}}">Connect with other groups</RouterLink>
     </nav>
     <p v-if="error" role="alert" class="group-error">{{ error }}</p>
     <p v-if="notice" role="status" class="group-success">{{ notice }}</p>
@@ -143,14 +148,16 @@ async function invite() {
           Save and return to draft
         </button>
       </form>
-      <PreferenceEditor
-        v-if="group.members.some((m) => m.id === currentUser?.id)"
-        :key="id"
-        :initial="group.myAnswers"
-        :busy="busy"
-        :saving="savingPreferences"
-        @save="(answers) => act(() => api.saveMemberPreferences(id, answers), true)"
-      />
+      <section v-if="group.members.some((m) => m.id === currentUser?.id)" class="card group-panel">
+        <h2>Your preferences</h2>
+        <PreferenceEditor
+          :key="id"
+          :initial="group.myAnswers"
+          :busy="busy"
+          :saving="savingPreferences"
+          @save="(answers) => act(() => api.saveMemberPreferences(id, answers), true)"
+        />
+      </section>
       <section v-if="isHost" class="card group-panel">
         <h2>Invitations &amp; publishing</h2>
         <button

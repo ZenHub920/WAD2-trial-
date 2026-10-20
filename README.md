@@ -35,8 +35,16 @@ Open <http://localhost:5173>.
 
 The main navigation has Concerts, Find a companion, Groups and, when signed in,
 Messages. Concert browsing and fan ticket sales share `/concerts`. Companion and
-ticket enquiries share `/messages`, with separate private threads. Group pages
-contain the hosting and connection tools.
+ticket enquiries share `/messages`, with separate private threads. Concert search
+matches artist, tour and venue, not the separate city field.
+
+Group pages have Browse groups, My groups and Create group navigation. My groups
+at `/groups/connect` lists all owned groups across concerts and active groups you
+have joined. Owned cards link directly to management, meetup planning and group
+connections. Create group (`?view=create`) opens a full form; creation is no longer
+inside a collapsed panel. Connecting groups opens from an owned card with
+`?view=connections&groupId=...`. Pending join requests and connection invitations
+stay actionable; old join requests and cancelled groups are kept in history.
 
 The Encore logo links to `/`, where the homepage shows up to five upcoming
 concerts from the Ticketmaster API. The companion finder's Edit filters shortcut
@@ -47,6 +55,18 @@ The theme toggle stays outside the mobile menu.
 Loading circles appear in the component or button handling a request and stop
 when it succeeds or fails. They respect reduced-motion preferences.
 Automatic-matching explanations are available on `/method`.
+
+Group search keeps keyword search and sorting visible. Refine results shows one
+filter category at a time for seating, budget, arrival, activities, vibe, minimum
+places or preferred groups, without checkboxes. Active filters appear as removable
+chips; Clear all filters resets them without changing the selected sort order.
+
+The shared preference editor shows one section at a time: personal interests,
+companion preferences or things to avoid. Choices are searchable toggle buttons
+with selection counts. Custom wording and meaning suggestions remain available;
+Save preferences applies all three sections. Group discovery and membership use
+the same editor, with responsive panels, consistent field sizes and aligned card
+actions across group pages.
 
 Checkboxes and native dropdowns have theme-aware checked, disabled and focus
 styles. They keep keyboard interaction and native option selection.
@@ -78,10 +98,12 @@ The Vue app uses same-origin `/api` requests through its development proxy.
 Creating a party, seeker request or Kaki participation requires a session
 (HTTP 401 otherwise). The cookie identifies the owner; the server does not trust
 user IDs in request JSON. The old open `POST /api/users` endpoint is gone.
-Concert browsing and aggregate matching previews remain public. Only a
-database-provisioned operator can run a round or read full round results, traces,
-rosters and explanations (HTTP 403 for ordinary accounts). Members see their own
-latest group result through `GET /api/me/concerts/:id/result`.
+Concert browsing and aggregate matching previews remain public. Full round results,
+traces, rosters and legacy round execution require a database-provisioned operator
+(HTTP 403 for ordinary accounts). Normal users can run managed-group matching
+through `/api/me/concerts/:id/matching`; its response contains only their own state
+and assigned request. Legacy results remain available through
+`GET /api/me/concerts/:id/result`.
 
 Provision an existing account from the server host (never via a web request):
 
@@ -94,6 +116,32 @@ This command uses `ENCORE_DB` when configured; the server and command must
 point at the same database. Registration and profile editing cannot grant
 operator access. Existing database files are migrated in place; never run
 the destructive demo seed on accounts you want to keep.
+
+### Find my group
+
+At `/groups`, save a concert group request, then choose **Find my group**. This
+explicitly joins the automatic matching pool and runs Gale–Shapley against all
+currently enrolled, eligible seekers and published managed groups with available
+stranger places. Existing requests are not silently enrolled.
+
+Each side ranks feasible pairs using 60% structured compatibility and 40%
+directional saved preferences, with member-derived group profiles. Saved preferred
+groups take priority without overriding eligibility. The solver verifies stability
+and stores the round, score snapshots and trace. Linked requests and lower quotas
+are rejected rather than silently relaxed in this flow.
+
+Assignments create 48-hour join requests linked to the matching round. These
+requests reserve places until host approval, rejection, withdrawal or expiration;
+approval converts the reservation into one membership. The host still decides.
+Manual group selection remains available; manual pending requests do not reserve
+places and stop automatic enrollment. If no suitable place exists, the user stays
+queued and can retry or leave. Empty rounds are not fabricated.
+
+`GET`, `POST` and `DELETE /api/me/concerts/:id/matching` read the caller's state,
+join/run matching and leave/withdraw respectively. POST requires a UUID-v4
+`Idempotency-Key`; keys are scoped to the caller. Matching history and request
+creation commit together under an IMMEDIATE transaction. The private response
+does not expose other seekers, rankings or the batch roster.
 
 ### Concerts and ticket listings
 
@@ -175,6 +223,26 @@ prefers event `description`, `info`, then `additionalInfo`, followed by the
 primary embedded artist's `description` or `additionalInfo`. These artist fields
 are documented in the [Attraction Details API](https://developer.ticketmaster.com/products-and-docs/apis/discovery-api/v2/#attraction-details-v2),
 but are not guaranteed to be populated. No biography is invented when absent.
+
+Optional HTTPS `seatmap.staticUrl` values from the
+[Discovery API](https://developer.ticketmaster.com/products-and-docs/apis/discovery-api/v2/#search-events-v2)
+are stored as `concerts.seatmap_url` and exposed in discovery, concert list and
+detail responses. The group creation form shows the selected venue and links to
+its event-specific seating plan when supplied, or to the official event page
+when no map is available. Seating choices remain general matching preferences,
+not a verified venue section list or live seat inventory. Group size in this
+form retains the capacity definition: new companion places, excluding the host
+and invited friends.
+
+New seating choices are VIP, Standing pen and Category 1–6 in group creation,
+group requests, concert participation and group filters. These are app categories,
+not Ticketmaster-confirmed sections. Existing records keep their original section
+keys and labels; the database upgrade widens the seating constraints without
+relabeling them. Matching rewards exact category matches without assuming that
+consecutive category numbers are physically adjacent.
+
+New arrival choices are On time (the default) and Early across group creation,
+requests, participation and filters. Existing midday preferences remain readable.
 
 The same import is also available from the command line:
 
@@ -385,6 +453,9 @@ without personal results.
 | `GET` | `/api/concerts/:id/match/preview?baselines=true` | public aggregate dry run; only operators receive identities/trace |
 | `POST` | `/api/concerts/:id/match` | operator-only: run and persist a round |
 | `GET` | `/api/me/concerts/:id/result` | own latest group-round result (session required) |
+| `GET` | `/api/me/concerts/:id/matching` | own managed matching queue, request and approval state |
+| `POST` | `/api/me/concerts/:id/matching` | opt in and run managed Gale–Shapley; UUID-v4 Idempotency-Key required |
+| `DELETE` | `/api/me/concerts/:id/matching` | leave managed pool and withdraw own pending automatic request |
 | `GET` | `/api/rounds/:id` | operator-only full per-seeker results |
 | `GET` | `/api/rounds/:id/trace` | operator-only proposal sequence |
 | `GET` | `/api/rounds/:id/parties/:partyId` | operator-only full party roster |

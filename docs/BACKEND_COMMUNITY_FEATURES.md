@@ -1,8 +1,9 @@
 # Encore: member-led groups, recommendations and concert coordination
 
 Implementation date: 17 October 2026, Singapore time.
+Managed matching integration updated and verified: 20 October 2026.
 
-This document describes the revised implementation. It supersedes the initial group-search design in `GROUP_FEATURES_IMPLEMENTATION.md` where the two differ. In particular, member-managed groups now use explicit seeker choice and receiving-host approval; they are not automatically assigned by Gale–Shapley.
+This document describes the current implementation and supersedes the initial group-search design in `GROUP_FEATURES_IMPLEMENTATION.md` where the two differ. Member-managed groups support explicit automatic enrollment through Find my group as well as manual choice. Gale–Shapley selects managed-group requests; the receiving host still approves membership.
 
 ## Branches and review
 
@@ -119,17 +120,21 @@ Reasons are constructed from actual shared concepts and support evidence. They a
 
 Only one pending join choice per seeker per concert is allowed. The seeker may withdraw before choosing another group. Withdrawn and expired requests may reopen, retaining status-change events in `group_join_request_events`. A rejection is final for that seeker-request/group pair and is also excluded from the legacy matching path.
 
-Managed join requests record the group's version at the time of choice. Membership, configuration or member-preference changes invalidate that choice: approval fails with a conflict, and the seeker is notified to review, withdraw and resubmit. This preserves consent without a second acceptance step for an unchanged group. Receiving hosts can inspect the requester's public profile and submitted discovery preferences before deciding.
+Managed join requests record the group's version and submitted preferences at the time of choice. Settings/member-preference changes invalidate that consent: approval fails with a conflict, and the seeker must review, withdraw and resubmit. Receiving hosts can inspect the requester's public profile and submitted discovery preferences before deciding. Approving another algorithm request from the same batch does not invalidate the other batch requests solely by incrementing membership counts.
 
-Pending join requests do not reserve places. Accepting two different seekers into the last place cannot both succeed: each approval checks current capacity while holding the write reservation. Accepted stranger memberships and active algorithm proposals consume places exactly once. Friends and the host do not consume advertised stranger places.
+Manual pending join requests do not reserve places. Algorithm-selected requests carry `matching_round_id` and reserve one place while pending and unexpired. Host approval credits that request's own reservation, then replaces it with one active stranger membership in the same transaction. Rejection, withdrawal and expiration release reservations. Capacity queries ignore elapsed requests even before a sweep runs; the sweep also reopens a previously full managed group. Hosts and friends do not consume stranger places.
 
 **Data flow:** seeker preferences → authenticated Express endpoints → validated concept selections in SQLite → eligibility + shared-profile scoring → ranked page + reasons → chosen join request → receiving host decision → transactional membership/capacity update → notifications.
 
 ### Where Gale–Shapley now fits
 
-Member-managed groups use direct choice and host approval and are excluded from operator-run automatic placement. This prevents the legacy proposal-confirmation path from bypassing host approval.
+The normal Groups page calls GET/POST/DELETE `/api/me/concerts/:id/matching`. POST explicitly sets the caller's `matching_opt_in`, then runs the existing preference builder, solver registry, Gale–Shapley and stability checks across eligible opted-in open seekers and published managed groups. Existing seekers default to not enrolled. Queued users can retry or leave; no suitable assignment means queued, not a fabricated matching result.
 
-Unconfigured legacy listings retain their existing Gale–Shapley workflow, including explicit saved algorithm preferences, deterministic rankings, blocks, declines, history, idempotency, expiry and proposal confirmation. The UI labels that saved-preference action as a separate optional legacy automatic-placement action. Existing memberships prevent another active concert assignment.
+Managed directional scores combine 60% structured compatibility with 40% directional saved concept preferences using member-derived group profiles. Eligibility still checks affordability, blocks across active members, declined pairs, publication, available stranger places, active membership and pending choices. Saved group preferences affect seeker ranking without bypassing feasibility. Unsupported linked-request or lower-quota constraints abort rather than silently committing a relaxed assignment.
+
+The verified round, historical results, trace and algorithmic join requests commit in one IMMEDIATE transaction. UUID-v4 idempotency keys are scoped to the caller. Responses whitelist only the caller's matching state and request, without other seekers or the round roster. Approval remains the receiving host's action; the legacy proposal-confirmation endpoint cannot approve a managed group.
+
+Unconfigured legacy listings retain their separate operator-run Gale–Shapley workflow, including deterministic rankings, blocks, declines, history, idempotency, expiry and proposal confirmation. Managed active memberships are recognized as legitimate assignments during legacy reconciliation.
 
 ## 4. How group-to-group recommendations and invitations work
 
@@ -284,6 +289,7 @@ All listed account/group endpoints require the existing authenticated session. T
 | Membership lifecycle | `GET /api/me/attendance-groups`, `POST /api/groups/:id/leave`, `POST /api/groups/:id/cancel` |
 | Seeker discovery | `GET /api/groups/discover/:concertId?limit=20&offset=0` |
 | Join approval | `POST /api/groups/:id/join-requests`, `GET /api/me/group-join-requests`, `POST /api/group-join-requests/:id/respond` with `accept`, `reject` or `withdraw` |
+| Managed matching | `GET/POST/DELETE /api/me/concerts/:id/matching`; POST requires a UUID-v4 Idempotency-Key and returns only the caller's queue/request state |
 | Connections | Existing `/api/group-connections` invitation/response endpoints; `/api/group-connections/candidates/:concertId?fromPartyId=...&limit=20&offset=0` now ranks candidates |
 | Notifications | `GET /api/me/notifications`, `GET /api/me/notifications/unread`, `POST /api/me/notifications/:id/read`, `POST /api/me/notifications/read-all`, `GET/PUT /api/me/notification-preferences` |
 | Planning | `GET /api/me/meetups`, `POST /api/meetups`, `GET /api/meetups/:id` |
@@ -303,7 +309,7 @@ Discovery filters are applied before pagination. Accepted query controls include
 | `server/src/services/discoveryPreferences.js` | Catalog, alias normalization, suggestions, answer validation, vote aggregation and directional concept scoring. |
 | `server/src/db/recommendationRepository.js` | Mutual group recommendations, whole-group eligibility, direct join requests, one pending choice, host approval and changed-group consent checks. |
 | `server/src/db/groupDiscoveryRepository.js` and `server/src/routes/groupDiscovery.js` | Preserve discovery/invitation contracts while adding member block checks, ranking, pre-pagination filtering and response metadata. |
-| `server/src/db/capacity.js`, `server/src/db/repositories.js`, `server/src/db/proposalRepository.js`, `server/src/services/matchingService.js` | Register new repositories; include direct admissions in live capacity; preserve legacy matching and exclude managed groups from automatic placement. |
+| `server/src/db/capacity.js`, `server/src/db/repositories.js`, `server/src/db/proposalRepository.js`, `server/src/services/matchingService.js` | Shared live capacity, opt-in managed Gale–Shapley batches with reserved host-approved requests, immutable matching history and the separate legacy proposal lifecycle. |
 | `server/src/db/notificationRepository.js` | Notification migrations/triggers, inbox, preferences, unread state and trusted future-chat hook. |
 | `server/src/db/meetupRepository.js` | Scoped planning data, dynamic participant authorization, private availability, proposed places, comments, votes and revision-specific approvals/cancellation. |
 | `server/src/services/meetupPlanning.js` and `server/src/services/meetupWeather.js` | Deterministic coverage/distance ranking and cached, bounded public forecast integration. |
@@ -365,9 +371,20 @@ Use `npm.cmd` on this machine because its PowerShell policy blocks `npm.ps1`. `N
 12. After an actual concert, submit feedback for eligible co-members. Verify unrelated, self and duplicate submissions fail and reliability updates.
 13. Exercise existing Kaki, operator matching for legacy listings, profile, marketplace, tickets and conversations.
 
+### Managed matching verification, 20 October 2026
+
+`npm test` passed all 284 backend tests, including opt-in batch competition,
+privacy, idempotency, capacity, rollback, expiry, withdrawal and approval cases.
+`npm run build` passed in `client`. An isolated in-memory API and frontend browser
+scenario matched two enrolled seekers across two published groups with zero
+blocking pairs, confirmed one through host approval, released another through
+withdrawal, and kept an unaffordable seeker queued until explicit opt-out. No
+operator account was used. The live database migration preserved existing rows,
+kept all existing seekers opted out and passed foreign-key checks.
+
 ### Explicit limits
 
-- Browser interaction/mobile-layout acceptance has not been completed; passing Vite compilation and HTTP tests is not a browser QA claim.
+- The managed matching seeker/host flow was browser-checked on desktop and mobile on 20 October 2026. This is not a claim of full application browser/mobile coverage.
 - Unknown custom phrases do not receive arbitrary AI semantic interpretation. Known aliases, lexical suggestions, explicit meaning confirmation and normalized exact custom matches work. Embedding-based semantic suggestions remain optional future work.
 - New member-managed groups use host approval; the legacy automatic-placement workflow is preserved separately.
 - Notifications are in-app polling, not email/mobile push or a distributed event broker. The teammate's future group-chat implementation still needs its own routes, authorization and UI.

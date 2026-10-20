@@ -206,6 +206,12 @@ export const api = {
     method: 'POST', headers: { 'Idempotency-Key': batchKey },
   }),
 
+  groupMatching: (id) => request(`/me/concerts/${encodeURIComponent(id)}/matching`),
+  findMyGroup: (id, batchKey) => request(`/me/concerts/${encodeURIComponent(id)}/matching`, {
+    method: 'POST', headers: { 'Idempotency-Key': batchKey },
+  }),
+  leaveGroupMatching: (id) => request(`/me/concerts/${encodeURIComponent(id)}/matching`, { method: 'DELETE' }),
+
   discoverGroups: (id,params={}) => request(`/groups/discover/${encodeURIComponent(id)}?${new URLSearchParams(params)}`),
   seekerRequest: (id) => request(`/me/seeker-request/${encodeURIComponent(id)}`),
   reopenSeekerRequest: (id) => request(`/me/seeker-request/${encodeURIComponent(id)}/reopen`, { method: 'POST' }),
@@ -213,6 +219,7 @@ export const api = {
   preferGroup: (id) => request(`/group-preferences/${encodeURIComponent(id)}`, { method: 'PUT' }),
   removeGroupPreference: (id) => request(`/group-preferences/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   hostedGroups: () => request('/me/hosted-groups'),
+  attendanceGroups: () => request('/me/attendance-groups'),
   connectionCandidates: (id, fromPartyId,params={}) => request(`/group-connections/candidates/${encodeURIComponent(id)}?${new URLSearchParams({...params,fromPartyId})}`),
   groupConnections: () => request('/me/group-connections'),
   inviteGroup: (fromPartyId, toPartyId) => request('/group-connections', { method: 'POST', body: JSON.stringify({ fromPartyId, toPartyId }) }),
@@ -286,9 +293,24 @@ export const api = {
 
 
 
+export const SECTION_OPTIONS = {
+  vip: 'VIP',
+  standing_pen: 'Standing pen',
+  category_1: 'Category 1',
+  category_2: 'Category 2',
+  category_3: 'Category 3',
+  category_4: 'Category 4',
+  category_5: 'Category 5',
+  category_6: 'Category 6',
+};
+
+export const ARRIVAL_OPTIONS = { doors: 'On time', early_queue: 'Early' };
+
 /** Human labels for the enum values the API speaks in. */
 export const LABELS = {
   section: {
+    ...SECTION_OPTIONS,
+    // Existing records keep their original labels; new forms use SECTION_OPTIONS.
     pit: 'Pit',
     ga_standing: 'General admission standing',
     lower_bowl: 'Lower bowl',
@@ -296,9 +318,8 @@ export const LABELS = {
     seated_any: 'Any seated section',
   },
   arrival: {
-    early_queue: 'Queue early',
+    ...ARRIVAL_OPTIONS,
     mid: 'Arrive midday',
-    doors: 'When doors open',
   },
   plans: {
     pre_meetup: 'Pre-show meetup',

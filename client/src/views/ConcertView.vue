@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { api, LABELS, formatDate } from '../api.js';
+import { api, LABELS, SECTION_OPTIONS, ARRIVAL_OPTIONS, formatDate } from '../api.js';
 import { currentUser, sessionReady } from '../auth.js';
 import UserAvatar from '../components/market/UserAvatar.vue';
 import { formatMoney } from '../market.js';
@@ -30,7 +30,7 @@ const participationError = ref('');
 const participationLoadError = ref(false);
 const participationRetry = ref(0);
 const participationNeedsSignIn = ref(false);
-const sectionPref = ref('seated_any');
+const sectionPref = ref('category_1');
 const arrivalPref = ref('doors');
 let participationRequest = 0;
 const myProposals = ref([]);
@@ -96,7 +96,7 @@ watch(
     participationError.value = '';
     participationLoadError.value = false;
     participationNeedsSignIn.value = false;
-    sectionPref.value = 'seated_any';
+    sectionPref.value = 'category_1';
     arrivalPref.value = 'doors';
     participationLoading.value = Boolean(userId);
     if (!userId) return;
@@ -420,7 +420,8 @@ const forecastFirstChoice = useCountUp(
         <p>Already have a ticket? Join an existing group or create your own. Group places do not include concert tickets.</p>
         <nav class="group-actions" aria-label="Group workflows">
           <RouterLink :to="{ path: '/groups', query: { concertId: id } }" class="btn btn--primary">Join a group</RouterLink>
-          <RouterLink :to="{ path: '/groups/connect', query: { concertId: id } }" class="btn btn--ghost">Host or connect groups</RouterLink>
+          <RouterLink :to="{ path: '/groups/connect', query: { concertId: id, view: 'create' } }" class="btn btn--ghost">Create a group</RouterLink>
+          <RouterLink :to="{ path: '/groups/connect', query: { concertId: id } }" class="btn btn--ghost">My groups</RouterLink>
         </nav>
       </section>
       <section class="kaki-join card" aria-labelledby="kaki-join-title">
@@ -446,13 +447,15 @@ const forecastFirstChoice = useCountUp(
             <label>
               Preferred section
               <select v-model="sectionPref" :disabled="participationBusy" required>
-                <option v-for="(label, value) in LABELS.section" :key="value" :value="value">{{ label }}</option>
+                <option v-if="!Object.hasOwn(SECTION_OPTIONS, sectionPref)" :value="sectionPref" disabled>Previously selected: {{ LABELS.section[sectionPref] ?? sectionPref }}</option>
+                <option v-for="(label, value) in SECTION_OPTIONS" :key="value" :value="value">{{ label }}</option>
               </select>
             </label>
             <label>
               Arrival plan
               <select v-model="arrivalPref" :disabled="participationBusy" required>
-                <option v-for="(label, value) in LABELS.arrival" :key="value" :value="value">{{ label }}</option>
+                <option v-if="!Object.hasOwn(ARRIVAL_OPTIONS, arrivalPref)" :value="arrivalPref" disabled>Previously selected: {{ LABELS.arrival[arrivalPref] ?? arrivalPref }}</option>
+                <option v-for="(label, value) in ARRIVAL_OPTIONS" :key="value" :value="value">{{ label }}</option>
               </select>
             </label>
           </div>

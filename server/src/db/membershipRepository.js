@@ -3,7 +3,7 @@ import {
   validateAnswers,
   aggregateAnswers,
 } from "../services/discoveryPreferences.js";
-import { reservedPlacesSql } from "./capacity.js";
+import { reservedPlacesSql, expireJoinRequests } from "./capacity.js";
 export const communityError = (message, status = 409) =>
   Object.assign(new Error(message), { status });
 const hash = (token) => createHash("sha256").update(token).digest("hex");
@@ -54,6 +54,12 @@ export function createMembershipRepo(db, repos) {
       ON CONFLICT(party_id,user_id) DO UPDATE SET status='active',source=excluded.source,
       joined_at=CASE WHEN group_memberships.status='active' THEN group_memberships.joined_at ELSE datetime('now') END,left_at=NULL`,
     ).run(p.id, user, p.concert_id, source);
+    db.prepare(`UPDATE group_join_requests SET status='withdrawn',responded_at=datetime('now')
+      WHERE user_id=? AND status='pending' AND party_id IN(SELECT id FROM parties WHERE concert_id=?)`)
+      .run(user, p.concert_id);
+    db.prepare("UPDATE seeker_requests SET matching_opt_in=0 WHERE user_id=? AND concert_id=?")
+      .run(user, p.concert_id);
+    expireJoinRequests(db);
   };
   const settings = (id) =>
     db.prepare("SELECT * FROM group_settings WHERE party_id=?").get(id);
@@ -85,6 +91,7 @@ export function createMembershipRepo(db, repos) {
         .all(user);
     },
     configure: db.transaction((user, id, input = {}) => {
+      expireJoinRequests(db);
       const p = owner(user, id);
       if (p.status === "cancelled") throw communityError("group_unavailable");
       ensureFree(user, p.concert_id, id);
@@ -275,7 +282,7 @@ export function createMembershipRepo(db, repos) {
       ).run(id, user);
       if (p.status === "matched") repos.parties.setStatus(id, "open");
       db.prepare(
-        "UPDATE seeker_requests SET status='withdrawn' WHERE user_id=? AND concert_id=?",
+        "UPDATE seeker_requests SET status='withdrawn',matching_opt_in=0 WHERE user_id=? AND concert_id=?",
       ).run(user, p.concert_id);
       return { left: true };
     }).immediate,

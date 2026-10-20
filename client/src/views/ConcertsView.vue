@@ -87,7 +87,7 @@ const matchingConcerts = computed(() => {
   return discovered.value.filter(({ concert }) => {
     if (date.value && concert.event_date.slice(0, 10) !== date.value) return false;
     if (savedOnly.value && !listings.value.some((listing) => listing.concert.id === concert.id && isSaved(listing.id))) return false;
-    return !query || [concert.artist, concert.tour_name, concert.venue, concert.city]
+    return !query || [concert.artist, concert.tour_name, concert.venue]
       .some((value) => String(value ?? '').toLowerCase().includes(query));
   });
 });
@@ -128,7 +128,7 @@ function clearFilters() {
           <span>Search concerts</span>
           <div class="concert-filters__input">
             <MarketIcon name="search" :size="18" />
-            <input v-model="search" type="search" placeholder="Artist, venue or city" />
+            <input v-model="search" type="search" placeholder="Artist or venue" />
           </div>
         </label>
         <div class="concert-filters__date">

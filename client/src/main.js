@@ -63,7 +63,7 @@ const router = createRouter({
 
     { path: '/kaki', name: 'kaki', component: KakiFinderView, meta: { title: 'Find a companion' } },
     { path: '/groups', name: 'groups', component: GroupExplorerView, meta: { title: 'Groups', requiresAuth: true } },
-    { path: '/groups/connect', name: 'group-connections', component: GroupConnectionsView, meta: { title: 'Connect groups', requiresAuth: true } },
+    { path: '/groups/connect', name: 'group-connections', component: GroupConnectionsView, meta: { title: 'My groups', requiresAuth: true } },
     { path:'/groups/invite/:token',component:GroupMembershipView,props:true,meta:{title:'Join your friends',requiresAuth:true} },
     { path:'/groups/:id/members',component:GroupMembershipView,props:true,meta:{title:'Group members',requiresAuth:true} },
     { path:'/meetups',component:MeetupView,meta:{title:'Meetup planning',requiresAuth:true} },
@@ -119,7 +119,9 @@ router.beforeEach(async (to) => {
 });
 
 router.afterEach((to) => {
-  const title = to.meta?.title;
+  const title = to.name === 'group-connections'
+    ? ({ create: 'Create a group', connections: 'Connect groups' }[to.query.view] ?? 'My groups')
+    : to.meta?.title;
   document.title = title && title !== 'Encore' ? `${title} | Encore` : 'Encore';
 });
 
