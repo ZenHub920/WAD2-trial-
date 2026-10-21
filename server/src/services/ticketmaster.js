@@ -15,8 +15,10 @@ export function normalizeTicketmasterEvent(event) {
   if (venue.country?.countryCode && venue.country.countryCode !== 'SG') return null;
 
   const images = Array.isArray(event.images) ? event.images : [];
-  const image = images.find((item) => item && item.ratio === '16_9' && !item.fallback)
-    ?? images.find((item) => item && !item.fallback);
+  // Ticketmaster lists several sizes of each image; take the widest so cards stay sharp.
+  const usable = images.filter((item) => item && !item.fallback && item.url)
+    .sort((a, b) => (Number(b.width) || 0) - (Number(a.width) || 0));
+  const image = usable.find((item) => item.ratio === '16_9') ?? usable[0];
   const attraction = event._embedded?.attractions?.[0];
   const artist = attraction?.name || event.name;
   if (typeof artist !== 'string' || !artist.trim()) return null;
