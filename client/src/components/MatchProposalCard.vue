@@ -16,6 +16,8 @@ const explanation = ref(null);
 const statuses = { proposed: 'Awaiting both approvals', confirmed: 'Group place confirmed', declined: 'Declined', expired: 'Expired', cancelled: 'Cancelled' };
 const isHost = computed(() => props.proposal.role === 'host');
 const myApproval = computed(() => isHost.value ? props.proposal.hostApproved : props.proposal.seekerApproved);
+const readyToReview = computed(() => props.proposal.canHostRespond !== false && props.proposal.queueStatus !== 'waiting');
+const held = computed(() => props.proposal.seatReserved ?? props.proposal.queueStatus !== 'waiting');
 
 async function respond(action) {
   if (busy.value) return;
@@ -29,7 +31,7 @@ async function respond(action) {
     else await api.declineProposal(props.proposal.id);
     emit('updated');
   } catch (err) {
-    error.value = err.status === 409 ? 'This proposal has changed or expired. Refresh your proposals before replying.' : 'Could not update this proposal. Please try again.';
+    error.value = err.status === 409 ? 'This proposal is not ready for a reply, changed or expired. Refresh the queue before replying.' : 'Could not update this proposal. Please try again.';
   } finally {
     busy.value = false;
     responding.value = '';
@@ -55,17 +57,21 @@ async function explain() {
 <template>
   <article class="proposal card">
     <h3>{{ proposal.artist }}, {{ proposal.hostName }}'s group</h3>
+    <span class="tag">Automatic proposal</span>
     <p v-if="proposal.role === 'host'">Proposed companion: {{ proposal.seekerName }}</p>
     <p>Section: {{ LABELS.section[proposal.section] ?? proposal.section }}</p>
-    <p>Status: <strong>{{ statuses[proposal.status] ?? 'Proposal updated' }}</strong></p>
+    <p>Status: <strong>{{ proposal.resolutionReason === 'group_full' ? 'Group filled before your turn' : statuses[proposal.status] ?? 'Proposal updated' }}</strong></p>
     <p v-if="proposal.status === 'proposed'">Host: {{ proposal.hostApproved ? 'Approved' : 'Awaiting approval' }} · Companion: {{ proposal.seekerApproved ? 'Approved' : 'Awaiting approval' }}</p>
     <p v-if="proposal.status === 'proposed'">
-      Both people must approve before {{ new Date(proposal.expiresAt).toLocaleString() }}. The place stays reserved while approval is pending. This offer is for a group place, not a ticket.
+      {{ readyToReview ? 'Next to review' : `Waiting · position ${proposal.queuePosition ?? '—'}` }}. Both people must approve before {{ new Date(proposal.expiresAt).toLocaleString() }}. This deadline includes time spent waiting and does not restart. This is for a group place, not a ticket.
     </p>
+    <p v-if="proposal.status === 'proposed' && held">One place is held for this proposal. It becomes confirmed only after both approvals.</p>
+    <p v-else-if="proposal.status === 'proposed'">A place is not held yet. You are in the same arrival-order queue as direct applicants.</p>
+    <p v-if="proposal.status === 'proposed' && !readyToReview" class="group-muted">An earlier request must be resolved before this proposal can be approved. {{ isHost ? 'Host decisions follow the queue order.' : 'You may still decline your proposal while waiting.' }}</p>
     <p v-if="proposal.status === 'proposed' && myApproval" role="status">You approved this match. Waiting for {{ isHost ? 'the companion' : 'the host' }} to approve.</p>
     <div v-if="proposal.status === 'proposed'" class="actions">
-      <button v-if="!myApproval" class="btn btn--success" :disabled="busy" @click="respond('accept')"><LoadingSpinner v-if="busy && responding === 'accept'" />{{ isHost ? 'Approve match' : 'Accept offer' }}</button>
-      <button class="btn btn--danger-ghost" :disabled="busy" @click="respond('decline')"><LoadingSpinner v-if="busy && responding === 'decline'" />Decline proposal</button>
+      <button v-if="!myApproval" class="btn btn--success" :disabled="busy || !readyToReview" @click="respond('accept')"><LoadingSpinner v-if="busy && responding === 'accept'" />{{ isHost ? 'Approve match' : 'Accept offer' }}</button>
+      <button class="btn btn--danger-ghost" :disabled="busy || (isHost && !readyToReview)" @click="respond('decline')"><LoadingSpinner v-if="busy && responding === 'decline'" />Decline proposal</button>
     </div>
     <FeedbackForm
       v-if="proposal.status === 'confirmed' && new Date(proposal.eventDate + 'T23:59:59+08:00') < new Date()"

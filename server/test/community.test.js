@@ -172,7 +172,7 @@ test("seeker chooses once and receiving host approves atomically without a secon
   repos.membership.publish("h1", "p1");
   repos.recommendations.savePersonal("seeker", "c1", answers);
   const request = directRequest("seeker", "p1");
-  assert.equal(repos.parties.findById("p1").remaining_capacity, 2);
+  assert.equal(repos.parties.findById("p1").remaining_capacity, 1);
   assert.throws(
     () => repos.recommendations.respond("seeker", request.id, "accept"),
     /request_not_found/,

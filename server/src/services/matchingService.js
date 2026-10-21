@@ -159,8 +159,8 @@ export function createMatchingService({ db, repos }) {
  *    create duplicate matching rounds.
  *
  * 2. CAPACITY MANAGEMENT:
- *    Expired proposals release their reserved spaces
- *    before the next matching round begins.
+ *    Expired proposals leave the shared admission queue before
+ *    the next matching round begins. Waiting requests inherit held places.
  *
  * 3. ATOMICITY:
  *    The round, historical results, proposals and status
@@ -219,11 +219,9 @@ run(concertId, { trace = true, batchKey } = {}) {
     // STEP 4: EXPIRE OLD PROPOSALS
     // --------------------------------------------------
     //
-    // A pending proposal reserves one party slot.
-    //
-    // If the user does not respond before its deadline,
-    // the proposal expires and the reserved slot must
-    // become available again.
+    // The earliest eligible proposals hold party places. Later requests wait.
+    // Expiry removes the entry and transfers its held place to the next request;
+    // a place becomes free only when no eligible queue entry remains.
     //
     // This must happen BEFORE loading matching inputs.
 
@@ -258,8 +256,8 @@ run(concertId, { trace = true, batchKey } = {}) {
     // constructs preferences, runs Gale-Shapley and
     // verifies the algorithm's matching result.
     //
-    // The earlier remaining-capacity modification in
-    // loadInstance() is still used here.
+    // loadInstance() uses unconfirmed places as this batch's capacity.
+    // Older pending requests retain priority in the operational queue.
 
     const preview = this.preview(concertId, {
       trace,
@@ -345,8 +343,8 @@ run(concertId, { trace = true, batchKey } = {}) {
     // STEP 8: UPDATE MATCHED SEEKER STATUSES
     // --------------------------------------------------
     //
-    // Mark seekers who received proposals as 'matched'
-    // in the existing request-status model.
+    // Mark seekers who received proposals as 'matched' in the request-status
+    // model, including offers waiting behind older queue entries.
     //
     // This prevents them from joining another round while
     // their current proposal is active.
@@ -365,16 +363,9 @@ run(concertId, { trace = true, batchKey } = {}) {
     // STEP 9: UPDATE PARTY STATUSES
     // --------------------------------------------------
     //
-    // Compare newly reserved places against the capacity
-    // available at the start of this matching round.
-    //
-    // The capacity map should contain REMAINING capacity,
-    // not the party's original total capacity.
-    //
-    // If all available slots were filled by proposals,
-    // mark the party as 'matched' (fully reserved).
-    //
-    // Otherwise, leave the party open for a future round.
+    // The database triggers update physical reservations across the whole queue.
+    // Filling every unconfirmed place in this batch also makes the party fully
+    // reserved, even when some of these new offers wait behind earlier entries.
 
     for (const [partyId, members] of result.partyMembers) {
 
@@ -543,15 +534,17 @@ function loadInstance(repos, concertId) {
   repos.proposals.expire();
   repos.recommendations.expire();
 
-  // Direct memberships and all live offers have already consumed capacity.
-  // Published managed groups and legacy groups share this same GS subproblem.
-  const parties = repos.parties.openForConcert(concertId).filter(p => repos.recommendations.visible(p));
+  // Every batch matches against places that do not yet have confirmed members.
+  // Existing pending entries keep their earlier FIFO positions; new offers may
+  // wait behind them. The saved stability guarantee describes this batch's
+  // preference snapshot, rather than the final combined admission queue.
+  const parties = repos.parties.queueableForConcert(concertId).filter(p => repos.recommendations.visible(p));
 
   const availableParties = parties.map(party => ({
 
     ...party,
 
-    capacity: party.remaining_capacity
+    capacity: party.queueable_places
 
   }));
 

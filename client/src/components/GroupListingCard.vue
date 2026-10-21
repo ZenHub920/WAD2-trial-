@@ -29,6 +29,8 @@ const hasMore = computed(() => props.group.notes || props.group.reasons?.length 
       <p class="group-card__artist">{{ group.artist }}<span v-if="group.tourName">, {{ group.tourName }}</span></p>
       <p class="group-card__meta">{{ formatDate(group.eventDate) }} · {{ LABELS.section[group.section] }}</p>
     </div>
+    <p v-if="group.canJoinQueue && group.remainingCapacity === 0" class="group-card__meta">All available places are currently held. You can join the waiting queue.</p>
+    <p v-if="group.queueLength" class="group-card__meta">{{ group.queueLength }} {{ group.queueLength === 1 ? 'request' : 'requests' }} in the arrival-order queue.</p>
     <dl class="group-card__facts">
       <div>
         <dt>Group size</dt>

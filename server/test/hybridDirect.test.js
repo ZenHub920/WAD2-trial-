@@ -37,15 +37,22 @@ test("legacy enrollment defaults to algorithm and direct applications require ex
   assert.throws(() => repos.recommendations.setJoiningMode("outsider", "c1", "direct"), /seeker_request_not_found/);
 });
 
-test("only one pending direct application is allowed and it never occupies a seat", () => {
+test("one pending direct application holds one seat without confirming membership", () => {
   direct();
   const first = repos.recommendations.requestJoin("one", "p1");
-  assert.equal(activeClaims().length, 0);
-  assert.equal(remaining(), 2);
+  assert.equal(activeClaims().length, 1);
+  assert.equal(activeClaims()[0].source, "direct");
+  assert.equal(activeClaims()[0].status, "proposed");
+  assert.equal(remaining(), 1);
+  assert.equal(repos.groups.seeker("one", "c1").status, "matched");
+  assert.equal(repos.membership.active("one", "c1"), undefined);
+  assert.deepEqual(repos.recommendations.currentMemberships("one"), []);
   assert.equal(repos.recommendations.requests("one", { scope: "own" }).length, 1);
   assert.throws(() => repos.recommendations.requestJoin("one", "p1"), /already_exists/);
   assert.throws(() => repos.recommendations.requestJoin("one", "p2"), /pending_application_limit_reached/);
   repos.recommendations.respond("one", first.id, "withdraw");
+  assert.equal(remaining(), 2);
+  assert.equal(repos.groups.seeker("one", "c1").status, "open");
   assert.equal(repos.recommendations.requestJoin("one", "p2").status, "pending");
 });
 
@@ -54,7 +61,7 @@ test("database constraints also prevent two pending applications for the same se
   repos.recommendations.requestJoin("one", "p1");
   assert.throws(() => db.prepare(`INSERT INTO group_join_requests(id,party_id,user_id,seeker_request_id,status,expires_at)
     VALUES('duplicate_pending','p2','one','s_one','pending',?)`).run(Date.now() + 3600000), /UNIQUE/);
-  assert.equal(remaining(), 2);
+  assert.equal(remaining(), 1);
   assert.equal(repos.recommendations.maxPendingDirectApplications, 1);
 });
 
@@ -96,7 +103,7 @@ test("public notes are validated and inboxes never expose unrelated applications
   assert.equal(inbox.length, 1);
   assert.equal(inbox[0].seeker.id, "one");
   assert.equal(typeof inbox[0].compatibility, "number");
-  assert.equal(inbox[0].remainingCapacity, 2);
+  assert.equal(inbox[0].remainingCapacity, 1);
   assert.equal(inbox[0].seeker.email, undefined);
   assert.deepEqual(repos.recommendations.requests("h2", { scope: "hosted" }), []);
   assert.deepEqual(repos.recommendations.requests("outsider"), []);
@@ -110,6 +117,8 @@ test("direct acceptance confirms one seat with host approval alone and creates n
   const withdrawn = repos.recommendations.requestJoin("one", "p2");
   repos.recommendations.respond("one", withdrawn.id, "withdraw");
   const application = repos.recommendations.requestJoin("one", "p1");
+  const claimBefore = activeClaims()[0].id;
+  assert.equal(remaining(), 1);
   repos.recommendations.respond("h1", application.id, "accept");
   assert.equal(row(application.id).status, "accepted");
   assert.equal(row(application.id).responded_by, "h1");
@@ -118,6 +127,7 @@ test("direct acceptance confirms one seat with host approval alone and creates n
   assert.equal(activeClaims().length, 1);
   assert.equal(activeClaims()[0].source, "direct");
   assert.equal(activeClaims()[0].status, "confirmed");
+  assert.equal(activeClaims()[0].id, claimBefore);
   assert.equal(db.prepare("SELECT COUNT(*) n FROM match_rounds").get().n, 0);
   assert.equal(db.prepare("SELECT COUNT(*) n FROM match_results").get().n, 0);
   assert.equal(db.prepare("SELECT COUNT(*) n FROM match_proposals").get().n, 0);
@@ -143,6 +153,8 @@ test("host decline records a pair exclusion; voluntary withdrawal does not", () 
   const withdrawn = repos.recommendations.requestJoin("one", "p2");
   repos.recommendations.respond("one", withdrawn.id, "withdraw");
   assert.equal(repos.proposals.declinedPairsForConcert("c1").has("s_one|p2"), false);
+  assert.equal(remaining("p2"), 2);
+  assert.equal(activeClaims().length, 0);
 });
 
 test("mode switches require explicit application resolution and preserve histories and preferences", () => {
@@ -171,30 +183,103 @@ test("a real proposed algorithm offer prevents mode changes until explicitly res
   assert.equal(repos.groups.seeker("one", "c1").joining_mode, "algorithm");
 });
 
-test("the final seat cannot be accepted twice and losing applications remain pending without a decline", () => {
+test("applicants share a FIFO queue for the last seat and hosts cannot skip the head", () => {
   db.prepare("UPDATE parties SET capacity=1 WHERE id='p1'").run();
   direct("one"); direct("two");
   const first = repos.recommendations.requestJoin("one", "p1");
+  assert.equal(remaining(), 0);
+  assert.equal(repos.parties.findById("p1").status, "matched");
   const second = repos.recommendations.requestJoin("two", "p1");
+  assert.equal(first.queuePosition, 1);
+  assert.equal(first.seatReserved, true);
+  assert.equal(second.queuePosition, 2);
+  assert.equal(second.queueStatus, "waiting");
+  assert.equal(second.seatReserved, false);
+  assert.equal(second.canHostRespond, false);
+  assert.throws(() => repos.recommendations.respond("h1", second.id, "accept"), /request_waiting_in_queue/);
+  assert.throws(() => repos.recommendations.respond("h1", second.id, "reject"), /request_waiting_in_queue/);
+  assert.equal(remaining(), 0);
   repos.recommendations.respond("h1", first.id, "accept");
-  assert.throws(() => repos.recommendations.respond("h1", second.id, "accept"), /group_unavailable|seat_capacity_exceeded/);
-  assert.equal(row(second.id).status, "pending");
+  assert.equal(row(first.id).status, "accepted");
+  assert.equal(row(second.id).status, "superseded");
+  assert.equal(row(second.id).resolution_reason, "group_full");
   assert.equal(remaining(), 0);
   assert.equal(activeClaims().length, 1);
   assert.equal(repos.proposals.declinedPairsForConcert("c1").has("s_two|p1"), false);
 });
 
+test("rejecting the queue head atomically passes its held seat to the next applicant", () => {
+  db.prepare("UPDATE parties SET capacity=1 WHERE id='p1'").run();
+  direct("one"); direct("two");
+  const first = repos.recommendations.requestJoin("one", "p1");
+  const second = repos.recommendations.requestJoin("two", "p1");
+  const originalExpiry = row(second.id).expires_at;
+  repos.recommendations.respond("h1", first.id, "reject");
+  const promoted = repos.recommendations.requests("two", { scope: "own" })[0];
+  assert.equal(promoted.queuePosition, 1);
+  assert.equal(promoted.queueStatus, "held");
+  assert.equal(promoted.seatReserved, true);
+  assert.equal(promoted.canHostRespond, true);
+  assert.equal(row(second.id).expires_at, originalExpiry);
+  assert.equal(remaining(), 0);
+  assert.equal(activeClaims().length, 1);
+  assert.ok(repos.proposals.declinedPairsForConcert("c1").has("s_one|p1"));
+  assert.equal(repos.proposals.declinedPairsForConcert("c1").has("s_two|p1"), false);
+  repos.recommendations.respond("h1", second.id, "accept");
+  assert.equal(repos.membership.active("two", "c1").party_id, "p1");
+});
+
+test("waiting applicants can withdraw and head withdrawal preserves the next applicant's held seat", () => {
+  db.prepare("UPDATE parties SET capacity=1 WHERE id='p1'").run();
+  direct("one"); direct("two");
+  const first = repos.recommendations.requestJoin("one", "p1");
+  const waiting = repos.recommendations.requestJoin("two", "p1");
+  repos.recommendations.respond("two", waiting.id, "withdraw");
+  assert.equal(remaining(), 0);
+  assert.equal(repos.groups.seeker("two", "c1").status, "open");
+  const replacement = repos.recommendations.requestJoin("two", "p1");
+  repos.recommendations.respond("one", first.id, "withdraw");
+  const promoted = repos.recommendations.requests("two", { scope: "own" }).find((r) => r.id === replacement.id);
+  assert.equal(promoted.queuePosition, 1);
+  assert.equal(promoted.seatReserved, true);
+  assert.equal(remaining(), 0);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM match_declines").get().n, 0);
+});
+
+test("admitting an earlier applicant does not invalidate the next applicant's agreed group policy", () => {
+  repos.membership.configure("h1", "p1", { expectedFriends: 0 });
+  repos.membership.saveAnswers("h1", "p1", answers);
+  repos.membership.publish("h1", "p1");
+  for (const user of ["one", "two"]) {
+    repos.recommendations.savePersonal(user, "c1", answers);
+    direct(user);
+  }
+  const first = repos.recommendations.requestJoin("one", "p1");
+  const second = repos.recommendations.requestJoin("two", "p1");
+  const policyVersion = row(second.id).group_version;
+  repos.recommendations.respond("h1", first.id, "accept");
+  assert.equal(repos.membership.settings("p1").version, policyVersion);
+  assert.equal(repos.recommendations.respond("h1", second.id, "accept").status, "accepted");
+  assert.equal(remaining(), 0);
+  assert.equal(activeClaims().filter((claim) => claim.status === "confirmed").length, 2);
+});
+
 test("membership failure rolls back the accepted state, seat claim, audit and notification", () => {
-  direct();
+  db.prepare("UPDATE parties SET capacity=1 WHERE id='p1'").run();
+  direct("one"); direct("two");
   const request = repos.recommendations.requestJoin("one", "p1");
+  const waiting = repos.recommendations.requestJoin("two", "p1");
+  const claimsBefore = activeClaims();
   const before = db.prepare("SELECT * FROM notifications ORDER BY id").all();
   db.exec(`CREATE TRIGGER reject_direct_member BEFORE INSERT ON group_memberships WHEN NEW.source='join'
     BEGIN SELECT RAISE(ABORT,'test_membership_failure'); END`);
   assert.throws(() => repos.recommendations.respond("h1", request.id, "accept"), /test_membership_failure/);
   assert.equal(row(request.id).status, "pending");
-  assert.equal(activeClaims().length, 0);
-  assert.equal(remaining(), 2);
+  assert.equal(row(waiting.id).status, "pending");
+  assert.deepEqual(activeClaims(), claimsBefore);
+  assert.equal(remaining(), 0);
   assert.equal(db.prepare("SELECT COUNT(*) n FROM group_join_request_events WHERE request_id=? AND status='accepted'").get(request.id).n, 0);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM group_join_request_events WHERE request_id=? AND status='superseded'").get(waiting.id).n, 0);
   assert.deepEqual(db.prepare("SELECT * FROM notifications ORDER BY id").all(), before);
 });
 
@@ -219,6 +304,8 @@ test("host cancellation closes applications without manufacturing permanent decl
   assert.equal(row(request.id).status, "cancelled");
   assert.equal(repos.proposals.declinedPairsForConcert("c1").has("s_one|p1"), false);
   assert.equal(activeClaims().length, 0);
+  assert.equal(remaining(), 2);
+  assert.equal(repos.groups.seeker("one", "c1").status, "open");
   assert.equal(repos.recommendations.requests("one", { scope: "own" })[0].status, "cancelled");
 });
 
@@ -275,5 +362,67 @@ test("account preference changes require renewed direct consent even after resto
   assert.equal(row(application.id).preferences_json, submitted);
   assert.equal(row(application.id).group_version, null);
   assert.throws(() => repos.recommendations.respond("h1", application.id, "accept"), /preferences_changed_withdraw_and_resubmit/);
+  assert.equal(activeClaims().length, 1);
+  assert.equal(activeClaims()[0].status, "proposed");
+});
+
+test("a direct application's expiry releases its hold and permits another application without a decline", () => {
+  direct();
+  const application = repos.recommendations.requestJoin("one", "p1");
+  assert.equal(remaining(), 1);
+  db.prepare("UPDATE group_join_requests SET expires_at=0 WHERE id=?").run(application.id);
+  assert.equal(remaining(), 2);
+  assert.equal(repos.recommendations.expire(), 1);
+  assert.equal(row(application.id).status, "expired");
+  assert.equal(repos.groups.seeker("one", "c1").status, "open");
   assert.equal(activeClaims().length, 0);
+  assert.equal(repos.proposals.declinedPairsForConcert("c1").has("s_one|p1"), false);
+  const replacement = repos.recommendations.requestJoin("one", "p2");
+  assert.equal(replacement.status, "pending");
+  assert.equal(remaining("p2"), 1);
+});
+
+test("a failed pending reservation rolls back its application, events and notifications", () => {
+  direct();
+  const before = db.prepare("SELECT * FROM notifications ORDER BY id").all();
+  db.exec(`CREATE TRIGGER fail_direct_hold AFTER INSERT ON active_seat_claims WHEN NEW.source='direct'
+    BEGIN SELECT RAISE(ABORT,'direct_hold_failed'); END`);
+  assert.throws(() => repos.recommendations.requestJoin("one", "p1"), /direct_hold_failed/);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM group_join_requests").get().n, 0);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM group_join_request_events").get().n, 0);
+  assert.equal(activeClaims().length, 0);
+  assert.equal(repos.groups.seeker("one", "c1").status, "open");
+  assert.equal(remaining(), 2);
+  assert.deepEqual(db.prepare("SELECT * FROM notifications ORDER BY id").all(), before);
+});
+
+test("Gale-Shapley joins the same FIFO queue and cannot take a direct applicant's held seat", () => {
+  db.prepare("UPDATE parties SET capacity=1 WHERE id='p1'").run();
+  repos.groups.addPreference("two", "p1");
+  direct();
+  const application = repos.recommendations.requestJoin("one", "p1");
+  const heldClaim = activeClaims()[0].id;
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM match_rounds").get().n, 0);
+  const result = createMatchingService({ db, repos }).run("c1", { batchKey: "algorithm-after-direct-hold" });
+  const proposal = db.prepare("SELECT * FROM match_proposals WHERE round_id=?").get(result.roundId);
+  assert.ok(proposal);
+  assert.equal(proposal.party_id, "p1");
+  assert.equal(proposal.seeker_request_id, "s_two");
+  const automatic = repos.proposals.forUser("two")[0];
+  assert.equal(automatic.queuePosition, 2);
+  assert.equal(automatic.queueStatus, "waiting");
+  assert.equal(automatic.seatReserved, false);
+  assert.equal(repos.proposals.respond("h1", proposal.id, "accept").status, 409);
+  assert.equal(row(application.id).status, "pending");
+  assert.equal(db.prepare("SELECT status FROM active_seat_claims WHERE id=?").get(heldClaim).status, "proposed");
+  assert.equal(repos.membership.active("one", "c1"), undefined);
+  assert.equal(remaining(), 0);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM match_results WHERE seeker_request_id='s_one'").get().n, 0);
+  repos.recommendations.respond("h1", application.id, "reject");
+  assert.equal(repos.proposals.forUser("two")[0].queuePosition, 1);
+  assert.equal(repos.proposals.forUser("two")[0].seatReserved, true);
+  assert.equal(remaining(), 0);
+  assert.equal(repos.proposals.respond("two", proposal.id, "accept").status, "proposed");
+  assert.equal(repos.proposals.respond("h1", proposal.id, "accept").status, "confirmed");
+  assert.equal(repos.membership.active("two", "c1").party_id, "p1");
 });

@@ -265,7 +265,10 @@ test('discovery permits browsing both modes and identifies eligible managed dest
   const withoutSeeker = (await call('/groups/discover/c1', 'friend')).body.groups;
   assert.equal(withoutSeeker.find(p => p.id === 'cheap').automaticPlacementAvailable, false);
   assert.equal((await call('/groups/cheap/join-requests', 'a', 'POST')).status, 200);
-  assert.equal((await call('/groups/discover/c1', 'a')).body.groups.find(p => p.id === 'cheap').automaticPlacementAvailable, false);
+  assert.deepEqual((await call('/groups/discover/c1', 'a')).body.groups,[]);
+  const queueable=(await call('/groups/discover/c1','c')).body.groups.find(p=>p.id==='cheap');
+  assert.equal(queueable.remainingCapacity,0);
+  assert.equal(queueable.canJoinQueue,true);
 });
 
 test('direct discovery and automatic preference construction share the same directional compatibility', async () => {
@@ -295,7 +298,8 @@ test('concurrent official rounds cannot overbook and do not enroll direct-mode s
   publish('cheap'); publish('rich');
   const attempts = await Promise.all([official(), official(), official()]);
   assert.ok(attempts.every(r => [201, 409].includes(r.status)));
-  assert.equal(count('match_proposals'), 2);
+  assert.equal(count('match_proposals'), 3);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM active_seat_claims WHERE status='proposed' AND seat_held=1").get().n,2);
   assert.equal(count('group_join_requests'), 0);
   assert.equal((await state('outsider')).body.matching.state, 'idle');
   assert.equal(proposal('outsider'), undefined);
@@ -303,38 +307,59 @@ test('concurrent official rounds cannot overbook and do not enroll direct-mode s
   assert.equal(repos.parties.findById('rich').remaining_capacity, 0);
 });
 
-test('concurrent host approval and operator matching share the final seat and preserve the losing pathway', async () => {
+test('concurrent host approval and operator matching preserve the earlier direct queue position', async () => {
   publish('cheap');
   await queue('a');
   const applied = await call('/groups/cheap/join-requests', 'c', 'POST');
   assert.equal(applied.status, 200);
-  assert.equal(repos.parties.findById('cheap').remaining_capacity, 1);
+  assert.equal(repos.parties.findById('cheap').remaining_capacity, 0);
   const [batch, host] = await Promise.all([
     official(),
     respond(applied.body.request, 'hostA', 'accept'),
   ]);
   assert.ok([201, 409].includes(batch.status), JSON.stringify(batch.body));
-  assert.ok([200, 409].includes(host.status), JSON.stringify(host.body));
-  assert.equal(Number(batch.status === 201) + Number(host.status === 200), 1);
+  assert.equal(host.status,200,JSON.stringify(host.body));
   assert.equal(db.prepare("SELECT COUNT(*) n FROM active_seat_claims WHERE party_id='cheap' AND status IN('proposed','confirmed')").get().n, 1);
   assert.equal(repos.parties.findById('cheap').remaining_capacity, 0);
   assert.equal(count('match_results'), batch.status === 201 ? 1 : 0);
   assert.equal(count('match_rounds'), batch.status === 201 ? 1 : 0);
   assert.equal(repos.proposals.declinedPairsForConcert('c1').has('s_c|cheap'), false);
   if (batch.status === 201) {
-    assert.equal(repos.recommendations.requests(ids.c).find(r => r.id === applied.body.request.id).status, 'pending');
-    const offer = proposal('a');
-    assert.equal((await answer(offer, 'a', 'accept')).status, 200);
-    assert.equal((await state('a')).body.matching.state, 'pending');
-    assert.equal((await answer(offer, 'hostA', 'accept')).status, 200);
-    assert.equal((await state('a')).body.matching.state, 'accepted');
+    assert.equal(repos.recommendations.requests(ids.c).find(r => r.id === applied.body.request.id).status, 'accepted');
+    const offer = repos.proposals.forUser(ids.a,'c1').find(p=>p.role==='seeker');
+    assert.equal(offer.status,'cancelled');
+    assert.equal((await answer(offer,'a','accept')).status,409);
     assert.equal(matching.reverify(batch.body.roundId).verified, true);
   } else {
     assert.equal((await state('c')).body.matching.state, 'accepted');
     assert.equal((await state('a')).body.matching.state, 'queued');
     assert.equal(count('match_proposals'), 0);
   }
+  assert.equal((await state('c')).body.matching.state,'accepted');
+  assert.equal((await state('a')).body.matching.state,'queued');
   assert.equal(repos.parties.findById('cheap').remaining_capacity, 0);
+});
+
+test('concurrent direct applications queue for one place and cannot bypass the first arrival', async () => {
+  publish('cheap');
+  const attempts=await Promise.all([
+    call('/groups/cheap/join-requests','a','POST'),
+    call('/groups/cheap/join-requests','c','POST'),
+  ]);
+  assert.ok(attempts.every(result=>result.status===200));
+  const inbox=repos.recommendations.requests(ids.hostA,{scope:'hosted'})
+    .filter(request=>request.partyId==='cheap').sort((a,b)=>a.queueOrder-b.queueOrder);
+  assert.deepEqual(inbox.map(request=>request.queuePosition),[1,2]);
+  assert.deepEqual(inbox.map(request=>request.seatReserved),[true,false]);
+  assert.equal(repos.parties.findById('cheap').remaining_capacity,0);
+  assert.equal((await respond(inbox[1],'hostA','accept')).body.error,'request_waiting_in_queue');
+  assert.equal((await respond(inbox[0],'hostA','reject')).status,200);
+  const promoted=repos.recommendations.requests(ids.hostA,{scope:'hosted'}).find(request=>request.id===inbox[1].id);
+  assert.equal(promoted.queuePosition,1);
+  assert.equal(promoted.seatReserved,true);
+  assert.equal(repos.parties.findById('cheap').remaining_capacity,0);
+  assert.equal((await respond(promoted,'hostA','reject')).status,200);
+  assert.equal(repos.parties.findById('cheap').remaining_capacity,1);
 });
 
 test('cancelled destinations stop appearing as current matching offers', async () => {

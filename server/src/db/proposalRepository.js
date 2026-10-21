@@ -1,6 +1,7 @@
 
 import { randomUUID } from 'node:crypto';
-import { reservedPlacesSql,availableCapacitySql } from './capacity.js';
+import { reservedPlacesSql,availableCapacitySql,queueablePlacesSql,expireJoinRequests } from './capacity.js';
+import { queueInfo } from './admissionQueue.js';
 
 /**
  * ============================================================
@@ -20,14 +21,10 @@ import { reservedPlacesSql,availableCapacitySql } from './capacity.js';
  * match_proposals:
  *   Current operational assignment status.
  *
- * The shared active_seat_claims ledger reserves places for proposals with status:
- *
- *   - proposed
- *   - confirmed
- *
- * reserve party capacity.
- *
- * Declined, expired and cancelled proposals release capacity.
+ * The shared admission queue orders direct applications and automatic offers.
+ * Confirmed claims and the earliest eligible pending claims reserve capacity.
+ * Other pending offers wait without consuming another physical seat.
+ * Removing an entry transfers its held place to the next request atomically.
  *
  * Database writes that change multiple related records are
  * wrapped in better-sqlite3 transactions.
@@ -59,6 +56,7 @@ export function createProposalRepo(db, repos = null) {
     seekerName: p.seeker_name,
 
     status: p.status,
+    resolutionReason: p.resolution_reason ?? null,
     expiresAt: p.expires_at,
 
     seekerScore: p.seeker_score,
@@ -68,6 +66,7 @@ export function createProposalRepo(db, repos = null) {
     seekerApprovedAt: p.seeker_approved_at ?? null,
     hostApprovedAt: p.host_approved_at ?? null,
     approvalPolicy: p.approval_policy ?? 'mutual',
+    ...queueInfo(db, { proposalId: p.id }),
   });
 
   // ============================================================
@@ -196,6 +195,8 @@ export function createProposalRepo(db, repos = null) {
   // All operations are atomic.
 
   const expire = db.transaction(() => {
+    // Proposal inboxes must also advance past elapsed direct applicants.
+    expireJoinRequests(db);
 
     const expired = db.prepare(`
       SELECT
@@ -275,8 +276,8 @@ export function createProposalRepo(db, repos = null) {
       `);
 
       for (const match of matches) {
-        const party = db.prepare(`SELECT ${availableCapacitySql()} capacity,p.status FROM parties p WHERE p.id = ?`).get(match.party_id);
-        if (!party || party.status === 'cancelled' || reserved.get({ id: match.party_id }).n >= party.capacity) {
+        const party = db.prepare(`SELECT ${queueablePlacesSql('p.id')} queueable_places,p.status FROM parties p WHERE p.id = ?`).get(match.party_id);
+        if (!party || party.status === 'cancelled' || party.queueable_places < 1) {
           throw new Error('party_capacity_exceeded');
         }
         const request = db.prepare('SELECT joining_mode,status,user_id FROM seeker_requests WHERE id=?').get(match.seeker_request_id);
@@ -461,6 +462,16 @@ export function createProposalRepo(db, repos = null) {
         refresh(proposal.party_id,proposal.seeker_request_id);
         return { error: 'proposal_expired', status: 409 };
       }
+      // Sweep both sources before checking FIFO: an expired earlier direct
+      // request must promote this offer even when its host has a stale inbox.
+      expire();
+      repos?.recommendations?.expire();
+      const role = proposal.seeker_user_id === userId ? 'seeker' : 'host';
+      const queue = queueInfo(db, { proposalId });
+      // Hosts work through the shared direct/automatic queue in arrival order.
+      // Applicants retain the ability to leave the queue at any position.
+      if ((decision === 'accept' || role === 'host') && (!queue.canHostRespond || !queue.seatReserved))
+        return { error: 'request_waiting_in_queue', status: 409 };
       if (decision === 'decline') {
         db.prepare("UPDATE match_proposals SET status='declined' WHERE id=?").run(proposalId);
         db.prepare('INSERT OR IGNORE INTO match_declines(seeker_request_id,party_id) VALUES(?,?)')
@@ -469,7 +480,6 @@ export function createProposalRepo(db, repos = null) {
         return { proposalId,status: 'declined' };
       }
       const seekerId = proposal.seeker_user_id;
-      const role = seekerId === userId ? 'seeker' : 'host';
       const approvalColumn = role === 'seeker' ? 'seeker_approved_at' : 'host_approved_at';
       if (proposal[approvalColumn]) return { error: 'proposal_already_approved',status:409 };
       const party = db.prepare(`SELECT p.status,${availableCapacitySql()} capacity FROM parties p WHERE p.id=?`).get(proposal.party_id);
@@ -481,7 +491,7 @@ export function createProposalRepo(db, repos = null) {
       const settings = db.prepare('SELECT published FROM group_settings WHERE party_id=?').get(proposal.party_id);
       if (settings && !settings.published) return { error:'group_unavailable',status:409 };
       if (reserved.get({id:proposal.party_id}).n > party.capacity) return {error:'party_capacity_exceeded',status:409};
-      const claim = db.prepare("SELECT 1 FROM active_seat_claims WHERE proposal_id=? AND status='proposed' AND expires_at>?")
+      const claim = db.prepare("SELECT 1 FROM active_seat_claims WHERE proposal_id=? AND status='proposed' AND seat_held=1 AND expires_at>?")
         .get(proposalId,Date.now());
       if (!claim) return {error:'claim_source_invalid',status:409};
       if (repos?.recommendations && !repos.recommendations.feasible(seekerId,repos.parties.findById(proposal.party_id)))
@@ -496,7 +506,8 @@ export function createProposalRepo(db, repos = null) {
       db.prepare(`UPDATE match_proposals SET ${approvalColumn}=datetime('now') WHERE id=?`).run(proposalId);
       const approvals = db.prepare('SELECT seeker_approved_at,host_approved_at FROM match_proposals WHERE id=?').get(proposalId);
       if (!approvals.seeker_approved_at || !approvals.host_approved_at) {
-        return {proposalId,status:'proposed',seekerApproved:Boolean(approvals.seeker_approved_at),hostApproved:Boolean(approvals.host_approved_at)};
+        return {proposalId,status:'proposed',seekerApproved:Boolean(approvals.seeker_approved_at),hostApproved:Boolean(approvals.host_approved_at),
+          ...queueInfo(db, { proposalId })};
       }
       db.prepare("UPDATE match_proposals SET status='confirmed' WHERE id=?").run(proposalId);
       if (repos?.membership) repos.membership.attach(repos.parties.findById(proposal.party_id),seekerId,'proposal');
@@ -507,9 +518,8 @@ export function createProposalRepo(db, repos = null) {
         ON CONFLICT(party_id,user_id) DO NOTHING`).run(proposal.party_id,seekerId,
         db.prepare('SELECT answers_json FROM seeker_discovery_preferences WHERE user_id=? AND concert_id=?')
           .get(seekerId,proposal.concert_id)?.answers_json ?? '{"about":[],"wants":[],"avoid":[]}');
-      db.prepare('UPDATE group_settings SET version=version+1 WHERE party_id=?').run(proposal.party_id);
       db.prepare('UPDATE seeker_requests SET matching_opt_in=0 WHERE id=?').run(proposal.seeker_request_id);
-      return {proposalId,status:'confirmed',seekerApproved:true,hostApproved:true};
+      return {proposalId,status:'confirmed',seekerApproved:true,hostApproved:true,...queueInfo(db, { proposalId })};
     }).immediate
   };
 }
