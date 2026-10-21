@@ -1,6 +1,8 @@
 import { listSolvers } from '../matching/index.js';
 import { publicUser } from './publicUser.js';
 
+const validUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function publicLedger(ledger) {
   if (!ledger) return null;
   return {
@@ -25,6 +27,34 @@ function publicLedger(ledger) {
 
 export function createMatchController({ repos, matching }) {
   return {
+    managedState(req, res) {
+      try {
+        return res.json(matching.managedState(req.params.id, req.user.id));
+      } catch (err) {
+        return res.status(err.status ?? 500).json({ error: err.status ? err.message : 'match_failed' });
+      }
+    },
+
+    matchManaged(req, res) {
+      const batchKey = req.get('Idempotency-Key');
+      if (!batchKey || !validUUID.test(batchKey)) {
+        return res.status(400).json({ error: 'invalid_idempotency_key' });
+      }
+      try {
+        return res.json(matching.matchManaged(req.params.id, req.user.id, { batchKey }));
+      } catch (err) {
+        return res.status(err.status ?? 500).json({ error: err.status ? err.message : 'match_failed' });
+      }
+    },
+
+    leaveManaged(req, res) {
+      try {
+        return res.json(matching.leaveManaged(req.params.id, req.user.id));
+      } catch (err) {
+        return res.status(err.status ?? 500).json({ error: err.status ? err.message : 'match_failed' });
+      }
+    },
+
     preview(req, res) {
       const withBaselines = req.query.baselines === 'true';
       const withTrace = req.user?.is_operator && req.query.trace === 'true';
@@ -105,8 +135,6 @@ export function createMatchController({ repos, matching }) {
         // crypto.randomUUID() on the frontend generates
         // a UUID suitable for this validation.
 
-        const validUUID =
-          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
         if (!batchKey || !validUUID.test(batchKey)) {
           return res.status(400).json({

@@ -1,6 +1,6 @@
 import { publicUser } from './publicUser.js';
 
-const SECTIONS = ['pit', 'ga_standing', 'lower_bowl', 'upper_bowl', 'seated_any'];
+import { SECTIONS } from '../matching/compatibility.js';
 const ARRIVALS = ['early_queue', 'mid', 'doors'];
 
 export function createConcertController(repos) {

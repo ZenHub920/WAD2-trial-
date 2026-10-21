@@ -155,7 +155,7 @@ async function getWeather() {
     <h1>{{ board?.title ?? "Meetup planning" }}</h1>
     <nav class="group-actions">
       <RouterLink v-if="id" to="/meetups">All meetup plans</RouterLink>
-      <RouterLink to="/groups/connect">Host &amp; connect groups</RouterLink>
+      <RouterLink to="/groups/connect">My groups</RouterLink>
     </nav>
     <p v-if="error" class="group-error" role="alert">{{ error }}</p>
     <p v-if="notice" class="group-success" role="status">{{ notice }}</p>

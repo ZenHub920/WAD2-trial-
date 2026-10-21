@@ -38,6 +38,7 @@ export function migrateCommunity(db) {
         id TEXT PRIMARY KEY, party_id TEXT NOT NULL REFERENCES parties(id), user_id TEXT NOT NULL REFERENCES users(id),
         status TEXT NOT NULL CHECK(status IN ('pending','accepted','rejected','withdrawn','expired')),
         expires_at INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), responded_at TEXT,
+        matching_round_id TEXT REFERENCES match_rounds(id),
         UNIQUE(party_id,user_id)
       );
       CREATE INDEX IF NOT EXISTS idx_join_requests_user ON group_join_requests(user_id,status);
@@ -80,6 +81,8 @@ export function migrateCommunity(db) {
       );
     if (!requestColumns.some((c) => c.name === "preferences_json"))
       db.exec("ALTER TABLE group_join_requests ADD COLUMN preferences_json TEXT");
+    if (!requestColumns.some((c) => c.name === "matching_round_id"))
+      db.exec("ALTER TABLE group_join_requests ADD COLUMN matching_round_id TEXT");
     db.exec(`CREATE TRIGGER IF NOT EXISTS membership_host_guard BEFORE INSERT ON group_memberships WHEN NEW.status='active'
       BEGIN SELECT RAISE(ABORT,'already_in_concert_group') WHERE EXISTS(SELECT 1 FROM parties WHERE host_user_id=NEW.user_id
         AND concert_id=NEW.concert_id AND status<>'cancelled' AND id<>NEW.party_id); END;
