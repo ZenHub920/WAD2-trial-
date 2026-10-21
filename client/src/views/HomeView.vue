@@ -25,7 +25,8 @@ onMounted(async () => {
   }
   const today = new Date().toISOString().slice(0, 10);
   concerts.value = [...byId.values()]
-    .filter((c) => c.event_date >= today)
+    // Locally seeded demo concerts have no provider source; keep them off the homepage.
+    .filter((c) => c.source === 'ticketmaster' && c.event_date >= today)
     .sort((a, b) => a.event_date.localeCompare(b.event_date));
   loading.value = false;
 });
