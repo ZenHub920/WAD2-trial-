@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { communityError } from "./membershipRepository.js";
-import { expireJoinRequests } from "./capacity.js";
+import { expireJoinRequests, queueablePlacesSql } from "./capacity.js";
+import { queueInfo } from "./admissionQueue.js";
 import {
   validateAnswers,
   individualProfile,
@@ -226,6 +227,13 @@ export function createRecommendationRepo(db, repos) {
       repos.proposals.expire();
       repos.recommendations.expire();
       const p = repos.membership.party(id);
+      // A pending application owns a queue position and marks enrollment matched.
+      // Report that application before checking general assignments.
+      const pending = db.prepare(`SELECT j.party_id FROM group_join_requests j JOIN parties p ON p.id=j.party_id
+        WHERE j.user_id=? AND p.concert_id=? AND j.status='pending' AND j.matching_round_id IS NULL`)
+        .get(user, p.concert_id);
+      if (pending) throw communityError(pending.party_id === id
+        ? "join_request_already_exists" : "pending_application_limit_reached");
       repos.membership.ensureFree(user, p.concert_id, id);
       if (repos.membership.member(user, id) || p.host_user_id === user)
         throw communityError("already_group_member");
@@ -241,11 +249,6 @@ export function createRecommendationRepo(db, repos) {
       if (db.prepare(`SELECT 1 FROM group_join_requests WHERE party_id=? AND user_id=?
         AND status IN('pending','accepted')`).get(id, user))
         throw communityError("join_request_already_exists");
-      const pending = db.prepare(`SELECT COUNT(*) n FROM group_join_requests j JOIN parties p ON p.id=j.party_id
-        WHERE j.user_id=? AND p.concert_id=? AND j.status='pending' AND j.matching_round_id IS NULL`)
-        .get(user, p.concert_id).n;
-      if (pending >= maxPendingDirectApplications)
-        throw communityError("pending_application_limit_reached");
       if (repos.membership.settings(id) && !answersJson(user, p.concert_id))
         throw communityError("save_discovery_preferences_first");
       if (
@@ -260,8 +263,8 @@ export function createRecommendationRepo(db, repos) {
         db.prepare("SELECT 1 FROM tickets WHERE source_party_id=?").get(id) ||
         !visible(p) ||
         !feasible(user, p) ||
-        p.status !== "open" ||
-        p.remaining_capacity < 1
+        !["open", "matched"].includes(p.status) ||
+        db.prepare(`SELECT ${queueablePlacesSql("@id")} n`).get({ id }).n < 1
       )
         throw communityError("group_unavailable");
       if (
@@ -286,10 +289,11 @@ export function createRecommendationRepo(db, repos) {
           JSON.stringify(repos.recommendations.answers(user, p.concert_id)),
           note,
         );
-      return { id: requestId, status: "pending" };
+      return { id: requestId, status: "pending", ...queueInfo(db, { joinRequestId: requestId }) };
     }).immediate,
     requests(user, { scope = "all", concertId } = {}) {
       if (!["all", "own", "hosted"].includes(scope)) throw communityError("invalid_request_scope", 400);
+      repos.proposals.expire();
       repos.recommendations.expire();
       return db
         .prepare(
@@ -309,6 +313,7 @@ export function createRecommendationRepo(db, repos) {
           const scored = request ? pairScore(request, party) : null;
           return {
             ...r,
+            ...queueInfo(db, { joinRequestId: r.id }),
             imageUrl: groupImageUrl(imagePath),
             legacyAutomatic: Boolean(r.matchingRoundId),
             compatibility: scored ? Math.round((scored.seekerToParty + scored.partyToSeeker) * 5000) / 10000 : null,
@@ -350,6 +355,7 @@ export function createRecommendationRepo(db, repos) {
       if (action === "decline") action = "reject";
       if (!["accept", "reject", "withdraw"].includes(action))
         throw communityError("invalid_decision", 400);
+      repos.proposals.expire();
       repos.recommendations.expire();
       const j = db
         .prepare("SELECT * FROM group_join_requests WHERE id=?")
@@ -360,6 +366,8 @@ export function createRecommendationRepo(db, repos) {
         throw communityError("request_not_found", 404);
       if (j.status !== "pending" || j.expires_at <= Date.now())
         throw communityError("request_not_pending");
+      if (action !== "withdraw" && !queueInfo(db, { joinRequestId: j.id }).canHostRespond)
+        throw communityError("request_waiting_in_queue");
       if (action === "accept") {
         if (
           j.group_version == null ||
@@ -373,12 +381,14 @@ export function createRecommendationRepo(db, repos) {
           throw communityError("group_changed_withdraw_and_resubmit");
         repos.proposals.expire();
         const live = repos.parties.findById(p.id);
-        const legacyClaim = j.matching_round_id && db.prepare(`SELECT 1 FROM active_seat_claims
-          WHERE join_request_id=? AND source='algorithm' AND status='proposed' AND expires_at>?`).get(j.id, Date.now());
-        if (j.matching_round_id && !legacyClaim) throw communityError("claim_source_invalid");
+        const ownClaim = db.prepare(`SELECT id FROM active_seat_claims
+          WHERE join_request_id=? AND party_id=? AND user_id=? AND source=?
+          AND status='proposed' AND seat_held=1 AND expires_at>?`).get(j.id, p.id, j.user_id,
+            j.matching_round_id ? "algorithm" : "direct", Date.now());
+        if (!ownClaim) throw communityError("claim_source_invalid");
         if (
-          (!j.matching_round_id ? live.status !== "open" : !["open", "matched"].includes(live.status)) ||
-          live.remaining_capacity + (j.matching_round_id ? 1 : 0) < 1 ||
+          !["open", "matched"].includes(live.status) ||
+          live.remaining_capacity + 1 < 1 ||
           !visible(live) ||
           !feasible(j.user_id, live)
         )
@@ -391,7 +401,7 @@ export function createRecommendationRepo(db, repos) {
           throw communityError("previously_declined");
         if (
           !request ||
-          (request.status !== "open" && !(legacyClaim && request.status === "matched")) ||
+          !["open", "matched"].includes(request.status) ||
           db
             .prepare(
               "SELECT 1 FROM match_proposals WHERE seeker_request_id=? AND (status='confirmed' OR(status='proposed' AND expires_at>?))",
@@ -399,7 +409,7 @@ export function createRecommendationRepo(db, repos) {
             .get(request.id, Date.now())
         )
           throw communityError("active_matching_proposal_exists");
-        // Replace this request's reservation with one membership in the same transaction.
+        // Confirm the same reserved claim; membership never consumes another seat.
         db.prepare(
           "UPDATE group_join_requests SET status='accepted',responded_at=datetime('now'),responded_by=? WHERE id=?",
         ).run(user, id);
@@ -436,12 +446,10 @@ export function createRecommendationRepo(db, repos) {
       db.prepare(
         "UPDATE group_join_requests SET status=?,responded_at=datetime('now'),responded_by=? WHERE id=? AND status='pending'",
       ).run(status, user, id);
-      if (action === "accept" && !j.matching_round_id)
-        db.prepare(
-          "UPDATE group_settings SET version=version+1 WHERE party_id=?",
-        ).run(p.id);
+      // Admissions advance the queue without changing its agreed policy version.
+      // Explicit settings and member preference edits still renew consent.
       repos.recommendations.expire();
-      return { id, status };
+      return { id, status, ...queueInfo(db, { joinRequestId: id }) };
     }).immediate,
   };
 }

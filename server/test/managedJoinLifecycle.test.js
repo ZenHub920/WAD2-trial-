@@ -62,7 +62,7 @@ test("repeat community migrations preserve pending manual requests without inven
   assert.deepEqual(db.prepare("SELECT * FROM group_join_requests WHERE id=?").get(request.id), before);
   assert.equal(before.matching_round_id, null);
   assert.equal(repos.groups.seeker("one", "c1").matching_opt_in, false);
-  assert.equal(remaining(), 3);
+  assert.equal(remaining(), 2);
   assert.equal(db.prepare("SELECT COUNT(*) n FROM match_rounds").get().n, 0);
   assert.throws(() => repos.recommendations.requestJoin("two", "p1", { matchingRoundId: "made-up" }), /direct_joining_mode_required/);
 });
@@ -73,7 +73,7 @@ test("real algorithm offers and direct members share stranger capacity while hos
   repos.membership.saveAnswers("friend", "p1", answers);
   repos.membership.publish("host", "p1");
   const request = manual("one");
-  assert.equal(remaining(), 3);
+  assert.equal(remaining(), 2);
   repos.recommendations.respond("host", request.id, "accept");
   assert.equal(remaining(), 2);
   const second = offer("two"), third = offer("three");
@@ -82,8 +82,11 @@ test("real algorithm offers and direct members share stranger capacity while hos
   assert.equal(remaining(), 0);
   assert.throws(() => repos.membership.configure("host", "p1", { strangerPlaces: 2, expectedFriends: 1 }), /below_active_reservations/);
   const fourth = offer("four");
-  assert.equal(fourth.party_id, "p2");
+  assert.equal(fourth.party_id, "p1");
+  assert.equal(repos.proposals.forUser("four")[0].queueStatus, "waiting");
   approve(second); approve(third);
+  assert.equal(row(fourth.id).status, "cancelled");
+  assert.equal(repos.proposals.declinedPairsForConcert("c1").has("s_four|p1"), false);
   assert.equal(remaining(), 0);
   assert.equal(repos.parties.findById("p1").status, "matched");
   assert.equal(db.prepare("SELECT COUNT(*) n FROM group_memberships WHERE party_id='p1' AND source IN('join','proposal') AND status='active'").get().n, 3);

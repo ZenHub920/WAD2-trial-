@@ -22,6 +22,10 @@ export function createGroupDiscoveryRepo(db, repos) {
       memberCount: db.prepare(`SELECT COUNT(*) n FROM (SELECT host_user_id AS user_id FROM parties WHERE id=@id
         UNION SELECT user_id FROM group_memberships WHERE party_id=@id AND status='active')`).get({id:party.id}).n,
       remainingCapacity: party.remaining_capacity, section: party.section,
+      queueablePlaces: party.queueable_places ?? 0,
+      queueLength: db.prepare(`SELECT COUNT(*) n FROM active_seat_claims WHERE party_id=?
+        AND status='proposed' AND expires_at>unixepoch('subsec')*1000`).get(party.id).n,
+      canJoinQueue: party.status !== 'cancelled' && (party.queueable_places ?? 0)>0,
       spendBand: party.spend_band, arrivalPlan: party.arrival_plan,
       plans: party.plans, vibe: party.host.vibe, notes: party.notes, status: party.status,
     };
@@ -58,7 +62,7 @@ export function createGroupDiscoveryRepo(db, repos) {
     seeker,
     automaticPlacementEligible(userId, party) {
       const request = seeker(userId, party.concert_id);
-      if (!repos.recommendations.visible(party) || party.status !== 'open' || party.remaining_capacity < 1
+      if (!repos.recommendations.visible(party) || !['open','matched'].includes(party.status) || party.queueable_places < 1
         || !request || request.status !== 'open' || isTicket(party.id)) return false;
       try {
         repos.membership.ensureFree(userId, party.concert_id, '');
@@ -91,7 +95,7 @@ export function createGroupDiscoveryRepo(db, repos) {
       const blocklist = repos.users.blocklist();
       const declines = repos.proposals.declinedPairsForConcert(concertId);
       const preferred = this.preferredPairs(concertId);
-      return repos.parties.openForConcert(concertId).filter(p => {
+      return repos.parties.queueableForConcert(concertId).filter(p => {
         if (p.host_user_id === userId || blocked(userId, p.host_user_id, blocklist)) return false;
         return !request || (!declines.has(`${request.id}|${p.id}`)
           && checkFeasibility(request, p, { blocklist }).feasible);
@@ -104,7 +108,7 @@ export function createGroupDiscoveryRepo(db, repos) {
       if (!party) return fail('group_not_found', 404);
       const request = seeker(userId, party.concert_id);
       if (!request || request.status !== 'open') return fail('open_seeker_request_required');
-      const available = repos.parties.openForConcert(party.concert_id).find(p => p.id === partyId);
+      const available = repos.parties.queueableForConcert(party.concert_id).find(p => p.id === partyId);
       if (!available) return fail('group_unavailable');
       if (repos.proposals.declinedPairsForConcert(party.concert_id).has(`${request.id}|${partyId}`)) return fail('previously_declined');
       const verdict = checkFeasibility(request, party, { blocklist: repos.users.blocklist() });

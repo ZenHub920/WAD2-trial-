@@ -124,10 +124,11 @@ test('confirmed historical automatic group memberships retain their origin and o
   } finally { db.close(); }
 });
 
-test('overbooked old data aborts the whole upgrade and restores foreign-key enforcement', () => {
+test('overbooked confirmed old data aborts the whole upgrade and restores foreign-key enforcement', () => {
   const db = legacyDb(1);
   try {
-    oldProposal(db); oldProposal(db,{id:'offer2',seeker:'s2',result:'result2'});
+    oldProposal(db,{status:'confirmed'}); oldProposal(db,{id:'offer2',seeker:'s2',result:'result2',status:'confirmed'});
+    migrateCommunity(db);
     const history = db.prepare('SELECT * FROM match_results ORDER BY id').all();
     assert.throws(()=>migrateHybrid(db),/hybrid_capacity_reconciliation_required/);
     assert.equal(db.pragma('foreign_keys',{simple:true}),1);
@@ -149,18 +150,20 @@ test('orphan historical stranger memberships require deliberate reconciliation',
   } finally { db.close(); }
 });
 
-test('legacy direct applications can select direct mode without erasing their pending choice', () => {
+test('legacy direct applications preserve their choice and backfill a held place', () => {
   const db = legacyDb();
   try {
     db.prepare(`INSERT INTO group_join_requests(id,party_id,user_id,status,expires_at)
       VALUES('manual','p1','one','pending',?)`).run(Date.now()+3600000);
     migrateHybrid(db);
     const repos = createRepositories(db);
-    assert.equal(repos.groups.seeker('one','c1').joining_mode,'algorithm');
+    assert.equal(repos.groups.seeker('one','c1').joining_mode,'direct');
     repos.recommendations.setJoiningMode('one','c1','direct');
     assert.equal(db.prepare("SELECT status FROM group_join_requests WHERE id='manual'").get().status,'pending');
     assert.throws(()=>repos.recommendations.setJoiningMode('one','c1','algorithm'),/withdraw_pending_applications_first/);
-    assert.equal(claims(db).length,0);
+    assert.equal(claims(db).length,1);
+    assert.equal(claims(db)[0].seat_held,1);
+    assert.equal(repos.parties.findById('p1').remaining_capacity,1);
   } finally { db.close(); }
 });
 
@@ -170,15 +173,72 @@ test('the database prevents direct and algorithm sources from taking the same la
     const app = repos.recommendations.requestJoin('two','p1');
     matching.run('c1',{batchKey:'last-seat'});
     const offer = repos.proposals.forUser('one')[0];
-    assert.equal(claims(db).length,1);
-    assert.throws(()=>db.prepare("UPDATE group_join_requests SET status='accepted' WHERE id=?").run(app.id),/seat_capacity_exceeded/);
+    assert.equal(claims(db).length,2);
+    assert.equal(claims(db).filter(c=>c.seat_held).length,1);
+    assert.equal(offer.queueStatus,'waiting');
+    assert.equal(repos.proposals.respond('host',offer.id,'accept').error,'request_waiting_in_queue');
     assert.equal(db.prepare('SELECT status FROM group_join_requests WHERE id=?').get(app.id).status,'pending');
-    assert.equal(repos.proposals.respond('host',offer.id,'decline').status,'declined');
+    assert.equal(repos.proposals.respond('one',offer.id,'decline').status,'declined');
     repos.recommendations.respond('host',app.id,'accept');
     assert.equal(claims(db).length,1);
     assert.equal(claims(db)[0].source,'direct');
     assert.equal(repos.parties.findById('p1').remaining_capacity,0);
   } finally { db.close(); }
+});
+
+test('oversubscribed legacy pending offers become one held seat and one FIFO waiter', () => {
+  const db=legacyDb(1);
+  try {
+    oldProposal(db);oldProposal(db,{id:'offer2',seeker:'s2',result:'result2'});
+    const history=db.prepare('SELECT * FROM match_results ORDER BY id').all();
+    migrateHybrid(db);migrateHybrid(db);
+    assert.equal(claims(db).length,2);
+    assert.equal(claims(db).filter(c=>c.seat_held).length,1);
+    assert.equal(new Set(claims(db).map(c=>c.queue_order)).size,2);
+    assert.deepEqual(db.prepare('SELECT * FROM match_results ORDER BY id').all(),history);
+    assert.deepEqual(db.pragma('foreign_key_check'),[]);
+  } finally {db.close();}
+});
+
+test('an installed non-reserving application trigger is upgraded and pending sources backfill', () => {
+  const {db,repos}=currentDb();
+  try {
+    db.exec(`DROP TRIGGER application_seat_created;
+      CREATE TRIGGER application_seat_created AFTER INSERT ON group_join_requests
+      BEGIN SELECT 1; END;`);
+    const request=repos.recommendations.requestJoin('two','p1');
+    assert.equal(claims(db).length,0);
+    migrateHybrid(db);migrateHybrid(db);
+    assert.equal(claims(db).length,1);
+    assert.equal(claims(db)[0].join_request_id,request.id);
+    assert.equal(claims(db)[0].seat_held,1);
+    assert.equal(repos.groups.seeker('two','c1').status,'matched');
+    repos.recommendations.respond('two',request.id,'withdraw');
+    const next=repos.recommendations.requestJoin('two','p1');
+    assert.equal(claims(db)[0].join_request_id,next.id);
+    assert.equal(repos.parties.findById('p1').remaining_capacity,0);
+  } finally {db.close();}
+});
+
+test('migration clears older waiting requests when confirmed members already fill the group', () => {
+  const db=legacyDb(1);
+  try {
+    oldProposal(db,{status:'confirmed'});
+    migrateCommunity(db);
+    db.prepare(`INSERT INTO group_join_requests(id,party_id,user_id,status,expires_at)
+      VALUES('old_waiter','p1','two','pending',?)`).run(Date.now()+3600000);
+    const history=db.prepare('SELECT * FROM match_results ORDER BY id').all();
+    migrateHybrid(db);migrateHybrid(db);
+    const repos=createRepositories(db);
+    assert.deepEqual(db.prepare("SELECT status,resolution_reason FROM group_join_requests WHERE id='old_waiter'").get(),
+      {status:'superseded',resolution_reason:'group_full'});
+    assert.equal(repos.groups.seeker('two','c1').status,'open');
+    assert.equal(claims(db).length,1);
+    assert.equal(claims(db)[0].status,'confirmed');
+    assert.equal(repos.parties.findById('p1').remaining_capacity,0);
+    assert.deepEqual(db.prepare('SELECT * FROM match_results ORDER BY id').all(),history);
+    assert.deepEqual(db.pragma('foreign_key_check'),[]);
+  } finally {db.close();}
 });
 
 test('failed final approval rolls back its approval, membership and notification writes', () => {

@@ -202,6 +202,7 @@ test("hybrid mode and inbox APIs use session identity and require explicit withd
   assert.equal((await api("/me/seeker-request/c", "seeker")).body.request.maxPendingDirectApplications, 1);
   assert.equal((await api(`/groups/${party}/join-requests`, "seeker", "POST", { note: "x".repeat(501) })).status, 400);
   const pending = (await api(`/groups/${party}/join-requests`, "seeker", "POST", { note: "Looking forward to joining!" })).body.request;
+  assert.equal(repos.parties.findById(party).remaining_capacity, 1);
   const hosted = (await api("/me/hosted-group-join-requests", "host")).body.requests;
   assert.equal(hosted.length, 1);
   assert.equal(hosted[0].applicationNote, "Looking forward to joining!");
@@ -219,7 +220,7 @@ test("host approval creates membership once and notification APIs remain recipie
   const r = await api(`/groups/${party}/join-requests`, "seeker", "POST");
   assert.equal(r.status, 200);
   join = r.body.request.id;
-  assert.equal(repos.parties.findById(party).remaining_capacity, 2);
+  assert.equal(repos.parties.findById(party).remaining_capacity, 1);
   assert.equal(
     (
       await api(`/group-join-requests/${join}/respond`, "seeker", "POST", {

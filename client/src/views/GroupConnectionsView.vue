@@ -46,6 +46,24 @@ const sourceId = computed(() => sourceGroup.value?.id ?? '');
 const visible = computed(() => filterGroups(candidates.value, filters));
 const pendingJoins = computed(() => joins.value.filter(j => j.status === 'pending'));
 const historicalJoins = computed(() => joins.value.filter(j => j.status !== 'pending'));
+const admissionQueues = computed(() => {
+  const entries = [
+    ...pendingJoins.value.map(record => ({ kind: 'direct', key: `direct:${record.id}`, record })),
+    ...automaticOffers.value.map(record => ({ kind: 'algorithm', key: `algorithm:${record.id}`, record })),
+  ].sort((a, b) => (a.record.queueOrder ?? Number.MAX_SAFE_INTEGER) - (b.record.queueOrder ?? Number.MAX_SAFE_INTEGER)
+    || String(a.record.createdAt ?? '').localeCompare(String(b.record.createdAt ?? '')) || a.key.localeCompare(b.key));
+  const queues = new Map();
+  for (const entry of entries) {
+    const partyId = entry.record.partyId;
+    if (!queues.has(partyId)) {
+      const group = hosted.value.find(owned => owned.id === partyId);
+      queues.set(partyId, { partyId, name: group ? groupTitle(group) : `${entry.record.hostName}'s group`, artist: entry.record.artist, entries: [] });
+    }
+    queues.get(partyId).entries.push(entry);
+  }
+  return [...queues.values()];
+});
+const incomingCount = computed(() => pendingJoins.value.length + automaticOffers.value.length);
 const shownConnections = computed(() => mode.value === 'connections'
   ? connections.value.filter(c => c.partyA.id === sourceId.value || c.partyB.id === sourceId.value)
   : connections.value);
@@ -182,6 +200,8 @@ async function act(operation) {
         already_in_concert_group: 'The applicant has already joined another group for this concert.',
         joining_mode_changed: 'The applicant changed joining methods. This application can no longer be approved.',
         request_not_pending: 'This application was already resolved or expired. The inbox has been refreshed.',
+        queue_head_required: 'An earlier request must be resolved first. The queue has been refreshed.',
+        request_waiting_in_queue: 'An earlier request must be resolved first. The queue has been refreshed.',
       })[e.message] ?? (e.status === 409 ? 'This group or request has changed. Review the latest information before trying again.' : 'Could not update the group. Please try again.');
     }
   } finally { busy.value = false; }
@@ -311,15 +331,15 @@ async function host() {
             </article>
           </div>
         </section>
-        <section v-if="automaticOffers.length" id="automatic-offers" aria-labelledby="automatic-offers-heading">
-          <div class="section-heading"><h2 id="automatic-offers-heading">Automatic match proposals</h2><span class="group-muted">{{ automaticOffers.length }} awaiting approval</span></div>
-          <p class="group-muted">Each proposal reserves one companion place. You and the companion must both approve before membership is confirmed.</p>
-          <MatchProposalCard v-for="proposal in automaticOffers" :key="proposal.id" :proposal="proposal" @updated="retry" />
-        </section>
-        <section v-if="joins.length" id="join-requests" class="card group-panel" aria-labelledby="requests-heading">
-          <div class="section-heading"><h2 id="requests-heading">Join requests</h2><span class="group-muted">{{ pendingJoins.length }} awaiting approval</span></div>
-          <p v-if="!pendingJoins.length" class="group-muted">No pending requests to join your groups.</p>
-          <GroupApplicationCard v-for="j in pendingJoins" :key="j.id" :application="j" :busy="busy" @respond="action => act(() => api.respondGroupJoin(j.id, action))" />
+        <section v-if="admissionQueues.length || historicalJoins.length" id="join-requests" class="card group-panel" aria-labelledby="requests-heading">
+          <div class="section-heading"><h2 id="requests-heading">Join requests</h2><span class="group-muted">{{ incomingCount }} in your queues</span></div>
+          <p class="group-muted">Each group has one arrival-order queue for direct applications and automatic proposals. Review the first request only. Later requests may be waiting without a held place; every request expires 48 hours after it was created.</p>
+          <p v-if="!admissionQueues.length" class="group-muted">No pending requests to join your groups.</p>
+          <section v-for="queue in admissionQueues" :key="queue.partyId" class="admission-queue">
+            <div class="section-heading"><h3>{{ queue.name }}</h3><span class="group-muted">{{ queue.entries.filter(entry => entry.record.seatReserved).length }} places held · {{ queue.entries.length }} requests</span></div>
+            <p class="group-muted">{{ queue.artist }} · A held request can be approved when it reaches the front, even when no additional places remain.</p>
+            <template v-for="entry in queue.entries" :key="entry.key"><GroupApplicationCard v-if="entry.kind === 'direct'" :application="entry.record" :busy="busy" @respond="action => act(() => api.respondGroupJoin(entry.record.id, action))" /><MatchProposalCard v-else :proposal="entry.record" @updated="retry" /></template>
+          </section>
           <details v-if="historicalJoins.length" class="history"><summary>Past join requests ({{ historicalJoins.length }})</summary><div class="history-list">
             <GroupApplicationCard v-for="j in historicalJoins" :key="j.id" :application="j" :busy="busy" />
           </div></details>
@@ -392,6 +412,7 @@ async function host() {
 .venue-layout p, .venue-layout a, .venue-layout span { font-size: var(--step--1); }
 .empty-state { justify-items: start; }
 .history-list { margin-top: var(--space-4); }
+.admission-queue { display: grid; gap: var(--space-3); padding-top: var(--space-4); border-top: var(--border-hairline); }
 .join-request, .cancelled-group { display: grid; gap: var(--space-2); }
 .connections { display: grid; gap: var(--space-5); }
 .invites, .connected { display: grid; gap: var(--space-3); }

@@ -11,7 +11,7 @@
 import { createProposalRepo } from './proposalRepository.js';
 import { createGroupDiscoveryRepo } from './groupDiscoveryRepository.js';
 import { createMembershipRepo } from './membershipRepository.js';
-import { reservedPlacesSql,availableCapacitySql } from './capacity.js';
+import { reservedPlacesSql,availableCapacitySql,queueablePlacesSql } from './capacity.js';
 import { createRecommendationRepo } from './recommendationRepository.js';
 import { createNotificationRepo } from './notificationRepository.js';
 import { createMeetupRepo } from './meetupRepository.js';
@@ -57,6 +57,7 @@ function mapParty(row) {
 
         // NEW: Available slots after previous assignments
         remaining_capacity: row.remaining_capacity ?? row.capacity,
+        queueable_places: row.queueable_places,
 
         section: row.section,
         spend_band: row.spend_band,
@@ -388,7 +389,7 @@ export function createPartyRepo(db) {
 
     findById(id) {
       const row = db.prepare(`
-        SELECT p.*, ${availableCapacitySql()} AS capacity, ${USER_COLUMNS('u', 'host_')}
+        SELECT p.*, ${availableCapacitySql()} AS capacity, ${queueablePlacesSql('p.id')} AS queueable_places, ${USER_COLUMNS('u', 'host_')}
         FROM parties p JOIN users u ON u.id = p.host_user_id
         WHERE p.id = ?
       `).get(id);
@@ -438,6 +439,18 @@ openForConcert(concertId) {
   return rows.map(mapParty);
   }
     ,
+  /** Queue admission stays open while at least one stranger place is unconfirmed. */
+  queueableForConcert(concertId) {
+    return db.prepare(`SELECT p.*,${availableCapacitySql()} capacity,
+      ${availableCapacitySql()}-${reservedPlacesSql('p.id')} remaining_capacity,
+      ${queueablePlacesSql('p.id')} queueable_places,${USER_COLUMNS('u','host_')}
+      FROM parties p JOIN users u ON u.id=p.host_user_id
+      WHERE p.concert_id=? AND p.status IN('open','matched')
+        AND ${queueablePlacesSql('p.id')}>0
+        AND NOT EXISTS(SELECT 1 FROM tickets t WHERE t.source_party_id=p.id)
+        AND NOT EXISTS(SELECT 1 FROM group_settings gs WHERE gs.party_id=p.id AND gs.published=0)
+      ORDER BY p.id`).all(concertId).map(mapParty);
+  },
   /**
    * Update a hosted party's operational status.
    *
