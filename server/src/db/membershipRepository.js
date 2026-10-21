@@ -4,7 +4,7 @@ import {
   aggregateAnswers,
   withoutRetired,
 } from "../services/discoveryPreferences.js";
-import { reservedPlacesSql, expireJoinRequests } from "./capacity.js";
+import { reservedPlacesSql, availableCapacitySql, expireJoinRequests } from "./capacity.js";
 export const communityError = (message, status = 409) =>
   Object.assign(new Error(message), { status });
 const hash = (token) => createHash("sha256").update(token).digest("hex");
@@ -42,8 +42,8 @@ export function createMembershipRepo(db, repos) {
       throw communityError("already_in_concert_group");
     const pending = db
       .prepare(
-        `SELECT 1 FROM match_proposals mp JOIN seeker_requests s ON s.id=mp.seeker_request_id
-      WHERE s.user_id=? AND s.concert_id=? AND mp.party_id<>? AND (mp.status='confirmed' OR(mp.status='proposed' AND mp.expires_at>?))`,
+        `SELECT 1 FROM active_seat_claims sc WHERE sc.user_id=? AND sc.concert_id=? AND sc.party_id<>?
+          AND (sc.status='confirmed' OR(sc.status='proposed' AND sc.expires_at>?))`,
       )
       .get(user, concert, id, Date.now());
     if (pending) throw communityError("active_matching_proposal_exists");
@@ -55,7 +55,7 @@ export function createMembershipRepo(db, repos) {
       ON CONFLICT(party_id,user_id) DO UPDATE SET status='active',source=excluded.source,
       joined_at=CASE WHEN group_memberships.status='active' THEN group_memberships.joined_at ELSE datetime('now') END,left_at=NULL`,
     ).run(p.id, user, p.concert_id, source);
-    db.prepare(`UPDATE group_join_requests SET status='withdrawn',responded_at=datetime('now')
+    db.prepare(`UPDATE group_join_requests SET status='superseded',responded_at=datetime('now')
       WHERE user_id=? AND status='pending' AND party_id IN(SELECT id FROM parties WHERE concert_id=?)`)
       .run(user, p.concert_id);
     db.prepare("UPDATE seeker_requests SET matching_opt_in=0 WHERE user_id=? AND concert_id=?")
@@ -87,7 +87,8 @@ export function createMembershipRepo(db, repos) {
         .prepare(
           `SELECT p.id,p.concert_id AS concertId,c.artist,m.source FROM group_memberships m
         JOIN parties p ON p.id=m.party_id JOIN concerts c ON c.id=p.concert_id
-        WHERE m.user_id=? AND m.status='active' AND p.status<>'cancelled' ORDER BY c.event_date,p.id`,
+        WHERE m.user_id=? AND m.status='active' AND p.status<>'cancelled'
+          AND NOT EXISTS(SELECT 1 FROM tickets WHERE source_party_id=p.id) ORDER BY c.event_date,p.id`,
         )
         .all(user);
     },
@@ -174,6 +175,9 @@ export function createMembershipRepo(db, repos) {
         partyId: id,
         hostId: p.host_user_id,
         concertId: p.concert_id,
+        artist: repos.concerts.findById(p.concert_id)?.artist,
+        status: p.status,
+        remainingCapacity: p.remaining_capacity,
         strangerPlaces: p.capacity,
         settings: settings(id),
         members,
@@ -281,7 +285,11 @@ export function createMembershipRepo(db, repos) {
         `UPDATE match_proposals SET status='cancelled' WHERE party_id=? AND seeker_request_id IN
         (SELECT id FROM seeker_requests WHERE user_id=?) AND status IN('proposed','confirmed')`,
       ).run(id, user);
-      if (p.status === "matched") repos.parties.setStatus(id, "open");
+      if (p.status === "matched") {
+        const capacity = db.prepare(`SELECT ${availableCapacitySql()} n FROM parties p WHERE p.id=?`).get(id).n;
+        const reserved = db.prepare(`SELECT ${reservedPlacesSql('@id')} n`).get({ id }).n;
+        repos.parties.setStatus(id, reserved >= capacity ? "matched" : "open");
+      }
       db.prepare(
         "UPDATE seeker_requests SET status='withdrawn',matching_opt_in=0 WHERE user_id=? AND concert_id=?",
       ).run(user, p.concert_id);
@@ -304,7 +312,7 @@ export function createMembershipRepo(db, repos) {
         "UPDATE match_proposals SET status='cancelled' WHERE party_id=? AND status IN('proposed','confirmed')",
       ).run(id);
       db.prepare(
-        "UPDATE group_join_requests SET status='rejected',responded_at=datetime('now') WHERE party_id=? AND status='pending'",
+        "UPDATE group_join_requests SET status='cancelled',responded_at=datetime('now') WHERE party_id=? AND status IN('pending','accepted')",
       ).run(id);
       db.prepare(
         "UPDATE group_friend_invites SET revoked=1 WHERE party_id=?",

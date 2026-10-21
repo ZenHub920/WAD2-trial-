@@ -1,15 +1,12 @@
 /** One definition for discovery, matching and operational reservation accounting.
  * Time is evaluated by SQLite, including before the expiration sweep runs. */
+import { liveClaimSql } from './hybridMigrations.js';
 export function activeReservationSql(alias = 'mp') {
   return `(${alias}.status = 'confirmed' OR (${alias}.status = 'proposed'
     AND ${alias}.expires_at > unixepoch('subsec') * 1000))`;
 }
 export function reservedPlacesSql(partyIdSql) {
-  return `((SELECT COUNT(*) FROM match_proposals mp WHERE mp.party_id=${partyIdSql} AND ${activeReservationSql()})
-    + (SELECT COUNT(*) FROM group_memberships gm WHERE gm.party_id=${partyIdSql} AND gm.source='join' AND gm.status='active')
-    + (SELECT COUNT(*) FROM group_join_requests gj WHERE gj.party_id=${partyIdSql}
-      AND gj.matching_round_id IS NOT NULL AND gj.status='pending' AND gj.expires_at > unixepoch('subsec') * 1000
-      AND NOT EXISTS(SELECT 1 FROM group_memberships gm WHERE gm.party_id=gj.party_id AND gm.user_id=gj.user_id AND gm.status='active')))`;
+  return `(SELECT COUNT(*) FROM active_seat_claims sc WHERE sc.party_id=${partyIdSql} AND ${liveClaimSql()})`;
 }
 export function availableCapacitySql(partyAlias='p') {
   return `COALESCE((SELECT gs.stranger_slots FROM group_settings gs WHERE gs.party_id=${partyAlias}.id),${partyAlias}.capacity)`;

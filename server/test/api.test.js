@@ -412,8 +412,8 @@ describe('Operational result isolation', () => {
     insertResult.run('mr_private_a', 'r_private_first', 's_private_a', 'p_private_a', 'matched');
     insertResult.run('mr_private_b', 'r_private_first', 's_private_b', null, 'unmatched');
     db.prepare(`INSERT INTO match_proposals
-      (id, round_id, match_result_id, seeker_request_id, party_id, status, expires_at)
-      VALUES ('mp_private', 'r_private_first', 'mr_private_a', 's_private_a', 'p_private_a', 'confirmed', ?)`)
+      (id, round_id, match_result_id, seeker_request_id, party_id, status, expires_at,seeker_approved_at,host_approved_at)
+      VALUES ('mp_private', 'r_private_first', 'mr_private_a', 's_private_a', 'p_private_a', 'confirmed', ?,datetime('now'),datetime('now'))`)
       .run(Date.now() + 48 * 60 * 60 * 1000);
 
     const mine = (concert, cookie, query = '') =>

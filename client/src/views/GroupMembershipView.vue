@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "../api.js";
 import { currentUser } from "../auth.js";
@@ -20,30 +20,38 @@ const group = ref(null),
   strangerPlaces = ref(0),
   connect = ref(false);
 const isHost = computed(() => group.value?.hostId === currentUser.value?.id);
+const memberSource = { host: 'Host', friend: 'Friend invitation', join: 'Approved application', proposal: 'Confirmed automatic match' };
+let loadVersion = 0, alive = true;
 async function load() {
-  if (props.id) {
-    group.value = (await api.groupMembership(props.id)).group;
+  const id = props.id, userId = currentUser.value?.id, version = ++loadVersion;
+  if (id && userId) {
+    const result = await api.groupMembership(id);
+    if (!alive || version !== loadVersion || props.id !== id || currentUser.value?.id !== userId) return;
+    group.value = result.group;
     friends.value = group.value.settings?.expected_friends ?? 0;
     strangerPlaces.value = group.value.settings?.stranger_slots ?? group.value.strangerPlaces;
     connect.value = Boolean(group.value.settings?.connect_open);
   }
 }
 watch(
-  () => props.id,
-  async () => {
+  [() => props.id, () => currentUser.value?.id],
+  async (_values, _previous, onCleanup) => {
+    let stale = false;
+    onCleanup(() => { stale = true; });
     group.value = null;
     error.value = "";
     loading.value = Boolean(props.id);
     try {
       await load();
     } catch (e) {
-      error.value = e.status === 403 ? "Only members can view this group. Use your invitation link to join." : "Could not load this group. It may no longer be available.";
+      if (!stale) error.value = e.status === 403 ? "Only members can view this group. Use your invitation link to join." : "Could not load this group. It may no longer be available.";
     } finally {
-      loading.value = false;
+      if (!stale) loading.value = false;
     }
   },
   { immediate: true },
 );
+onUnmounted(() => { alive = false; loadVersion++; });
 async function act(fn, preferences = false) {
   if (busy.value) return;
   busy.value = true;
@@ -83,6 +91,16 @@ async function invite() {
     link.value = new URL(r.invitation.path, window.location.origin).href;
   });
 }
+async function leave() {
+  if (busy.value) return;
+  busy.value = true; error.value = '';
+  try {
+    const concertId = group.value.concertId;
+    await api.leaveGroup(props.id);
+    await router.push({ path: '/groups', query: { concertId } });
+  } catch (err) { error.value = err.status === 401 ? 'Sign in to manage your membership.' : 'Could not leave this group. Refresh and try again.'; }
+  finally { busy.value = false; }
+}
 </script>
 <template>
   <div class="container groups-page">
@@ -95,6 +113,7 @@ async function invite() {
       <RouterLink :to="`/concerts/${encodeURIComponent(group.concertId)}`">Concert details</RouterLink>
       <RouterLink :to="{path:'/meetups',query:{partyId:id}}">Plan meetup</RouterLink>
       <RouterLink v-if="isHost" :to="{path:'/groups/connect',query:{view:'connections',groupId:id,concertId:group.concertId}}">Connect with other groups</RouterLink>
+      <RouterLink v-if="isHost" :to="{path:'/groups/connect',query:{concertId:group.concertId},hash:'#join-requests'}">Review join applications</RouterLink>
     </nav>
     <p v-if="error" role="alert" class="group-error">{{ error }}</p>
     <p v-if="notice" role="status" class="group-success">{{ notice }}</p>
@@ -111,10 +130,11 @@ async function invite() {
     <template v-if="group">
       <section class="card group-panel">
         <h2>{{ group.settings?.published ? "Published group" : "Draft group" }}</h2>
+        <p v-if="group.remainingCapacity != null">{{ group.members.length }} members · {{ group.remainingCapacity }} companion places remaining</p>
         <p>{{ group.settings?.published ? "Your group is published for discovery." : "Your group is not published. Complete the member preferences before publishing." }}</p>
         <p>{{ group.members.filter((m) => m.answered).length }} of {{ group.members.length }} members have saved preferences.</p>
         <ul>
-          <li v-for="m in group.members" :key="m.id">{{ m.name }} — {{ m.answered ? "Preferences saved" : "Preferences pending" }}{{ m.id === group.hostId ? " (host)" : "" }}</li>
+          <li v-for="m in group.members" :key="m.id">{{ m.name }} — {{ memberSource[m.source] ?? 'Member' }} · {{ m.answered ? "Preferences saved" : "Preferences pending" }}</li>
         </ul>
       </section>
       <form
@@ -194,7 +214,7 @@ async function invite() {
         v-else
         class="btn btn--danger-ghost"
         :disabled="busy"
-        @click="act(() => api.leaveGroup(id))"
+        @click="leave"
       >
         Leave group
       </button></template

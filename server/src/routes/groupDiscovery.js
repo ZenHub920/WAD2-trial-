@@ -24,10 +24,14 @@ export function registerGroupDiscoveryRoutes(router, { repos, requireUser }) {
   router.get('/me/seeker-request/:concertId', requireUser, concertExists, (req, res) => {
     repos.proposals.expire();
     const request = repos.groups.seeker(req.user.id, req.params.concertId);
-    return send(res, request ? { ...request, user: undefined } : null, 'request');
+    return send(res, request ? { ...request, user: undefined,
+      maxPendingDirectApplications: repos.recommendations.maxPendingDirectApplications } : null, 'request');
   });
-  router.post('/me/seeker-request/:concertId/reopen', requireUser, concertExists, (req, res) =>
-    send(res, repos.groups.reopen(req.user.id, req.params.concertId), 'request'));
+  router.post('/me/seeker-request/:concertId/reopen', requireUser, concertExists, (req, res) => {
+    const result = repos.groups.reopen(req.user.id, req.params.concertId);
+    return send(res, result.error ? result : { ...result,
+      maxPendingDirectApplications: repos.recommendations.maxPendingDirectApplications }, 'request');
+  });
   router.get('/me/group-preferences/:concertId', requireUser, concertExists, (req, res) =>
     send(res, repos.groups.preferences(req.user.id, req.params.concertId), 'preferences'));
   router.put('/group-preferences/:partyId', requireUser, (req, res) =>

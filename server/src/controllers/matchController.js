@@ -175,8 +175,8 @@ export function createMatchController({ repos, matching }) {
         //
         // We must not silently release those historical slots.
 
-        if (err.message === 'legacy_matches_require_reconciliation') {
-          return res.status(409).json({
+        if (err.message === 'legacy_matches_require_reconciliation' || err.status) {
+          return res.status(err.status ?? 409).json({
             error: err.message
           });
         }

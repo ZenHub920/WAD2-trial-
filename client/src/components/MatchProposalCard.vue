@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { api, LABELS } from '../api.js';
 import FeedbackForm from './FeedbackForm.vue';
 import LoadingSpinner from './LoadingSpinner.vue';
@@ -13,7 +13,9 @@ const responding = ref('');
 const explanationLoading = ref(false);
 const error = ref('');
 const explanation = ref(null);
-const statuses = { proposed: 'Awaiting companion acceptance', confirmed: 'Group place confirmed', declined: 'Declined', expired: 'Expired', cancelled: 'Cancelled' };
+const statuses = { proposed: 'Awaiting both approvals', confirmed: 'Group place confirmed', declined: 'Declined', expired: 'Expired', cancelled: 'Cancelled' };
+const isHost = computed(() => props.proposal.role === 'host');
+const myApproval = computed(() => isHost.value ? props.proposal.hostApproved : props.proposal.seekerApproved);
 
 async function respond(action) {
   if (busy.value) return;
@@ -56,11 +58,13 @@ async function explain() {
     <p v-if="proposal.role === 'host'">Proposed companion: {{ proposal.seekerName }}</p>
     <p>Section: {{ LABELS.section[proposal.section] ?? proposal.section }}</p>
     <p>Status: <strong>{{ statuses[proposal.status] ?? 'Proposal updated' }}</strong></p>
+    <p v-if="proposal.status === 'proposed'">Host: {{ proposal.hostApproved ? 'Approved' : 'Awaiting approval' }} · Companion: {{ proposal.seekerApproved ? 'Approved' : 'Awaiting approval' }}</p>
     <p v-if="proposal.status === 'proposed'">
-      {{ proposal.role === 'host' ? 'The companion must reply' : 'Reply' }} before {{ new Date(proposal.expiresAt).toLocaleString() }}. This offer is for a group place, not a ticket.
+      Both people must approve before {{ new Date(proposal.expiresAt).toLocaleString() }}. The place stays reserved while approval is pending. This offer is for a group place, not a ticket.
     </p>
-    <div v-if="proposal.status === 'proposed' && proposal.role !== 'host'" class="actions">
-      <button class="btn btn--success" :disabled="busy" @click="respond('accept')"><LoadingSpinner v-if="busy && responding === 'accept'" />Accept group place</button>
+    <p v-if="proposal.status === 'proposed' && myApproval" role="status">You approved this match. Waiting for {{ isHost ? 'the companion' : 'the host' }} to approve.</p>
+    <div v-if="proposal.status === 'proposed'" class="actions">
+      <button v-if="!myApproval" class="btn btn--success" :disabled="busy" @click="respond('accept')"><LoadingSpinner v-if="busy && responding === 'accept'" />{{ isHost ? 'Approve match' : 'Accept offer' }}</button>
       <button class="btn btn--danger-ghost" :disabled="busy" @click="respond('decline')"><LoadingSpinner v-if="busy && responding === 'decline'" />Decline proposal</button>
     </div>
     <FeedbackForm

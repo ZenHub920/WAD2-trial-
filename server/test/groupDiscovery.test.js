@@ -62,6 +62,10 @@ const invite = (who = 'hostA', fromPartyId = 'pA', toPartyId = 'pB') => {
   return call('/group-connections', who, 'POST', { fromPartyId, toPartyId });
 };
 const round = () => matching.run('c1', { batchKey: randomUUID() });
+const directJoin = (user, party) => {
+  repos.recommendations.setJoiningMode(user, repos.parties.findById(party).concert_id, 'direct');
+  return repos.recommendations.requestJoin(user, party);
+};
 
 test('discovery is concert scoped, private, and uses existing feasibility scores', async () => {
   assert.equal((await call('/groups/discover/c1')).status, 401);
@@ -155,6 +159,7 @@ test('matching retries preserve history, confirmed proposals and live capacity a
   assert.equal((await call('/concerts/c1/match', 'hostA', 'POST')).status, 400);
   const proposal = repos.proposals.forUser(cookies.seekerId)[0];
   assert.equal((await call(`/proposals/${proposal.id}/accept`, 'other', 'POST')).status, 404);
+  assert.equal((await call(`/proposals/${proposal.id}/accept`, 'hostA', 'POST')).status, 200);
   assert.equal((await call(`/proposals/${proposal.id}/accept`, 'seeker', 'POST')).status, 200);
   repos.seekers.create(makeSeeker('s2', makeUser(cookies.otherId)));
   round(); round();
@@ -353,8 +358,8 @@ test('time-based capacity queries release elapsed proposals before the expiratio
   repos.groups.addPreference(cookies.seekerId, 'pA'); round();
   db.prepare('UPDATE match_proposals SET expires_at = ?').run(Date.now() - 1);
   assert.equal(repos.parties.findById('pA').remaining_capacity, 1);
-  assert.equal(repos.concerts.listWithCounts().find(c => c.id === 'c1').open_slots, 2);
-  // Full parties remain marked matched until the sweep reopens them.
+  assert.equal(repos.concerts.listWithCounts().find(c => c.id === 'c1').open_slots, 3);
+  // Updating the proposal deadline also synchronizes its claim and availability.
   repos.proposals.expire();
   assert.equal(repos.parties.openForConcert('c1').find(p => p.id === 'pA').remaining_capacity, 1);
 });
@@ -396,7 +401,7 @@ test('friend links recheck blocks against every active member without consuming 
 test('expanding full stranger capacity reopens discovery and cancellation releases direct seekers without rewriting history', () => {
   publishGroup('pA');
   repos.recommendations.savePersonal(cookies.seekerId, 'c1', { about: ['supper'] });
-  const join = repos.recommendations.requestJoin(cookies.seekerId, 'pA');
+  const join = directJoin(cookies.seekerId, 'pA');
   repos.recommendations.respond(cookies.hostAId, join.id, 'accept');
   assert.equal(repos.parties.findById('pA').status, 'matched');
   repos.membership.configure(cookies.hostAId, 'pA', { strangerPlaces: 2 });
@@ -410,7 +415,7 @@ test('expanding full stranger capacity reopens discovery and cancellation releas
   repos.membership.cancel(cookies.hostAId, 'pA');
   assert.equal(repos.groups.seeker(cookies.seekerId, 'c1').status, 'open');
   assert.equal(db.prepare('SELECT left_at FROM group_memberships WHERE user_id=?').get(cookies.otherId).left_at, '2020-01-02 00:00:00');
-  assert.equal(db.prepare('SELECT status FROM group_join_requests WHERE id=?').get(join.id).status, 'accepted');
+  assert.equal(db.prepare('SELECT status FROM group_join_requests WHERE id=?').get(join.id).status, 'cancelled');
   assert.equal(repos.membership.active(cookies.seekerId, 'c1'), undefined);
 });
 
@@ -458,7 +463,7 @@ test('seeker preference changes preserve submitted answers and require renewed c
   publishGroup('pA');
   const original = { about: ['supper'], wants: ['quiet'] };
   const submitted = repos.recommendations.savePersonal(cookies.seekerId, 'c1', original);
-  const join = repos.recommendations.requestJoin(cookies.seekerId, 'pA');
+  const join = directJoin(cookies.seekerId, 'pA');
   repos.recommendations.savePersonal(cookies.seekerId, 'c1', original);
   assert.equal(db.prepare('SELECT group_version FROM group_join_requests WHERE id=?').get(join.id).group_version, repos.membership.settings('pA').version);
   repos.recommendations.savePersonal(cookies.seekerId, 'c1', { about: ['dancing'] });
@@ -467,14 +472,15 @@ test('seeker preference changes preserve submitted answers and require renewed c
   repos.recommendations.savePersonal(cookies.seekerId, 'c1', original);
   assert.throws(() => repos.recommendations.respond(cookies.hostAId, join.id, 'accept'), /preferences_changed_withdraw_and_resubmit/);
   repos.recommendations.respond(cookies.seekerId, join.id, 'withdraw');
-  repos.recommendations.requestJoin(cookies.seekerId, 'pA');
-  assert.equal(repos.recommendations.respond(cookies.hostAId, join.id, 'accept').status, 'accepted');
+  const renewed = directJoin(cookies.seekerId, 'pA');
+  assert.notEqual(renewed.id, join.id);
+  assert.equal(repos.recommendations.respond(cookies.hostAId, renewed.id, 'accept').status, 'accepted');
 });
 
 test('repeated community migrations preserve unknown historical consent and require resubmission', () => {
   publishGroup('pA');
   repos.recommendations.savePersonal(cookies.seekerId, 'c1', { about: ['supper'] });
-  const join = repos.recommendations.requestJoin(cookies.seekerId, 'pA');
+  const join = directJoin(cookies.seekerId, 'pA');
   db.prepare('UPDATE group_join_requests SET preferences_json=NULL WHERE id=?').run(join.id);
   migrateCommunity(db);
   migrateCommunity(db);
@@ -482,21 +488,26 @@ test('repeated community migrations preserve unknown historical consent and requ
   assert.equal(repos.recommendations.requests(cookies.hostAId)[0].preferences, null);
   assert.throws(() => repos.recommendations.respond(cookies.hostAId, join.id, 'accept'), /preferences_changed_withdraw_and_resubmit/);
   repos.recommendations.respond(cookies.seekerId, join.id, 'withdraw');
-  repos.recommendations.requestJoin(cookies.seekerId, 'pA');
-  assert.equal(repos.recommendations.respond(cookies.hostAId, join.id, 'accept').status, 'accepted');
+  const renewed = directJoin(cookies.seekerId, 'pA');
+  assert.notEqual(renewed.id, join.id);
+  assert.equal(repos.recommendations.respond(cookies.hostAId, renewed.id, 'accept').status, 'accepted');
 });
 
 test('full managed groups do not block independent legacy rounds', () => {
   repos.membership.configure(cookies.hostBId, 'pB', { strangerPlaces: 1 });
-  db.prepare(`INSERT INTO group_memberships(party_id,user_id,concert_id,source)
-    VALUES('pB',?,'c1','join')`).run(cookies.otherId);
-  repos.parties.setStatus('pB', 'matched');
+  repos.membership.saveAnswers(cookies.hostBId, 'pB', {});
+  repos.membership.publish(cookies.hostBId, 'pB');
+  repos.seekers.create(makeSeeker('otherRequest', makeUser(cookies.otherId)));
+  repos.recommendations.savePersonal(cookies.otherId, 'c1', {});
+  const direct = directJoin(cookies.otherId, 'pB');
+  repos.recommendations.respond(cookies.hostBId, direct.id, 'accept');
+  assert.equal(repos.parties.findById('pB').remaining_capacity, 0);
   const result = round();
   assert.equal(result.empty, false);
   assert.deepEqual(repos.proposals.forUser(cookies.seekerId).map(p => p.partyId), ['pA']);
 });
 
-test('proposal confirmation rechecks blocks, managed approval and capacity', () => {
+test('proposal confirmation rechecks blocks and supports published managed groups', () => {
   repos.groups.addPreference(cookies.seekerId, 'pA');
   round();
   const proposal = repos.proposals.forUser(cookies.seekerId)[0];
@@ -506,21 +517,24 @@ test('proposal confirmation rechecks blocks, managed approval and capacity', () 
     db.prepare('DELETE FROM blocks').run();
   }
   repos.membership.configure(cookies.hostAId, 'pA', { strangerPlaces: 1 });
-  assert.equal(repos.proposals.respond(cookies.seekerId, proposal.id, 'accept').error,
-    'managed_group_requires_host_approval');
-  assert.equal(db.prepare("SELECT COUNT(*) n FROM group_memberships WHERE source='proposal'").get().n, 0);
-  assert.equal(repos.proposals.forUser(cookies.seekerId)[0].status, 'proposed');
+  repos.membership.saveAnswers(cookies.hostAId, 'pA', {});
+  repos.membership.publish(cookies.hostAId, 'pA');
+  assert.equal(repos.proposals.respond(cookies.hostAId, proposal.id, 'accept').status, 'proposed');
+  assert.equal(repos.proposals.respond(cookies.seekerId, proposal.id, 'accept').status, 'confirmed');
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM group_memberships WHERE source='proposal'").get().n, 1);
+  assert.equal(repos.proposals.forUser(cookies.seekerId)[0].status, 'confirmed');
 });
 
-test('overbooked legacy proposals cannot be confirmed after capacity changes', () => {
+test('database rejects capacity reductions below live claims and preserves valid proposals', () => {
   repos.parties.setStatus('pA', 'cancelled');
   repos.seekers.create(makeSeeker('s2', makeUser(cookies.otherId)));
   round();
-  db.prepare("UPDATE parties SET capacity=1 WHERE id='pB'").run();
+  assert.throws(() => db.prepare("UPDATE parties SET capacity=1 WHERE id='pB'").run(), /seat_capacity_exceeded/);
+  assert.equal(repos.parties.findById('pB').capacity, 2);
   const proposal = repos.proposals.forUser(cookies.seekerId)[0];
-  assert.equal(repos.proposals.respond(cookies.seekerId, proposal.id, 'accept').error,
-    'party_capacity_exceeded');
-  assert.equal(db.prepare("SELECT COUNT(*) n FROM group_memberships WHERE source='proposal'").get().n, 0);
+  assert.equal(repos.proposals.respond(cookies.hostBId, proposal.id, 'accept').status, 'proposed');
+  assert.equal(repos.proposals.respond(cookies.seekerId, proposal.id, 'accept').status, 'confirmed');
+  assert.equal(repos.parties.findById('pB').remaining_capacity, 0);
 });
 
 test('a cancelled target cannot receive a confirmed proposal', () => {
@@ -537,8 +551,12 @@ test('proposal expiry refreshes managed groups against stranger places rather th
   repos.groups.addPreference(cookies.seekerId, 'pB');
   round();
   repos.membership.configure(cookies.hostBId, 'pB', { strangerPlaces: 2 });
-  db.prepare(`INSERT INTO group_memberships(party_id,user_id,concert_id,source)
-    VALUES('pB',?,'c1','join')`).run(cookies.otherId);
+  repos.membership.saveAnswers(cookies.hostBId, 'pB', {});
+  repos.membership.publish(cookies.hostBId, 'pB');
+  repos.seekers.create(makeSeeker('otherRequest', makeUser(cookies.otherId)));
+  repos.recommendations.savePersonal(cookies.otherId, 'c1', {});
+  const direct = directJoin(cookies.otherId, 'pB');
+  repos.recommendations.respond(cookies.hostBId, direct.id, 'accept');
   db.prepare('UPDATE match_proposals SET expires_at=?').run(Date.now() - 1000);
   repos.membership.configure(cookies.hostBId, 'pB', { strangerPlaces: 1 });
   repos.proposals.expire();

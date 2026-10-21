@@ -185,7 +185,32 @@ test("ranked discovery paginates before display, validates limits and preserves 
     400,
   );
 });
+test("hybrid mode and inbox APIs use session identity and require explicit withdrawal before switching", async () => {
+  assert.equal((await api(`/groups/${party}/join-requests`, null, "POST")).status, 401);
+  assert.equal((await api("/me/seeker-requests/c/joining-mode", null, "PUT", { mode: "direct" })).status, 401);
+  assert.equal((await api("/me/seeker-requests/c/joining-mode", "outsider", "PUT", { mode: "direct", userId: users.seeker })).status, 404);
+  assert.equal((await api("/me/seeker-requests/c/joining-mode", "seeker", "PUT", { mode: "bad" })).status, 400);
+  assert.equal((await api(`/groups/${party}/join-requests`, "seeker", "POST")).body.error, "direct_joining_mode_required");
+  const mode = await api("/me/seeker-requests/c/joining-mode", "seeker", "PUT", { mode: "direct" });
+  assert.equal(mode.body.request.joining_mode, "direct");
+  assert.equal(mode.body.request.maxPendingDirectApplications, 1);
+  assert.equal((await api("/me/seeker-request/c", "seeker")).body.request.maxPendingDirectApplications, 1);
+  assert.equal((await api(`/groups/${party}/join-requests`, "seeker", "POST", { note: "x".repeat(501) })).status, 400);
+  const pending = (await api(`/groups/${party}/join-requests`, "seeker", "POST", { note: "Looking forward to joining!" })).body.request;
+  const hosted = (await api("/me/hosted-group-join-requests", "host")).body.requests;
+  assert.equal(hosted.length, 1);
+  assert.equal(hosted[0].applicationNote, "Looking forward to joining!");
+  assert.equal(hosted[0].seeker.email, undefined);
+  assert.equal((await api("/me/hosted-group-join-requests", "outsider")).body.requests.length, 0);
+  assert.equal((await api("/me/group-join-requests?scope=own", "host")).body.requests.length, 0);
+  assert.equal((await api(`/group-join-requests/${pending.id}/withdraw`, "outsider", "POST")).status, 404);
+  assert.equal((await api("/me/seeker-requests/c/joining-mode", "seeker", "PUT", { mode: "algorithm" })).status, 409);
+  assert.equal((await api(`/group-join-requests/${pending.id}/withdraw`, "seeker", "POST")).status, 200);
+  assert.equal((await api("/me/group-join-requests?scope=own&concertId=c", "seeker")).body.requests[0].status, "withdrawn");
+  assert.equal(repos.parties.findById(party).remaining_capacity, 2);
+});
 test("host approval creates membership once and notification APIs remain recipient scoped", async () => {
+  assert.equal((await api("/me/seeker-requests/c/joining-mode", "seeker", "PUT", {mode: "direct"})).status, 200);
   const r = await api(`/groups/${party}/join-requests`, "seeker", "POST");
   assert.equal(r.status, 200);
   join = r.body.request.id;
@@ -207,6 +232,12 @@ test("host approval creates membership once and notification APIs remain recipie
     200,
   );
   assert.equal(repos.parties.findById(party).remaining_capacity, 1);
+  const memberships = (await api("/me/current-group-memberships", "seeker")).body.groups;
+  assert.equal(memberships.length, 1);
+  assert.equal(memberships[0].assignmentOrigin, "direct");
+  assert.equal(memberships[0].partyId, party);
+  assert.equal(memberships[0].remainingCapacity, 1);
+  assert.equal((await api("/me/current-group-memberships", "outsider")).body.groups.length, 0);
   const inbox = (await api("/me/notifications", "host")).body.notifications;
   assert.ok(inbox.length);
   assert.equal(

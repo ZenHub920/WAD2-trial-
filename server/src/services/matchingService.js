@@ -18,14 +18,12 @@ import {
   comparisonTable,
   solveInstance,
   getSolver,
-  assertStable,
 } from '../matching/index.js';
-import { scorePair } from '../matching/compatibility.js';
-import { compareProfiles } from './discoveryPreferences.js';
 import { communityError } from '../db/membershipRepository.js';
 
 export function createMatchingService({ db, repos }) {
   return {
+    // Keep the existing user-facing queue API; only an operator runs a round.
     managedState(concertId, userId) {
       if (!repos.concerts.findById(concertId)) throw communityError('concert_not_found', 404);
       repos.proposals.expire();
@@ -33,112 +31,47 @@ export function createMatchingService({ db, repos }) {
       const seeker = repos.groups.seeker(userId, concertId);
       const membership = repos.membership.active(userId, concertId);
       const active = membership && repos.parties.findById(membership.party_id)?.status !== 'cancelled';
+      const proposal = repos.proposals.forUser(userId, concertId, ['proposed', 'confirmed'])
+        .find(p => p.role === 'seeker' && repos.parties.findById(p.partyId)?.status !== 'cancelled'
+          && (p.status === 'confirmed' || p.expiresAt > Date.now())) ?? null;
+      // Old host-reviewed automatic applications remain visible and resolvable.
+      // New algorithm assignments always use match_proposals instead.
       const requests = repos.recommendations.requests(userId).filter(r =>
         r.userId === userId && r.concertId === concertId && r.matchingRoundId
         && repos.parties.findById(r.partyId)?.status !== 'cancelled');
-      const request = requests.find(r => r.status === 'pending' && r.expiresAt > Date.now())
-        ?? (active ? requests.find(r => r.status === 'accepted' && r.partyId === membership.party_id) : null);
+      const legacy = requests.find(r => r.status === 'pending' && r.expiresAt > Date.now()) ?? null;
+      const optedIn = seeker?.joining_mode === 'algorithm' && seeker?.status === 'open';
       return { matching: {
-        optedIn: Boolean(seeker?.matching_opt_in),
-        state: active ? 'accepted' : request?.status === 'pending' ? 'pending'
-          : seeker?.status === 'open' && seeker.matching_opt_in ? 'queued' : 'idle',
-        request: request ? {
-          id: request.id, partyId: request.partyId, concertId: request.concertId,
-          artist: request.artist, hostName: request.hostName, section: request.section,
-          status: request.status, expiresAt: request.expiresAt, matchingRoundId: request.matchingRoundId,
+        optedIn: Boolean(optedIn),
+        state: active || proposal?.status === 'confirmed' ? 'accepted'
+          : proposal || legacy ? 'pending' : optedIn ? 'queued' : 'idle',
+        request: legacy ? {
+          id: legacy.id, partyId: legacy.partyId, concertId: legacy.concertId,
+          artist: legacy.artist, hostName: legacy.hostName, section: legacy.section,
+          status: legacy.status, expiresAt: legacy.expiresAt, matchingRoundId: legacy.matchingRoundId,
         } : null,
+        proposal,
       } };
     },
 
     matchManaged(concertId, userId, { batchKey } = {}) {
       if (!batchKey) throw communityError('invalid_idempotency_key', 400);
-      const key = `managed:${userId}:${batchKey}`;
       return db.transaction(() => {
         const current = this.managedState(concertId, userId);
-        // A retry must not re-enrol someone who has since withdrawn or left.
-        if (repos.rounds.findByBatch(concertId, key)
-          || ['pending', 'accepted'].includes(current.matching.state)) return current;
+        if (['pending', 'accepted'].includes(current.matching.state)) return current;
+        const seeker = repos.groups.seeker(userId, concertId);
+        if (!seeker || seeker.status !== 'open') throw communityError('open_seeker_request_required');
         repos.membership.ensureFree(userId, concertId, '');
-        const caller = repos.groups.seeker(userId, concertId);
-        if (!caller || caller.status !== 'open') throw communityError('open_seeker_request_required');
-        if (db.prepare(`SELECT 1 FROM group_join_requests j JOIN parties p ON p.id=j.party_id
-          WHERE j.user_id=? AND p.concert_id=? AND j.status='pending' AND j.expires_at>?`)
-          .get(userId, concertId, Date.now())) throw communityError('withdraw_current_join_request_first');
-        // This explicit action consents to saved answers, or empty defaults if none were saved.
-        if (!db.prepare('SELECT 1 FROM seeker_discovery_preferences WHERE user_id=? AND concert_id=?')
-          .get(userId, concertId)) repos.recommendations.savePersonal(userId, concertId, {});
-        db.prepare('UPDATE seeker_requests SET matching_opt_in=1 WHERE id=?').run(caller.id);
-
-        const seekers = repos.seekers.openForConcert(concertId).filter(s => {
-          if (!s.matching_opt_in) return false;
-          if (db.prepare(`SELECT 1 FROM group_join_requests j JOIN parties p ON p.id=j.party_id
-            WHERE j.user_id=? AND p.concert_id=? AND j.status='pending' AND j.expires_at>?`)
-            .get(s.user_id, concertId, Date.now())) return false;
-          try {
-            repos.membership.ensureFree(s.user_id, concertId, '');
-            return true;
-          } catch (error) {
-            if (['already_in_concert_group', 'active_matching_proposal_exists'].includes(error.message)) return false;
-            throw error;
-          }
-        });
-        const parties = repos.parties.openForConcert(concertId)
-          .filter(p => repos.membership.settings(p.id)?.published)
-          .map(p => ({ ...p, capacity: p.remaining_capacity }));
-        if (!seekers.length || !parties.length) return this.managedState(concertId, userId);
-
-        const start = performance.now();
-        const personal = new Map(seekers.map(s => [s.id, repos.recommendations.personal(s.user_id, concertId)]));
-        const groupProfiles = new Map(parties.map(p => [p.id, repos.membership.profile(p.id)]));
-        const aggregates = new Map(parties.map(p => [p.id, repos.recommendations.aggregateParty(p)]));
-        const profile = buildPreferences(seekers, parties, {
-          blocklist: repos.users.blocklist(),
-          declinedPairs: repos.proposals.declinedPairsForConcert(concertId),
-          preferredPairs: repos.groups.preferredPairs(concertId),
-          isEligible: (s, p) => repos.recommendations.feasible(s.user_id, p),
-          scorePair: (s, p) => {
-            const base = scorePair(s, aggregates.get(p.id));
-            const concepts = compareProfiles(personal.get(s.id), groupProfiles.get(p.id));
-            return {
-              ...base,
-              seekerToParty: 0.6 * base.seekerToParty + 0.4 * concepts.seekerScore,
-              partyToSeeker: 0.6 * base.partyToSeeker + 0.4 * concepts.groupScore,
-              discovery: concepts,
-            };
-          },
-        });
-        const preferencesAt = performance.now();
-        const { result, ledger } = solveInstance({ profile, seekers, parties, options: { trace: true } });
-        if (ledger.relaxations.length) throw communityError('unsupported_matching_constraints', 409);
-        assertStable(profile, result);
-        const solvedAt = performance.now();
-        // Queued users stay opted in, but no fabricated empty round is persisted.
-        if (!result.assignments.size) return this.managedState(concertId, userId);
-        const metrics = evaluate(profile, result);
-        const timings = {
-          preferencesMs: round2(preferencesAt - start), solveMs: round2(solvedAt - preferencesAt),
-          evaluateMs: round2(performance.now() - solvedAt), totalMs: round2(performance.now() - start),
-        };
-        const roundId = repos.rounds.save({
-          concertId, batchKey: key, profile, result, metrics, timings, ledger,
-          algorithm: ledger.solver, trace: result.trace,
-        });
-        const byId = new Map(seekers.map(s => [s.id, s]));
-        for (const [seekerId, partyId] of result.assignments) {
-          repos.recommendations.requestJoin(byId.get(seekerId).user_id, partyId, { matchingRoundId: roundId });
-        }
+        repos.recommendations.setJoiningMode(userId, concertId, 'algorithm');
         return this.managedState(concertId, userId);
       }).immediate();
     },
 
     leaveManaged(concertId, userId) {
       return db.transaction(() => {
-        const current = this.managedState(concertId, userId);
-        db.prepare('UPDATE seeker_requests SET matching_opt_in=0 WHERE user_id=? AND concert_id=?')
-          .run(userId, concertId);
-        if (current.matching.state === 'pending') {
-          repos.recommendations.respond(userId, current.matching.request.id, 'withdraw');
-        }
+        // Mode validation rejects active offers and memberships. Stopping the
+        // queue must never silently decline an offer or withdraw an application.
+        repos.recommendations.setJoiningMode(userId, concertId, 'direct');
         return this.managedState(concertId, userId);
       }).immediate();
     },
@@ -156,8 +89,7 @@ export function createMatchingService({ db, repos }) {
       }
 
       const t0 = performance.now();
-      const profile = buildPreferences(seekers, parties, { blocklist, declinedPairs,
-        preferredPairs: repos.groups.preferredPairs(concertId) });
+      const profile = buildProfile(repos, concertId, seekers, parties, blocklist, declinedPairs);
       const t1 = performance.now();
 
       // Classification, solver selection and verification all happen here. The
@@ -348,6 +280,13 @@ run(concertId, { trace = true, batchKey } = {}) {
       timings,
       ledger
     } = preview;
+
+    if (ledger?.relaxations?.length) {
+      throw communityError('unsupported_matching_constraints');
+    }
+    if (!result.assignments.size) {
+      return { empty: true, seekers: profile.stats.seekers, parties: profile.stats.parties };
+    }
 
     // --------------------------------------------------
     // STEP 6: SAVE HISTORICAL MATCHING RESULTS
@@ -563,9 +502,8 @@ run(concertId, { trace = true, batchKey } = {}) {
      */
     explain(concertId, seekerRequestId) {
       const { seekers, parties, blocklist } = loadInstance(repos, concertId);
-      const profile = buildPreferences(seekers, parties, { blocklist,
-        declinedPairs: repos.proposals.declinedPairsForConcert(concertId),
-        preferredPairs: repos.groups.preferredPairs(concertId) });
+      const profile = buildProfile(repos, concertId, seekers, parties, blocklist,
+        repos.proposals.declinedPairsForConcert(concertId));
       const result = galeShapley(profile, { trace: true });
 
       const list = profile.seekerPrefs.get(seekerRequestId) ?? [];
@@ -605,8 +543,9 @@ function loadInstance(repos, concertId) {
   repos.proposals.expire();
   repos.recommendations.expire();
 
-  // Managed groups have their own consented batch and host-approval lifecycle.
-  const parties = repos.parties.openForConcert(concertId).filter(p=>!repos.membership.settings(p.id));
+  // Direct memberships and all live offers have already consumed capacity.
+  // Published managed groups and legacy groups share this same GS subproblem.
+  const parties = repos.parties.openForConcert(concertId).filter(p => repos.recommendations.visible(p));
 
   const availableParties = parties.map(party => ({
 
@@ -619,13 +558,14 @@ function loadInstance(repos, concertId) {
   return {
 
     seekers: repos.seekers.openForConcert(concertId).filter(s=>{
+      if (s.joining_mode !== 'algorithm') return false;
       if (repos.recommendations.requests(s.user_id).some(r => r.userId === s.user_id
         && r.concertId === concertId && r.status === 'pending' && r.expiresAt > Date.now())) return false;
       try {
         repos.membership.ensureFree(s.user_id, concertId, '');
         return true;
       } catch (error) {
-        if (['already_in_concert_group', 'active_matching_proposal_exists'].includes(error.message)) return false;
+        if (['already_in_concert_group', 'active_matching_proposal_exists', 'active_seat_claim_exists'].includes(error.message)) return false;
         throw error;
       }
     }),
@@ -635,6 +575,17 @@ function loadInstance(repos, concertId) {
     blocklist: repos.users.blocklist()
 
   };
+}
+
+
+function buildProfile(repos, concertId, seekers, parties, blocklist, declinedPairs) {
+  return buildPreferences(seekers, parties, {
+    blocklist,
+    declinedPairs,
+    preferredPairs: repos.groups.preferredPairs(concertId),
+    isEligible: (seeker, party) => repos.recommendations.feasible(seeker.user_id, party),
+    scorePair: (seeker, party) => repos.recommendations.pairScore(seeker, party),
+  });
 }
 
 
