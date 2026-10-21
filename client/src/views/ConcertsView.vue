@@ -92,16 +92,6 @@ const matchingConcerts = computed(() => {
   });
 });
 const visibleConcerts = computed(() => showAll.value ? matchingConcerts.value : matchingConcerts.value.slice(0, PAGE_SIZE));
-const summary = computed(() => {
-  if (concertsLoading.value) return 'Loading concerts…';
-  if (activityLoading.value) return 'Loading group activity…';
-  if (concertError.value && !visibleConcerts.value.length) return 'Group finder activity unavailable';
-  if (activityError.value || visibleConcerts.value.some((row) => row.openSeekers === null)) {
-    return 'Group finder activity unavailable';
-  }
-  const count = visibleConcerts.value.reduce((total, row) => total + row.openSeekers, 0);
-  return count ? `${count} active group ${count === 1 ? 'finder' : 'finders'}` : 'No active group finders';
-});
 function clearFilters() {
   search.value = '';
   date.value = '';
@@ -151,7 +141,6 @@ function clearFilters() {
             <h2 id="upcoming-concerts">Upcoming concerts</h2>
             <p>Showing {{ visibleConcerts.length }} of {{ matchingConcerts.length }} {{ matchingConcerts.length === 1 ? 'concert' : 'concerts' }}{{ hasFilters ? ' matching your filters' : '' }}.</p>
           </div>
-          <p class="concert-results__activity" role="status">{{ summary }}</p>
         </header>
         <details v-if="matchingConcerts.length" class="concert-context">
           <summary>What do these counts mean?</summary>
@@ -199,7 +188,6 @@ function clearFilters() {
 .concert-results { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
 .concert-results h2 { font-size: var(--step-1); }
 .concert-results p { margin-top: var(--space-1); color: var(--text-300); font-size: var(--step--1); }
-.concert-results__activity { font-variant-numeric: tabular-nums; }
 .concert-context { max-width: 95ch; margin-block: var(--space-3) var(--space-5); color: var(--text-400); font-size: var(--step--1); }
 .concert-error { margin-bottom: var(--space-4); color: var(--rose-400); }
 .concert-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }

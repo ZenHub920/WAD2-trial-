@@ -110,8 +110,30 @@ function step(name, delta) {
   return Boolean(next);
 }
 
+/** Highest value a day or month segment can hold, given what is typed so far. */
+function maxOf(name) {
+  if (name === 'month') return 12;
+  const m = Number(month.value);
+  if (!m || m > 12) return 31;
+  // Without a year yet, allow 29 Feb; the full-date check catches non-leap years.
+  return new Date(Number(year.value) || 2000, m, 0).getDate();
+}
+
+/**
+ * Keeps day and month within range as they are typed: a first digit that cannot
+ * start a valid two-digit value ("4" for a month) is taken as "04", and a second
+ * digit that would overshoot ("13") or make zero ("00") is dropped.
+ */
+function clampSegment(name, digits) {
+  if (name === 'year' || !digits) return digits;
+  const max = maxOf(name);
+  if (digits.length === 1) return Number(digits) > Math.floor(max / 10) ? `0${digits}` : digits;
+  const n = Number(digits);
+  return n === 0 || n > max ? digits.slice(0, 1) : digits;
+}
+
 function onInput(name, event) {
-  const digits = event.target.value.replace(/\D/g, '').slice(0, sizeOf(name));
+  const digits = clampSegment(name, event.target.value.replace(/\D/g, '').slice(0, sizeOf(name)));
   values[name].value = digits;
   // The DOM may hold characters we just stripped; put it back in step.
   event.target.value = digits;
@@ -171,6 +193,14 @@ function onPaste(event) {
   focusSegment('year');
   publish();
 }
+
+/** Clicking the field itself (padding or a separator) starts at the first unfilled segment, day first. */
+function onFieldMousedown(event) {
+  if (event.target.tagName === 'INPUT') return;
+  event.preventDefault();
+  const next = SEGMENTS.find((s) => values[s.name].value.length < s.size) ?? SEGMENTS[0];
+  focusSegment(next.name, 'select');
+}
 </script>
 
 <template>
@@ -181,6 +211,7 @@ function onPaste(event) {
     :aria-labelledby="labelledBy"
     :aria-invalid="invalid || undefined"
     @paste="onPaste"
+    @mousedown="onFieldMousedown"
   >
     <template v-for="(segment, index) in SEGMENTS" :key="segment.name">
       <span v-if="index" class="datefield__sep" aria-hidden="true">/</span>
