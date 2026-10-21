@@ -5,6 +5,7 @@ import {
   validateAnswers,
   individualProfile,
   compareProfiles,
+  withoutRetired,
 } from "../services/discoveryPreferences.js";
 import { checkFeasibility, scorePair } from "../matching/compatibility.js";
 export function createRecommendationRepo(db, repos) {
@@ -101,14 +102,14 @@ export function createRecommendationRepo(db, repos) {
     feasible,
     expire: db.transaction(() => expireJoinRequests(db)).immediate,
     answers(user, concert) {
-      return JSON.parse(
+      return withoutRetired(JSON.parse(
         db
           .prepare(
             "SELECT answers_json FROM seeker_discovery_preferences WHERE user_id=? AND concert_id=?",
           )
           .get(user, concert)?.answers_json ??
           '{"about":[],"wants":[],"avoid":[]}',
-      );
+      ));
     },
     savePersonal: db.transaction((user, concert, input) => {
       if (!repos.concerts.findById(concert))

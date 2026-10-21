@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS users (
   age_band               TEXT    NOT NULL CHECK (age_band IN ('18-20','21-24','25-29','30-34','35+')),
   home_region            TEXT    NOT NULL,
   gender                 TEXT    NOT NULL,
-  companion_gender_pref  TEXT    NOT NULL DEFAULT 'any' CHECK (companion_gender_pref IN ('any','same_only')),
+  companion_gender_pref  TEXT    NOT NULL DEFAULT 'any' CHECK (companion_gender_pref IN ('any','male','female')),
   languages_json         TEXT    NOT NULL DEFAULT '["en"]',
   vibe_json              TEXT    NOT NULL,
   reliability            REAL    NOT NULL DEFAULT 0.75 CHECK (reliability BETWEEN 0 AND 1),

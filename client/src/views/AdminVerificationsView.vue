@@ -125,10 +125,10 @@ onMounted(load);
 
           <div class="item__actions">
             <LoadingSpinner v-if="working === listing.id" />
-            <button class="btn btn--ghost" type="button" :disabled="working === listing.id" @click="decide(listing, 'reject')">
+            <button class="btn btn--danger-ghost" type="button" :disabled="working === listing.id" @click="decide(listing, 'reject')">
               Reject
             </button>
-            <button class="btn btn--primary" type="button" :disabled="working === listing.id" @click="decide(listing, 'approve')">
+            <button class="btn btn--success" type="button" :disabled="working === listing.id" @click="decide(listing, 'approve')">
               Approve
             </button>
           </div>

@@ -62,7 +62,7 @@ Every respondent answers three separate questions:
 - **Wants:** what I enjoy in companions.
 - **Avoid:** what I prefer to avoid; these are soft preferences.
 
-Standard options include pre-show meetups, food before/after the concert, merchandise, shared transport, public transport, early queueing, arriving at doors, singalong, quiet listening, dancing, photography, group photos, lighter phone use, earplugs, and water/rest breaks.
+Standard options include pre-show meetups, food before/after the concert, merchandise, shared transport, public transport, early queueing, arriving at doors, singalong, quiet listening, dancing, photography, group photos, lighter phone use, and earplugs.
 
 These are personal preferences. Selecting photography is not permission to ignore an event's photography rules. Safety-related options are optional coordination choices, not health advice or admission requirements.
 

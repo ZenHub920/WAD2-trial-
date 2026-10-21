@@ -17,6 +17,7 @@ import { migrateNotifications } from './notificationRepository.js';
 import { migrateMeetups } from './meetupRepository.js';
 import { migrateFeedback } from './feedbackRepository.js';
 import { migrateSeating } from './seatingMigrations.js';
+import { migrateGenderPref } from './genderPrefMigration.js';
 const here = dirname(fileURLToPath(import.meta.url));
 
 let db = null;
@@ -36,6 +37,7 @@ export function getDb() {
   migrate(db);
   migrateGroups(db);
   migrateSeating(db);
+  migrateGenderPref(db);
   migrateLegacyTickets(db);
   migrateCommunity(db);
   migrateNotifications(db);

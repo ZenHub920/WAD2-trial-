@@ -1,7 +1,7 @@
 const AGE_BANDS = ['18-20', '21-24', '25-29', '30-34', '35+'];
 const REGIONS = ['north', 'north_east', 'east', 'west', 'central'];
 const GENDERS = ['f', 'm', 'nb', 'unspecified'];
-const PREFERENCES = ['any', 'same_only'];
+const PREFERENCES = ['any', 'male', 'female'];
 const LANGUAGES = ['en', 'zh', 'ms', 'ta'];
 const VIBE_AXES = ['singalong', 'photography', 'dancing', 'quiet', 'queue_early', 'merch'];
 const FIELDS = ['displayName', 'ageBand', 'homeRegion', 'gender',
