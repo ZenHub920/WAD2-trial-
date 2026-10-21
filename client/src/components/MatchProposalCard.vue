@@ -60,8 +60,8 @@ async function explain() {
       {{ proposal.role === 'host' ? 'The companion must reply' : 'Reply' }} before {{ new Date(proposal.expiresAt).toLocaleString() }}. This offer is for a group place, not a ticket.
     </p>
     <div v-if="proposal.status === 'proposed' && proposal.role !== 'host'" class="actions">
-      <button class="btn btn--primary" :disabled="busy" @click="respond('accept')"><LoadingSpinner v-if="busy && responding === 'accept'" />Accept group place</button>
-      <button class="btn btn--ghost" :disabled="busy" @click="respond('decline')"><LoadingSpinner v-if="busy && responding === 'decline'" />Decline proposal</button>
+      <button class="btn btn--success" :disabled="busy" @click="respond('accept')"><LoadingSpinner v-if="busy && responding === 'accept'" />Accept group place</button>
+      <button class="btn btn--danger-ghost" :disabled="busy" @click="respond('decline')"><LoadingSpinner v-if="busy && responding === 'decline'" />Decline proposal</button>
     </div>
     <FeedbackForm
       v-if="proposal.status === 'confirmed' && new Date(proposal.eventDate + 'T23:59:59+08:00') < new Date()"

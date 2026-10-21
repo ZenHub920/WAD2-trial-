@@ -207,7 +207,7 @@ async function getWeather() {
           (board.creator_id === currentUser?.id ||
             board.requiredApprovers.includes(currentUser?.id))
         "
-        class="btn btn--ghost"
+        class="btn btn--danger"
         :disabled="busy"
         @click="act(() => api.cancelMeetup(id, board.version))"
       >
@@ -374,7 +374,7 @@ async function getWeather() {
             board.status === 'proposed' &&
             board.requiredApprovers.includes(currentUser?.id)
           "
-          class="btn btn--primary"
+          class="btn btn--success"
           :disabled="busy"
           @click="act(() => api.approveMeetup(id, board.version))"
         >

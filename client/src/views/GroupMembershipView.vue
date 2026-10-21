@@ -104,7 +104,7 @@ async function invite() {
       <p>
         Join your friend's group using this invitation.
       </p>
-      <button class="btn btn--primary" :disabled="busy" @click="accept">
+      <button class="btn btn--success" :disabled="busy" @click="accept">
         Accept invitation
       </button>
     </section>
@@ -183,7 +183,7 @@ async function invite() {
         </button>
         <p>All expected friends must join and every member must save their preferences before publishing.</p>
         <button
-          class="btn btn--ghost"
+          class="btn btn--danger"
           :disabled="busy"
           @click="act(() => api.cancelGroup(id))"
         >
@@ -192,7 +192,7 @@ async function invite() {
       </section>
       <button
         v-else
-        class="btn btn--ghost"
+        class="btn btn--danger-ghost"
         :disabled="busy"
         @click="act(() => api.leaveGroup(id))"
       >

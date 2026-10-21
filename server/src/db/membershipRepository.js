@@ -2,6 +2,7 @@ import { randomBytes, createHash, randomUUID } from "node:crypto";
 import {
   validateAnswers,
   aggregateAnswers,
+  withoutRetired,
 } from "../services/discoveryPreferences.js";
 import { reservedPlacesSql, expireJoinRequests } from "./capacity.js";
 export const communityError = (message, status = 409) =>
@@ -177,13 +178,13 @@ export function createMembershipRepo(db, repos) {
         settings: settings(id),
         members,
         profile: profile(id),
-        myAnswers: JSON.parse(
+        myAnswers: withoutRetired(JSON.parse(
           db
             .prepare(
               "SELECT answers_json FROM group_member_preferences WHERE party_id=? AND user_id=?",
             )
             .get(id, user)?.answers_json ?? "{}",
-        ),
+        )),
       };
     },
     publish: db.transaction((user, id, input = {}) => {

@@ -466,7 +466,7 @@ const forecastFirstChoice = useCountUp(
             <button type="submit" class="btn btn--primary" :disabled="participationBusy">
               {{ participationBusy ? 'Working…' : participation ? 'Save preferences' : 'Join companion finder' }}
             </button>
-            <button v-if="participation" type="button" class="btn btn--ghost" :disabled="participationBusy" @click="leaveParticipation">Leave companion finder</button>
+            <button v-if="participation" type="button" class="btn btn--danger-ghost" :disabled="participationBusy" @click="leaveParticipation">Leave companion finder</button>
           </div>
         </form>
       </section>

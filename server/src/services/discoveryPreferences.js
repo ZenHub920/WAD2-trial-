@@ -62,11 +62,6 @@ export const CONCEPTS = [
     aliases: ["earplugs", "hearing protection", "protect hearing"],
   },
   {
-    id: "hydration_breaks",
-    label: "Take water and rest breaks",
-    aliases: ["water breaks", "hydration breaks", "rest breaks"],
-  },
-  {
     id: "pre_food",
     label: "Food before the concert",
     aliases: ["dinner beforehand", "pre show dinner", "eat before the show"],
@@ -78,10 +73,23 @@ export const CONCEPTS = [
   },
   {
     id: "group_photos",
-    label: "Take group photos before or after",
-    aliases: ["group photos", "group pictures"],
+    label: "Group photos",
+    aliases: ["take group photos", "group pictures"],
   },
 ];
+// Options that were offered once and later removed. Answers saved before the
+// removal still name them, so they are dropped on read and on save instead of
+// failing validation or showing up as a raw key.
+const RETIRED = new Set(["hydration_breaks"]);
+export function withoutRetired(answers) {
+  const output = { ...answers };
+  for (const intent of ["about", "wants", "avoid"])
+    if (Array.isArray(output[intent]))
+      output[intent] = output[intent].filter(
+        (item) => !RETIRED.has(item?.key ?? item?.conceptId),
+      );
+  return output;
+}
 export const normalize = (value) =>
   value
     .normalize("NFKC")
@@ -133,6 +141,7 @@ export function validateAnswers(input) {
           status: 400,
         });
       const explicit = typeof entry === "object" ? entry.conceptId : null;
+      if (explicit && RETIRED.has(explicit)) continue;
       const keepCustom = typeof entry === "object" && entry.custom === true;
       if (keepCustom && explicit)
         throw Object.assign(new Error("choose_concept_or_custom"), {
@@ -164,7 +173,7 @@ export function aggregateAnswers(answers) {
     avoid: {},
     respondents: answers.length,
   };
-  for (const a of answers)
+  for (const a of answers.map(withoutRetired))
     for (const intent of ["about", "wants", "avoid"])
       for (const item of a[intent] ?? []) {
         profile[intent][item.key] =

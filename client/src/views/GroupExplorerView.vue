@@ -185,7 +185,7 @@ async function preference(id, remove) {
           <p class="group-muted">Response deadline: {{ new Date(matching.request.expiresAt).toLocaleString() }}</p>
           <div class="group-actions">
             <button type="button" class="btn btn--ghost" :disabled="busy" @click="load">Refresh status</button>
-            <button type="button" class="btn btn--ghost" :disabled="busy" @click="leaveMatching"><LoadingSpinner v-if="matchingAction === 'leave'" />Withdraw matched request</button>
+            <button type="button" class="btn btn--danger-ghost" :disabled="busy" @click="leaveMatching"><LoadingSpinner v-if="matchingAction === 'leave'" />Withdraw matched request</button>
           </div>
         </template>
         <template v-else-if="matching.state === 'accepted'">
@@ -209,7 +209,7 @@ async function preference(id, remove) {
             <button type="button" class="btn btn--primary" :disabled="busy || pendingManualRequest" @click="findMyGroup">
               <LoadingSpinner v-if="matchingAction === 'find'" />{{ matchingAction === 'find' ? 'Matching…' : matching.optedIn ? 'Retry matching' : 'Find my group' }}
             </button>
-            <button v-if="matching.optedIn" type="button" class="btn btn--ghost" :disabled="busy" @click="leaveMatching"><LoadingSpinner v-if="matchingAction === 'leave'" />Leave matching pool</button>
+            <button v-if="matching.optedIn" type="button" class="btn btn--danger-ghost" :disabled="busy" @click="leaveMatching"><LoadingSpinner v-if="matchingAction === 'leave'" />Leave matching pool</button>
           </div>
           <p class="group-muted automatic-matching__consent">Finding a group joins the matching pool and allows a request to be sent to the group selected for you. Only host approval confirms your place.</p>
         </template>
@@ -220,15 +220,15 @@ async function preference(id, remove) {
         <PreferenceEditor :key="concertId" :initial="answers" :busy="busy" :saving="savingPreferences" @save="saveAnswers"/>
       </details>
       <p>{{ visible.length }} {{ visible.length === 1 ? 'group' : 'groups' }} on this page. <span v-if="!seeker">Open a group-finding request to request a group place.</span></p>
-      <div class="group-grid"><GroupListingCard v-for="g in visible" :key="g.id" :group="g"><button class="btn btn--ghost" :disabled="busy || !canPrefer || pendingRequest" @click="join(g.id)">{{ joins.some(j=>j.partyId===g.id&&j.status==='pending') ? 'Awaiting host approval' : 'Choose this group manually' }}</button><details v-if="g.automaticPlacementAvailable"><summary>Automatic matching preference</summary><button class="btn btn--ghost" :disabled="busy || (!g.preferred && (!canPrefer || pendingRequest))" @click="preference(g.id,g.preferred)">{{g.preferred?'Remove preference':'Prefer for automatic matching'}}</button></details></GroupListingCard></div>
+      <div class="group-grid"><GroupListingCard v-for="g in visible" :key="g.id" :group="g"><button class="btn btn--ghost" :disabled="busy || !canPrefer || pendingRequest" @click="join(g.id)">{{ joins.some(j=>j.partyId===g.id&&j.status==='pending') ? 'Awaiting host approval' : 'Choose this group manually' }}</button><details v-if="g.automaticPlacementAvailable"><summary>Automatic matching preference</summary><button class="btn" :class="g.preferred ? 'btn--danger-ghost' : 'btn--ghost'" :disabled="busy || (!g.preferred && (!canPrefer || pendingRequest))" @click="preference(g.id,g.preferred)">{{g.preferred?'Remove preference':'Prefer for automatic matching'}}</button></details></GroupListingCard></div>
       <nav class="group-actions group-pagination" aria-label="Group results pages"><button class="btn btn--ghost" :disabled="loading||busy||offset===0" @click="offset=Math.max(0,offset-20);load()">Previous</button><span>{{total}} results</span><button class="btn btn--ghost" :disabled="loading||busy||offset+20>=total" @click="offset+=20;load()">Next</button></nav>
       <section v-if="joins.length" class="card group-panel">
         <h2>Your join requests</h2>
-        <article v-for="j in joins.filter(request => ['pending', 'accepted'].includes(request.status))" :key="j.id" class="group-actions"><span>{{j.artist}} — {{joinStatus[j.status] ?? 'Request updated'}}</span><button v-if="j.status==='pending'" class="btn btn--ghost" :disabled="busy" @click="withdrawJoin(j.id)">Withdraw request</button><RouterLink v-if="j.status==='accepted'" :to="`/groups/${j.partyId}/members`">Manage your group</RouterLink></article>
+        <article v-for="j in joins.filter(request => ['pending', 'accepted'].includes(request.status))" :key="j.id" class="group-actions"><span>{{j.artist}} — {{joinStatus[j.status] ?? 'Request updated'}}</span><button v-if="j.status==='pending'" class="btn btn--danger-ghost" :disabled="busy" @click="withdrawJoin(j.id)">Withdraw request</button><RouterLink v-if="j.status==='accepted'" :to="`/groups/${j.partyId}/members`">Manage your group</RouterLink></article>
         <details v-if="joins.some(request => !['pending', 'accepted'].includes(request.status))"><summary>Past requests</summary><p v-for="j in joins.filter(request => !['pending', 'accepted'].includes(request.status))" :key="j.id">{{ j.artist }} — {{ joinStatus[j.status] ?? 'Request updated' }}</p></details>
       </section>
       <p v-if="!visible.length && !pendingRequest && matching.state !== 'accepted'" class="group-muted">No eligible groups match these filters. Try another concert or adjust your filters.</p>
-      <details v-if="saved.length" class="card group-panel"><summary>Saved matching-round preferences ({{ saved.length }})</summary><div v-for="p in saved" :key="p.partyId" class="group-actions"><span>{{ p.hostName }}, {{ LABELS.section[p.section] }} — {{ p.status === 'open' ? 'Group open' : p.status === 'cancelled' ? 'Group cancelled' : 'Group unavailable for new matches' }}</span><button class="btn btn--ghost" :disabled="busy" @click="preference(p.partyId, true)">Remove preference</button></div></details>
+      <details v-if="saved.length" class="card group-panel"><summary>Saved matching-round preferences ({{ saved.length }})</summary><div v-for="p in saved" :key="p.partyId" class="group-actions"><span>{{ p.hostName }}, {{ LABELS.section[p.section] }} — {{ p.status === 'open' ? 'Group open' : p.status === 'cancelled' ? 'Group cancelled' : 'Group unavailable for new matches' }}</span><button class="btn btn--danger-ghost" :disabled="busy" @click="preference(p.partyId, true)">Remove preference</button></div></details>
     </template>
     <p v-else-if="!concertsLoading && !concerts.length">No concerts are available yet.</p>
   </div>

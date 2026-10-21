@@ -228,7 +228,7 @@ async function host() {
               <p class="group-muted">{{ g.eventDate }} · {{ sectionName(g.section) }}</p>
               <p>{{ g.memberCount }} {{ g.memberCount === 1 ? 'member' : 'members' }} · {{ g.remainingCapacity }} places remaining</p>
               <p class="group-muted">{{ g.settings?.published ? (g.settings.connect_open ? 'Open to meeting other groups.' : 'Group connections are off. Change this in Manage group.') : 'Invite friends, collect preferences, then publish from Manage group.' }}</p>
-              <div class="group-actions owned-card__actions">
+              <div class="owned-card__actions">
                 <RouterLink :to="`/groups/${encodeURIComponent(g.id)}/members`" class="btn btn--primary">Manage group</RouterLink>
                 <RouterLink :to="{ path: '/meetups', query: { partyId: g.id } }" class="btn btn--ghost">Plan meetup</RouterLink>
                 <RouterLink :to="viewLink('connections', g)" class="btn btn--ghost">Connect groups</RouterLink>
@@ -246,7 +246,7 @@ async function host() {
             <article v-for="g in joinedGroups" :key="g.id" class="card group-panel">
               <h3>{{ g.artist }}</h3>
               <p class="group-muted">{{ membershipSource[g.source] ?? 'Active group member' }}</p>
-              <div class="group-actions">
+              <div class="owned-card__actions">
                 <RouterLink :to="`/groups/${encodeURIComponent(g.id)}/members`" class="btn btn--primary">View group</RouterLink>
                 <RouterLink :to="{ path: '/meetups', query: { partyId: g.id } }" class="btn btn--ghost">Plan meetup</RouterLink>
               </div>
@@ -262,7 +262,7 @@ async function host() {
             <p v-if="j.matchingRoundId" class="group-muted">The algorithm selected your group from the matching pool. A place is reserved until you respond or the request expires.</p>
             <p v-if="j.preferences">Enjoys: {{ j.preferences.about.map(p => p.text).join(', ') || 'No preferences specified' }}. Companion preferences: {{ j.preferences.wants.map(p => p.text).join(', ') || 'Flexible' }}.</p>
             <p v-if="j.seeker">{{ j.seeker.ageBand }}, {{ j.seeker.languages.join(', ') }}</p>
-            <div class="group-actions"><button class="btn btn--primary" :disabled="busy" @click="act(() => api.respondGroupJoin(j.id, 'accept'))">Approve group place</button><button class="btn btn--ghost" :disabled="busy" @click="act(() => api.respondGroupJoin(j.id, 'reject'))">Decline request</button></div>
+            <div class="group-actions"><button class="btn btn--success" :disabled="busy" @click="act(() => api.respondGroupJoin(j.id, 'accept'))">Approve group place</button><button class="btn btn--danger-ghost" :disabled="busy" @click="act(() => api.respondGroupJoin(j.id, 'reject'))">Decline request</button></div>
           </article>
           <details v-if="historicalJoins.length" class="history"><summary>Past join requests ({{ historicalJoins.length }})</summary><div class="history-list">
             <article v-for="j in historicalJoins" :key="j.id" class="join-request"><h3>{{ j.seekerName }}</h3><p>{{ j.artist }} — {{ joinStatus[j.status] ?? 'Request updated' }}</p><p v-if="j.preferences">Enjoys: {{ j.preferences.about.map(p => p.text).join(', ') || 'No preferences specified' }}. Companion preferences: {{ j.preferences.wants.map(p => p.text).join(', ') || 'Flexible' }}.</p><p v-if="j.seeker">{{ j.seeker.ageBand }}, {{ j.seeker.languages.join(', ') }}</p></article>
@@ -293,11 +293,11 @@ async function host() {
         <h2>{{ mode === 'dashboard' ? 'Group connections and invitations' : 'This group’s connections' }}</h2>
         <div v-if="incoming.length" class="invites">
           <h3 class="invites__title">Received <span class="invites__count tabular">{{ incoming.length }}</span></h3>
-          <article v-for="c in incoming" :key="c.id" class="invite"><p class="invite__who">{{ describe(c) }}</p><div class="invite__actions"><button type="button" class="btn btn--primary" :disabled="busy" :aria-label="`Accept the invitation from ${otherParty(c).hostName}`" @click="act(() => api.respondToGroup(c.id, 'accept'))">Accept</button><button type="button" class="btn btn--ghost" :disabled="busy" :aria-label="`Decline the invitation from ${otherParty(c).hostName}`" @click="confirming = { kind: 'decline', connection: c }">Decline</button></div></article>
+          <article v-for="c in incoming" :key="c.id" class="invite"><p class="invite__who">{{ describe(c) }}</p><div class="invite__actions"><button type="button" class="btn btn--success" :disabled="busy" :aria-label="`Accept the invitation from ${otherParty(c).hostName}`" @click="act(() => api.respondToGroup(c.id, 'accept'))">Accept</button><button type="button" class="btn btn--danger-ghost" :disabled="busy" :aria-label="`Decline the invitation from ${otherParty(c).hostName}`" @click="confirming = { kind: 'decline', connection: c }">Decline</button></div></article>
         </div>
         <div v-if="outgoing.length" class="invites">
           <h3 class="invites__title">Sent <span class="invites__count tabular">{{ outgoing.length }}</span></h3>
-          <article v-for="c in outgoing" :key="c.id" class="invite"><p class="invite__who">{{ describe(c) }}</p><button type="button" class="btn btn--ghost" :disabled="busy" :aria-label="`Cancel your invitation to ${otherParty(c).hostName}`" @click="confirming = { kind: 'cancel', connection: c }">Withdraw pending invitation</button></article>
+          <article v-for="c in outgoing" :key="c.id" class="invite"><p class="invite__who">{{ describe(c) }}</p><button type="button" class="btn btn--danger-ghost" :disabled="busy" :aria-label="`Cancel your invitation to ${otherParty(c).hostName}`" @click="confirming = { kind: 'cancel', connection: c }">Withdraw pending invitation</button></article>
         </div>
         <div class="connected">
           <h3 class="invites__title">Connected</h3>
@@ -320,7 +320,11 @@ async function host() {
 .owned-card { grid-template-rows: auto auto auto 1fr auto; }
 .owned-card__top { align-items: flex-start; }
 .owned-card__top h3, .owned-card__top h2 { flex: 1 1 10rem; }
-.owned-card__actions { align-self: end; }
+/* Main action across the full width, secondary actions in equal halves below,
+   so the buttons line up however long their labels are. */
+.owned-card__actions { align-self: end; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+.owned-card__actions .btn { width: 100%; justify-content: center; text-align: center; padding-inline: var(--space-3); }
+.owned-card__actions .btn--primary { grid-column: 1 / -1; }
 .group-state { display: inline-flex; padding: var(--space-1) var(--space-2); border: var(--border-soft); border-radius: var(--radius-pill); color: var(--text-300); font-size: var(--step--2); font-weight: 600; white-space: nowrap; }
 .group-state--published { color: var(--mint-400); }
 .create-form { max-width: 54rem; width: 100%; box-sizing: border-box; }
@@ -351,6 +355,5 @@ async function host() {
   .invite { align-items: flex-start; flex-direction: column; }
   .invite__actions { width: 100%; }
   .invite__actions .btn { flex: 1; }
-  .owned-card__actions .btn { flex: 1 1 auto; justify-content: center; }
 }
 </style>
