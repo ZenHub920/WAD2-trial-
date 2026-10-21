@@ -4,6 +4,7 @@ import { ref, computed, onUnmounted, watch } from 'vue';
 import { api, LABELS } from '../api.js';
 import { currentUser, sessionReady } from '../auth.js';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
+import BackLink from '../components/BackLink.vue';
 
 const props = defineProps({ id: { type: String, required: true } });
 
@@ -193,7 +194,7 @@ const sortedParties = computed(() =>
 
 <template>
   <div class="container container--wide section">
-    <RouterLink :to="`/concerts/${id}`" class="back">← Back to concert</RouterLink>
+    <BackLink :fallback="`/concerts/${id}`" fallback-label="Back to concert" />
 
     <header class="head">
       <div>
@@ -387,15 +388,6 @@ const sortedParties = computed(() =>
 </template>
 
 <style scoped>
-.back {
-  display: inline-block;
-  margin-bottom: var(--space-5);
-  color: var(--text-400);
-  text-decoration: none;
-  font-size: var(--step--1);
-}
-
-.back:hover { color: var(--accent-400); }
 
 .head {
   margin-bottom: var(--space-6);

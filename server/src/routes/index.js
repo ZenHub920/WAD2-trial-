@@ -16,6 +16,7 @@ import { createOrderController } from '../controllers/orderController.js';
 import { createChatController } from '../controllers/chatController.js';
 import { createAdminController } from '../controllers/adminController.js';
 import { createAvatarController } from '../controllers/avatarController.js';
+import { createGroupIdentityController } from '../controllers/groupIdentityController.js';
 import { openStream } from '../services/realtime.js';
 
 export function createRoutes({
@@ -35,6 +36,7 @@ export function createRoutes({
   const kaki = createKakiController(repos);
   const kakiChat = createKakiChatController(repos, realtime);
   const avatar = avatars ? createAvatarController(repos, avatars) : null;
+  const groupIdentity = createGroupIdentityController(repos, avatars);
   const profile = createProfileController(repos);
   const participation = createParticipationController(repos);
   const orders = createOrderController(repos);
@@ -131,7 +133,10 @@ export function createRoutes({
   if (avatar) {
     router.put('/me/avatar', requireUser, avatar.set);
     router.delete('/me/avatar', requireUser, avatar.clear);
+    router.put('/groups/:id/image', requireUser, groupIdentity.setImage);
+    router.delete('/groups/:id/image', requireUser, groupIdentity.clearImage);
   }
+  router.put('/groups/:id/name', requireUser, groupIdentity.setName);
 
   // Safety. Blocking is mutual in effect — it closes the thread for both
   // sides — but only the blocker can lift it.

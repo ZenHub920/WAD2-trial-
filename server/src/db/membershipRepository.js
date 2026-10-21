@@ -5,6 +5,7 @@ import {
   withoutRetired,
 } from "../services/discoveryPreferences.js";
 import { reservedPlacesSql, availableCapacitySql, expireJoinRequests } from "./capacity.js";
+import { groupImageUrl } from "../controllers/groupIdentityController.js";
 export const communityError = (message, status = 409) =>
   Object.assign(new Error(message), { status });
 const hash = (token) => createHash("sha256").update(token).digest("hex");
@@ -48,6 +49,18 @@ export function createMembershipRepo(db, repos) {
       .get(user, concert, id, Date.now());
     if (pending) throw communityError("active_matching_proposal_exists");
   };
+  const userAnswersJson = (user) =>
+    db.prepare("SELECT answers_json FROM user_group_preferences WHERE user_id=?").get(user)?.answers_json ?? null;
+  /** Copies the user's own preferences into one group; true when they changed. */
+  const syncGroupAnswers = (partyId, user, json) => {
+    const current = db.prepare("SELECT answers_json FROM group_member_preferences WHERE party_id=? AND user_id=?").get(partyId, user)?.answers_json;
+    if (current === json) return false;
+    db.prepare(
+      `INSERT INTO group_member_preferences(party_id,user_id,answers_json) VALUES(?,?,?)
+      ON CONFLICT(party_id,user_id) DO UPDATE SET answers_json=excluded.answers_json,updated_at=datetime('now')`,
+    ).run(partyId, user, json);
+    return true;
+  };
   const attach = (p, user, source) => {
     ensureFree(user, p.concert_id, p.id);
     db.prepare(
@@ -55,6 +68,9 @@ export function createMembershipRepo(db, repos) {
       ON CONFLICT(party_id,user_id) DO UPDATE SET status='active',source=excluded.source,
       joined_at=CASE WHEN group_memberships.status='active' THEN group_memberships.joined_at ELSE datetime('now') END,left_at=NULL`,
     ).run(p.id, user, p.concert_id, source);
+    // Members answer once, on their account; every group they join uses it.
+    const own = userAnswersJson(user);
+    if (own) syncGroupAnswers(p.id, user, own);
     db.prepare(`UPDATE group_join_requests SET status='superseded',responded_at=datetime('now')
       WHERE user_id=? AND status='pending' AND party_id IN(SELECT id FROM parties WHERE concert_id=?)`)
       .run(user, p.concert_id);
@@ -82,15 +98,42 @@ export function createMembershipRepo(db, repos) {
     attach,
     settings,
     profile,
+    /** The user's own group preferences, or null before they have saved any. */
+    preferences(user) {
+      const json = userAnswersJson(user);
+      const answers = json ? withoutRetired(JSON.parse(json)) : null;
+      return answers && ["about", "wants", "avoid"].some((k) => answers[k]?.length) ? answers : null;
+    },
+    savePreferences: db.transaction((user, input) => {
+      const answers = validateAnswers(input);
+      if (!["about", "wants", "avoid"].some((k) => answers[k].length))
+        throw communityError("choose_at_least_one_preference", 400);
+      const json = JSON.stringify(answers);
+      const previous = userAnswersJson(user);
+      db.prepare(
+        `INSERT INTO user_group_preferences(user_id,answers_json) VALUES(?,?)
+        ON CONFLICT(user_id) DO UPDATE SET answers_json=excluded.answers_json,updated_at=datetime('now')`,
+      ).run(user, json);
+      if (previous !== json) db.prepare(`UPDATE group_join_requests SET group_version=NULL
+        WHERE user_id=? AND status='pending' AND matching_round_id IS NULL`).run(user);
+      const groups = db.prepare("SELECT party_id FROM group_memberships WHERE user_id=? AND status='active'").all(user);
+      for (const { party_id } of groups)
+        if (syncGroupAnswers(party_id, user, json))
+          db.prepare("UPDATE group_settings SET version=version+1 WHERE party_id=?").run(party_id);
+      const concerts = db.prepare("SELECT concert_id FROM seeker_discovery_preferences WHERE user_id=?").all(user);
+      for (const { concert_id } of concerts) repos.recommendations.storePersonal(user, concert_id, json);
+      return answers;
+    }).immediate,
     activeGroups(user) {
       return db
         .prepare(
-          `SELECT p.id,p.concert_id AS concertId,c.artist,m.source FROM group_memberships m
+          `SELECT p.id,p.concert_id AS concertId,c.artist,c.event_date AS eventDate,p.name,p.image_path,m.source FROM group_memberships m
         JOIN parties p ON p.id=m.party_id JOIN concerts c ON c.id=p.concert_id
         WHERE m.user_id=? AND m.status='active' AND p.status<>'cancelled'
           AND NOT EXISTS(SELECT 1 FROM tickets WHERE source_party_id=p.id) ORDER BY c.event_date,p.id`,
         )
-        .all(user);
+        .all(user)
+        .map(({ image_path, ...g }) => ({ ...g, imageUrl: groupImageUrl(image_path) }));
     },
     configure: db.transaction((user, id, input = {}) => {
       expireJoinRequests(db);
@@ -175,9 +218,11 @@ export function createMembershipRepo(db, repos) {
         partyId: id,
         hostId: p.host_user_id,
         concertId: p.concert_id,
-        artist: repos.concerts.findById(p.concert_id)?.artist,
+        artist: repos.concerts.findById(p.concert_id)?.artist ?? null,
         status: p.status,
         remainingCapacity: p.remaining_capacity,
+        name: p.name,
+        imageUrl: groupImageUrl(p.image_path),
         strangerPlaces: p.capacity,
         settings: settings(id),
         members,

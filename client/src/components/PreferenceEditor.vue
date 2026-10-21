@@ -6,6 +6,9 @@ const props = defineProps({
   initial: { type: Object, default: () => ({}) },
   busy: Boolean,
   saving: Boolean,
+  /** Refuse to save with nothing chosen in any section. */
+  requireOne: Boolean,
+  submitLabel: { type: String, default: "Save preferences" },
 });
 const emit = defineEmits(["save"]);
 const concepts = ref([]),
@@ -112,6 +115,11 @@ function save() {
       "You typed a preference but didn't add it. Press Add, or clear the box, before saving.";
     return;
   }
+  if (props.requireOne && !["about", "wants", "avoid"].some(answerCount)) {
+    error.value = "Choose at least one preference, or add your own, before continuing.";
+    return;
+  }
+  error.value = "";
   const answers = {};
   for (const k of ["about", "wants", "avoid"])
     answers[k] = [
@@ -191,7 +199,7 @@ function save() {
     <footer class="preference-editor__footer">
       <p class="group-muted">Save to apply changes from all three sections.</p>
       <button class="btn btn--primary" :disabled="busy || !concepts.length">
-        <LoadingSpinner v-if="saving" />{{ saving ? 'Saving…' : 'Save preferences' }}
+        <LoadingSpinner v-if="saving" />{{ saving ? 'Saving…' : submitLabel }}
       </button>
     </footer>
   </form>
@@ -210,15 +218,24 @@ function save() {
 .preference-editor__choice-head span { font-size: var(--step--1); }
 .preference-editor__choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: var(--space-2); align-content: start; }
 .preference-editor__choice { display: flex; gap: var(--space-2); align-items: center; text-align: left; min-height: 44px; padding: var(--space-2) var(--space-3); border: var(--border-soft); border-radius: var(--radius-sm); background: var(--ink-800); color: var(--text-200); cursor: pointer; font: inherit; font-size: var(--step--1); }
-.preference-editor__choice[aria-pressed='true'] { border-color: var(--accent-400); color: var(--accent-400); background: var(--ink-700); }
-.preference-editor__choice > span { width: 16px; flex: none; }
+/* Selected options are filled orchid: clearly "on" at a glance, and distinct
+   from the purple used for the section tabs and buttons around them. */
+.preference-editor__choice { transition: background-color var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast); }
+.preference-editor__choice:hover:not(:disabled) { border-color: var(--mint-400); }
+.preference-editor__choice[aria-pressed='true'] { border-color: var(--mint-500); background: var(--mint-500); color: #fff; font-weight: 600; box-shadow: 0 2px 8px color-mix(in oklab, var(--mint-500) 35%, transparent); }
+.preference-editor__choice[aria-pressed='true']:hover:not(:disabled) { background: var(--mint-400); border-color: var(--mint-400); }
+.preference-editor__choice > span { display: inline-grid; place-items: center; width: 20px; height: 20px; flex: none; border-radius: 50%; border: 1.5px solid currentColor; font-size: 12px; line-height: 1; }
+.preference-editor__choice[aria-pressed='true'] > span { background: #fff; border-color: #fff; color: var(--mint-500); font-weight: 700; }
+:root[data-theme='dark'] .preference-editor__choice[aria-pressed='true'] { color: #08070c; }
+:root[data-theme='dark'] .preference-editor__choice[aria-pressed='true'] > span { background: #08070c; border-color: #08070c; color: var(--mint-400); }
 .preference-editor__choice:disabled { cursor: not-allowed; opacity: .55; }
 .preference-editor__chosen { display: grid; gap: var(--space-3); padding: var(--space-4); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-850); }
 .preference-editor__chosen h4 { margin: 0; font-size: var(--step-0); color: var(--text-100); }
 .preference-editor__chosen > p { font-size: var(--step--1); }
 .preference-editor__chips { display: flex; flex-wrap: wrap; gap: var(--space-2); list-style: none; padding: 0; margin: 0; }
-.preference-editor__chips li { display: inline-flex; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3); border-radius: var(--radius-pill); background: var(--accent-500); color: #fff; font-size: var(--step--1); }
-.preference-editor__chips li.preference-editor__chip--custom { background: var(--ink-800); color: var(--accent-400); border: 1px solid var(--accent-400); }
+.preference-editor__chips li { display: inline-flex; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3); border-radius: var(--radius-pill); background: var(--mint-500); color: #fff; font-size: var(--step--1); font-weight: 600; }
+.preference-editor__chips li.preference-editor__chip--custom { background: var(--ink-800); color: var(--mint-400); border: 1.5px solid var(--mint-400); }
+:root[data-theme='dark'] .preference-editor__chips li:not(.preference-editor__chip--custom) { color: #08070c; }
 .preference-editor__chips button { display: inline-grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: 50%; background: transparent; color: inherit; font-size: 1.1em; line-height: 1; cursor: pointer; }
 .preference-editor__chips button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.2); }
 .preference-editor__add { display: grid; gap: var(--space-2); padding-top: var(--space-3); border-top: var(--border-hairline); font-size: var(--step--1); }
