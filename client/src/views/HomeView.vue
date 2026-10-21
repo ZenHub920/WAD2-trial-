@@ -1,22 +1,68 @@
 <script setup>
-import { ref, onMounted } from 'vue';
-import { api, formatShortDate } from '../api.js';
+import { ref, computed, onMounted } from 'vue';
+import { api, formatShortDate, formatDate } from '../api.js';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 
 const concerts = ref([]);
 const loading = ref(true);
 const error = ref(false);
+// Ticketmaster image URLs occasionally 404; those cards fall back to the artwork.
+const brokenImages = ref(new Set());
 
+// The local list carries the companion counts; the provider list only adds
+// concerts that have not been imported yet. Either may fail on its own.
 onMounted(async () => {
-  try {
-    const data = await api.externalConcerts();
-    concerts.value = data.events.slice(0, 5);
-  } catch {
+  const [local, external] = await Promise.allSettled([api.concerts(), api.externalConcerts()]);
+  if (local.status === 'rejected' && external.status === 'rejected') {
     error.value = true;
-  } finally {
     loading.value = false;
+    return;
   }
+  const byId = new Map();
+  for (const event of external.value?.events ?? []) byId.set(event.id, event);
+  for (const concert of local.value?.concerts ?? []) {
+    byId.set(concert.id, { ...byId.get(concert.id), ...concert });
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  concerts.value = [...byId.values()]
+    .filter((c) => c.event_date >= today)
+    .sort((a, b) => a.event_date.localeCompare(b.event_date));
+  loading.value = false;
 });
+
+const peopleCount = (c) => (c.open_seekers ?? 0) + (c.open_slots ?? 0);
+
+// The busiest upcoming show leads the page; a photo breaks ties.
+const featured = computed(() => {
+  const [best] = [...concerts.value].sort(
+    (a, b) => peopleCount(b) - peopleCount(a) || hasImage(b) - hasImage(a),
+  );
+  return best ?? null;
+});
+
+const upcoming = computed(() =>
+  concerts.value.filter((c) => c.id !== featured.value?.id).slice(0, 6),
+);
+
+function hasImage(concert) {
+  return Boolean(concert.hero_image_url) && !brokenImages.value.has(concert.id);
+}
+
+function markBroken(concert) {
+  brokenImages.value = new Set(brokenImages.value).add(concert.id);
+}
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const people = (n) => (n === 1 ? '1 person' : `${n} people`);
+
+function peopleLine(c) {
+  const seekers = c.open_seekers ?? 0;
+  const groups = c.open_parties ?? 0;
+  if (seekers && groups) return `${people(seekers)} looking · ${plural(groups, 'group')} open`;
+  if (seekers) return `${people(seekers)} looking for company`;
+  if (groups) return `${plural(groups, 'group')} with ${plural(c.open_slots ?? 0, 'spot')} left`;
+  return 'Be the first to look for company';
+}
 
 const steps = [
   {
@@ -41,23 +87,48 @@ const steps = [
   <div>
     <!-- ---------------------------------------------------------------- Hero -->
     <section class="hero">
-      <div class="hero__glow" aria-hidden="true" />
       <div class="container hero__inner">
+        <div class="hero__copy">
+          <h1 class="hero__title">
+            Your next concert.
+            <span class="hero__accent">Your kind of people.</span>
+          </h1>
 
-        <h1 class="hero__title">
-          Your next concert.
-          <span class="hero__accent">Your kind of people.</span>
-        </h1>
+          <p class="lede hero__lede">
+            Find people going to the same concert and make plans together.
+          </p>
 
-        <p class="lede hero__lede">
-          Find people going to the same concert and make plans together.
-        </p>
-
-        <div class="hero__actions">
-          <RouterLink to="/concerts" class="btn btn--primary">Browse concerts</RouterLink>
-          <RouterLink to="/groups" class="btn btn--ghost">Find a group</RouterLink>
+          <div class="hero__actions">
+            <RouterLink to="/concerts" class="btn btn--primary">Browse concerts</RouterLink>
+            <RouterLink to="/groups" class="btn btn--ghost">Find a group</RouterLink>
+          </div>
         </div>
 
+        <RouterLink
+          v-if="featured"
+          :to="`/concerts/${featured.id}`"
+          class="feature"
+          :aria-label="`${featured.artist}, ${formatDate(featured.event_date)} at ${featured.venue}. ${peopleLine(featured)}`"
+        >
+          <div class="poster poster--feature">
+            <img
+              v-if="hasImage(featured)"
+              :src="featured.hero_image_url"
+              alt=""
+              @error="markBroken(featured)"
+            />
+            <span v-else class="poster__initial" aria-hidden="true">{{ featured.artist.charAt(0) }}</span>
+          </div>
+          <div class="feature__body">
+            <p class="feature__eyebrow mono">{{ peopleCount(featured) ? 'Most people looking' : 'Up next' }}</p>
+            <p class="feature__artist">{{ featured.artist }}</p>
+            <p class="feature__meta">{{ formatDate(featured.event_date) }} · {{ featured.venue }}</p>
+            <p class="people" :class="{ 'people--quiet': !peopleCount(featured) }">
+              {{ peopleLine(featured) }}
+            </p>
+          </div>
+        </RouterLink>
+        <div v-else-if="loading" class="feature feature--placeholder" aria-hidden="true" />
       </div>
     </section>
 
@@ -93,20 +164,35 @@ const steps = [
         <p v-else-if="error" class="empty-note" role="alert">
           Concerts could not be loaded. Try again later.
         </p>
-        <p v-else-if="!concerts.length" class="empty-note">
+        <p v-else-if="!upcoming.length" class="empty-note">
           No upcoming concerts are available.
         </p>
 
         <div v-else class="upcoming__grid">
           <RouterLink
-            v-for="concert in concerts"
+            v-for="concert in upcoming"
             :key="concert.id"
             :to="`/concerts/${concert.id}`"
             class="card card--interactive mini"
           >
-            <p class="mini__date mono">{{ formatShortDate(concert.event_date) }}</p>
-            <h3 class="mini__artist">{{ concert.artist }}</h3>
-            <p class="mini__venue">{{ concert.venue }}</p>
+            <div class="poster">
+              <img
+                v-if="hasImage(concert)"
+                :src="concert.hero_image_url"
+                alt=""
+                loading="lazy"
+                @error="markBroken(concert)"
+              />
+              <span v-else class="poster__initial" aria-hidden="true">{{ concert.artist.charAt(0) }}</span>
+            </div>
+            <div class="mini__body">
+              <p class="mini__date mono">{{ formatShortDate(concert.event_date) }}</p>
+              <h3 class="mini__artist">{{ concert.artist }}</h3>
+              <p class="mini__venue">{{ concert.venue }}</p>
+              <p class="people" :class="{ 'people--quiet': !peopleCount(concert) }">
+                {{ peopleLine(concert) }}
+              </p>
+            </div>
           </RouterLink>
         </div>
       </div>
@@ -119,38 +205,23 @@ const steps = [
 /* ---------------------------------------------------------------- Hero ---- */
 
 .hero {
-  position: relative;
-  padding-block: var(--space-9) var(--space-8);
-  overflow: hidden;
-}
-
-.hero__glow {
-  position: absolute;
-  top: -40%;
-  left: 50%;
-  width: min(900px, 120vw);
-  aspect-ratio: 1;
-  translate: -50% 0;
-  background: radial-gradient(
-    circle,
-    var(--accent-glow) 0%,
-    transparent 62%
-  );
-  pointer-events: none;
-  animation: drift 14s ease-in-out infinite alternate;
-}
-
-@keyframes drift {
-  from { transform: translate(-4%, 0) scale(1); }
-  to   { transform: translate(4%, 3%) scale(1.08); }
+  padding-block: var(--space-8) var(--space-7);
 }
 
 .hero__inner {
-  position: relative;
+  display: grid;
+  gap: var(--space-7);
+  align-items: center;
+}
+
+@media (min-width: 900px) {
+  .hero__inner {
+    grid-template-columns: 1.1fr 1fr;
+    gap: var(--space-8);
+  }
 }
 
 .hero__title {
-  margin-top: var(--space-4);
   font-size: var(--step-6);
   max-width: 18ch;
 }
@@ -162,7 +233,7 @@ const steps = [
 
 .hero__lede {
   margin-top: var(--space-5);
-  max-width: 58ch;
+  max-width: 48ch;
 }
 
 .hero__actions {
@@ -170,6 +241,117 @@ const steps = [
   flex-wrap: wrap;
   gap: var(--space-3);
   margin-top: var(--space-6);
+}
+
+/* Featured concert: the hero's evidence that real shows and people are here. */
+.feature {
+  display: block;
+  overflow: hidden;
+  border: var(--border-hairline);
+  border-radius: var(--radius-xl);
+  background: var(--ink-800);
+  box-shadow: var(--shadow-lg);
+  text-decoration: none;
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+}
+
+.feature:hover {
+  transform: translateY(-3px);
+  border-color: var(--ink-500);
+}
+
+.feature--placeholder {
+  aspect-ratio: 4 / 3;
+  background: var(--ink-850);
+  box-shadow: none;
+}
+
+.feature__body {
+  padding: var(--space-5) var(--space-6) var(--space-6);
+}
+
+.feature__eyebrow {
+  font-size: var(--step--2);
+  color: var(--accent-400);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.feature__artist {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--step-3);
+  line-height: 1.1;
+  color: var(--text-100);
+  margin-block: var(--space-2);
+}
+
+.feature__meta {
+  color: var(--text-300);
+  font-size: var(--step--1);
+}
+
+/* ---------------------------------------------------------------- Poster -- */
+
+.poster {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--accent-300), var(--ink-700) 70%);
+}
+
+.poster img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.poster__initial {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--step-5);
+  color: var(--accent-500);
+  opacity: 0.55;
+}
+
+.poster--feature .poster__initial {
+  font-size: var(--step-6);
+}
+
+/* ---------------------------------------------------------------- People -- */
+
+.people {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  font-size: var(--step--1);
+  font-weight: 700;
+  color: var(--accent-500);
+}
+
+.people::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mint-400);
+}
+
+.people--quiet {
+  font-weight: 600;
+  color: var(--text-400);
+}
+
+.people--quiet::before {
+  background: var(--ink-500);
 }
 
 /* --------------------------------------------------------------- Steps ---- */
@@ -238,12 +420,27 @@ const steps = [
 .upcoming__grid {
   display: grid;
   gap: var(--space-4);
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 255px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
 }
 
 .mini {
   text-decoration: none;
-  display: block;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.mini__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: var(--space-4) var(--space-5) var(--space-5);
+}
+
+.mini__body .people {
+  margin-top: auto;
+  padding-top: var(--space-4);
 }
 
 .mini__date {
@@ -263,8 +460,6 @@ const steps = [
   font-size: var(--step--1);
 }
 
-
-
 .empty-note {
   padding: var(--space-6);
   border: 1px dashed var(--ink-500);
@@ -274,6 +469,10 @@ const steps = [
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hero__glow { animation: none; }
+  .feature,
+  .feature:hover {
+    transition: none;
+    transform: none;
+  }
 }
 </style>
