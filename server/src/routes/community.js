@@ -30,8 +30,17 @@ export function registerCommunityRoutes(
   route("post", "/groups/:id/friend-invites", "invitation", (r) =>
     repos.membership.invite(r.user.id, r.params.id),
   );
-  route("post", "/group-friend-invites/:token/accept", "membership", (r) =>
-    repos.membership.acceptInvite(r.user.id, r.params.token),
+  route("post", "/group-friend-invites/:token/accept", "membership", (r) => {
+    // Everyone in a group has answered, so the group's profile includes them.
+    if (!repos.membership.preferences(r.user.id))
+      throw Object.assign(new Error("save_group_preferences_first"), { status: 409 });
+    return repos.membership.acceptInvite(r.user.id, r.params.token);
+  });
+  route("get", "/me/preferences", "preferences", (r) =>
+    repos.membership.preferences(r.user.id),
+  );
+  route("put", "/me/preferences", "preferences", (r) =>
+    repos.membership.savePreferences(r.user.id, r.body),
   );
   route("post", "/groups/:id/leave", "membership", (r) =>
     repos.membership.leave(r.user.id, r.params.id),

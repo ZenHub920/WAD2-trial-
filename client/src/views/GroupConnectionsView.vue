@@ -8,6 +8,11 @@ import GroupListingCard from '../components/GroupListingCard.vue';
 import GroupNavigation from '../components/GroupNavigation.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
+import GroupAvatar from '../components/GroupAvatar.vue';
+import AvatarPicker from '../components/AvatarPicker.vue';
+import BackLink from '../components/BackLink.vue';
+import GroupPreferencesGate from '../components/GroupPreferencesGate.vue';
+import { preferencesReady } from '../groupPreferences.js';
 import '../assets/groups.css';
 import { currentUser } from '../auth.js';
 
@@ -19,7 +24,13 @@ const error = ref(''), message = ref('');
 const offset = ref(0), total = ref(0);
 const allConcerts = ref([]), hostConcertId = ref('');
 const selectedConcert = computed(() => allConcerts.value.find(concert => concert.id === hostConcertId.value));
-const hostForm = reactive({ capacity: 2, section: 'standing_pen', spend_band: 2, arrival_plan: 'doors', plans: {}, notes: '' });
+const hostForm = reactive({ name: '', capacity: 2, section: 'standing_pen', spend_band: 2, arrival_plan: 'doors', plans: {}, notes: '' });
+const hostImage = ref(null);
+// Highlight missing fields only after the first attempt to create.
+const attempted = ref(false);
+const capacityValid = computed(() => Number.isInteger(hostForm.capacity) && hostForm.capacity >= 1);
+const fieldState = filled => ({ 'field-ok': filled, 'field-error': attempted.value && !filled });
+const groupTitle = g => g.name || g.artist;
 const filters = reactive({ query: '', section: '', minCapacity: 0, spendBand: '', arrival: '', activity: '', vibe: '', sort: 'compatibility' });
 const mode = computed(() => ['create', 'connections'].includes(route.query.view) ? route.query.view : 'dashboard');
 const concertId = computed(() => typeof route.query.concertId === 'string' ? route.query.concertId : '');
@@ -42,7 +53,7 @@ const canConnect = computed(() => Boolean(sourceGroup.value?.settings?.published
 const pageTitle = computed(() => mode.value === 'create' ? 'Create a group' : mode.value === 'connections' ? 'Connect groups' : 'My groups');
 const joinStatus = { pending: 'Awaiting your approval', accepted: 'Approved', rejected: 'Not approved', withdrawn: 'Withdrawn', expired: 'Expired' };
 const sectionName = key => LABELS.section[key] ?? key;
-const describe = c => `${c.partyA.hostName} (${sectionName(c.partyA.section)}) ↔ ${c.partyB.hostName} (${sectionName(c.partyB.section)}), ${c.partyA.artist}`;
+const describe = c => `${c.partyA.name || c.partyA.hostName} (${sectionName(c.partyA.section)}) ↔ ${c.partyB.name || c.partyB.hostName} (${sectionName(c.partyB.section)}), ${c.partyA.artist}`;
 let generation = 0, alive = true, filterTimer;
 
 function viewLink(view, group) {
@@ -160,10 +171,19 @@ async function retry() {
   finally { if (alive) groupsLoading.value = false; }
 }
 async function host() {
+  attempted.value = true;
+  if (!hostForm.name.trim() || !capacityValid.value) {
+    error.value = 'Fill in the highlighted fields to create your group.';
+    message.value = '';
+    return;
+  }
   await act(async () => {
-    const result = await api.createParty(hostConcertId.value, hostForm);
+    const result = await api.createParty(hostConcertId.value, { ...hostForm, name: hostForm.name.trim() });
     if (!alive) return;
     await api.configureGroup(result.party.id, { expectedFriends: 0 });
+    // The group exists by now; a picture that fails to upload can be added
+    // again from Manage group, so it does not block finishing creation.
+    if (hostImage.value) await api.setGroupImage(result.party.id, hostImage.value).catch(() => {});
     await router.push(`/groups/${encodeURIComponent(result.party.id)}/members`);
   });
 }
@@ -171,6 +191,7 @@ async function host() {
 
 <template>
   <div class="container groups-page">
+    <BackLink v-if="mode !== 'dashboard'" :fallback="viewLink()" fallback-label="Back to My groups" />
     <header class="page-heading">
       <div>
         <h1>{{ pageTitle }}</h1>
@@ -178,19 +199,32 @@ async function host() {
         <p v-else-if="mode === 'create'">Start with a draft, then invite friends and publish when your group is ready.</p>
         <p v-else>Meet another group at the same concert. Connecting groups does not merge their members.</p>
       </div>
-      <RouterLink v-if="mode === 'dashboard'" :to="viewLink('create')" class="btn btn--primary">Create a group</RouterLink>
+      <RouterLink v-if="mode === 'dashboard' && preferencesReady" :to="viewLink('create')" class="btn btn--primary">Create a group</RouterLink>
     </header>
-    <GroupNavigation />
+    <GroupPreferencesGate :summary="mode === 'dashboard'">
+    <template #before><GroupNavigation /></template>
     <p v-if="error" class="group-error" role="alert">{{ error }} <button class="btn btn--ghost" :disabled="busy || groupsLoading" @click="retry">Retry</button></p>
     <p v-if="message" class="group-success" role="status">{{ message }}</p>
     <p v-if="busy && !confirming" class="loading-state" role="status"><LoadingSpinner />Updating your groups and connections…</p>
     <p v-if="groupsLoading" class="loading-state" role="status"><LoadingSpinner />Loading your groups…</p>
 
     <template v-if="mode === 'create'">
-      <form class="card group-panel create-form" @submit.prevent="host">
+      <form class="card group-panel create-form" novalidate @submit.prevent="host">
+        <section class="form-section">
+          <h2>Name your group</h2>
+          <div class="form-grid">
+            <label class="form-wide">Group name<input v-model="hostForm.name" type="text" maxlength="60" required placeholder="e.g. Front Row Crew" :disabled="busy || groupsLoading" :class="fieldState(Boolean(hostForm.name.trim()))" :aria-invalid="attempted && !hostForm.name.trim()"><span v-if="attempted && !hostForm.name.trim()" class="field-message">Enter a name for your group.</span><span v-else class="field-hint">This is what other people see. Up to 60 characters.</span></label>
+            <div class="form-wide group-picture-field">
+              <span>Group picture <span class="field-hint">(optional)</span></span>
+              <AvatarPicker :src="hostImage" :name="hostForm.name" :busy="busy || groupsLoading" :size="72" @select="image => hostImage = image" @remove="hostImage = null">
+                <template #preview><GroupAvatar :src="hostImage" :name="hostForm.name" :size="72" /></template>
+              </AvatarPicker>
+            </div>
+          </div>
+        </section>
         <section class="form-section">
           <h2>Concert and group preferences</h2>
-          <p class="group-muted">Your group stays private as a draft until you publish it from Manage group. You can invite friends and collect preferences there first.</p>
+          <p class="group-muted">Your group stays private as a draft until you publish it from Manage group. You can invite friends there first. Your saved preferences are added to the group automatically.</p>
           <div class="form-grid">
             <label class="form-wide">Concert<select v-model="hostConcertId" required :disabled="busy || groupsLoading"><option v-for="c in allConcerts" :key="c.id" :value="c.id">{{ c.artist }}, {{ c.event_date }}</option></select></label>
             <div v-if="selectedConcert" class="form-wide venue-layout">
@@ -201,7 +235,7 @@ async function host() {
               </div>
               <p v-if="!selectedConcert.seatmap_url" class="group-muted">{{ selectedConcert.source === 'ticketmaster' ? 'Ticketmaster has not provided a seating plan for this concert.' : 'A seating plan is not available for this concert.' }}</p>
             </div>
-            <label>Group size<input v-model.number="hostForm.capacity" type="number" min="1" step="1" required :disabled="busy || groupsLoading"><span class="field-hint">New companion places, excluding you and invited friends.</span></label>
+            <label>Group size<input v-model.number="hostForm.capacity" type="number" min="1" step="1" required :disabled="busy || groupsLoading" :class="fieldState(capacityValid)" :aria-invalid="attempted && !capacityValid"><span v-if="attempted && !capacityValid" class="field-message">Enter a number, 1 or more.</span><span v-else class="field-hint">New companion places, excluding you and invited friends.</span></label>
             <label>Seating preference<select v-model="hostForm.section" :disabled="busy || groupsLoading"><option v-for="(name, id) in SECTION_OPTIONS" :key="id" :value="id">{{ name }}</option></select><span class="field-hint">General categories, not confirmed venue sections.</span></label>
             <label>Spending budget<select v-model.number="hostForm.spend_band" :disabled="busy || groupsLoading"><option v-for="n in 4" :key="n" :value="n">{{ LABELS.spendBand[n] }}</option></select></label>
             <label>Arrival<select v-model="hostForm.arrival_plan" :disabled="busy || groupsLoading"><option v-for="(name, id) in ARRIVAL_OPTIONS" :key="id" :value="id">{{ name }}</option></select></label>
@@ -224,14 +258,16 @@ async function host() {
           <div class="section-heading"><h2 id="owned-heading">{{ mode === 'connections' ? 'Choose one of your groups' : 'Groups you own' }}</h2><span class="group-muted">{{ activeGroups.length }} active</span></div>
           <div v-if="activeGroups.length" class="owned-grid">
             <article v-for="g in activeGroups" :key="g.id" class="card group-panel owned-card">
-              <div class="owned-card__top"><h3>{{ g.artist }}</h3><span class="group-state" :class="{ 'group-state--published': g.settings?.published }">{{ g.settings?.published ? 'Published' : 'Draft' }}</span></div>
+              <div class="owned-card__top">
+                <GroupAvatar :src="g.imageUrl" :name="groupTitle(g)" :size="52" />
+                <div class="owned-card__title"><h3>{{ groupTitle(g) }}</h3><p v-if="g.name" class="group-muted">{{ g.artist }}</p></div>
+                <span class="group-state" :class="{ 'group-state--published': g.settings?.published }">{{ g.settings?.published ? 'Published' : 'Draft' }}</span>
+              </div>
               <p class="group-muted">{{ g.eventDate }} · {{ sectionName(g.section) }}</p>
               <p>{{ g.memberCount }} {{ g.memberCount === 1 ? 'member' : 'members' }} · {{ g.remainingCapacity }} places remaining</p>
-              <p class="group-muted">{{ g.settings?.published ? (g.settings.connect_open ? 'Open to meeting other groups.' : 'Group connections are off. Change this in Manage group.') : 'Invite friends, collect preferences, then publish from Manage group.' }}</p>
+              <p class="group-muted">{{ g.settings?.published ? (g.settings.connect_open ? 'Open to meeting other groups.' : 'Group connections are off. Change this in Manage group.') : 'Invite friends, then publish from Manage group.' }}</p>
               <div class="owned-card__actions">
-                <RouterLink :to="`/groups/${encodeURIComponent(g.id)}/members`" class="btn btn--primary">Manage group</RouterLink>
-                <RouterLink :to="{ path: '/meetups', query: { partyId: g.id } }" class="btn btn--ghost">Plan meetup</RouterLink>
-                <RouterLink :to="viewLink('connections', g)" class="btn btn--ghost">Connect groups</RouterLink>
+                <RouterLink :to="mode === 'connections' ? viewLink('connections', g) : `/groups/${encodeURIComponent(g.id)}/members`" class="btn btn--primary">{{ mode === 'connections' ? 'Connect this group' : 'Manage group' }}</RouterLink>
               </div>
             </article>
           </div>
@@ -243,12 +279,14 @@ async function host() {
         <section v-if="joinedGroups.length" class="owned-section" aria-labelledby="joined-heading">
           <div class="section-heading"><h2 id="joined-heading">Groups I joined</h2><span class="group-muted">{{ joinedGroups.length }} active</span></div>
           <div v-if="joinedGroups.length" class="owned-grid">
-            <article v-for="g in joinedGroups" :key="g.id" class="card group-panel">
-              <h3>{{ g.artist }}</h3>
+            <article v-for="g in joinedGroups" :key="g.id" class="card group-panel owned-card">
+              <div class="owned-card__top">
+                <GroupAvatar :src="g.imageUrl" :name="groupTitle(g)" :size="52" />
+                <div class="owned-card__title"><h3>{{ groupTitle(g) }}</h3><p v-if="g.name" class="group-muted">{{ g.artist }}</p></div>
+              </div>
               <p class="group-muted">{{ membershipSource[g.source] ?? 'Active group member' }}</p>
               <div class="owned-card__actions">
                 <RouterLink :to="`/groups/${encodeURIComponent(g.id)}/members`" class="btn btn--primary">View group</RouterLink>
-                <RouterLink :to="{ path: '/meetups', query: { partyId: g.id } }" class="btn btn--ghost">Plan meetup</RouterLink>
               </div>
             </article>
           </div>
@@ -268,13 +306,12 @@ async function host() {
             <article v-for="j in historicalJoins" :key="j.id" class="join-request"><h3>{{ j.seekerName }}</h3><p>{{ j.artist }} — {{ joinStatus[j.status] ?? 'Request updated' }}</p><p v-if="j.preferences">Enjoys: {{ j.preferences.about.map(p => p.text).join(', ') || 'No preferences specified' }}. Companion preferences: {{ j.preferences.wants.map(p => p.text).join(', ') || 'Flexible' }}.</p><p v-if="j.seeker">{{ j.seeker.ageBand }}, {{ j.seeker.languages.join(', ') }}</p></article>
           </div></details>
         </section>
-        <details v-if="cancelledGroups.length" class="card group-panel history"><summary>Cancelled groups ({{ cancelledGroups.length }})</summary><div class="history-list"><article v-for="g in cancelledGroups" :key="g.id" class="cancelled-group"><h3>{{ g.artist }} <span class="group-state">Cancelled</span></h3><p class="group-muted">{{ g.eventDate }} · {{ sectionName(g.section) }}</p><RouterLink :to="`/groups/${encodeURIComponent(g.id)}/members`">View group history</RouterLink></article></div></details>
+        <details v-if="cancelledGroups.length" class="card group-panel history"><summary>Cancelled groups ({{ cancelledGroups.length }})</summary><div class="history-list"><article v-for="g in cancelledGroups" :key="g.id" class="cancelled-group"><h3>{{ groupTitle(g) }} <span class="group-state">Cancelled</span></h3><p class="group-muted">{{ g.eventDate }} · {{ sectionName(g.section) }}</p><RouterLink :to="`/groups/${encodeURIComponent(g.id)}/members`">View group history</RouterLink></article></div></details>
       </template>
 
       <template v-if="mode === 'connections' && sourceGroup">
         <section class="card group-panel selected-group">
-          <RouterLink :to="viewLink()">← Back to My groups</RouterLink>
-          <div class="owned-card__top"><h2>{{ sourceGroup.artist }}</h2><span class="group-state" :class="{ 'group-state--published': sourceGroup.settings?.published }">{{ sourceGroup.settings?.published ? 'Published' : 'Draft' }}</span></div>
+          <div class="owned-card__top"><GroupAvatar :src="sourceGroup.imageUrl" :name="groupTitle(sourceGroup)" :size="52" /><div class="owned-card__title"><h2>{{ groupTitle(sourceGroup) }}</h2><p v-if="sourceGroup.name" class="group-muted">{{ sourceGroup.artist }}</p></div><span class="group-state" :class="{ 'group-state--published': sourceGroup.settings?.published }">{{ sourceGroup.settings?.published ? 'Published' : 'Draft' }}</span></div>
           <p>{{ sourceGroup.eventDate }} · {{ sectionName(sourceGroup.section) }} · {{ sourceGroup.memberCount }} {{ sourceGroup.memberCount === 1 ? 'member' : 'members' }}</p>
           <p v-if="!canConnect" class="group-muted">Publish this group and enable “Open to meeting other groups” in Manage group before sending invitations.</p>
           <p v-else class="group-muted">Open to meeting other groups at this concert.</p>
@@ -306,6 +343,7 @@ async function host() {
         </div>
       </section>
     </template>
+    </GroupPreferencesGate>
 
     <ConfirmDialog :open="Boolean(confirming)" :title="confirmCopy.title" :body="confirmCopy.body" :confirm-label="confirmCopy.label" cancel-label="Keep it" danger :busy="busy" @confirm="runConfirmed" @cancel="confirming = null" />
   </div>
@@ -318,15 +356,13 @@ async function host() {
 .owned-section, .form-section, .history-list { display: grid; gap: var(--space-4); min-width: 0; }
 .owned-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); gap: var(--space-4); }
 .owned-card { grid-template-rows: auto auto auto 1fr auto; }
-.owned-card__top { align-items: flex-start; }
-.owned-card__top h3, .owned-card__top h2 { flex: 1 1 10rem; }
-/* Main action across the full width, secondary actions in equal halves below,
-   so the buttons line up however long their labels are. */
-.owned-card__actions { align-self: end; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
-.owned-card__actions .btn { width: 100%; justify-content: center; text-align: center; padding-inline: var(--space-3); }
-.owned-card__actions .btn--primary { grid-column: 1 / -1; }
-.group-state { display: inline-flex; padding: var(--space-1) var(--space-2); border: var(--border-soft); border-radius: var(--radius-pill); color: var(--text-300); font-size: var(--step--2); font-weight: 600; white-space: nowrap; }
-.group-state--published { color: var(--mint-400); }
+.owned-card__top { align-items: center; flex-wrap: nowrap; }
+.owned-card__title { display: grid; flex: 1 1 auto; gap: 2px; min-width: 0; }
+.owned-card__title p { font-size: var(--step--1); }
+/* One full-width action; meetups and connections live inside Manage group. */
+.owned-card__actions { align-self: end; display: grid; }
+.owned-card__actions .btn { width: 100%; justify-content: center; text-align: center; }
+.group-picture-field { display: grid; gap: var(--space-2); font-size: var(--step--1); }
 .create-form { max-width: 54rem; width: 100%; box-sizing: border-box; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); align-items: end; }
 .form-wide { grid-column: 1 / -1; }

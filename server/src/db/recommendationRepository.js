@@ -9,17 +9,26 @@ import {
 } from "../services/discoveryPreferences.js";
 import { checkFeasibility, scorePair } from "../matching/compatibility.js";
 export function createRecommendationRepo(db, repos) {
+  const EMPTY = '{"about":[],"wants":[],"avoid":[]}';
+  /** Concert-specific answers if any were saved, otherwise the user's own. */
+  const answersJson = (user, concert) =>
+    db.prepare("SELECT answers_json FROM seeker_discovery_preferences WHERE user_id=? AND concert_id=?")
+      .get(user, concert)?.answers_json ??
+    db.prepare("SELECT answers_json FROM user_group_preferences WHERE user_id=?").get(user)?.answers_json ??
+    null;
   const personal = (user, concert) =>
-    individualProfile(
-      JSON.parse(
-        db
-          .prepare(
-            "SELECT answers_json FROM seeker_discovery_preferences WHERE user_id=? AND concert_id=?",
-          )
-          .get(user, concert)?.answers_json ??
-          '{"about":[],"wants":[],"avoid":[]}',
-      ),
-    );
+    individualProfile(JSON.parse(answersJson(user, concert) ?? EMPTY));
+  /** Writes already-validated answers for one concert. */
+  const storePersonal = (user, concert, serialized) => {
+    const previous = answersJson(user, concert);
+    db.prepare(
+      `INSERT INTO seeker_discovery_preferences VALUES(?,?,?) ON CONFLICT(user_id,concert_id) DO UPDATE SET answers_json=excluded.answers_json`,
+    ).run(user, concert, serialized);
+    if (previous !== serialized)
+      // A missing version means consent must be renewed, even if answers are later restored.
+      db.prepare(`UPDATE group_join_requests SET group_version=NULL WHERE user_id=? AND status='pending'
+        AND party_id IN(SELECT id FROM parties WHERE concert_id=?)`).run(user, concert);
+  };
   const visible = (p) => {
     const s = repos.membership.settings(p.id);
     return !s || Boolean(s.published);
@@ -97,35 +106,20 @@ export function createRecommendationRepo(db, repos) {
   };
   return {
     personal,
+    storePersonal,
+    hasAnswers: (user, concert) => answersJson(user, concert) !== null,
     visible,
     aggregateParty,
     feasible,
     expire: db.transaction(() => expireJoinRequests(db)).immediate,
     answers(user, concert) {
-      return withoutRetired(JSON.parse(
-        db
-          .prepare(
-            "SELECT answers_json FROM seeker_discovery_preferences WHERE user_id=? AND concert_id=?",
-          )
-          .get(user, concert)?.answers_json ??
-          '{"about":[],"wants":[],"avoid":[]}',
-      ));
+      return withoutRetired(JSON.parse(answersJson(user, concert) ?? EMPTY));
     },
     savePersonal: db.transaction((user, concert, input) => {
       if (!repos.concerts.findById(concert))
         throw communityError("concert_not_found", 404);
       const answers = validateAnswers(input);
-      const previous = db.prepare(
-        "SELECT answers_json FROM seeker_discovery_preferences WHERE user_id=? AND concert_id=?",
-      ).get(user, concert)?.answers_json;
-      const serialized = JSON.stringify(answers);
-      db.prepare(
-        `INSERT INTO seeker_discovery_preferences VALUES(?,?,?) ON CONFLICT(user_id,concert_id) DO UPDATE SET answers_json=excluded.answers_json`,
-      ).run(user, concert, serialized);
-      if (previous !== serialized)
-        // A missing version means consent must be renewed, even if answers are later restored.
-        db.prepare(`UPDATE group_join_requests SET group_version=NULL WHERE user_id=? AND status='pending'
-          AND party_id IN(SELECT id FROM parties WHERE concert_id=?)`).run(user, concert);
+      storePersonal(user, concert, JSON.stringify(answers));
       return answers;
     }).immediate,
     individual(user, concert) {
@@ -212,14 +206,7 @@ export function createRecommendationRepo(db, repos) {
         !db.prepare("SELECT 1 FROM match_rounds WHERE id=? AND concert_id=?").get(matchingRoundId, p.concert_id)
       ))
         throw communityError("automatic_matching_consent_required");
-      if (
-        repos.membership.settings(id) &&
-        !db
-          .prepare(
-            "SELECT 1 FROM seeker_discovery_preferences WHERE user_id=? AND concert_id=?",
-          )
-          .get(user, p.concert_id)
-      )
+      if (repos.membership.settings(id) && !answersJson(user, p.concert_id))
         throw communityError("save_discovery_preferences_first");
       if (
         db
@@ -340,16 +327,12 @@ export function createRecommendationRepo(db, repos) {
           "UPDATE group_join_requests SET status='accepted',responded_at=datetime('now') WHERE id=?",
         ).run(id);
         repos.membership.attach(p, j.user_id, "join");
-        const answers = db
-          .prepare(
-            "SELECT answers_json FROM seeker_discovery_preferences WHERE user_id=? AND concert_id=?",
-          )
-          .get(j.user_id, p.concert_id);
+        const answers = answersJson(j.user_id, p.concert_id);
         if (answers)
           db.prepare(
             `INSERT INTO group_member_preferences(party_id,user_id,answers_json) VALUES(?,?,?)
           ON CONFLICT(party_id,user_id) DO UPDATE SET answers_json=excluded.answers_json`,
-          ).run(p.id, j.user_id, answers.answers_json);
+          ).run(p.id, j.user_id, answers);
         // Explicit choice ends the automatic placement request; no second acceptance.
         db.prepare(
           "UPDATE seeker_requests SET status='matched',matching_opt_in=0 WHERE user_id=? AND concert_id=?",

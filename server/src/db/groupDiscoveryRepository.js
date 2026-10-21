@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { checkFeasibility, scorePair } from '../matching/compatibility.js';
+import { groupImageUrl } from '../controllers/groupIdentityController.js';
 
 const fail = (error, status = 409) => ({ error, status });
 
@@ -15,6 +16,7 @@ export function createGroupDiscoveryRepo(db, repos) {
     const concert = repos.concerts.findById(party.concert_id);
     return {
       id: party.id, concertId: party.concert_id, artist: concert.artist,
+      name: party.name, imageUrl: groupImageUrl(party.image_path),
       tourName: concert.tour_name, eventDate: concert.event_date,
       hostName: party.host.display_name, capacity: party.capacity,
       memberCount: db.prepare(`SELECT COUNT(*) n FROM (SELECT host_user_id AS user_id FROM parties WHERE id=@id

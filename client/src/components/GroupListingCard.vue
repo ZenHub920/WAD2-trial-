@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import { LABELS, formatDate } from '../api.js';
+import GroupAvatar from './GroupAvatar.vue';
 const props = defineProps({ group: { type: Object, required: true } });
 
 const fit = computed(() => {
@@ -17,7 +18,11 @@ const hasMore = computed(() => props.group.notes || props.group.reasons?.length 
 <template>
   <article class="card group-card">
     <header class="group-card__head">
-      <h3>{{ group.hostName }}'s group</h3>
+      <GroupAvatar :src="group.imageUrl" :name="group.name || group.hostName" :size="44" />
+      <div class="group-card__title">
+        <h3>{{ group.name || `${group.hostName}'s group` }}</h3>
+        <p v-if="group.name" class="group-card__meta">Hosted by {{ group.hostName }}</p>
+      </div>
       <span class="tag group-card__capacity">{{ group.remainingCapacity }} {{ group.remainingCapacity === 1 ? 'group place' : 'group places' }} available</span>
     </header>
     <div class="group-card__concert">
@@ -53,7 +58,8 @@ const hasMore = computed(() => props.group.notes || props.group.reasons?.length 
 .group-card { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; overflow-wrap: anywhere; font-size: var(--step--1); line-height: 1.5; }
 .group-card :where(p, h3, ul, dl, dd) { margin: 0; }
 .group-card__head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-2); justify-content: space-between; min-width: 0; }
-.group-card__head h3 { flex: 1 1 10rem; min-width: 0; font-size: var(--step-1); line-height: 1.3; }
+.group-card__title { display: grid; gap: 2px; flex: 1 1 10rem; min-width: 0; }
+.group-card__head h3 { min-width: 0; font-size: var(--step-1); line-height: 1.3; }
 .group-card__capacity { white-space: normal; max-width: 100%; background: var(--accent-glow); color: var(--accent-400); }
 .group-card__concert { display: grid; gap: var(--space-1); }
 .group-card__artist { font-weight: 600; color: var(--text-100); }

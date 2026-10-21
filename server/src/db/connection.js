@@ -18,6 +18,7 @@ import { migrateMeetups } from './meetupRepository.js';
 import { migrateFeedback } from './feedbackRepository.js';
 import { migrateSeating } from './seatingMigrations.js';
 import { migrateGenderPref } from './genderPrefMigration.js';
+import { migrateUserPreferences } from './userPreferencesMigration.js';
 const here = dirname(fileURLToPath(import.meta.url));
 
 let db = null;
@@ -43,6 +44,7 @@ export function getDb() {
   migrateNotifications(db);
   migrateMeetups(db);
   migrateFeedback(db);
+  migrateUserPreferences(db);
   return db;
 }
 
@@ -136,6 +138,11 @@ const ADDED_COLUMNS = [
   // Optional profile picture. Existing accounts keep NULL, which the UI shows
   // as a grey silhouette, so nobody is forced to upload one.
   ['users', 'avatar_path', 'TEXT'],
+
+  // Group name and picture chosen by the host. Older groups keep NULL and are
+  // shown under their concert's artist, as before.
+  ['parties', 'name', 'TEXT'],
+  ['parties', 'image_path', 'TEXT'],
 ];
 
 function migrate(target) {
@@ -233,6 +240,7 @@ export function createTestDb() {
   migrateNotifications(testDb);
   migrateMeetups(testDb);
   migrateFeedback(testDb);
+  migrateUserPreferences(testDb);
   return testDb;
 }
 

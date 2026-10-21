@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import { api, LABELS } from '../api.js';
 import { useRoute } from 'vue-router';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
+import BackLink from '../components/BackLink.vue';
 
 const props = defineProps({ id: { type: String, required: true } });
 const route = useRoute();
@@ -84,7 +85,7 @@ const rankHistogram = computed(() => {
     </div>
 
     <template v-else-if="round">
-      <RouterLink :to="`/concerts/${round.concertId}`" class="back">← Back to concert</RouterLink>
+      <BackLink :fallback="`/concerts/${round.concertId}`" fallback-label="Back to concert" />
 
       <header class="head">
         <h1>Group matching results</h1>
@@ -206,15 +207,6 @@ const rankHistogram = computed(() => {
 </template>
 
 <style scoped>
-.back {
-  display: inline-block;
-  margin-bottom: var(--space-5);
-  color: var(--text-400);
-  text-decoration: none;
-  font-size: var(--step--1);
-}
-
-.back:hover { color: var(--accent-400); }
 
 .head { margin-bottom: var(--space-6); }
 .head h1 { margin-block: var(--space-3) var(--space-4); }
