@@ -12,6 +12,9 @@ export function registerCommunityRoutes(
         res.json({ [key]: result });
       } catch (e) {
         if (e.status) return res.status(e.status).json({ error: e.message });
+        if (e.code?.startsWith("SQLITE_CONSTRAINT") && [
+          "seat_capacity_exceeded", "seeker_already_reserved", "claim_source_invalid", "claim_assignment_conflict",
+        ].includes(e.message)) return res.status(409).json({ error: e.message });
         next(e);
       }
     });
@@ -52,10 +55,22 @@ export function registerCommunityRoutes(
     repos.recommendations.savePersonal(r.user.id, r.params.concertId, r.body),
   );
   route("post", "/groups/:id/join-requests", "request", (r) =>
-    repos.recommendations.requestJoin(r.user.id, r.params.id),
+    repos.recommendations.requestJoin(r.user.id, r.params.id, r.body ?? {}),
   );
   route("get", "/me/group-join-requests", "requests", (r) =>
-    repos.recommendations.requests(r.user.id),
+    repos.recommendations.requests(r.user.id, r.query),
+  );
+  route("get", "/me/hosted-group-join-requests", "requests", (r) =>
+    repos.recommendations.requests(r.user.id, { ...r.query, scope: "hosted" }),
+  );
+  route("get", "/me/current-group-memberships", "groups", (r) =>
+    repos.recommendations.currentMemberships(r.user.id),
+  );
+  route("put", "/me/seeker-requests/:concertId/joining-mode", "request", (r) =>
+    repos.recommendations.setJoiningMode(r.user.id, r.params.concertId, r.body?.mode),
+  );
+  route("post", "/group-join-requests/:id/withdraw", "request", (r) =>
+    repos.recommendations.respond(r.user.id, r.params.id, "withdraw"),
   );
   route("post", "/group-join-requests/:id/respond", "request", (r) =>
     repos.recommendations.respond(r.user.id, r.params.id, r.body?.action),

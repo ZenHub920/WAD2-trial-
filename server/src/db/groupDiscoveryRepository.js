@@ -55,14 +55,13 @@ export function createGroupDiscoveryRepo(db, repos) {
   return {
     seeker,
     automaticPlacementEligible(userId, party) {
-      const settings = repos.membership.settings(party.id);
       const request = seeker(userId, party.concert_id);
-      if (!settings?.published || party.status !== 'open' || party.remaining_capacity < 1
+      if (!repos.recommendations.visible(party) || party.status !== 'open' || party.remaining_capacity < 1
         || !request || request.status !== 'open' || isTicket(party.id)) return false;
       try {
         repos.membership.ensureFree(userId, party.concert_id, '');
       } catch (error) {
-        if (['already_in_concert_group', 'active_matching_proposal_exists'].includes(error.message)) return false;
+        if (['already_in_concert_group', 'active_matching_proposal_exists', 'active_seat_claim_exists'].includes(error.message)) return false;
         throw error;
       }
       if (db.prepare(`SELECT 1 FROM group_join_requests j JOIN parties p ON p.id=j.party_id
@@ -108,6 +107,13 @@ export function createGroupDiscoveryRepo(db, repos) {
       if (repos.proposals.declinedPairsForConcert(party.concert_id).has(`${request.id}|${partyId}`)) return fail('previously_declined');
       const verdict = checkFeasibility(request, party, { blocklist: repos.users.blocklist() });
       if (!verdict.feasible) return fail(verdict.reason, 400);
+      if (!repos.recommendations.visible(party) || !repos.recommendations.feasible(userId, party)) return fail('group_unavailable');
+      try {
+        repos.membership.ensureFree(userId, party.concert_id, '');
+      } catch (error) {
+        if (['already_in_concert_group', 'active_matching_proposal_exists', 'active_seat_claim_exists'].includes(error.message)) return fail(error.message);
+        throw error;
+      }
       db.prepare('INSERT OR IGNORE INTO seeker_party_preferences (seeker_request_id, party_id) VALUES (?, ?)').run(request.id, partyId);
       return { partyId, preferred: true };
     }).immediate,
@@ -122,6 +128,12 @@ export function createGroupDiscoveryRepo(db, repos) {
       if (!request) return fail('seeker_request_not_found', 404);
       if (request.status !== 'withdrawn') return fail('request_not_withdrawn');
       if (db.prepare("SELECT 1 FROM match_proposals WHERE seeker_request_id = ? AND status IN ('proposed','confirmed')").get(request.id)) return fail('active_proposal_exists');
+      try {
+        repos.membership.ensureFree(userId, concertId, '');
+      } catch (error) {
+        if (['already_in_concert_group', 'active_matching_proposal_exists', 'active_seat_claim_exists'].includes(error.message)) return fail(error.message);
+        throw error;
+      }
       repos.seekers.setStatus(request.id, 'open');
       return { ...request, user: undefined, status: 'open' };
     }).immediate,

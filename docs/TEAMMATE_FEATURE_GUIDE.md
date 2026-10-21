@@ -1,6 +1,8 @@
 # Encore: group features and teammate integration guide
 
-This guide explains the original implementation and final behaviour, now integrated into `main`. For endpoint details, see [BACKEND_COMMUNITY_FEATURES.md](BACKEND_COMMUNITY_FEATURES.md); [GROUP_FEATURES_IMPLEMENTATION.md](GROUP_FEATURES_IMPLEMENTATION.md) is historical and contains superseded rules.
+This guide records the earlier community-feature implementation. For the current person-to-group workflow and integration details, read [HYBRID_GROUP_MATCHING.md](HYBRID_GROUP_MATCHING.md).
+
+> The hybrid guide supersedes the older matching behaviour in sections 3 and 8 below: direct joining allows one pending application per concert; automatic proposals need both host and seeker approval and come from operator-run rounds. The earlier managed-versus-legacy placement restriction no longer applies. Group formation, group connections and the other community features remain as described.
 
 ## 1. What was added, and what changed later?
 

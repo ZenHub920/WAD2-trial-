@@ -127,15 +127,34 @@ export function migrateNotifications(db) {
       "'group-response:'||NEW.id||':'||NEW.status",
       "NEW.status<>OLD.status",
     );
+    // Existing installations notified only the seeker. Both decision makers
+    // now receive the same offer, without rewriting any delivered notification.
+    db.exec("DROP TRIGGER IF EXISTS notify_match_offer");
     trigger(
       "notify_match_offer",
       "match_proposals",
       "INSERT",
       "match",
-      "SELECT user_id recipient FROM seeker_requests WHERE id=NEW.seeker_request_id",
+      `SELECT user_id recipient FROM seeker_requests WHERE id=NEW.seeker_request_id
+        UNION SELECT host_user_id recipient FROM parties WHERE id=NEW.party_id`,
       "You received a matching proposal",
       "'/concerts/'||(SELECT concert_id FROM parties WHERE id=NEW.party_id)",
       "'match-offer:'||NEW.id",
+    );
+    const proposalColumns = new Set(db.prepare("PRAGMA table_info(match_proposals)").all().map((c) => c.name));
+    if (proposalColumns.has("seeker_approved_at") && proposalColumns.has("host_approved_at")) trigger(
+      "notify_match_first_approval",
+      "match_proposals",
+      "UPDATE OF seeker_approved_at,host_approved_at",
+      "match",
+      `SELECT host_user_id recipient FROM parties WHERE id=NEW.party_id
+        AND OLD.seeker_approved_at IS NULL AND NEW.seeker_approved_at IS NOT NULL
+        UNION SELECT user_id recipient FROM seeker_requests WHERE id=NEW.seeker_request_id
+        AND OLD.host_approved_at IS NULL AND NEW.host_approved_at IS NOT NULL`,
+      "A matching proposal is waiting for your decision",
+      "'/concerts/'||(SELECT concert_id FROM parties WHERE id=NEW.party_id)",
+      "'match-approval:'||NEW.id||':'||CASE WHEN OLD.seeker_approved_at IS NULL AND NEW.seeker_approved_at IS NOT NULL THEN 'seeker' ELSE 'host' END",
+      "NEW.status='proposed' AND (NEW.seeker_approved_at IS NULL OR NEW.host_approved_at IS NULL) AND ((OLD.seeker_approved_at IS NULL AND NEW.seeker_approved_at IS NOT NULL) OR (OLD.host_approved_at IS NULL AND NEW.host_approved_at IS NOT NULL))",
     );
     trigger(
       "notify_match_response",

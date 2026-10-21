@@ -90,6 +90,8 @@ function mapSeeker(row) {
         notes: row.notes,
         status: row.status,
         matching_opt_in: row.matching_opt_in === 1,
+        joining_mode: row.joining_mode ?? 'algorithm',
+        joiningMode: row.joining_mode ?? 'algorithm',
         user: row.user_id_joined ? mapUser(prefixed(row, 'user_')) : undefined,
     };
 }
@@ -686,10 +688,10 @@ export function createSeekerRepo(db) {
       db.prepare(`
         INSERT INTO seeker_requests (id, user_id, concert_id, section_pref, spend_band_max,
                                      arrival_pref, plans_wanted_json, strict_age_policy,
-                                     age_tolerance, notes)
+                                     age_tolerance, notes, joining_mode)
         VALUES (@id, @user_id, @concert_id, @section_pref, @spend_band_max,
                 @arrival_pref, @plans_wanted_json, @strict_age_policy,
-                @age_tolerance, @notes)
+                @age_tolerance, @notes, @joining_mode)
       `).run({
         id,
         user_id: data.user_id,
@@ -701,6 +703,7 @@ export function createSeekerRepo(db) {
         strict_age_policy: data.strict_age_policy ? 1 : 0,
         age_tolerance: data.age_tolerance ?? 1,
         notes: data.notes ?? null,
+        joining_mode: data.joining_mode ?? 'algorithm',
       });
       return this.findById(id);
     },
@@ -931,10 +934,9 @@ export function createRoundRepo(db) {
 
           AND NOT EXISTS (
             SELECT 1
-            FROM match_proposals mp
-
-            WHERE mp.seeker_request_id = s.id
-              AND mp.status IN ('proposed', 'confirmed')
+            FROM active_seat_claims sc
+            WHERE sc.seeker_request_id=s.id AND
+              (sc.status='confirmed' OR(sc.status='proposed' AND sc.expires_at>unixepoch('subsec')*1000))
           )
           AND NOT EXISTS (
             SELECT 1 FROM group_memberships gm JOIN parties p ON p.id=gm.party_id
@@ -956,10 +958,9 @@ export function createRoundRepo(db) {
 
           AND NOT EXISTS (
             SELECT 1
-            FROM match_proposals mp
-
-            WHERE mp.party_id = p.id
-              AND mp.status IN ('proposed', 'confirmed')
+            FROM active_seat_claims sc
+            WHERE sc.party_id=p.id AND
+              (sc.status='confirmed' OR(sc.status='proposed' AND sc.expires_at>unixepoch('subsec')*1000))
           )
       `).get(concertId).n;
 
@@ -1559,8 +1560,8 @@ export function createRepositories(db) {
     // Kaki Finder messaging. Separate from `conversations` above, which is the
     // buyer–seller chat on a ticket listing.
     kakiChat: createKakiChatRepo(db),
-    proposals: createProposalRepo(db),
   };
+  repos.proposals = createProposalRepo(db, repos);
   repos.groups = createGroupDiscoveryRepo(db, repos);
   repos.membership = createMembershipRepo(db, repos);
   repos.recommendations = createRecommendationRepo(db, repos);

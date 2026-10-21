@@ -18,6 +18,7 @@ import { migrateMeetups } from './meetupRepository.js';
 import { migrateFeedback } from './feedbackRepository.js';
 import { migrateSeating } from './seatingMigrations.js';
 import { migrateGenderPref } from './genderPrefMigration.js';
+import { migrateHybrid } from './hybridMigrations.js';
 const here = dirname(fileURLToPath(import.meta.url));
 
 let db = null;
@@ -40,9 +41,10 @@ export function getDb() {
   migrateGenderPref(db);
   migrateLegacyTickets(db);
   migrateCommunity(db);
-  migrateNotifications(db);
   migrateMeetups(db);
   migrateFeedback(db);
+  migrateHybrid(db);
+  migrateNotifications(db);
   return db;
 }
 
@@ -221,7 +223,7 @@ export function migrateLegacyTickets(target, imageDir = process.env.ENCORE_TICKE
 }
 
 /** For tests: an isolated in-memory database with the schema applied. */
-export function createTestDb() {
+export function createTestDb({ hybrid = true } = {}) {
   const testDb = new Database(':memory:');
   testDb.pragma('foreign_keys = ON');
   testDb.exec(readFileSync(join(here, 'schema.sql'), 'utf8'));
@@ -230,9 +232,10 @@ export function createTestDb() {
   migrateSeating(testDb);
   migrateLegacyTickets(testDb);
   migrateCommunity(testDb);
-  migrateNotifications(testDb);
   migrateMeetups(testDb);
   migrateFeedback(testDb);
+  if (hybrid) migrateHybrid(testDb);
+  migrateNotifications(testDb);
   return testDb;
 }
 

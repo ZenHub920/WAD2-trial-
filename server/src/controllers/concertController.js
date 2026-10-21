@@ -151,6 +151,7 @@ function validateParty(body = {}) {
 }
 
 function validateRequest(body = {}) {
+  if (body.joining_mode !== undefined && !['direct','algorithm'].includes(body.joining_mode)) return 'invalid_joining_mode';
   if (!SECTIONS.includes(body.section_pref)) return 'invalid_section_pref';
   if (!Number.isInteger(body.spend_band_max) || body.spend_band_max < 1 || body.spend_band_max > 4) {
     return 'spend_band_max_must_be_1_to_4';

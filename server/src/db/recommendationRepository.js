@@ -9,6 +9,7 @@ import {
 } from "../services/discoveryPreferences.js";
 import { checkFeasibility, scorePair } from "../matching/compatibility.js";
 export function createRecommendationRepo(db, repos) {
+  const maxPendingDirectApplications = 1;
   const personal = (user, concert) =>
     individualProfile(
       JSON.parse(
@@ -71,18 +72,29 @@ export function createRecommendationRepo(db, repos) {
     }
     return true;
   };
+  // Discovery and both sides of the matching engine use this same scorer.
+  const pairScore = (seeker, p) => {
+    if (!repos.membership.settings(p.id)) return scorePair(seeker, p);
+    const base = scorePair(seeker, aggregateParty(p));
+    const discovery = compareProfiles(personal(seeker.user_id, p.concert_id), repos.membership.profile(p.id));
+    return {
+      ...base,
+      seekerToParty: 0.6 * base.seekerToParty + 0.4 * discovery.seekerScore,
+      partyToSeeker: 0.6 * base.partyToSeeker + 0.4 * discovery.groupScore,
+      discovery,
+    };
+  };
   const rankIndividual = (user, card) => {
     const p = repos.parties.findById(card.id),
       s = repos.groups.seeker(user, p.concert_id);
     const profile = repos.membership.profile(p.id);
     const concepts = compareProfiles(personal(user, p.concert_id), profile);
-    const base = s ? scorePair(s, aggregateParty(p)) : null;
+    const base = s ? pairScore(s, p) : null;
     return {
       ...card,
       compatibility: base
         ? Math.round(
-            ((0.6 * (base.seekerToParty + base.partyToSeeker)) / 2 +
-              0.4 * concepts.score) *
+            ((base.seekerToParty + base.partyToSeeker) / 2) *
               10000,
           ) / 10000
         : null,
@@ -90,9 +102,9 @@ export function createRecommendationRepo(db, repos) {
       confidence: concepts.confidence,
       profile,
       requiresHostApproval: true,
-      automaticPlacementAvailable: repos.membership.settings(p.id)
-        ? repos.groups.automaticPlacementEligible(user, p)
-        : true,
+      directRequiresHostApproval: true,
+      automaticRequiresSeekerApproval: true,
+      automaticPlacementAvailable: repos.groups.automaticPlacementEligible(user, p),
     };
   };
   return {
@@ -100,6 +112,8 @@ export function createRecommendationRepo(db, repos) {
     visible,
     aggregateParty,
     feasible,
+    pairScore,
+    maxPendingDirectApplications,
     expire: db.transaction(() => expireJoinRequests(db)).immediate,
     answers(user, concert) {
       return withoutRetired(JSON.parse(
@@ -188,30 +202,55 @@ export function createRecommendationRepo(db, repos) {
             b.compatibility - a.compatibility || a.id.localeCompare(b.id),
         );
     },
-    requestJoin: db.transaction((user, id, { matchingRoundId = null } = {}) => {
+    setJoiningMode: db.transaction((user, concert, mode) => {
+      if (!["direct", "algorithm"].includes(mode)) throw communityError("invalid_joining_mode", 400);
+      if (!repos.concerts.findById(concert)) throw communityError("concert_not_found", 404);
+      repos.proposals.expire();
+      repos.recommendations.expire();
+      const seeker = repos.groups.seeker(user, concert);
+      if (!seeker) throw communityError("seeker_request_not_found", 404);
+      const changing = seeker.joining_mode !== mode;
+      if (changing) {
+        if (mode === "algorithm" && db.prepare(`SELECT 1 FROM group_join_requests j JOIN parties p ON p.id=j.party_id
+          WHERE j.user_id=? AND p.concert_id=? AND j.status='pending'`).get(user, concert))
+          throw communityError("withdraw_pending_applications_first");
+        if (db.prepare(`SELECT 1 FROM active_seat_claims WHERE seeker_request_id=?
+          AND (status='confirmed' OR (status='proposed' AND expires_at>?))`).get(seeker.id, Date.now()))
+          throw communityError("active_seat_claim_exists");
+        repos.membership.ensureFree(user, concert, "");
+        if (seeker.status !== "open") throw communityError("open_seeker_request_required");
+      }
+      // Choosing an algorithm mode explicitly enrols an open, unassigned seeker.
+      // Re-selecting the current mode never resolves a real offer or membership.
+      db.prepare(`UPDATE seeker_requests SET joining_mode=?,matching_opt_in=? WHERE id=?`)
+        .run(mode, mode === "algorithm" && seeker.status === "open" ? 1 : 0, seeker.id);
+      const result = repos.groups.seeker(user, concert);
+      return { ...result, user: undefined, maxPendingDirectApplications };
+    }).immediate,
+    requestJoin: db.transaction((user, id, input = {}) => {
       repos.proposals.expire();
       repos.recommendations.expire();
       const p = repos.membership.party(id);
-      if (
-        db
-          .prepare(
-            "SELECT 1 FROM group_join_requests j JOIN parties p ON p.id=j.party_id WHERE j.user_id=? AND p.concert_id=? AND j.status='pending'",
-          )
-          .get(user, p.concert_id)
-      )
-        throw communityError("withdraw_current_join_request_first");
       repos.membership.ensureFree(user, p.concert_id, id);
       if (repos.membership.member(user, id) || p.host_user_id === user)
         throw communityError("already_group_member");
       const s = repos.groups.seeker(user, p.concert_id);
       if (!s || s.status !== "open")
         throw communityError("open_seeker_request_required");
-      if (matchingRoundId && (
-        !s.matching_opt_in ||
-        !repos.membership.settings(id) ||
-        !db.prepare("SELECT 1 FROM match_rounds WHERE id=? AND concert_id=?").get(matchingRoundId, p.concert_id)
-      ))
-        throw communityError("automatic_matching_consent_required");
+      if (s.joining_mode !== "direct") throw communityError("direct_joining_mode_required");
+      if (!input || Array.isArray(input) || typeof input !== "object"
+        || (input.note !== undefined && typeof input.note !== "string")
+        || (input.note?.length ?? 0) > 500)
+        throw communityError("invalid_application_note", 400);
+      const note = input.note?.trim() ?? "";
+      if (db.prepare(`SELECT 1 FROM group_join_requests WHERE party_id=? AND user_id=?
+        AND status IN('pending','accepted')`).get(id, user))
+        throw communityError("join_request_already_exists");
+      const pending = db.prepare(`SELECT COUNT(*) n FROM group_join_requests j JOIN parties p ON p.id=j.party_id
+        WHERE j.user_id=? AND p.concert_id=? AND j.status='pending' AND j.matching_round_id IS NULL`)
+        .get(user, p.concert_id).n;
+      if (pending >= maxPendingDirectApplications)
+        throw communityError("pending_application_limit_reached");
       if (
         repos.membership.settings(id) &&
         !db
@@ -230,6 +269,7 @@ export function createRecommendationRepo(db, repos) {
       )
         throw communityError("active_matching_proposal_exists");
       if (
+        db.prepare("SELECT 1 FROM tickets WHERE source_party_id=?").get(id) ||
         !visible(p) ||
         !feasible(user, p) ||
         p.status !== "open" ||
@@ -243,41 +283,48 @@ export function createRecommendationRepo(db, repos) {
       )
         throw communityError("previously_declined");
       const requestId = `gj_${randomUUID()}`;
-      const inserted = db
+      db
         .prepare(
-          `INSERT INTO group_join_requests(id,party_id,user_id,status,expires_at,group_version,preferences_json,matching_round_id) VALUES(?,?,?,'pending',?,?,?,?)
-        ON CONFLICT(party_id,user_id) DO UPDATE SET status='pending',expires_at=excluded.expires_at,responded_at=NULL,group_version=excluded.group_version,preferences_json=excluded.preferences_json,matching_round_id=excluded.matching_round_id
-        WHERE group_join_requests.status IN('withdrawn','expired') RETURNING id`,
+          `INSERT INTO group_join_requests(id,party_id,user_id,seeker_request_id,status,expires_at,
+            group_version,preferences_json,application_note) VALUES(?,?,?,?,'pending',?,?,?,?)`,
         )
-        .get(
+        .run(
           requestId,
           id,
           user,
+          s.id,
           Date.now() + 48 * 3600000,
           repos.membership.settings(id)?.version ?? 0,
           JSON.stringify(repos.recommendations.answers(user, p.concert_id)),
-          matchingRoundId,
+          note,
         );
-      if (!inserted) throw communityError("join_request_already_exists");
-      if (!matchingRoundId)
-        db.prepare("UPDATE seeker_requests SET matching_opt_in=0 WHERE id=?").run(s.id);
-      return { id: inserted.id, status: "pending" };
+      return { id: requestId, status: "pending" };
     }).immediate,
-    requests(user) {
+    requests(user, { scope = "all", concertId } = {}) {
+      if (!["all", "own", "hosted"].includes(scope)) throw communityError("invalid_request_scope", 400);
       repos.recommendations.expire();
       return db
         .prepare(
           `SELECT j.id,j.party_id AS partyId,j.user_id AS userId,u.display_name AS seekerName,p.host_user_id AS hostId,
         p.concert_id AS concertId,c.artist,h.display_name AS hostName,p.section,j.status,j.expires_at AS expiresAt,
-        j.created_at AS createdAt,j.matching_round_id AS matchingRoundId,j.preferences_json FROM group_join_requests j
+        j.created_at AS createdAt,j.responded_at AS respondedAt,j.matching_round_id AS matchingRoundId,
+        j.application_note AS applicationNote,j.responded_by AS respondedBy,j.resolution_reason AS resolutionReason,j.preferences_json FROM group_join_requests j
         JOIN parties p ON p.id=j.party_id JOIN users u ON u.id=j.user_id JOIN users h ON h.id=p.host_user_id JOIN concerts c ON c.id=p.concert_id
-        WHERE j.user_id=? OR p.host_user_id=? ORDER BY j.created_at DESC,j.id`,
+        WHERE ((? IN('all','own') AND j.user_id=?) OR (? IN('all','hosted') AND p.host_user_id=?))
+          AND (? IS NULL OR p.concert_id=?) ORDER BY j.created_at DESC,j.rowid DESC`,
         )
-        .all(user, user)
+        .all(scope, user, scope, user, concertId ?? null, concertId ?? null)
         .map(({ preferences_json, ...r }) => {
           const seeker = repos.users.findById(r.userId);
+          const party = repos.parties.findById(r.partyId);
+          const request = repos.groups.seeker(r.userId, r.concertId);
+          const scored = request ? pairScore(request, party) : null;
           return {
             ...r,
+            legacyAutomatic: Boolean(r.matchingRoundId),
+            compatibility: scored ? Math.round((scored.seekerToParty + scored.partyToSeeker) * 5000) / 10000 : null,
+            reasons: scored?.discovery?.reasons ?? [],
+            remainingCapacity: party.remaining_capacity,
             seeker: {
               id: seeker.id,
               displayName: seeker.display_name,
@@ -290,7 +337,27 @@ export function createRecommendationRepo(db, repos) {
           };
         });
     },
+    currentMemberships(user) {
+      repos.proposals.expire();
+      return repos.membership.activeGroups(user).map((attendance) => {
+        const p = repos.parties.findById(attendance.id);
+        const claim = db.prepare(`SELECT source FROM active_seat_claims a JOIN seeker_requests s
+          ON s.id=a.seeker_request_id WHERE s.user_id=? AND a.party_id=? AND a.status='confirmed'`).get(user, p.id);
+        return {
+          ...attendance,
+          partyId: p.id,
+          assignmentOrigin: claim?.source ?? (attendance.source === "proposal" ? "algorithm" : attendance.source === "join" ? "direct" : attendance.source),
+          assignmentStatus: "confirmed",
+          host: { id: p.host_user_id, displayName: p.host.display_name },
+          group: { id: p.id, section: p.section, spendBand: p.spend_band, arrivalPlan: p.arrival_plan, notes: p.notes, status: p.status },
+          remainingCapacity: p.remaining_capacity,
+          members: db.prepare(`SELECT u.id,u.display_name AS name,m.source FROM group_memberships m JOIN users u ON u.id=m.user_id
+            WHERE m.party_id=? AND m.status='active' ORDER BY m.joined_at,u.id`).all(p.id),
+        };
+      });
+    },
     respond: db.transaction((user, id, action) => {
+      if (action === "decline") action = "reject";
       if (!["accept", "reject", "withdraw"].includes(action))
         throw communityError("invalid_decision", 400);
       repos.recommendations.expire();
@@ -316,6 +383,9 @@ export function createRecommendationRepo(db, repos) {
           throw communityError("group_changed_withdraw_and_resubmit");
         repos.proposals.expire();
         const live = repos.parties.findById(p.id);
+        const legacyClaim = j.matching_round_id && db.prepare(`SELECT 1 FROM active_seat_claims
+          WHERE join_request_id=? AND source='algorithm' AND status='proposed' AND expires_at>?`).get(j.id, Date.now());
+        if (j.matching_round_id && !legacyClaim) throw communityError("claim_source_invalid");
         if (
           (!j.matching_round_id ? live.status !== "open" : !["open", "matched"].includes(live.status)) ||
           live.remaining_capacity + (j.matching_round_id ? 1 : 0) < 1 ||
@@ -325,9 +395,13 @@ export function createRecommendationRepo(db, repos) {
           throw communityError("group_unavailable");
         repos.membership.ensureFree(j.user_id, p.concert_id, p.id);
         const request = repos.groups.seeker(j.user_id, p.concert_id);
+        if (request?.joining_mode !== (j.matching_round_id ? "algorithm" : "direct"))
+          throw communityError("joining_mode_changed");
+        if (request && repos.proposals.declinedPairsForConcert(p.concert_id).has(`${request.id}|${p.id}`))
+          throw communityError("previously_declined");
         if (
           !request ||
-          request.status !== "open" ||
+          (request.status !== "open" && !(legacyClaim && request.status === "matched")) ||
           db
             .prepare(
               "SELECT 1 FROM match_proposals WHERE seeker_request_id=? AND (status='confirmed' OR(status='proposed' AND expires_at>?))",
@@ -337,8 +411,8 @@ export function createRecommendationRepo(db, repos) {
           throw communityError("active_matching_proposal_exists");
         // Replace this request's reservation with one membership in the same transaction.
         db.prepare(
-          "UPDATE group_join_requests SET status='accepted',responded_at=datetime('now') WHERE id=?",
-        ).run(id);
+          "UPDATE group_join_requests SET status='accepted',responded_at=datetime('now'),responded_by=? WHERE id=?",
+        ).run(user, id);
         repos.membership.attach(p, j.user_id, "join");
         const answers = db
           .prepare(
@@ -374,11 +448,8 @@ export function createRecommendationRepo(db, repos) {
           ).run(seeker.id, p.id);
       }
       db.prepare(
-        "UPDATE group_join_requests SET status=?,responded_at=datetime('now') WHERE id=? AND status='pending'",
-      ).run(status, id);
-      if (action === "withdraw")
-        db.prepare("UPDATE seeker_requests SET matching_opt_in=0 WHERE user_id=? AND concert_id=?")
-          .run(j.user_id, p.concert_id);
+        "UPDATE group_join_requests SET status=?,responded_at=datetime('now'),responded_by=? WHERE id=? AND status='pending'",
+      ).run(status, user, id);
       if (action === "accept" && !j.matching_round_id)
         db.prepare(
           "UPDATE group_settings SET version=version+1 WHERE party_id=?",
