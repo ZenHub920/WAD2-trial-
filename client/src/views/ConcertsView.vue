@@ -142,10 +142,6 @@ function clearFilters() {
             <p>Showing {{ visibleConcerts.length }} of {{ matchingConcerts.length }} {{ matchingConcerts.length === 1 ? 'concert' : 'concerts' }}{{ hasFilters ? ' matching your filters' : '' }}.</p>
           </div>
         </header>
-        <details v-if="matchingConcerts.length" class="concert-context">
-          <summary>What do these counts mean?</summary>
-          <p>Group places are openings in app groups. Active group finders are open group-matching requests. Tickets for sale are fan listings here, not Ticketmaster availability.</p>
-        </details>
         <p v-if="activityError" class="concert-error" role="alert">Could not load group activity. Group counts are unavailable; concert and ticket details are shown separately.</p>
         <p v-if="ticketError" class="concert-error" role="alert">Could not load tickets for sale. Ticket counts and resale prices are unavailable; concert discovery is still shown.</p>
         <div v-if="concertError" class="concert-empty" role="alert">
@@ -188,7 +184,7 @@ function clearFilters() {
 .concert-results { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
 .concert-results h2 { font-size: var(--step-1); }
 .concert-results p { margin-top: var(--space-1); color: var(--text-300); font-size: var(--step--1); }
-.concert-context { max-width: 95ch; margin-block: var(--space-3) var(--space-5); color: var(--text-400); font-size: var(--step--1); }
+.concert-results { margin-bottom: var(--space-5); }
 .concert-error { margin-bottom: var(--space-4); color: var(--rose-400); }
 .concert-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
 .concert-empty { display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-7) var(--space-4); text-align: center; border: var(--border-soft); border-radius: var(--radius-lg); }
