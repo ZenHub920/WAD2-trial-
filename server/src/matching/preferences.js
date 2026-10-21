@@ -28,6 +28,8 @@ import { checkFeasibility, scorePair } from './compatibility.js';
  * @param {Array} parties  party listings, each with a hydrated `.host`
  * @param {object} [options]
  * @param {Set<string>} [options.blocklist] "userA:userB" pairs that may never match
+ * @param {Function} [options.isEligible] Additional pair eligibility for managed groups
+ * @param {Function} [options.scorePair] Directional scorer; defaults to the legacy scorer
  * @returns {PreferenceProfile}
  */
 export function buildPreferences(seekers, parties, options = {}) {
@@ -36,6 +38,7 @@ export function buildPreferences(seekers, parties, options = {}) {
   const capacities = new Map();
   const pairScores = new Map();
   const rejectionReasons = new Map();
+  const score = options.scorePair ?? scorePair;
 
   // Scored candidate lists, accumulated before sorting.
   const seekerCandidates = new Map();
@@ -77,8 +80,12 @@ export function buildPreferences(seekers, parties, options = {}) {
         rejectionReasons.set(verdict.reason, count + 1);
         continue;
       }
+      if (options.isEligible && !options.isEligible(seeker, party)) {
+        rejectionReasons.set('managed_ineligible', (rejectionReasons.get('managed_ineligible') ?? 0) + 1);
+        continue;
+      }
 
-      const scored = scorePair(seeker, party);
+      const scored = score(seeker, party);
       feasiblePairs += 1;
 
       pairScores.set(key, scored);

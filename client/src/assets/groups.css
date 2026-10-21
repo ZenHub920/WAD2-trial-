@@ -1,7 +1,10 @@
-.groups-page { padding-top: var(--space-8); padding-bottom: var(--space-8); display: grid; gap: var(--space-5); min-width: 0; overflow-wrap: anywhere; }
-.groups-page h1 { font-size: var(--step-4); }
-.groups-page h2 { font-size: var(--step-2); }
-.groups-page h3 { font-size: var(--step-1); }
+.groups-page { padding-top: var(--space-7); padding-bottom: var(--space-8); display: grid; gap: var(--space-5); min-width: 0; max-width: 74rem; overflow-wrap: anywhere; align-content: start; }
+.groups-page :where(h1, h2, h3, p, ul) { margin: 0; }
+.groups-page h1 { font-size: var(--step-3); line-height: 1.2; }
+.groups-page h2 { font-size: var(--step-1); line-height: 1.3; }
+.groups-page h3 { font-size: var(--step-0); line-height: 1.35; }
+.groups-page p { line-height: 1.6; }
+.groups-page > p { max-width: 78ch; }
 .group-panel, .group-card { padding: var(--space-5); display: grid; gap: var(--space-3); min-width: 0; align-content: start; }
 .group-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: var(--space-4); align-items: start; }
 .groups-page label, .group-panel label { display: grid; gap: var(--space-2); font-size: var(--step--1); min-width: 0; }
@@ -23,7 +26,47 @@
 .groups-page details[open] > summary, .group-panel details[open] > summary { margin-bottom: var(--space-3); }
 .group-check input[type=checkbox] { flex: none; margin-top: 0.2em; }
 .group-panel article + article { border-top: var(--border-hairline); padding-top: var(--space-4); }
+.groups-page .group-panel { gap: var(--space-4); }
+.groups-page :where(section, .group-panel, .group-card) { scroll-margin-top: calc(var(--header-height) + var(--space-4)); }
+.groups-page .group-panel .group-panel:not(.card) { padding: 0; }
+.groups-page .group-controls { align-items: end; }
+.groups-page label { line-height: 1.45; }
+.groups-page :where(input:not([type=checkbox]):not([type=radio]), select, textarea) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: var(--space-3);
+  border: var(--border-soft);
+  border-radius: var(--radius-md);
+  background-color: var(--ink-700);
+  color: var(--text-100);
+  font-size: var(--step--1);
+  line-height: 1.4;
+}
+.groups-page select:not([multiple]):not([size]) { padding-right: 2.75rem; }
+.groups-page :where(input, textarea):disabled { opacity: 0.55; cursor: not-allowed; }
+.groups-page :where(input, textarea):focus-visible { border-color: var(--accent-400); }
+.groups-page > label { width: 100%; max-width: 36rem; }
+.groups-page fieldset { margin: 0; padding: var(--space-4); gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); }
+.groups-page legend { padding-inline: var(--space-2); font-size: var(--step--1); font-weight: 600; }
+.groups-page .group-check { line-height: 1.5; align-items: flex-start; }
+.groups-page .group-check input[type=checkbox] { margin: 0.15em 0 0; }
+.groups-page .group-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr)); align-items: stretch; gap: var(--space-4); }
+.groups-page .group-grid > .group-card { width: 100%; max-width: 34rem; }
+.groups-page .group-actions { column-gap: var(--space-3); row-gap: var(--space-2); }
+.groups-page .group-actions .btn { flex: 0 1 auto; }
+.groups-page > .btn, .groups-page .group-panel > .btn, .groups-page .group-panel > form > .btn { justify-self: start; align-self: start; }
+.groups-page details > summary { line-height: 1.5; font-size: var(--step--1); font-weight: 600; }
+.groups-page details[open] > summary { margin-bottom: var(--space-4); }
+.groups-page .group-panel > ul { padding-left: var(--space-5); }
+.groups-page .group-panel > article { display: grid; gap: var(--space-3); min-width: 0; }
+.groups-page .group-panel article + article { padding-top: var(--space-4); }
+.groups-page :where(.group-error, .group-success) { line-height: 1.5; }
 @media (max-width: 480px) {
   .group-panel, .group-card { padding: var(--space-4); }
   .group-actions .btn { flex: 1 1 auto; text-align: center; justify-content: center; }
+  .groups-page { padding-top: var(--space-5); gap: var(--space-4); }
+  .groups-page .group-actions .btn { flex: 0 1 auto; }
+  .groups-page .group-controls { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
 }

@@ -54,6 +54,23 @@ export function createGroupDiscoveryRepo(db, repos) {
   };
   return {
     seeker,
+    automaticPlacementEligible(userId, party) {
+      const settings = repos.membership.settings(party.id);
+      const request = seeker(userId, party.concert_id);
+      if (!settings?.published || party.status !== 'open' || party.remaining_capacity < 1
+        || !request || request.status !== 'open' || isTicket(party.id)) return false;
+      try {
+        repos.membership.ensureFree(userId, party.concert_id, '');
+      } catch (error) {
+        if (['already_in_concert_group', 'active_matching_proposal_exists'].includes(error.message)) return false;
+        throw error;
+      }
+      if (db.prepare(`SELECT 1 FROM group_join_requests j JOIN parties p ON p.id=j.party_id
+        WHERE j.user_id=? AND p.concert_id=? AND j.status='pending' AND j.expires_at>?`)
+        .get(userId, party.concert_id, Date.now())) return false;
+      return !repos.proposals.declinedPairsForConcert(party.concert_id).has(`${request.id}|${party.id}`)
+        && repos.recommendations.feasible(userId, party);
+    },
     preferredPairs(concertId) {
       return new Set(db.prepare(`SELECT pref.seeker_request_id, pref.party_id
         FROM seeker_party_preferences pref JOIN seeker_requests s ON s.id = pref.seeker_request_id

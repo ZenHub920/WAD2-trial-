@@ -6,7 +6,7 @@ This guide explains the original implementation and final behaviour, now integra
 
 Initially, **Find a Group** provided filters and saved preferences for automatic matching. **Connect Groups** introduced host-to-host invitations and connection status.
 
-The expansion added memberships, friend links, shared preferences, recommendations, host-approved joining, notifications, planning, weather and feedback. **Managed groups use seeker choice and receiving-host approval.** Legacy automatic placement remains separate.
+The expansion added memberships, friend links, shared preferences, recommendations, host-approved joining, notifications, planning, weather and feedback. Managed groups support **Find my group** using Gale–Shapley as well as manual choice; both require receiving-host approval. Legacy operator placement remains separate.
 
 Connections never merge memberships, consume stranger places or transfer tickets.
 
@@ -31,19 +31,20 @@ Each member contributes one vote per concept per intent: three of four choosing 
 2. The server finds published groups with stranger places, checking eligibility, blocks, rejections and hard compatibility against active members.
 3. It compares seeker wants with group About preferences, and group wants with seeker About preferences. Avoid overlap reduces the score.
 4. Filtering precedes pagination: **20 ranked results per page**, maximum 30, with qualitative compatibility and up to three supported reasons.
-5. The seeker chooses a group and sends a join request. Only one pending choice per concert is allowed; withdrawal allows another choice. Pending requests do not reserve places.
-6. The host reviews the seeker profile/preferences and accepts or rejects. Acceptance transactionally rechecks eligibility/capacity, creates membership and consumes one stranger place.
+5. The seeker can choose **Find my group** to opt into a real Gale–Shapley batch across eligible enrolled seekers and published managed groups, or choose a group manually. Only one pending request per concert is allowed.
+6. An algorithm-selected request reserves a place for up to 48 hours. The host reviews the seeker profile/preferences and accepts or rejects. Acceptance converts the reservation into exactly one membership. Manual pending requests do not reserve places.
+7. A user without a suitable assignment stays queued and can retry or leave. Withdrawing an algorithm-selected request releases its place and stops automatic enrollment. Rejected pairs are excluded from later rounds; expired requests release their places.
 
-There is **no second seeker acceptance**. Changed membership/settings/preferences invalidate the original choice; the seeker must review, withdraw and resubmit before approval. Requests preserve submitted seeker answers for host review; later seeker preference edits also invalidate consent, even if the old answers are restored.
+There is **no second seeker acceptance**: Find my group explicitly authorizes a request to the selected group, and manual choice authorizes that group. Settings/member-preference or submitted seeker-answer changes invalidate consent and require review, withdrawal and resubmission. Approving another algorithm request from the same batch does not invalidate the remaining batch requests solely by changing membership counts.
 
 Ranking uses **60% structured compatibility** (vibe, language, logistics, reliability) and **40% mutual concepts**. Profiles incorporate member data, not averaged complete compatibility scores. Custom wants have capped influence; sparse evidence receives limited confidence.
 
-**Flow:** saved preferences → eligibility → mutual ranking → selected request → host decision → membership/capacity update → notifications.
+**Flow:** saved preferences → explicit matching enrollment → directional preference lists → Gale–Shapley and stability verification → persisted round and reserved request → host decision → membership/capacity update → notifications. Manual choice skips the batch and uses the existing approval path.
 
 ## 4. Group → group recommendations and invitations
 
 1. Both groups form, publish and opt into connections.
-2. At `/groups/connect`, the host selects their group. Candidates share the concert; self/same-host, cancelled and blocked pairs are excluded, including active-member blocks.
+2. Open My groups at `/groups/connect` and use Connect groups on an owned-group card. Creation has its own Create group page (`?view=create`); My groups also lists active joined groups. The selected group's connection view uses `?view=connections&groupId=...`. Candidates share the concert; self/same-host, cancelled and blocked pairs are excluded, including active-member blocks.
 3. Ranking combines **70% mutual concept compatibility** and **30% shared logistics**: section, arrival and spending. The default page contains 20 candidates with reasons and invitation status.
 4. The host sends an invitation. Database uniqueness prevents duplicate/reversed invitations.
 5. Only the receiving host can accept or decline. Acceptance rechecks current eligibility. Both groups remain separate and gain access to shared planning.
@@ -78,7 +79,7 @@ Feedback updates existing reliability using both legacy and direct-group records
 
 ## 8. Legacy matching, backend safeguards and integration points
 
-Legacy saved preferences prioritize feasible groups; Gale–Shapley produces proposals for confirmation/decline. Managed groups are excluded so automatic placement cannot bypass approval. Kaki's swipe/mutual-chat flow remains separate.
+Normal-user managed matching is available through GET/POST/DELETE `/api/me/concerts/:id/matching`; POST needs a UUID-v4 Idempotency-Key and returns only the caller's state. Managed assignments use reserved join requests so host approval cannot be bypassed. Legacy operator rounds retain their proposal-confirmation lifecycle. Kaki's swipe/mutual-chat flow remains separate.
 
 Backend fixes aligned decline handling, matching retry keys, proposal expiry, shared capacity checks and transaction rollback on matching-write failure.
 
@@ -92,4 +93,4 @@ Migrations upgrade the schema at startup without resetting data. Conflicting his
 | Notifications/planning/feedback | Corresponding repositories; `/notifications`, `/meetups/:id`, `/feedback` |
 | Frontend requests/navigation | Existing `client/src/api.js` and `client/src/main.js` |
 
-Actions use session identity and backend authorization. The post-integration backend review passed 253 tests, the frontend production build and an isolated live HTTP journey. An authenticated browser smoke checked meetup distance rendering; full browser/mobile acceptance remains outstanding. See the backend guide's review section for fixes and migration details.
+Actions use session identity and backend authorization. On 20 October 2026, the managed matching integration passed all 284 backend tests and the frontend production build. An isolated desktop/mobile browser scenario exercised normal-user Gale–Shapley matching, host approval, membership access, reservation release, budget exclusion and opt-out. Full application browser/mobile coverage is not claimed.

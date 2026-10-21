@@ -151,6 +151,9 @@ export function createRoutes({
   router.get('/concerts/:id/match/preview', matches.preview);
   router.post('/concerts/:id/match', requireOperator, matches.run);
   router.get('/me/concerts/:id/result', requireUser, matches.myResult);
+  router.get('/me/concerts/:id/matching', requireUser, matches.managedState);
+  router.post('/me/concerts/:id/matching', requireUser, matches.matchManaged);
+  router.delete('/me/concerts/:id/matching', requireUser, matches.leaveManaged);
   router.get('/rounds/:id', requireOperator, matches.round);
   router.get('/solvers', matches.solvers);
   router.get('/rounds/:id/trace', requireOperator, matches.trace);

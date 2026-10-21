@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS concerts (
   source_event_id TEXT,
   official_url  TEXT,
   image_attribution TEXT,
+  seatmap_url    TEXT,
   -- Matching for an event closes at this point; rounds run on or after it.
   matching_closes_at TEXT,
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
@@ -90,7 +91,7 @@ CREATE TABLE IF NOT EXISTS parties (
   host_user_id      TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   concert_id        TEXT    NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
   capacity          INTEGER NOT NULL CHECK (capacity >= 1),
-  section           TEXT    NOT NULL CHECK (section IN ('pit','ga_standing','lower_bowl','upper_bowl','seated_any')),
+  section           TEXT    NOT NULL CHECK (section IN ('vip','standing_pen','category_1','category_2','category_3','category_4','category_5','category_6','pit','ga_standing','lower_bowl','upper_bowl','seated_any')),
   spend_band        INTEGER NOT NULL CHECK (spend_band BETWEEN 1 AND 4),
   arrival_plan      TEXT    NOT NULL CHECK (arrival_plan IN ('early_queue','mid','doors')),
   plans_json        TEXT    NOT NULL DEFAULT '{}',
@@ -201,7 +202,7 @@ CREATE INDEX IF NOT EXISTS idx_ticket_messages_conversation ON ticket_messages(c
 CREATE TABLE IF NOT EXISTS concert_participants (
   user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   concert_id   TEXT NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
-  section_pref TEXT NOT NULL CHECK (section_pref IN ('pit','ga_standing','lower_bowl','upper_bowl','seated_any')),
+  section_pref TEXT NOT NULL CHECK (section_pref IN ('vip','standing_pen','category_1','category_2','category_3','category_4','category_5','category_6','pit','ga_standing','lower_bowl','upper_bowl','seated_any')),
   arrival_pref TEXT NOT NULL CHECK (arrival_pref IN ('early_queue','mid','doors')),
   status       TEXT NOT NULL DEFAULT 'joined' CHECK (status IN ('joined','withdrawn')),
   joined_at    TEXT NOT NULL DEFAULT (datetime('now')),
@@ -213,7 +214,7 @@ CREATE TABLE IF NOT EXISTS seeker_requests (
   id                TEXT    PRIMARY KEY,
   user_id           TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   concert_id        TEXT    NOT NULL REFERENCES concerts(id) ON DELETE CASCADE,
-  section_pref      TEXT    NOT NULL CHECK (section_pref IN ('pit','ga_standing','lower_bowl','upper_bowl','seated_any')),
+  section_pref      TEXT    NOT NULL CHECK (section_pref IN ('vip','standing_pen','category_1','category_2','category_3','category_4','category_5','category_6','pit','ga_standing','lower_bowl','upper_bowl','seated_any')),
   spend_band_max    INTEGER NOT NULL CHECK (spend_band_max BETWEEN 1 AND 4),
   arrival_pref      TEXT    NOT NULL CHECK (arrival_pref IN ('early_queue','mid','doors')),
   plans_wanted_json TEXT    NOT NULL DEFAULT '{}',
@@ -227,6 +228,7 @@ CREATE TABLE IF NOT EXISTS seeker_requests (
   linked_request_id TEXT    REFERENCES seeker_requests(id) ON DELETE SET NULL,
   notes             TEXT,
   status            TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open','matched','withdrawn')),
+  matching_opt_in   INTEGER NOT NULL DEFAULT 0 CHECK (matching_opt_in IN (0,1)),
   created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
   UNIQUE (user_id, concert_id),
   CHECK (linked_request_id IS NULL OR linked_request_id <> id)

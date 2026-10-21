@@ -89,6 +89,7 @@ function mapSeeker(row) {
         linked_request_id: row.linked_request_id ?? null,
         notes: row.notes,
         status: row.status,
+        matching_opt_in: row.matching_opt_in === 1,
         user: row.user_id_joined ? mapUser(prefixed(row, 'user_')) : undefined,
     };
 }
@@ -725,7 +726,9 @@ export function createSeekerRepo(db) {
     },
 
     setStatus(id, status) {
-      db.prepare('UPDATE seeker_requests SET status = ? WHERE id = ?').run(status, id);
+      db.prepare(`UPDATE seeker_requests SET status = ?,
+        matching_opt_in = CASE WHEN ? = 'withdrawn' THEN 0 ELSE matching_opt_in END WHERE id = ?`)
+        .run(status, status, id);
     },
   };
 }
@@ -932,6 +935,11 @@ export function createRoundRepo(db) {
 
             WHERE mp.seeker_request_id = s.id
               AND mp.status IN ('proposed', 'confirmed')
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM group_memberships gm JOIN parties p ON p.id=gm.party_id
+            WHERE gm.user_id=s.user_id AND gm.concert_id=s.concert_id
+              AND gm.status='active' AND p.status<>'cancelled'
           )
       `).get(concertId).n;
 
