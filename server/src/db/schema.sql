@@ -103,6 +103,10 @@ CREATE TABLE IF NOT EXISTS parties (
   -- which no registered solver can yet model exactly.
   min_size          INTEGER CHECK (min_size IS NULL OR min_size >= 1),
   notes             TEXT,
+  -- Optional host-chosen identity. NULL name falls back to the artist in the
+  -- interface; image_path is a stored filename under the avatars directory.
+  name              TEXT,
+  image_path        TEXT,
   status            TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open','matched','cancelled')),
   created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
   CHECK (min_size IS NULL OR min_size <= capacity)

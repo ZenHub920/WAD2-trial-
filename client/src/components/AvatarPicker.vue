@@ -65,7 +65,7 @@ function onFile(event) {
 
 <template>
   <div class="picker">
-    <UserAvatar :src="src" :name="name" :size="size" />
+    <slot name="preview"><UserAvatar :src="src" :name="name" :size="size" /></slot>
 
     <div class="picker__actions">
       <button class="btn btn--ghost" type="button" :disabled="busy || reading" @click="choose">

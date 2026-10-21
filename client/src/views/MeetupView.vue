@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { api } from "../api.js";
 import { currentUser } from "../auth.js";
 import LoadingSpinner from "../components/LoadingSpinner.vue";
+import BackLink from "../components/BackLink.vue";
 import "../assets/groups.css";
 const props = defineProps({ id: String });
 const route = useRoute(),
@@ -152,10 +153,10 @@ async function getWeather() {
 </script>
 <template>
   <div class="container groups-page">
+    <BackLink fallback="/groups/connect" fallback-label="Back to My groups" />
     <h1>{{ board?.title ?? "Meetup planning" }}</h1>
-    <nav class="group-actions">
-      <RouterLink v-if="id" to="/meetups">All meetup plans</RouterLink>
-      <RouterLink to="/groups/connect">My groups</RouterLink>
+    <nav v-if="id" class="group-actions">
+      <RouterLink to="/meetups">All meetup plans</RouterLink>
     </nav>
     <p v-if="error" class="group-error" role="alert">{{ error }}</p>
     <p v-if="notice" class="group-success" role="status">{{ notice }}</p>

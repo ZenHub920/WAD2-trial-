@@ -107,6 +107,11 @@ test("host and friend supply preferences, publish together and keep friend place
   invite = (await api(`/groups/${party}/friend-invites`, "host", "POST")).body
     .invitation;
   assert.equal(
+    (await api(`/group-friend-invites/${invite.token}/accept`, "friend", "POST")).body.error,
+    "save_group_preferences_first",
+  );
+  assert.equal((await api("/me/preferences", "friend", "PUT", answers)).status, 200);
+  assert.equal(
     (
       await api(
         `/group-friend-invites/${invite.token}/accept`,

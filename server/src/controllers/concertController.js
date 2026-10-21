@@ -103,7 +103,7 @@ export function createConcertController(repos) {
       if (error) return res.status(400).json({ error });
       try {
         const party = repos.parties.create({
-          ...req.body, host_user_id: req.user.id, concert_id: req.params.id,
+          ...req.body, name: groupName(req.body.name), host_user_id: req.user.id, concert_id: req.params.id,
         });
         res.status(201).json({ party });
       } catch {
@@ -147,7 +147,19 @@ function validateParty(body = {}) {
     return 'spend_band_must_be_1_to_4';
   }
   if (!ARRIVALS.includes(body.arrival_plan)) return 'invalid_arrival_plan';
+  if (body.name !== undefined && body.name !== null && groupName(body.name) === undefined) return 'invalid_group_name';
   return null;
+}
+
+export const GROUP_NAME_MAX = 60;
+
+/** Trimmed name, null when blank or absent, undefined when not a valid name. */
+export function groupName(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') return undefined;
+  const name = value.trim().replace(/\s+/g, ' ');
+  if (!name) return null;
+  return name.length <= GROUP_NAME_MAX ? name : undefined;
 }
 
 function validateRequest(body = {}) {

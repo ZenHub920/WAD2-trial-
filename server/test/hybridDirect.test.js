@@ -238,3 +238,42 @@ test("whole-group blocks apply to direct joining and the shared directional scor
   assert.throws(() => repos.recommendations.requestJoin("one", "p1"), /group_unavailable/);
   assert.equal(repos.recommendations.individual("one", "c1").some((g) => g.id === "p1"), false);
 });
+
+test("saved account preferences support direct admission and retain the group's upstream name and picture", () => {
+  repos.membership.savePreferences("h1", answers);
+  repos.membership.savePreferences("one", answers);
+  repos.membership.configure("h1", "p1", { expectedFriends: 0 });
+  repos.membership.publish("h1", "p1");
+  repos.parties.setName("p1", "Supper after the show");
+  repos.parties.setImage("p1", "group-picture.png");
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM seeker_discovery_preferences WHERE user_id='one'").get().n, 0);
+  assert.equal(repos.recommendations.hasAnswers("one", "c1"), true);
+  direct();
+  const request = repos.recommendations.requestJoin("one", "p1");
+  const inbox = repos.recommendations.requests("h1", { scope: "hosted" })[0];
+  assert.equal(inbox.groupName, "Supper after the show");
+  assert.equal(inbox.imageUrl, "/api/avatars/group-picture.png");
+  repos.recommendations.respond("h1", request.id, "accept");
+  assert.ok(repos.membership.detail("one", "p1").myAnswers.about.some((a) => a.key === "post_supper"));
+  const membership = repos.recommendations.currentMemberships("one")[0];
+  assert.equal(membership.assignmentOrigin, "direct");
+  assert.equal(membership.group.name, "Supper after the show");
+  assert.equal(membership.group.imageUrl, "/api/avatars/group-picture.png");
+  assert.equal(remaining(), 1);
+});
+
+test("account preference changes require renewed direct consent even after restoring the original answers", () => {
+  repos.membership.savePreferences("h1", answers);
+  repos.membership.savePreferences("one", answers);
+  repos.membership.configure("h1", "p1", { expectedFriends: 0 });
+  repos.membership.publish("h1", "p1");
+  direct();
+  const application = repos.recommendations.requestJoin("one", "p1");
+  const submitted = row(application.id).preferences_json;
+  repos.membership.savePreferences("one", { about: ["dancing"], wants: [], avoid: [] });
+  repos.membership.savePreferences("one", answers);
+  assert.equal(row(application.id).preferences_json, submitted);
+  assert.equal(row(application.id).group_version, null);
+  assert.throws(() => repos.recommendations.respond("h1", application.id, "accept"), /preferences_changed_withdraw_and_resubmit/);
+  assert.equal(activeClaims().length, 0);
+});

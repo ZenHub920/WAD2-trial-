@@ -9,6 +9,7 @@ import '../assets/groups.css';
 import MatchProposalCard from '../components/MatchProposalCard.vue';
 import { useCountUp } from '../composables/useCountUp.js';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
+import BackLink from '../components/BackLink.vue';
 
 const props = defineProps({ id: { type: String, required: true } });
 const router = useRouter();
@@ -269,7 +270,7 @@ const forecastFirstChoice = useCountUp(
 
 <template>
   <div class="container section">
-    <RouterLink to="/concerts" class="back">← All concerts</RouterLink>
+    <BackLink fallback="/concerts" fallback-label="All concerts" />
 
     <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading concert details…</p>
 
@@ -491,17 +492,6 @@ const forecastFirstChoice = useCountUp(
 .kaki-join__error { color: var(--rose-400); }
 @media (max-width: 600px) { .kaki-join__fields { grid-template-columns: 1fr; } }
 
-
-.back {
-  display: inline-block;
-  margin-bottom: var(--space-5);
-  color: var(--text-400);
-  text-decoration: none;
-  font-size: var(--step--1);
-  transition: color var(--dur-fast) var(--ease-out);
-}
-
-.back:hover { color: var(--accent-400); }
 
 /* ---- Head --------------------------------------------------------------- */
 

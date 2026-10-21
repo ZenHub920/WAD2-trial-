@@ -51,8 +51,10 @@
   --cyan-500: #0b6c8c;
   --amber-400: #a9690a;  /* algorithm: evictions, warnings */
   --amber-500: #8c5607;
-  --mint-400: #0b8f6a;   /* algorithm: accepted, stable */
-  --mint-500: #077355;
+  /* "Mint" is the positive/selected hue. It was green; it is now an orchid
+     plum that sits beside the purple accent instead of fighting it. */
+  --mint-400: #9c3d8f;   /* algorithm: accepted, stable */
+  --mint-500: #82307a;
   --rose-400: #cf3b57;   /* algorithm: rejected, blocking pairs */
   --rose-500: #b02a44;
 
@@ -184,8 +186,8 @@
   --cyan-500: #1fc8ef;
   --amber-400: #ffc457;
   --amber-500: #f0a01c;
-  --mint-400: #4ce0b3;
-  --mint-500: #17c496;
+  --mint-400: #e69ddb;
+  --mint-500: #cf74c3;
   --rose-400: #ff7a7a;
   --rose-500: #ef4444;
 

@@ -2,6 +2,8 @@
 
 This is the current guide to **Find a Group**. It replaces the older distinction between managed-group host requests and legacy automatic placement. Group formation, Kaki Finder, group connections, notifications, planning and marketplace features remain separate.
 
+The latest GitHub integration also preserves account-wide preference setup, group names/pictures, Back links and the refined Manage group layout. These upstream controls work alongside the hybrid methods below.
+
 ## What the two methods do
 
 | Method | Who chooses the group? | What confirms membership? | When is a place reserved? |
@@ -15,15 +17,16 @@ Both methods share concert enrollment, search filters, compatibility, blocks, pr
 
 ### 1. Prepare a hosted group
 
-1. Sign in and open **Groups → Create group**. Choose the concert, companion places, seating, budget and arrival details. **Create draft group** opens Manage group.
-2. Set the expected friends and additional companion places. The host and invited friends do not consume companion places. Friends accept their private links and every active member saves preferences.
-3. Press **Publish group**. It becomes discoverable when the required members and answers are complete. Enabling **Open to meeting other groups** is a separate connection setting.
+1. Sign in and open Groups. If no account preferences exist, **Before we start, let's get to know you** appears first. Choose at least one About/Wants/Avoid answer and press **Save and unlock groups**. This is answered once per account; saved answers are shared automatically with groups the person creates or joins.
+2. Open **Create group**. Enter the group name, optional picture, concert, companion places, seating, budget and arrival details. **Create draft group** opens Manage group.
+3. Manage group preserves the name/picture editor, friend/place steppers and bottom **Save changes** bar. Save changes before making invitation links or publishing. The host and invited friends do not consume companion places. Friends accept their private links after completing their own account preference setup.
+4. Press **Publish group** when the expected friends and required answers are complete. **Open to meeting other groups** is a separate connection setting. Back links return to the previous in-app screen, with My groups as the fallback.
 
 ### 2. A seeker chooses direct joining
 
-1. Complete Profile, then open **Groups → Browse groups** (`/groups`) and select a concert. Press **Set up group request** to open seating, maximum spending, arrival and activity fields.
+1. Complete Profile, then open **Groups → Browse groups** (`/groups`). Complete **Save and unlock groups** if prompted; existing account answers appear in a compact **Your preferences** summary. After this required setup, the friendly choice cards are available. Select a concert and press **Set up group request** to open seating, maximum spending, arrival and activity fields.
 2. Under **Already know what you’re looking for?**, press **Browse groups**, then **Save group request**. The helper explains: “Browse groups and choose who to join.” New enrollment saves the selected method atomically. For an existing automatic request, press **Use direct joining** explicitly.
-3. Open **Your preferences**, choose About/Wants/Avoid answers and save. Standard meanings and confirmed aliases are shared; unknown custom wording uses normalized text matching.
+3. Use **Your preferences → Edit** to review the shared account answers if needed. They apply across group pages rather than being entered again for each concert. Standard meanings and confirmed aliases are shared; unknown custom wording uses normalized text matching. Changing answers after applying requires withdrawal and resubmission to renew consent.
 4. Use **Search groups**, **Refine results** and sorting. The server filters before returning a page of 20 compatibility-ranked cards. Cards show available places, member count, group details and supported match reasons.
 5. Press **Request to join** on a card. An optional message field opens, limited to 500 characters. Press **Send application** to submit it.
 6. **Your applications** shows the pending request. It persists after refresh and does **not** reserve a place. There is **one pending direct application per concert**. To choose another group, press **Withdraw application**, then apply again. History is retained.
@@ -33,7 +36,7 @@ Both methods share concert enrollment, search filters, compatibility, blocks, pr
 1. Open **Groups → My groups** (`/groups/connect`), then **Join requests**. Manage group also has a **Review join applications** link.
 2. Review the applicant's name, public profile, submitted preferences, optional message, match reasons, application date and current remaining capacity. Private account information is not exposed.
 3. Press **Approve group place** or **Decline request**. Approval rechecks eligibility and live capacity inside one transaction; a stale card cannot overbook the group.
-4. Approval immediately confirms membership. The seeker refreshes Browse groups and sees **Your confirmed group**, its origin and links to **View your group** and **Plan meetup**. My groups also lists the membership. No second seeker acceptance is required.
+4. Approval immediately confirms membership. The seeker refreshes Browse groups and sees their confirmed group card, showing its name/picture, membership origin and links to **View your group** and **Plan meetup**. My groups also lists the membership. No second seeker acceptance is required.
 5. Declining releases no seat because none was reserved. It records the declined pairing for subsequent discovery/matching exclusions. Withdrawal is not a compatibility decline.
 
 If the group or submitted preferences changed after applying, approval requests renewed consent: the seeker withdraws, reviews and reapplies. If another action consumed the place or the seeker joined elsewhere, approval fails without partial writes.
@@ -144,11 +147,11 @@ Paths are relative to the repository root. Existing matching engines, Kaki and m
 | `server/src/routes/community.js` | Authenticated application, mode and membership endpoints. |
 | `server/src/routes/groupDiscovery.js` | Returns mode/limit metadata with existing discovery controls. |
 | `client/src/api.js` | Client methods for mode, applications, host inbox, withdrawal and memberships. |
-| `client/src/views/GroupExplorerView.vue` | Shared discovery with two explicit methods, notes, statuses, shortlist, offers and stale-response protection. |
+| `client/src/views/GroupExplorerView.vue` | Shared discovery with two explicit methods, notes, statuses, shortlist, offers and stale-response protection; preserves account preference setup and group identities. |
 | `client/src/components/GroupApplicationCard.vue` | New public-profile host application review card. |
 | `client/src/components/MatchProposalCard.vue` | Role-aware two-sided approval and waiting status. |
 | `client/src/views/GroupConnectionsView.vue` | My groups shows direct applications, automatic proposals and current assignments without changing invitation mechanics. |
-| `client/src/views/GroupMembershipView.vue` | Member origins/capacity, inbox link and safe leave navigation. |
+| `client/src/views/GroupMembershipView.vue` | Member origins/capacity, inbox link and safe leave navigation; retains upstream name/picture editing, global preferences, Back link and save bar. |
 | `server/test/hybridDirect.test.js` | New direct/mode/authorization/history/cross-mechanism regression coverage. |
 | `server/test/hybridReservations.test.js` | Fourteen migration/ledger regressions: existing offers, mutual-approval conversion, history, rollback, corruption detection and capacity defenses. |
 | `server/test/managedMatching.test.js` | Automatic enrollment, operator rounds, shared capacity and mutual-approval checks. |
@@ -167,14 +170,16 @@ Executed verification on 22 October 2026 (Singapore):
 | Check | Result |
 | --- | --- |
 | Baseline backend suite before changes | 286 passed, zero failures/skips |
-| Final complete backend suite: `npm.cmd test` | **322 passed, 30 suites, zero failures/skips** |
+| Final complete backend suite after integrating upstream group identity/preferences: `npm.cmd test` | **330 passed, 30 suites, zero failures/skips** |
 | New migration/seat-ledger suite | 14 passed, zero failures/skips |
-| Final production frontend build | Passed; 142 modules |
-| JavaScript syntax checks | 23 files passed |
-| Production bootstrap against explicit `:memory:` storage, with repeated hybrid migrations | 47 tables; zero foreign-key violations |
+| Final production frontend build | Passed; 149 modules |
+| JavaScript syntax checks | 33 changed/resolved files passed |
+| Production bootstrap against explicit `:memory:` storage, with repeated hybrid migrations | 48 tables; zero foreign-key violations |
 | `git diff --check` | Passed |
 
 The existing ticket rollback test intentionally logs a simulated SQLite error while its assertions pass. All database verification used isolated databases; the development database was not reset or migrated during these checks.
+
+The original hybrid result passed 322 tests. While this work was running, upstream commit `a198dfb` added group names, pictures and account-wide preferences. Those changes were merged into the feature branch and retained. A first parallel post-merge run encountered three localhost connection resets; the final complete run outside the sandbox passed all 330 tests without disabling or skipping tests. Account preference changes also invalidate pending direct consent, including when the original answers are later restored.
 
 Browser verification in this environment is unavailable: native computer-use reported a missing pipe, and browser inventory contained no browsers/apps. The walkthrough above is a manual acceptance checklist, not a claim that it has been executed here. There is no new scheduler, email/push provider, paid API or payment integration.
 
