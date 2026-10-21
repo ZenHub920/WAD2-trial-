@@ -68,6 +68,8 @@ function mapParty(row) {
         // classifier permanently blind to the constraint even once it is stored.
         min_size: row.min_size ?? null,
         notes: row.notes,
+        name: row.name ?? null,
+        image_path: row.image_path ?? null,
         status: row.status,
         host: row.host_id ? mapUser(prefixed(row, 'host_')) : undefined,
     };
@@ -354,9 +356,9 @@ export function createPartyRepo(db) {
       const id = data.id ?? `p_${randomUUID().slice(0, 8)}`;
       db.prepare(`
         INSERT INTO parties (id, host_user_id, concert_id, capacity, section, spend_band,
-                             arrival_plan, plans_json, strict_age_policy, min_age_band, notes)
+                             arrival_plan, plans_json, strict_age_policy, min_age_band, notes, name)
         VALUES (@id, @host_user_id, @concert_id, @capacity, @section, @spend_band,
-                @arrival_plan, @plans_json, @strict_age_policy, @min_age_band, @notes)
+                @arrival_plan, @plans_json, @strict_age_policy, @min_age_band, @notes, @name)
       `).run({
         id,
         host_user_id: data.host_user_id,
@@ -369,8 +371,17 @@ export function createPartyRepo(db) {
         strict_age_policy: data.strict_age_policy ? 1 : 0,
         min_age_band: data.min_age_band ?? null,
         notes: data.notes ?? null,
+        name: data.name ?? null,
       });
       return this.findById(id);
+    },
+
+    setName(id, name) {
+      db.prepare('UPDATE parties SET name = ? WHERE id = ?').run(name ?? null, id);
+    },
+
+    setImage(id, filename) {
+      db.prepare('UPDATE parties SET image_path = ? WHERE id = ?').run(filename ?? null, id);
     },
 
     findById(id) {

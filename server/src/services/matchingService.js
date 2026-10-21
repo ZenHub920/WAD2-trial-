@@ -65,8 +65,7 @@ export function createMatchingService({ db, repos }) {
           WHERE j.user_id=? AND p.concert_id=? AND j.status='pending' AND j.expires_at>?`)
           .get(userId, concertId, Date.now())) throw communityError('withdraw_current_join_request_first');
         // This explicit action consents to saved answers, or empty defaults if none were saved.
-        if (!db.prepare('SELECT 1 FROM seeker_discovery_preferences WHERE user_id=? AND concert_id=?')
-          .get(userId, concertId)) repos.recommendations.savePersonal(userId, concertId, {});
+        if (!repos.recommendations.hasAnswers(userId, concertId)) repos.recommendations.savePersonal(userId, concertId, {});
         db.prepare('UPDATE seeker_requests SET matching_opt_in=1 WHERE id=?').run(caller.id);
 
         const seekers = repos.seekers.openForConcert(concertId).filter(s => {

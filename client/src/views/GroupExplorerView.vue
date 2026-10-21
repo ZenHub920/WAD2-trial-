@@ -5,7 +5,7 @@ import { api, LABELS, SECTION_OPTIONS, ARRIVAL_OPTIONS } from '../api.js';
 import { filterGroups } from '../groupFilters.js';
 import GroupFilters from '../components/GroupFilters.vue';
 import GroupListingCard from '../components/GroupListingCard.vue';
-import PreferenceEditor from '../components/PreferenceEditor.vue';
+import GroupPreferencesGate from '../components/GroupPreferencesGate.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import GroupNavigation from '../components/GroupNavigation.vue';
 import '../assets/groups.css';
@@ -20,7 +20,7 @@ const router = useRouter();
 const concerts = ref([]), groups = ref([]), saved = ref([]), seeker = ref(null);
 const concertId = ref(typeof route.query.concertId === 'string' ? route.query.concertId : '');
 const loading = ref(false), busy = ref(false), error = ref(''), message = ref('');
-const answers=ref(null),offset=ref(0),total=ref(0),joins=ref([]);
+const offset=ref(0),total=ref(0),joins=ref([]);
 let generation = 0, alive = true;
 const filters = reactive({ query: '', section: '', minCapacity: 0, spendBand: '', arrival: '', activity: '', vibe: '', sort: 'compatibility', preferredOnly: false });
 const form = reactive({ section_pref: 'standing_pen', spend_band_max: 3, arrival_pref: 'doors', plans_wanted: {} });
@@ -37,13 +37,13 @@ async function load() {
   if (!id) { loading.value = false; return; }
   loading.value = true;
   try {
-    const [listing, preferences, request, custom, requests, state] = await Promise.all([
+    const [listing, preferences, request, requests, state] = await Promise.all([
       api.discoverGroups(id, { offset: offset.value, q: filters.query, section: filters.section, arrival: filters.arrival, spendBand: filters.spendBand, minCapacity: filters.minCapacity, activity: filters.activity, vibe: filters.vibe, preferredOnly: filters.preferredOnly, sort: filters.sort }),
-      api.groupPreferences(id), api.seekerRequest(id), api.discoveryPreferences(id), api.groupJoinRequests(), api.groupMatching(id),
+      api.groupPreferences(id), api.seekerRequest(id), api.groupJoinRequests(), api.groupMatching(id),
     ]);
     if (alive && current === generation) {
       groups.value = listing.groups; total.value = listing.total; saved.value = preferences.preferences;
-      seeker.value = request.request; answers.value = custom.preferences; joins.value = requests.requests;
+      seeker.value = request.request; joins.value = requests.requests;
       matching.value = state.matching;
     }
   } catch (e) { if (alive && current === generation) error.value = e.status === 401 ? 'Sign in to browse groups and manage your preferences.' : 'Could not load groups and preferences. Please try again.'; }
@@ -72,7 +72,6 @@ onMounted(async () => {
   finally { concertsLoading.value = false; }
 });
 onUnmounted(() => { alive = false; generation++;clearTimeout(filterTimer); });
-async function saveAnswers(value){busy.value=true;savingPreferences.value=true;error.value='';try{await api.saveDiscoveryPreferences(concertId.value,value);await load();message.value='Preferences saved.';}catch(e){error.value='Could not save your preferences. Please try again.';}finally{busy.value=false;savingPreferences.value=false;}}
 async function join(id){busy.value=true;error.value='';try{await api.requestGroupJoin(id);await load();message.value='Request sent. Your group place is confirmed when the host approves.';}catch(e){await load();error.value=e.status===409?'This group or your preferences changed. Review the group and your open request before trying again.':'Could not send your join request. Please try again.';}finally{busy.value=false;}}
 async function withdrawJoin(id){busy.value=true;error.value='';try{await api.respondGroupJoin(id,'withdraw');await load();message.value='Join request withdrawn.';}catch(e){error.value='Could not withdraw this request. Please try again.';}finally{busy.value=false;}}
 async function findMyGroup() {
@@ -148,7 +147,8 @@ async function preference(id, remove) {
       <h1>Groups</h1>
       <p>Find concert company, manage your groups or start one of your own. Group places do not include tickets.</p>
     </header>
-    <GroupNavigation />
+    <GroupPreferencesGate summary @saved="load">
+    <template #before><GroupNavigation /></template>
     <div class="groups-concert-picker">
       <label>Choose your concert<select v-model="concertId" :disabled="busy"><option value="">Select a concert</option><option v-for="c in concerts" :key="c.id" :value="c.id">{{ c.artist }}, {{ c.event_date }}</option></select></label>
     </div>
@@ -215,10 +215,6 @@ async function preference(id, remove) {
         </template>
       </section>
       <section class="card group-panel"><h2>Search groups</h2><GroupFilters :filters="filters" preferences /></section>
-      <details v-if="answers" class="card group-panel group-preferences">
-        <summary>Your preferences<span class="group-preferences__hint">Interests, companion preferences and things to avoid</span></summary>
-        <PreferenceEditor :key="concertId" :initial="answers" :busy="busy" :saving="savingPreferences" @save="saveAnswers"/>
-      </details>
       <p>{{ visible.length }} {{ visible.length === 1 ? 'group' : 'groups' }} on this page. <span v-if="!seeker">Open a group-finding request to request a group place.</span></p>
       <div class="group-grid"><GroupListingCard v-for="g in visible" :key="g.id" :group="g"><button class="btn btn--ghost" :disabled="busy || !canPrefer || pendingRequest" @click="join(g.id)">{{ joins.some(j=>j.partyId===g.id&&j.status==='pending') ? 'Awaiting host approval' : 'Choose this group manually' }}</button><details v-if="g.automaticPlacementAvailable"><summary>Automatic matching preference</summary><button class="btn" :class="g.preferred ? 'btn--danger-ghost' : 'btn--ghost'" :disabled="busy || (!g.preferred && (!canPrefer || pendingRequest))" @click="preference(g.id,g.preferred)">{{g.preferred?'Remove preference':'Prefer for automatic matching'}}</button></details></GroupListingCard></div>
       <nav class="group-actions group-pagination" aria-label="Group results pages"><button class="btn btn--ghost" :disabled="loading||busy||offset===0" @click="offset=Math.max(0,offset-20);load()">Previous</button><span>{{total}} results</span><button class="btn btn--ghost" :disabled="loading||busy||offset+20>=total" @click="offset+=20;load()">Next</button></nav>
@@ -231,6 +227,7 @@ async function preference(id, remove) {
       <details v-if="saved.length" class="card group-panel"><summary>Saved matching-round preferences ({{ saved.length }})</summary><div v-for="p in saved" :key="p.partyId" class="group-actions"><span>{{ p.hostName }}, {{ LABELS.section[p.section] }} — {{ p.status === 'open' ? 'Group open' : p.status === 'cancelled' ? 'Group cancelled' : 'Group unavailable for new matches' }}</span><button class="btn btn--danger-ghost" :disabled="busy" @click="preference(p.partyId, true)">Remove preference</button></div></details>
     </template>
     <p v-else-if="!concertsLoading && !concerts.length">No concerts are available yet.</p>
+    </GroupPreferencesGate>
   </div>
 </template>
 
@@ -239,9 +236,6 @@ async function preference(id, remove) {
 .groups-page__header > p { max-width: 70ch; color: var(--text-300); line-height: 1.6; }
 .groups-page__header nav { margin-top: var(--space-1); font-size: var(--step--1); }
 .groups-concert-picker { max-width: 560px; width: 100%; }
-.group-preferences > summary { font-size: var(--step-1); font-weight: 600; padding-block: var(--space-1); }
-.group-preferences__hint { display: block; font-size: var(--step--1); font-weight: 400; color: var(--text-300); margin-top: var(--space-2); }
-.group-preferences[open] > summary { padding-bottom: var(--space-4); border-bottom: var(--border-hairline); }
 .group-pagination { justify-content: space-between; padding-top: var(--space-3); }
 .group-pagination > span { color: var(--text-300); font-size: var(--step--1); }
 .group-setup__heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-4); }
