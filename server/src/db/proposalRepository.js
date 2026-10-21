@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { reservedPlacesSql,availableCapacitySql,queueablePlacesSql,expireJoinRequests } from './capacity.js';
 import { queueInfo } from './admissionQueue.js';
+import { groupImageUrl } from '../controllers/groupIdentityController.js';
 
 /**
  * ============================================================
@@ -38,7 +39,10 @@ export function createProposalRepo(db, repos = null) {
   // HELPER: CONVERT DATABASE ROW INTO API RESPONSE
   // ============================================================
 
-  const details = (p) => ({
+  const details = (p) => {
+    // Explain the actual matching snapshot, even after account preferences change.
+    const saved = p.score_breakdown_json ? JSON.parse(p.score_breakdown_json) : null;
+    return {
     id: p.id,
     roundId: p.round_id,
     concertId: p.concert_id,
@@ -50,6 +54,10 @@ export function createProposalRepo(db, repos = null) {
     artist: p.artist,
     eventDate: p.event_date,
     section: p.section,
+    groupName: p.group_name ?? null,
+    imageUrl: groupImageUrl(p.group_image_path),
+    reasons: Array.isArray(saved?.discovery?.reasons) ? saved.discovery.reasons.slice(0, 3) : [],
+    confidence: saved?.discovery?.confidence ?? null,
 
     hostName: p.host_name,
     hostUserId: p.host_user_id,
@@ -67,7 +75,8 @@ export function createProposalRepo(db, repos = null) {
     hostApprovedAt: p.host_approved_at ?? null,
     approvalPolicy: p.approval_policy ?? 'mutual',
     ...queueInfo(db, { proposalId: p.id }),
-  });
+    };
+  };
 
   // ============================================================
   // SHARED SQL: HYDRATE PROPOSALS WITH CONCERT AND USER DATA
@@ -82,6 +91,8 @@ export function createProposalRepo(db, repos = null) {
       c.artist,
       c.event_date,
       p.section,
+      p.name AS group_name,
+      p.image_path AS group_image_path,
       p.host_user_id,
       h.display_name AS host_name,
       su.display_name AS seeker_name,
