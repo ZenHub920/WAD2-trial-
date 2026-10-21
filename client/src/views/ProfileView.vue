@@ -1,13 +1,31 @@
 <script setup>
 import { onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { api, LABELS } from '../api.js';
-import { currentUser, refreshSession, setCurrentUser } from '../auth.js';
+import { currentUser, refreshSession, setCurrentUser, signOut } from '../auth.js';
 import AvatarPicker from '../components/AvatarPicker.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import ProfileNotifications from '../components/ProfileNotifications.vue';
 
 const avatarBusy = ref(false);
 const avatarError = ref('');
+
+const router = useRouter();
+const signingOut = ref(false);
+const signOutError = ref('');
+
+async function logOut() {
+  signingOut.value = true;
+  signOutError.value = '';
+  try {
+    await signOut();
+    await router.push('/');
+  } catch {
+    signOutError.value = 'Could not log out. Please try again.';
+  } finally {
+    signingOut.value = false;
+  }
+}
 
 /** Applies immediately; the header picture updates with it. */
 async function applyAvatar(dataUrl) {
@@ -222,6 +240,18 @@ async function save() {
       </div>
     </form>
     <ProfileNotifications v-if="currentUser" />
+
+    <section v-if="currentUser" class="profile__card profile__logout" aria-labelledby="profile-logout">
+      <div>
+        <h2 id="profile-logout">Log out</h2>
+        <p class="profile__hint">Signed in as {{ currentUser.email ?? currentUser.displayName }}.</p>
+      </div>
+      <button type="button" class="btn btn--ghost profile__logout-btn" :disabled="signingOut" @click="logOut">
+        <LoadingSpinner v-if="signingOut" />
+        {{ signingOut ? 'Logging out…' : 'Log out' }}
+      </button>
+      <p v-if="signOutError" class="profile__error" role="alert">{{ signOutError }}</p>
+    </section>
   </div>
 </template>
 
@@ -248,6 +278,10 @@ async function save() {
 .profile__success { color: var(--mint-400); }
 .profile__notice { display: grid; justify-items: start; gap: var(--space-3); }
 .profile__actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-3); }
+.profile__logout { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3) var(--space-5); margin-top: var(--space-6); }
+.profile__logout h2 { margin-bottom: var(--space-1); }
+.profile__logout .profile__error { flex-basis: 100%; }
+.profile__logout-btn { color: var(--rose-400); border-color: color-mix(in oklab, var(--rose-400) 45%, transparent); }
 @media (max-width: 600px) {
   .profile__fields { grid-template-columns: 1fr; }
   .profile__card { padding: var(--space-4); }
