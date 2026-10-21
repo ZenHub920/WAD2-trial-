@@ -38,8 +38,12 @@ Every pending entry expires **48 hours after its creation**, including time spen
 2. Under **Already know what you’re looking for?**, press **Browse groups**, then **Save group request**. The helper explains: “Browse groups and choose who to join.” New enrollment saves the selected method atomically. For an existing automatic request, press **Use direct joining** explicitly.
 3. Use **Your preferences → Edit** to review the shared account answers if needed. They apply across group pages rather than being entered again for each concert. Standard meanings and confirmed aliases are shared; unknown custom wording uses normalized text matching. Changing answers after applying requires withdrawal and resubmission to renew consent.
 4. Use **Search groups**, **Refine results** and sorting. The server filters before returning a page of 20 compatibility-ranked cards. Cards show available places, queue length, member count, group details and supported match reasons. A group with all its places temporarily held can still accept waiting requests; a group filled by confirmed members cannot.
-5. Press **Request to join**, or **Join waiting queue** when all places are currently held. An optional message field opens, limited to 500 characters. Press **Send application** to submit it.
-6. **Your applications** shows the server queue position, whether a place is held and the fixed expiry deadline. Waiting is not confirmed membership and does not itself occupy a seat. There is **one pending direct application per concert**. To choose another group, press **Withdraw application**; any held place passes to the next request, then you may apply again. History is retained.
+5. Direct results default to **Compare two**. Before the cards appear, an introduction separately explains **Compare** and **Request to join**. Press **Start comparing** to fade into two side-by-side cards; **How this works** reopens the instructions. Reduced-motion settings remove the animations.
+6. Tap a card or **Prefer this group**: that card stays on its side while the other slides left and the next unseen group replaces it. This is a local comparison, not an application or an automatic-matching preference. Swipe either card left to skip it. Skipped groups can be reviewed again; when the page runs out, the remaining favorite stays available.
+7. Swipe either card right or press **Request to join** / **Join waiting queue** to submit the application. One pending direct application per concert still applies. **List view** remains available and offers the existing optional message field (maximum 500 characters) before **Send application**. Comparing does not send a message; the direct comparison action applies without an optional note.
+8. **Your applications** shows the server queue position, whether a place is held and the fixed expiry deadline. Waiting is not confirmed membership and does not itself occupy a seat. To choose another group, press **Withdraw application**; any held place passes to the next request, then you may apply again. History is retained.
+
+Comparisons survive same-page refreshes, failed applications and switching to List view. New concert/filter/page results start a new comparison. Newly unavailable groups disappear on refresh; a failed submission never silently advances to another group. The backend rechecks eligibility and the one-pending limit for every application.
 
 ### 3. The receiving host reviews the application
 
@@ -58,7 +62,7 @@ If the group or submitted preferences changed after applying, approval requests 
 3. The status panel shows that the open algorithm-mode request is waiting in the pool. **Join matching pool**, when shown, enrolls it. **Refresh status** retrieves authoritative state.
 4. An **operator** opens the concert page, uses **Preview matching** if desired, then **Prepare new batch → Run matching round**. Normal seekers cannot run a global round. Enrollment does not start a background scheduler.
 5. Gale–Shapley builds independent seeker and group preference orders, uses capacity remaining after confirmed members, verifies supported stability guarantees, and writes the real round, results, proposals and queue claims atomically. A proposal can wait behind existing held requests; a matching result does not bypass queue order.
-6. The seeker sees the proposal under Browse groups or **Concert & proposal history**. The host sees its **Automatic proposal** card in **My groups → Join requests**, interleaved with direct applicants in arrival order. Cards show position, held/waiting state, both approvals and deadline.
+6. The seeker sees the proposal under Browse groups or **Concert & proposal history**. The host sees its **Automatic proposal** card in **My groups → Join requests**, interleaved with direct applicants in arrival order. The result card shows the group name/picture, saved match reasons, held/waiting state, queue position, reply deadline and each person's approval. The concert page prioritizes active proposals and collapses previous ones. **Why this group match?** expands the saved explanation.
 7. Once the proposal is first in line with a held place, the seeker presses **Accept offer** and the host presses **Approve match**, in either order. **The first approval keeps it at the front, pending and reserved; it creates no final membership. The second approval confirms membership.** The first approver sees a waiting-for-the-other-person message.
 8. The seeker can **Decline proposal** at any queue position. The host can decline only the head. Decline or expiry advances the queue, passing a released hold to the next request. Once confirmed, the place remains occupied until an authorized membership lifecycle ends it.
 
@@ -100,6 +104,8 @@ Use separate signed-in browser sessions for the host and two seekers, with the s
 **Automatic:** algorithm-mode seekers + capacity after confirmed members → shared eligibility/scoring + saved preferences → two-sided preference lists → solver/stability verification → real round/results/proposals → same proposed queue claims → when held at the head, both approvals → confirmed claim + membership.
 
 The session supplies identity. The server checks ownership, concert, blocks, declined pairs, profile constraints, current assignment and live capacity again on writes. SQLite IMMEDIATE transactions and database guards prevent competing approvals or a round and direct approval from taking the same final place.
+
+The result UI reads additive public proposal fields `groupName`, `imageUrl`, `reasons` and `confidence`. Identity reflects the current group; reasons come from the immutable matching-result snapshot, so editing preferences later cannot rewrite the explanation. This presentation change does not alter Gale–Shapley, its rankings, the queue or mutual approval.
 
 ### Schema and migration
 
@@ -164,6 +170,9 @@ Paths are relative to the repository root. Existing matching engines, Kaki and m
 | `client/src/components/GroupApplicationCard.vue` | Public-profile application review with queue position, held/waiting state, deadline and head-only host controls. |
 | `client/src/components/MatchProposalCard.vue` | Role-aware mutual approval and queue gating; seekers can decline while waiting. |
 | `client/src/components/GroupListingCard.vue` | Displays waiting-queue availability and length alongside actual free places. |
+| `client/src/components/GroupComparisonDeck.vue` | Instruction intro, two-card direct comparison, gestures/buttons, transitions and safe async application. |
+| `client/src/utils/groupComparison.js` | Local comparison snapshot and replacement logic; does not write server preferences. |
+| `client/src/views/ConcertView.vue` | Clearer automatic result section, active offers, previous proposals and refresh/empty states. |
 | `client/src/views/GroupConnectionsView.vue` | My groups combines both mechanisms into each group's chronological request queue; invitation mechanics are preserved. |
 | `client/src/views/GroupMembershipView.vue` | Member origins/capacity, inbox link and safe leave navigation; retains upstream name/picture editing, global preferences, Back link and save bar. |
 | `server/test/hybridDirect.test.js` | New direct/mode/authorization/history/cross-mechanism regression coverage. |
@@ -176,6 +185,8 @@ Paths are relative to the repository root. Existing matching engines, Kaki and m
 | `server/test/community.test.js` | Existing community repository expectations for explicit direct mode. |
 | `server/test/communityApi.test.js` | Authenticated community flow regression checks. |
 | `server/test/groupDiscovery.test.js` | Existing discovery/preferences/capacity regression expectations. |
+| `server/test/proposalPresentation.test.js` | Public group identity and immutable saved reasons, including legacy fallback. |
+| `client/test/groupComparison.test.js` | Comparison position, replacement, exhaustion, skip and refresh regressions. |
 | `docs/HYBRID_GROUP_MATCHING.md` | This architecture, integration and demonstration guide. |
 | `docs/TEAMMATE_FEATURE_GUIDE.md` | Short pointer to the superseding hybrid behaviour. |
 
@@ -186,17 +197,20 @@ Executed verification on 22 October 2026 (Singapore):
 | Check | Result |
 | --- | --- |
 | Baseline backend suite before changes | 286 passed, zero failures/skips |
-| Final complete backend suite including the shared FIFO queue: `npm.cmd test` | **350 passed, 30 suites, zero failures/skips** |
+| Final complete backend suite including FIFO and proposal presentation: `npm.cmd test` | **352 passed, 30 suites, zero failures/skips** |
 | Migration/seat-ledger suite | 17 passed, zero failures/skips |
 | Mixed FIFO and queue lifecycle suites | 10 passed, zero failures/skips |
-| Final production frontend build | Passed; 149 modules |
-| JavaScript syntax checks for this queue update | 17 changed/new files passed |
+| Direct comparison state tests | 7 passed, zero failures/skips |
+| Real-component server-render checks | 22 passed; no Vue warnings |
+| Real-component setup interaction checks | 12 passed, including duplicate requests, failure/retry and context/reset cleanup |
+| Final production frontend build | Passed; 152 modules |
+| JavaScript syntax checks for the UI/presentation update | Changed/new helper and presentation modules passed |
 | Production bootstrap against explicit `:memory:` storage, with repeated hybrid migrations | 48 tables; zero foreign-key violations |
 | `git diff --check` | Passed |
 
 The existing ticket rollback test intentionally logs a simulated SQLite error while its assertions pass. All database verification used isolated databases; the development database was not reset or migrated during these checks.
 
-The original hybrid result passed 322 tests, and integrating upstream group names, pictures and account-wide preferences raised that to 330. The shared queue update passes 350 tests, including concurrent arrivals, mixed request sources, both approval orders, queue rollback, installed-trigger upgrades, capacity increases and natural expiry. Account preference changes invalidate pending direct consent, including when the original answers are later restored.
+The original hybrid result passed 322 tests, integrating upstream group identity/preferences raised that to 330, and the shared queue update passed 350. The result-presentation update raises the backend total to 352. Coverage includes concurrent arrivals, mixed request sources, both approval orders, queue rollback, installed-trigger upgrades, capacity increases, natural expiry and saved explanation history. Account preference changes invalidate pending direct consent, including when the original answers are later restored.
 
 Browser verification in this environment is unavailable: native computer-use reported a missing pipe, and browser inventory contained no browsers/apps. The walkthrough above is a manual acceptance checklist, not a claim that it has been executed here. There is no new scheduler, email/push provider, paid API or payment integration.
 
@@ -239,4 +253,4 @@ git diff --stat
 git diff
 ```
 
-Work began on `hybrid-seeker-group-matching` and is isolated on `feature/hybrid-group-matching`. The two pre-existing documentation deletions were preserved. The latest instruction permits committing/pushing feature branches; main/master remain outside the authorized implementation scope. Consult the final implementation report for the resulting Git status and final test totals.
+Work began on `hybrid-seeker-group-matching` and was integrated on `feature/hybrid-group-matching`. The two pre-existing local documentation deletions are preserved. The latest instruction authorizes publishing the completed work to `main`. Consult the final implementation report for the resulting Git status and final test totals.

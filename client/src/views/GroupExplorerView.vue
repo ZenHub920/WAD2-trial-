@@ -5,6 +5,7 @@ import { api, LABELS, SECTION_OPTIONS, ARRIVAL_OPTIONS } from '../api.js';
 import { currentUser, sessionReady } from '../auth.js';
 import GroupFilters from '../components/GroupFilters.vue';
 import GroupListingCard from '../components/GroupListingCard.vue';
+import GroupComparisonDeck from '../components/GroupComparisonDeck.vue';
 import GroupPreferencesGate from '../components/GroupPreferencesGate.vue';
 import GroupAvatar from '../components/GroupAvatar.vue';
 import { preferencesReady } from '../groupPreferences.js';
@@ -21,6 +22,7 @@ const setupOpen = ref(false), error = ref(''), message = ref('');
 const offset = ref(0), total = ref(0), joins = ref([]), memberships = ref([]), proposals = ref([]);
 const matching = ref({ optedIn: false, state: 'idle', request: null, proposal: null });
 const displayedMode = ref('direct'), applicationFor = ref(''), applicationNote = ref('');
+const directLayout = ref('compare'), comparisonSession = ref('');
 const filters = reactive({ query: '', section: '', minCapacity: 0, spendBand: '', arrival: '', activity: '', vibe: '', sort: 'compatibility', preferredOnly: false });
 const form = reactive({ section_pref: 'standing_pen', spend_band_max: 3, arrival_pref: 'doors', plans_wanted: {} });
 const persistedMode = computed(() => seeker.value?.joining_mode ?? seeker.value?.joiningMode ?? 'algorithm');
@@ -31,7 +33,7 @@ const pendingLegacy = computed(() => ownRequests.value.filter(request => request
 const activeProposals = computed(() => proposals.value.filter(proposal => proposal.status === 'proposed'));
 const modeIsActive = computed(() => Boolean(seeker.value && persistedMode.value === displayedMode.value));
 const pendingLimit = computed(() => seeker.value?.maxPendingDirectApplications ?? 1);
-const canApply = computed(() => seeker.value?.status === 'open' && persistedMode.value === 'direct' && !currentGroup.value && !activeProposals.value.length && !pendingLegacy.value.length && pendingDirect.value.length < pendingLimit.value);
+const canApply = computed(() => !busy.value && !loading.value && displayedMode.value === 'direct' && seeker.value?.status === 'open' && persistedMode.value === 'direct' && !currentGroup.value && !activeProposals.value.length && !pendingLegacy.value.length && pendingDirect.value.length < pendingLimit.value);
 const canPrefer = computed(() => seeker.value?.status === 'open' && !currentGroup.value && !activeProposals.value.length);
 const modeLabels = { direct: 'Direct joining', algorithm: 'Automatic matching' };
 const modeOptions = [
@@ -40,7 +42,7 @@ const modeOptions = [
 ];
 const originLabels = { direct: 'Approved direct application', algorithm: 'Confirmed automatic match', host: 'You host this group', friend: 'Friend invitation' };
 const joinStatus = { pending: 'Awaiting review in the group queue', accepted: 'Approved', rejected: 'Declined', declined: 'Declined', withdrawn: 'Withdrawn', expired: 'Request expired', superseded: 'Request closed', cancelled: 'Membership or request ended' };
-let generation = 0, alive = true, filterTimer, loadedContext = '';
+let generation = 0, alive = true, filterTimer, loadedContext = '', loadedDataContext = '';
 const context = () => `${currentUser.value?.id ?? ''}:${concertId.value}`;
 const isCurrent = key => alive && key === context();
 const pendingFor = id => ownRequests.value.some(request => request.partyId === id && request.status === 'pending');
@@ -71,9 +73,13 @@ function failureMessage(err) {
 
 async function load() {
   const current = ++generation, key = context(), id = concertId.value;
-  groups.value = []; saved.value = []; seeker.value = null;
-  joins.value = []; memberships.value = []; proposals.value = []; total.value = 0;
-  matching.value = { optedIn: false, state: 'idle', request: null, proposal: null };
+  const listingKey = `${key}:${offset.value}:${JSON.stringify(filters)}`;
+  if (loadedDataContext !== key) {
+    groups.value = []; saved.value = []; seeker.value = null;
+    joins.value = []; memberships.value = []; proposals.value = []; total.value = 0;
+    matching.value = { optedIn: false, state: 'idle', request: null, proposal: null };
+    comparisonSession.value = ''; loadedDataContext = key;
+  }
   error.value = '';
   if (!id || !currentUser.value || !sessionReady.value || !preferencesReady.value) { loading.value = false; return; }
   loading.value = true;
@@ -85,20 +91,31 @@ async function load() {
     ]);
     if (!isCurrent(key) || current !== generation) return;
     groups.value = listing.groups; total.value = listing.total; saved.value = preferences.preferences;
+    comparisonSession.value = listingKey;
     seeker.value = request.request; joins.value = applications.requests;
     matching.value = state.matching; memberships.value = attendance.groups ?? attendance.memberships ?? [];
     proposals.value = offers.proposals.filter(proposal => proposal.concertId === id && proposal.role === 'seeker');
-    if (loadedContext !== key) { displayedMode.value = seeker.value ? persistedMode.value : 'direct'; loadedContext = key; }
+    if (loadedContext !== key) {
+      displayedMode.value = ['direct', 'algorithm'].includes(route.query.mode) ? route.query.mode : seeker.value ? persistedMode.value : 'direct';
+      loadedContext = key;
+    }
   } catch (err) {
-    if (isCurrent(key) && current === generation) error.value = err.status === 401 ? 'Sign in to browse groups and manage your preferences.' : 'Could not load groups and your requests. Please try again.';
+    if (isCurrent(key) && current === generation) {
+      if (comparisonSession.value !== listingKey) groups.value = [];
+      error.value = err.status === 401 ? 'Sign in to browse groups and manage your preferences.' : 'Could not load groups and your requests. Please try again.';
+    }
   } finally { if (isCurrent(key) && current === generation) loading.value = false; }
 }
 watch(concertId, id => {
   setupOpen.value = false; applicationFor.value = ''; applicationNote.value = ''; offset.value = 0; message.value = '';
   clearTimeout(filterTimer); router.replace({ query: { ...route.query, concertId: id || undefined } }); load();
 });
-watch(() => Object.values(filters), () => { clearTimeout(filterTimer); filterTimer = setTimeout(() => { offset.value = 0; load(); }, 250); });
+watch(() => Object.values(filters), () => {
+  generation++; loading.value = true; applicationFor.value = ''; applicationNote.value = '';
+  clearTimeout(filterTimer); filterTimer = setTimeout(() => { offset.value = 0; load(); }, 250);
+});
 watch(() => route.query.concertId, id => { const next = typeof id === 'string' ? id : ''; if (next !== concertId.value) concertId.value = next; });
+watch(() => route.query.mode, mode => { if (['direct', 'algorithm'].includes(mode)) { displayedMode.value = mode; applicationFor.value = ''; } });
 watch([() => currentUser.value?.id, sessionReady, preferencesReady], () => { message.value = ''; applicationFor.value = ''; loadedContext = ''; load(); });
 onMounted(async () => {
   try {
@@ -109,18 +126,25 @@ onMounted(async () => {
 });
 onUnmounted(() => { alive = false; generation++; clearTimeout(filterTimer); });
 async function act(operation, success) {
-  if (busy.value) return;
+  if (busy.value) return false;
   const key = context(); busy.value = true; error.value = ''; message.value = '';
-  try { await operation(); if (isCurrent(key)) { await load(); message.value = typeof success === 'function' ? success() : success; } }
-  catch (err) { if (isCurrent(key)) { await load(); error.value = failureMessage(err); } }
+  try {
+    await operation();
+    if (!isCurrent(key)) return false;
+    await load();
+    if (!isCurrent(key)) return false;
+    message.value = typeof success === 'function' ? success() : success;
+    return true;
+  }
+  catch (err) { if (isCurrent(key)) { await load(); if (isCurrent(key)) error.value = failureMessage(err); } return false; }
   finally { busy.value = false; }
 }
 async function enroll(reopen = false) { await act(() => reopen ? api.reopenSeekerRequest(concertId.value) : api.createRequest(concertId.value, { ...form, joining_mode: displayedMode.value }), 'Your group request is ready. Choose and activate the joining mode you want to use.'); }
 async function activateMode() { const target = displayedMode.value; await act(() => api.setJoiningMode(concertId.value, target), target === 'direct' ? 'Direct joining is active. You may apply to one group at a time for this concert.' : 'Automatic matching is active. Your open request can enter the next matching round.'); }
-async function join(id) {
+async function join(id, note = applicationNote.value.trim()) {
   let application;
-  await act(async () => {
-    application = (await api.requestGroupJoin(id, { note: applicationNote.value.trim() })).request;
+  return act(async () => {
+    application = (await api.requestGroupJoin(id, { note })).request;
     applicationFor.value = ''; applicationNote.value = '';
   }, () => application?.seatReserved
     ? 'Application sent. One place is held for you; the host reviews requests in arrival order. Check your deadline below.'
@@ -143,7 +167,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
     <p v-if="concertsLoading" class="loading-state" role="status"><LoadingSpinner />Loading concerts…</p>
     <p v-if="busy" class="loading-state" role="status"><LoadingSpinner />Updating your request…</p>
     <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading groups and your requests…</p>
-    <template v-else-if="concertId && currentUser">
+    <template v-if="concertId && currentUser">
       <section v-if="currentGroup" class="card group-panel" aria-labelledby="current-group-heading">
         <div class="current-group-identity"><GroupAvatar :src="currentGroup.imageUrl ?? currentGroup.group?.imageUrl" :name="currentGroup.name || currentGroup.group?.name || currentGroup.artist" :size="52" /><div><h2 id="current-group-heading">{{ currentGroup.name || currentGroup.group?.name || 'Your confirmed group' }}</h2><p>{{ currentGroup.artist }} · Hosted by {{ currentGroup.host?.displayName ?? currentGroup.group?.hostName ?? 'your concert companion' }}</p></div></div>
         <p class="group-muted">{{ originLabels[currentGroup.assignmentOrigin] ?? 'Confirmed membership' }} · {{ currentGroup.remainingCapacity }} places remaining</p><p>You can belong to one attendance group for this concert.</p>
@@ -174,8 +198,11 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
       </section>
       <section v-if="activeProposals.length" aria-label="Your automatic matching offers"><MatchProposalCard v-for="proposal in activeProposals" :key="proposal.id" :proposal="proposal" @updated="load" /></section>
       <section class="card group-panel"><h2>Search groups</h2><fieldset :disabled="busy" class="group-fieldset"><GroupFilters :filters="filters" preferences /></fieldset></section>
-      <p>{{ groups.length }} {{ groups.length === 1 ? 'group' : 'groups' }} on this page. <span v-if="displayedMode === 'direct'">{{ pendingDirect.length }} of {{ pendingLimit }} pending applications.</span></p>
-      <div class="group-grid"><GroupListingCard v-for="group in groups" :key="group.id" :group="group">
+      <div class="results-heading"><p>{{ groups.length }} {{ groups.length === 1 ? 'group' : 'groups' }} on this page. <span v-if="displayedMode === 'direct'">{{ pendingDirect.length }} of {{ pendingLimit }} pending applications.</span></p>
+        <div v-if="displayedMode === 'direct'" class="results-layout" role="group" aria-label="Display direct group results"><button type="button" class="btn" :class="directLayout === 'compare' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="directLayout === 'compare'" :disabled="busy" @click="directLayout = 'compare'; applicationFor = ''">Compare two</button><button type="button" class="btn" :class="directLayout === 'list' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="directLayout === 'list'" :disabled="busy" @click="directLayout = 'list'">List view</button></div>
+      </div>
+      <GroupComparisonDeck v-if="displayedMode === 'direct' && groups.length" v-show="directLayout === 'compare'" :groups="groups" :session-key="comparisonSession" :disabled="busy || loading || directLayout !== 'compare'" :can-apply="canApply" :apply-group="group => join(group.id, '')" />
+      <div v-if="displayedMode !== 'direct' || directLayout === 'list'" class="group-grid"><GroupListingCard v-for="group in groups" :key="group.id" :group="group">
         <template v-if="displayedMode === 'direct'"><button type="button" class="btn btn--ghost" :disabled="busy || !canApply || pendingFor(group.id) || declinedFor(group.id) || !canQueueFor(group) || group.status === 'cancelled'" @click="applicationFor = applicationFor === group.id ? '' : group.id; applicationNote = ''">{{ pendingFor(group.id) ? 'Application pending' : declinedFor(group.id) ? 'Previously declined' : !canQueueFor(group) ? 'Group full' : group.remainingCapacity < 1 ? 'Join waiting queue' : 'Request to join' }}</button>
           <form v-if="applicationFor === group.id" class="application-form" @submit.prevent="join(group.id)"><label>Message to the host (optional)<textarea v-model="applicationNote" maxlength="500" rows="3" :disabled="busy" /></label><small class="group-muted">{{ applicationNote.length }}/500 characters. The host will see your public profile and preferences. Requests are reviewed in arrival order and expire 48 hours after submission; a later request may wait without a held place.</small><div class="group-actions"><button class="btn btn--primary" :disabled="busy || !canApply || !canQueueFor(group)">Send application</button><button type="button" class="btn btn--ghost" :disabled="busy" @click="applicationFor = ''">Cancel</button></div></form>
         </template>
@@ -216,6 +243,9 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
 .group-pagination > span { color: var(--text-300); font-size: var(--step--1); }
 .automatic-matching { border-color: var(--accent-400); }
 .automatic-matching > p { max-width: 75ch; line-height: 1.6; }
+.results-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); }
+.results-heading p { color: var(--text-300); font-size: var(--step--1); }
+.results-layout { display: inline-flex; flex-wrap: wrap; gap: var(--space-2); }
 @media (max-width: 600px) { .joining-modes { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 480px) { .joining-modes .btn { width: 100%; } .group-pagination .btn { flex: 0 1 auto; } }
 </style>
