@@ -91,12 +91,12 @@ const steps = [
       <div class="container hero__inner">
         <div class="hero__copy">
           <h1 class="hero__title">
-            Your next concert.
-            <span class="hero__accent">Your kind of people.</span>
+            Meet before the music.
+            <span class="hero__accent">Walk in together.</span>
           </h1>
 
           <p class="lede hero__lede">
-            Find people going to the same concert and make plans together.
+            Your next concert, with your kind of people. Meet fans who share your taste and plan where to meet before the show.
           </p>
 
           <div class="hero__actions">
@@ -136,7 +136,7 @@ const steps = [
     <!-- --------------------------------------------------------------- Steps -->
     <section class="section">
       <div class="container">
-        <h2 class="steps__title">Go together</h2>
+        <h2 class="steps__title">Get started</h2>
 
         <ol class="steps">
           <li v-for="step in steps" :key="step.n" class="step">
