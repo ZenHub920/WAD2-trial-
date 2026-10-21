@@ -111,11 +111,14 @@ function applyAndContinue() {
 function onAgeMin(event) {
   const value = Number(event.target.value);
   filters.value.ageMin = Math.min(value, filters.value.ageMax - 1);
+  // Vue skips the DOM patch when the clamped value is unchanged, so pin the thumb here.
+  event.target.value = filters.value.ageMin;
 }
 
 function onAgeMax(event) {
   const value = Number(event.target.value);
   filters.value.ageMax = Math.max(value, filters.value.ageMin + 1);
+  event.target.value = filters.value.ageMax;
 }
 
 const agePercent = computed(() => ({
