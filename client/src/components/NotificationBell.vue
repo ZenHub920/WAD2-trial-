@@ -16,9 +16,9 @@ const unreadCount = ref(0);
 const loading = ref(false);
 const readingId = ref('');
 const error = ref('');
+// Chat titles are written by the server and name the sender, so there is
+// nothing here to rewrite them to — a generic label would throw away the name.
 const titles = {
-  'New Kaki message': 'New companion message',
-  'New marketplace message': 'New ticket message',
   'A seeker requested to join your group': 'Someone requested a group place',
   'Seeker preferences changed; review and resubmit the join request': 'Companion preferences changed; review your group join request',
 };

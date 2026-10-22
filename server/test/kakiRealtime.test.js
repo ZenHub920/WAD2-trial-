@@ -237,17 +237,20 @@ test('a later message is unread again even though earlier ones were read', async
   assert.equal(byBody.two, 'sent', 'the read marker must not run ahead of what was shown');
 });
 
-test('unread totals count only the other person messages, and clear on open', async (t) => {
+test('the unread badge counts people waiting, not messages, and clears on open', async (t) => {
   const f = await fixture(t);
   const { a, b, id } = await f.matchedPair('c_unread');
 
   await f.send(a, id, 'one');
   await f.send(a, id, 'two');
 
-  assert.equal((await f.api('/kaki/unread', { cookie: b.cookie })).body.total, 2);
+  // One person is waiting, however much they typed.
+  assert.equal((await f.api('/kaki/unread', { cookie: b.cookie })).body.total, 1);
   assert.equal((await f.api('/kaki/unread', { cookie: a.cookie })).body.total, 0,
     'your own messages are never unread to you');
 
+  // The per-thread count inside the inbox is still a message count: there it
+  // answers "how much have I missed here?", which is a different question.
   const list = await f.api('/kaki/conversations', { cookie: b.cookie });
   assert.equal(list.body.conversations[0].unread, 2);
 

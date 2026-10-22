@@ -23,9 +23,10 @@ export function migrateNotifications(db) {
       condition = "1",
     ) =>
       db.exec(`
-    CREATE TRIGGER IF NOT EXISTS ${name} AFTER ${timing} ON ${table} WHEN ${condition} BEGIN
+    DROP TRIGGER IF EXISTS ${name};
+    CREATE TRIGGER ${name} AFTER ${timing} ON ${table} WHEN ${condition} BEGIN
       INSERT OR IGNORE INTO notifications(id,user_id,category,event_key,title,resource_path)
-      SELECT lower(hex(randomblob(16))),recipient,'${category}',${key},'${title}',${path}
+      SELECT lower(hex(randomblob(16))),recipient,'${category}',${key},${title},${path}
       FROM (${recipients}) WHERE recipient IS NOT NULL AND COALESCE((SELECT enabled FROM notification_preferences
         WHERE user_id=recipient AND category='${category}'),1)=1;
     END;`);
@@ -35,9 +36,11 @@ export function migrateNotifications(db) {
       "INSERT",
       "chat",
       `SELECT CASE WHEN c.user_a_id=NEW.sender_user_id THEN c.user_b_id ELSE c.user_a_id END recipient FROM conversations c WHERE c.id=NEW.conversation_id`,
-      "New Kaki message",
+      "'Message from '||COALESCE((SELECT display_name FROM users WHERE id=NEW.sender_user_id),'a companion')",
       "'/kaki/chat/'||NEW.conversation_id",
-      "'kaki-message:'||NEW.id",
+      // Keyed by CONVERSATION, not by message: ten messages from one person
+      // are one thing to look at. UNIQUE(user_id,event_key) collapses the rest.
+      "'kaki-chat:'||NEW.conversation_id",
     );
     trigger(
       "notify_market_message",
@@ -45,9 +48,9 @@ export function migrateNotifications(db) {
       "INSERT",
       "chat",
       `SELECT CASE WHEN c.buyer_user_id=NEW.sender_user_id THEN c.seller_user_id ELSE c.buyer_user_id END recipient FROM ticket_conversations c WHERE c.id=NEW.conversation_id`,
-      "New marketplace message",
+      "'Ticket message from '||COALESCE((SELECT display_name FROM users WHERE id=NEW.sender_user_id),'a companion')",
       "'/chat/'||NEW.conversation_id",
-      "'ticket-message:'||NEW.id",
+      "'ticket-chat:'||NEW.conversation_id",
     );
     trigger(
       "notify_join_request",
@@ -55,7 +58,7 @@ export function migrateNotifications(db) {
       "INSERT",
       "group",
       "SELECT host_user_id recipient FROM parties WHERE id=NEW.party_id",
-      "A seeker requested to join your group",
+      "'A seeker requested to join your group'",
       "'/groups/connect'",
       "'join-request:'||NEW.id",
     );
@@ -65,7 +68,7 @@ export function migrateNotifications(db) {
       "UPDATE OF status",
       "group",
       "SELECT NEW.user_id recipient",
-      "Your group join request was updated",
+      "'Your group join request was updated'",
       "'/groups'",
       "'join-response:'||NEW.id||':'||NEW.status",
       "NEW.status<>OLD.status AND NEW.status<>'pending'",
@@ -76,7 +79,7 @@ export function migrateNotifications(db) {
       "UPDATE OF status",
       "group",
       "SELECT host_user_id recipient FROM parties WHERE id=NEW.party_id",
-      "A seeker requested to join your group",
+      "'A seeker requested to join your group'",
       "'/groups/connect'",
       "'join-reopened:'||lower(hex(randomblob(16)))",
       "NEW.status='pending' AND OLD.status IN('withdrawn','expired')",
@@ -87,7 +90,7 @@ export function migrateNotifications(db) {
       "INSERT",
       "group",
       `SELECT host_user_id recipient FROM parties WHERE id=CASE WHEN NEW.initiator_party_id=NEW.party_a_id THEN NEW.party_b_id ELSE NEW.party_a_id END`,
-      "A group invited your group to connect",
+      "'A group invited your group to connect'",
       "'/groups/connect'",
       "'group-invite:'||NEW.id",
     );
@@ -97,7 +100,7 @@ export function migrateNotifications(db) {
       "UPDATE OF version",
       "group",
       "SELECT user_id recipient FROM group_join_requests WHERE party_id=NEW.party_id AND status='pending' AND COALESCE(group_version,0)<>NEW.version",
-      "A group you chose changed; review and resubmit your request",
+      "'A group you chose changed; review and resubmit your request'",
       "'/groups'",
       "'group-profile:'||NEW.party_id||':'||NEW.version",
       "NEW.version<>OLD.version",
@@ -111,7 +114,7 @@ export function migrateNotifications(db) {
         WHERE r.user_id=NEW.user_id AND p.concert_id=NEW.concert_id AND r.status='pending')
        UNION SELECT p.host_user_id recipient FROM group_join_requests r JOIN parties p ON p.id=r.party_id
         WHERE r.user_id=NEW.user_id AND p.concert_id=NEW.concert_id AND r.status='pending'`,
-      "Seeker preferences changed; review and resubmit the join request",
+      "'Seeker preferences changed; review and resubmit the join request'",
       "CASE WHEN recipient=NEW.user_id THEN '/groups' ELSE '/groups/connect' END",
       "'seeker-profile:'||NEW.user_id||':'||NEW.concert_id||':'||lower(hex(randomblob(16)))",
       "NEW.answers_json<>OLD.answers_json",
@@ -122,7 +125,7 @@ export function migrateNotifications(db) {
       "UPDATE OF status",
       "group",
       "SELECT host_user_id recipient FROM parties WHERE id=NEW.initiator_party_id",
-      "Your group invitation was updated",
+      "'Your group invitation was updated'",
       "'/groups/connect'",
       "'group-response:'||NEW.id||':'||NEW.status",
       "NEW.status<>OLD.status",
@@ -137,7 +140,7 @@ export function migrateNotifications(db) {
       "match",
       `SELECT user_id recipient FROM seeker_requests WHERE id=NEW.seeker_request_id
         UNION SELECT host_user_id recipient FROM parties WHERE id=NEW.party_id`,
-      "You received a matching proposal",
+      "'You received a matching proposal'",
       "'/concerts/'||(SELECT concert_id FROM parties WHERE id=NEW.party_id)",
       "'match-offer:'||NEW.id",
     );
@@ -151,7 +154,7 @@ export function migrateNotifications(db) {
         AND OLD.seeker_approved_at IS NULL AND NEW.seeker_approved_at IS NOT NULL
         UNION SELECT user_id recipient FROM seeker_requests WHERE id=NEW.seeker_request_id
         AND OLD.host_approved_at IS NULL AND NEW.host_approved_at IS NOT NULL`,
-      "A matching proposal is waiting for your decision",
+      "'A matching proposal is waiting for your decision'",
       "'/concerts/'||(SELECT concert_id FROM parties WHERE id=NEW.party_id)",
       "'match-approval:'||NEW.id||':'||CASE WHEN OLD.seeker_approved_at IS NULL AND NEW.seeker_approved_at IS NOT NULL THEN 'seeker' ELSE 'host' END",
       "NEW.status='proposed' AND (NEW.seeker_approved_at IS NULL OR NEW.host_approved_at IS NULL) AND ((OLD.seeker_approved_at IS NULL AND NEW.seeker_approved_at IS NOT NULL) OR (OLD.host_approved_at IS NULL AND NEW.host_approved_at IS NOT NULL))",
@@ -162,11 +165,18 @@ export function migrateNotifications(db) {
       "UPDATE OF status",
       "match",
       `SELECT host_user_id recipient FROM parties WHERE id=NEW.party_id UNION SELECT user_id recipient FROM seeker_requests WHERE id=NEW.seeker_request_id`,
-      "A matching proposal was updated",
+      "'A matching proposal was updated'",
       "'/concerts/'||(SELECT concert_id FROM parties WHERE id=NEW.party_id)",
       "'match-status:'||NEW.id||':'||NEW.status",
       "NEW.status<>OLD.status",
     );
+    // The previous scheme wrote one row per message with a generic title. Those
+    // rows cannot be upgraded in place — their keys are per-message — so they are
+    // cleared once. A per-conversation row reappears with the next message, named
+    // after whoever sent it.
+    db.exec(`DELETE FROM notifications WHERE category='chat'
+      AND (event_key LIKE 'kaki-message:%' OR event_key LIKE 'ticket-message:%'
+           OR (event_key LIKE 'chat:%' AND event_key NOT LIKE 'chat-thread:%'))`);
   }).immediate();
 }
 export function createNotificationRepo(db) {
@@ -197,21 +207,39 @@ export function createNotificationRepo(db) {
         )
         .get(user).total;
     },
+    /**
+     * Chat notifications are DELETED rather than marked, everywhere below.
+     *
+     * Two reasons, and the second is the load-bearing one. A chat notification
+     * says "you have unread messages here" — once read it describes nothing, so
+     * leaving it in the inbox is clutter. And because chat rows are now keyed by
+     * conversation, UNIQUE(user_id,event_key) would silently swallow every later
+     * message from that person if the row were merely marked read. Deleting is
+     * what re-arms the key for the next conversation that goes quiet and starts
+     * again. Everything else still marks read and stays as history.
+     */
     read(user, id) {
-      const result = db
-        .prepare(
-          "UPDATE notifications SET read_at=COALESCE(read_at,datetime('now')) WHERE id=? AND user_id=?",
-        )
-        .run(id, user);
-      if (!result.changes) throw communityError("notification_not_found", 404);
+      const row = db
+        .prepare("SELECT category FROM notifications WHERE id=? AND user_id=?")
+        .get(id, user);
+      if (!row) throw communityError("notification_not_found", 404);
+      if (row.category === "chat") {
+        db.prepare("DELETE FROM notifications WHERE id=? AND user_id=?").run(id, user);
+        return { read: true };
+      }
+      db.prepare(
+        "UPDATE notifications SET read_at=COALESCE(read_at,datetime('now')) WHERE id=? AND user_id=?",
+      ).run(id, user);
       return { read: true };
     },
+    /** Called when the person opens the thread; the badge clears with the row. */
     readConversation(user, path) {
       return db.prepare(
-        "UPDATE notifications SET read_at=datetime('now') WHERE user_id=? AND category='chat' AND resource_path=? AND read_at IS NULL",
+        "DELETE FROM notifications WHERE user_id=? AND category='chat' AND resource_path=?",
       ).run(user, path).changes;
     },
     readAll(user) {
+      db.prepare("DELETE FROM notifications WHERE user_id=? AND category='chat'").run(user);
       db.prepare(
         "UPDATE notifications SET read_at=datetime('now') WHERE user_id=? AND read_at IS NULL",
       ).run(user);
@@ -272,9 +300,19 @@ export function createNotificationRepo(db) {
               .get(user, "chat")?.enabled === 0
           )
             continue;
+          const sender = db
+            .prepare("SELECT display_name FROM users WHERE id=?")
+            .get(senderId)?.display_name;
           db.prepare(
-            "INSERT OR IGNORE INTO notifications(id,user_id,category,event_key,title,resource_path) VALUES(?,?,'chat',?,'New chat message',?)",
-          ).run(randomUUID(), user, `chat:${messageId}`, conversationPath);
+            "INSERT OR IGNORE INTO notifications(id,user_id,category,event_key,title,resource_path) VALUES(?,?,'chat',?,?,?)",
+          ).run(
+            randomUUID(),
+            user,
+            // Per conversation, not per message, to match the triggers.
+            `chat-thread:${conversationPath}`,
+            `Message from ${sender ?? "a companion"}`,
+            conversationPath,
+          );
         }
       },
     ).immediate,
