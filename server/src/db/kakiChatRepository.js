@@ -234,9 +234,14 @@ export function createKakiChatRepo(db) {
          WHERE conversation_id = @conversation AND user_id = @user), 0)
   `);
 
-  /** Unread across every thread the viewer can still see — drives the nav dot. */
+  /**
+   * How many PEOPLE are waiting on a reply — not how many messages they sent.
+   * Ten messages from one person is one thing to deal with, and counting them
+   * individually made the nav badge disagree with the notification bell, which
+   * raises one notification per conversation.
+   */
   const unreadTotal = db.prepare(`
-    SELECT COUNT(*) AS n
+    SELECT COUNT(DISTINCT c.id) AS n
     FROM messages m
     JOIN conversations c ON c.id = m.conversation_id
     WHERE (c.user_a_id = @user OR c.user_b_id = @user)

@@ -155,17 +155,21 @@ test('opening and polling ticket chats reads only the viewer’s notifications f
   assert.equal((await api(`/conversations/${first}`, { as: 'buyer2' })).status, 404);
   assert.equal((await inbox('buyer')).find(n => n.path === `/chat/${first}`).readAt, null);
 
+  // Opening clears the row outright; the other thread and the other party keep theirs.
   assert.equal((await api(`/conversations/${first}`, { as: 'buyer' })).status, 200);
   let notifications = await inbox('buyer');
-  assert.ok(notifications.find(n => n.path === `/chat/${first}`).readAt);
+  assert.equal(notifications.find(n => n.path === `/chat/${first}`), undefined);
   assert.equal(notifications.find(n => n.path === `/chat/${second}`).readAt, null);
   assert.equal((await inbox('seller')).find(n => n.path === `/chat/${first}`).readAt, null);
 
+  // And a later message raises a fresh one, named after the sender.
   await send(first, 'seller', 'Let me know if you have any other questions.');
-  assert.ok((await inbox('buyer')).some(n => n.path === `/chat/${first}` && !n.readAt));
+  const raised = (await inbox('buyer')).find(n => n.path === `/chat/${first}`);
+  assert.ok(raised && !raised.readAt);
+  assert.match(raised.title, /^Ticket message from /);
   assert.equal((await api(`/conversations/${first}?after=${last.id}`, { as: 'buyer' })).status, 200);
   notifications = await inbox('buyer');
-  assert.ok(notifications.filter(n => n.path === `/chat/${first}`).every(n => n.readAt));
+  assert.equal(notifications.filter(n => n.path === `/chat/${first}`).length, 0);
   assert.equal(notifications.find(n => n.path === `/chat/${second}`).readAt, null);
 });
 

@@ -209,9 +209,14 @@ test("notification hooks are persistent, recipient scoped, deduplicated and obey
   assert.equal(repos.notifications.unread("friend"), 1);
   assert.equal(repos.notifications.unread("h1"), 0);
   const n = repos.notifications.list("friend")[0];
+  // Named after whoever sent it, not "New chat message".
+  assert.equal(n.title, "Message from User h1");
   assert.throws(() => repos.notifications.read("outsider", n.id), /not_found/);
+  // Reading a CHAT notification removes it; it described unread messages that
+  // are no longer unread, and the row has to go for the next one to be raised.
   repos.notifications.read("friend", n.id);
   assert.equal(repos.notifications.unread("friend"), 0);
+  assert.equal(repos.notifications.list("friend").length, 0);
   repos.notifications.setSettings("friend", { chat: false });
   repos.notifications.chatMessage({
     messageId: "m2",
@@ -219,11 +224,28 @@ test("notification hooks are persistent, recipient scoped, deduplicated and obey
     senderId: "h1",
     recipientIds: ["friend"],
   });
-  assert.equal(repos.notifications.list("friend").length, 1);
+  assert.equal(repos.notifications.list("friend").length, 0, "the chat preference still blocks it");
   assert.throws(
     () => repos.notifications.setSettings("friend", { chat: "yes" }),
     /invalid/,
   );
+  repos.notifications.setSettings("friend", { chat: true });
+  for (const messageId of ["m3", "m4", "m5"]) {
+    repos.notifications.chatMessage({
+      messageId,
+      conversationPath: "/groups/p1/members",
+      senderId: "h1",
+      recipientIds: ["friend"],
+    });
+  }
+  assert.equal(repos.notifications.unread("friend"), 1, "one thread, one notification");
+  repos.notifications.chatMessage({
+    messageId: "m6",
+    conversationPath: "/groups/p2/members",
+    senderId: "h2",
+    recipientIds: ["friend"],
+  });
+  assert.equal(repos.notifications.unread("friend"), 2, "a second thread gets its own");
 });
 test("join request notifications and business writes share transaction rollback", () => {
   const operation = db.transaction(() => {

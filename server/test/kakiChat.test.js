@@ -159,9 +159,12 @@ test('opening or acknowledging a thread clears only that user’s chat notificat
   assert.equal((await f.api(`/kaki/conversations/${id}`, { cookie: outsider.cookie })).status, 404);
   assert.equal((await notifications(b)).find(n => n.id === unread.id).readAt, null);
 
+  // Opening the thread removes the notification rather than marking it read:
+  // once read it describes nothing, and the row has to go for the next quiet
+  // period to raise a fresh one.
   assert.equal((await f.api(`/kaki/conversations/${id}`, { cookie: b.cookie })).status, 200);
   let inbox = await notifications(b);
-  assert.ok(inbox.find(n => n.id === unread.id).readAt);
+  assert.equal(inbox.find(n => n.id === unread.id), undefined);
   assert.equal(inbox.find(n => n.id === 'unrelated').readAt, null);
 
   await send(b, 'Yes, see you there.');
@@ -169,12 +172,29 @@ test('opening or acknowledging a thread clears only that user’s chat notificat
   await f.api(`/kaki/conversations/${id}`, { cookie: b.cookie });
   assert.equal((await notifications(a)).find(n => n.id === otherSide.id).readAt, null);
 
+  // Re-armed: a message after the thread was read raises a new one.
   await send(a, 'I am on the way.');
   assert.ok((await notifications(b)).some(n => n.path === path && !n.readAt));
   assert.equal((await f.api(`/kaki/conversations/${id}/read`, { method: 'POST', cookie: b.cookie })).status, 200);
   inbox = await notifications(b);
-  assert.ok(inbox.filter(n => n.path === path).every(n => n.readAt));
+  assert.equal(inbox.filter(n => n.path === path).length, 0);
   assert.equal(inbox.find(n => n.id === 'unrelated').readAt, null);
+});
+
+test('chat notifications collapse per conversation and name the sender', async (t) => {
+  const f = await fixture(t);
+  const { a, b } = await f.matchedPair('c_notification_collapse');
+  const id = (await f.openChat(a.cookie, 'c_notification_collapse', b)).body.conversation.id;
+  const path = `/kaki/chat/${id}`;
+  const notifications = async (person) => (await f.api('/me/notifications', { cookie: person.cookie })).body.notifications;
+
+  for (const body of ['one', 'two', 'three', 'four']) {
+    await f.api(`/kaki/conversations/${id}/messages`, { method: 'POST', cookie: a.cookie, body: { body } });
+  }
+  const mine = (await notifications(b)).filter(n => n.path === path);
+  assert.equal(mine.length, 1, 'four messages from one person are one notification');
+  // matchedPair registers the sender as `a-<concertId>`.
+  assert.equal(mine[0].title, 'Message from a-c_notification_collapse');
 });
 
 test('a non-participant gets 404, not 403, so ids cannot be probed', async (t) => {
