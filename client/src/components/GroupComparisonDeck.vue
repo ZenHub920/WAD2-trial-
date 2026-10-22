@@ -31,6 +31,7 @@ const requestLabel = group => group.remainingCapacity < 1 ? 'Join waiting queue'
 const canRequest = group => !locked.value && props.canApply && !submitted.value && acceptsRequests(group);
 
 watch(() => pending.value || transitioning.value, value => emit('pending-change', value));
+watch(() => props.canApply, value => { if (value) submitted.value = null; });
 
 function cancelAnimation() {
   clearTimeout(animationTimer);

@@ -35,10 +35,14 @@ const peopleCount = (c) => (c.open_seekers ?? 0) + (c.open_slots ?? 0);
 
 // The busiest upcoming show leads the page; a photo breaks ties.
 const featured = computed(() => {
-  const [best] = [...concerts.value].sort(
-    (a, b) => peopleCount(b) - peopleCount(a) || hasImage(b) - hasImage(a),
-  );
-  return best ?? null;
+  let best = null;
+  for (const concert of concerts.value) {
+    if (!best || peopleCount(concert) > peopleCount(best)
+      || (peopleCount(concert) === peopleCount(best) && hasImage(concert) && !hasImage(best))) {
+      best = concert;
+    }
+  }
+  return best;
 });
 
 const upcoming = computed(() =>
