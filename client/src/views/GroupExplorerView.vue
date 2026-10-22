@@ -101,7 +101,7 @@ async function load() {
     }
   } catch (err) {
     if (isCurrent(key) && current === generation) {
-      if (comparisonSession.value !== listingKey) groups.value = [];
+      if (comparisonSession.value !== listingKey) { groups.value = []; comparisonSession.value = listingKey; }
       error.value = err.status === 401 ? 'Sign in to browse groups and manage your preferences.' : 'Could not load groups and your requests. Please try again.';
     }
   } finally { if (isCurrent(key) && current === generation) loading.value = false; }
@@ -201,7 +201,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
       <div class="results-heading"><p>{{ groups.length }} {{ groups.length === 1 ? 'group' : 'groups' }} on this page. <span v-if="displayedMode === 'direct'">{{ pendingDirect.length }} of {{ pendingLimit }} pending applications.</span></p>
         <div v-if="displayedMode === 'direct'" class="results-layout" role="group" aria-label="Display direct group results"><button type="button" class="btn" :class="directLayout === 'compare' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="directLayout === 'compare'" :disabled="busy" @click="directLayout = 'compare'; applicationFor = ''">Compare two</button><button type="button" class="btn" :class="directLayout === 'list' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="directLayout === 'list'" :disabled="busy" @click="directLayout = 'list'">List view</button></div>
       </div>
-      <GroupComparisonDeck v-if="displayedMode === 'direct' && groups.length" v-show="directLayout === 'compare'" :groups="groups" :session-key="comparisonSession" :disabled="busy || loading || directLayout !== 'compare'" :can-apply="canApply" :apply-group="group => join(group.id, '')" />
+      <GroupComparisonDeck v-if="displayedMode === 'direct'" v-show="directLayout === 'compare' && groups.length" :groups="groups" :session-key="comparisonSession" :disabled="busy || loading || directLayout !== 'compare'" :can-apply="canApply" :apply-group="group => join(group.id, '')" />
       <div v-if="displayedMode !== 'direct' || directLayout === 'list'" class="group-grid"><GroupListingCard v-for="group in groups" :key="group.id" :group="group">
         <template v-if="displayedMode === 'direct'"><button type="button" class="btn btn--ghost" :disabled="busy || !canApply || pendingFor(group.id) || declinedFor(group.id) || !canQueueFor(group) || group.status === 'cancelled'" @click="applicationFor = applicationFor === group.id ? '' : group.id; applicationNote = ''">{{ pendingFor(group.id) ? 'Application pending' : declinedFor(group.id) ? 'Previously declined' : !canQueueFor(group) ? 'Group full' : group.remainingCapacity < 1 ? 'Join waiting queue' : 'Request to join' }}</button>
           <form v-if="applicationFor === group.id" class="application-form" @submit.prevent="join(group.id)"><label>Message to the host (optional)<textarea v-model="applicationNote" maxlength="500" rows="3" :disabled="busy" /></label><small class="group-muted">{{ applicationNote.length }}/500 characters. The host will see your public profile and preferences. Requests are reviewed in arrival order and expire 48 hours after submission; a later request may wait without a held place.</small><div class="group-actions"><button class="btn btn--primary" :disabled="busy || !canApply || !canQueueFor(group)">Send application</button><button type="button" class="btn btn--ghost" :disabled="busy" @click="applicationFor = ''">Cancel</button></div></form>

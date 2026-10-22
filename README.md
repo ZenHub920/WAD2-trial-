@@ -46,8 +46,15 @@ inside a collapsed panel. Connecting groups opens from an owned card with
 `?view=connections&groupId=...`. Pending join requests and connection invitations
 stay actionable; old join requests and cancelled groups are kept in history.
 
-The Encore logo links to `/`, where the homepage shows up to five upcoming
-concerts from the Ticketmaster API. The companion finder's Edit filters shortcut
+Direct group comparisons keep their local session when switching to List view or
+refreshing the same results, even if a refresh returns no groups. Withdrawing an
+application re-enables requests from the existing comparison instead of requiring
+a page reload.
+
+The Encore logo links to `/`, where the homepage features the busiest upcoming
+Ticketmaster concert (a working picture breaks ties), followed by up to six
+other upcoming concerts. The featured concert is selected in one pass without
+copying and sorting the list. The companion finder's Edit filters shortcut
 appears while browsing profiles and is hidden when the filter form is open.
 The theme toggle and notification bell sit 8px apart on desktop and mobile.
 The theme toggle stays outside the mobile menu.
@@ -99,10 +106,10 @@ Creating a party, seeker request or Kaki participation requires a session
 (HTTP 401 otherwise). The cookie identifies the owner; the server does not trust
 user IDs in request JSON. The old open `POST /api/users` endpoint is gone.
 Concert browsing and aggregate matching previews remain public. Full round results,
-traces, rosters and legacy round execution require a database-provisioned operator
-(HTTP 403 for ordinary accounts). Normal users can run managed-group matching
+traces, rosters and round execution require a database-provisioned operator
+(HTTP 403 for ordinary accounts). Normal users can join the matching pool
 through `/api/me/concerts/:id/matching`; its response contains only their own state
-and assigned request. Legacy results remain available through
+and proposal. Legacy results remain available through
 `GET /api/me/concerts/:id/result`.
 
 Provision an existing account from the server host (never via a web request):
@@ -119,29 +126,30 @@ the destructive demo seed on accounts you want to keep.
 
 ### Find my group
 
-At `/groups`, save a concert group request, then choose **Find my group**. This
-explicitly joins the automatic matching pool and runs Gale–Shapley against all
-currently enrolled, eligible seekers and published managed groups with available
-stranger places. Existing requests are not silently enrolled.
+At `/groups`, save a concert group request, then choose **Find my group** to
+join the automatic matching pool. An operator runs the matching round from the
+concert page; enrollment alone does not run Gale–Shapley or start a scheduler.
 
 Each side ranks feasible pairs using 60% structured compatibility and 40%
 directional saved preferences, with member-derived group profiles. Saved preferred
 groups take priority without overriding eligibility. The solver verifies stability
-and stores the round, score snapshots and trace. Linked requests and lower quotas
-are rejected rather than silently relaxed in this flow.
+and stores the round, score snapshots and trace. Unsupported relaxations are
+rejected rather than silently applied.
 
-Assignments create 48-hour join requests linked to the matching round. These
-requests reserve places until host approval, rejection, withdrawal or expiration;
-approval converts the reservation into one membership. The host still decides.
-Manual group selection remains available; manual pending requests do not reserve
-places and stop automatic enrollment. If no suitable place exists, the user stays
-queued and can retry or leave. Empty rounds are not fabricated.
+Automatic proposals and direct applications share each group's FIFO queue.
+Entries expire 48 hours after creation, including time spent waiting. Available
+places are held by the earliest entries; later entries wait without a seat.
+Only the first held entry can be approved. Direct applications need host approval;
+automatic proposals need both host and seeker approval. Confirmation converts
+the existing hold into membership. Withdrawal, decline or expiry promotes waiters
+without restarting their deadlines.
 
 `GET`, `POST` and `DELETE /api/me/concerts/:id/matching` read the caller's state,
-join/run matching and leave/withdraw respectively. POST requires a UUID-v4
-`Idempotency-Key`; keys are scoped to the caller. Matching history and request
-creation commit together under an IMMEDIATE transaction. The private response
-does not expose other seekers, rankings or the batch roster.
+join the automatic pool and switch back to direct joining respectively. POST
+requires a UUID-v4 `Idempotency-Key`. Active offers must be resolved before
+switching methods; leaving the pool does not silently withdraw an application
+or decline an offer. See [Hybrid group matching](docs/HYBRID_GROUP_MATCHING.md)
+for the complete workflow.
 
 ### Concerts and ticket listings
 
@@ -454,8 +462,8 @@ without personal results.
 | `POST` | `/api/concerts/:id/match` | operator-only: run and persist a round |
 | `GET` | `/api/me/concerts/:id/result` | own latest group-round result (session required) |
 | `GET` | `/api/me/concerts/:id/matching` | own managed matching queue, request and approval state |
-| `POST` | `/api/me/concerts/:id/matching` | opt in and run managed Gale–Shapley; UUID-v4 Idempotency-Key required |
-| `DELETE` | `/api/me/concerts/:id/matching` | leave managed pool and withdraw own pending automatic request |
+| `POST` | `/api/me/concerts/:id/matching` | join automatic matching pool; UUID-v4 Idempotency-Key required; does not run a round |
+| `DELETE` | `/api/me/concerts/:id/matching` | switch to direct joining; active offers must be resolved first |
 | `GET` | `/api/rounds/:id` | operator-only full per-seeker results |
 | `GET` | `/api/rounds/:id/trace` | operator-only proposal sequence |
 | `GET` | `/api/rounds/:id/parties/:partyId` | operator-only full party roster |
