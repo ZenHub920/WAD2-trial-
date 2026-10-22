@@ -42,8 +42,8 @@ const from = computed(() => {
     <div class="spot__activity">
       <p v-if="activityLoading"><LoadingSpinner /> Loading group activity…</p>
       <template v-else>
-        <p>{{ openSlots === null ? 'Group places unavailable' : `${openSlots} group ${openSlots === 1 ? 'place' : 'places'} available` }}</p>
-        <p>{{ openSeekers === null ? 'Group finder activity unavailable' : openSeekers === 0 ? 'No active group finders' : `${openSeekers} active group ${openSeekers === 1 ? 'finder' : 'finders'}` }}</p>
+        <p>{{ openSlots === null ? 'Group spots unavailable' : openSlots === 0 ? 'No open spots in groups' : `${openSlots} open ${openSlots === 1 ? 'spot' : 'spots'} in groups` }}</p>
+        <p>{{ openSeekers === null ? 'Group activity unavailable' : openSeekers === 0 ? 'Nobody looking for a group yet' : `${openSeekers} ${openSeekers === 1 ? 'person' : 'people'} looking for a group` }}</p>
       </template>
     </div>
 
@@ -59,10 +59,10 @@ const from = computed(() => {
       <span v-if="ticketsLoading" class="spot__resale"><LoadingSpinner /> Loading tickets…</span>
       <span v-else-if="ticketCount" class="spot__resale">
         <MarketIcon name="ticket" :size="15" />
-        <span>{{ ticketCount }} {{ ticketCount === 1 ? 'ticket' : 'tickets' }} for sale · Listing totals from {{ from }}</span>
+        <span>{{ ticketCount }} fan-listed {{ ticketCount === 1 ? 'ticket' : 'tickets' }} · from {{ from }}</span>
       </span>
-      <span v-else-if="ticketCount === 0" class="spot__resale spot__resale--none">No tickets for sale</span>
-      <span v-else class="spot__resale spot__resale--none">Tickets for sale unavailable</span>
+      <span v-else-if="ticketCount === 0" class="spot__resale spot__resale--none">No fan-listed tickets</span>
+      <span v-else class="spot__resale spot__resale--none">Fan-listed tickets unavailable</span>
       <RouterLink :to="`/concerts/${concert.id}`" class="spot__see">View concert</RouterLink>
     </footer>
   </article>

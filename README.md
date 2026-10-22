@@ -51,10 +51,10 @@ refreshing the same results, even if a refresh returns no groups. Withdrawing an
 application re-enables requests from the existing comparison instead of requiring
 a page reload.
 
-The Encore logo links to `/`, where the homepage features the busiest upcoming
-Ticketmaster concert (a working picture breaks ties), followed by up to six
-other upcoming concerts. The featured concert is selected in one pass without
-copying and sorting the list. The companion finder's Edit filters shortcut
+The Encore logo links to `/`, where the homepage rotates through up to five
+upcoming Ticketmaster concerts ranked by activity, with pictures breaking ties.
+Up to six other upcoming concerts appear below the carousel.
+The companion finder's Edit filters shortcut
 appears while browsing profiles and is hidden when the filter form is open.
 The theme toggle and notification bell sit 8px apart on desktop and mobile.
 The theme toggle stays outside the mobile menu.
