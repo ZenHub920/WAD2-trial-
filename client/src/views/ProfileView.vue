@@ -59,7 +59,7 @@ async function removeAvatar() {
 const ageBands = ['18-20', '21-24', '25-29', '30-34', '35+'];
 const regions = { north: 'North', north_east: 'North East', east: 'East', west: 'West', central: 'Central' };
 const genders = { f: 'Female', m: 'Male', nb: 'Non-binary', unspecified: 'Prefer not to say' };
-const companionPreferences = { any: 'Any gender', same_only: 'Same gender only' };
+const companionPreferences = { any: 'Any gender', male: 'Male', female: 'Female' };
 const languages = { en: 'English', zh: 'Chinese', ms: 'Malay', ta: 'Tamil' };
 
 const profile = ref(null);
@@ -225,15 +225,12 @@ async function save() {
         </div>
       </section>
 
-      <p v-if="saveError" class="profile__error" role="alert">{{ saveError }} <RouterLink v-if="sessionExpired" to="/login">Sign in</RouterLink></p>
-      <p v-if="saved" class="profile__success" role="status">Profile saved.</p>
+      <!-- Sticks to the bottom of the screen while the form is in view, so Save
+           is always one click away without scrolling back down. -->
       <div class="profile__actions">
-        <RouterLink to="/kaki" class="btn btn--ghost">Find a companion</RouterLink>
-        <RouterLink to="/groups" class="btn btn--ghost">Browse groups</RouterLink>
-        <RouterLink to="/groups/connect" class="btn btn--ghost">My groups &amp; invitations</RouterLink>
-        <RouterLink to="/meetups" class="btn btn--ghost">Meetup planning</RouterLink>
-        <RouterLink to="/feedback" class="btn btn--ghost">Post-concert feedback</RouterLink>
-        <button type="submit" class="btn btn--primary" :disabled="saving">
+        <p v-if="saveError" class="profile__error" role="alert">{{ saveError }} <RouterLink v-if="sessionExpired" to="/login">Sign in</RouterLink></p>
+        <p v-else-if="saved" class="profile__success" role="status">✓ Profile saved</p>
+        <button type="submit" class="btn btn--primary profile__save" :disabled="saving">
           <LoadingSpinner v-if="saving" />
           {{ saving ? 'Saving…' : 'Save profile' }}
         </button>
@@ -246,7 +243,7 @@ async function save() {
         <h2 id="profile-logout">Log out</h2>
         <p class="profile__hint">Signed in as {{ currentUser.email ?? currentUser.displayName }}.</p>
       </div>
-      <button type="button" class="btn btn--ghost profile__logout-btn" :disabled="signingOut" @click="logOut">
+      <button type="button" class="btn btn--danger-ghost" :disabled="signingOut" @click="logOut">
         <LoadingSpinner v-if="signingOut" />
         {{ signingOut ? 'Logging out…' : 'Log out' }}
       </button>
@@ -277,17 +274,19 @@ async function save() {
 .profile__error { color: var(--rose-400); }
 .profile__success { color: var(--mint-400); }
 .profile__notice { display: grid; justify-items: start; gap: var(--space-3); }
-.profile__actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-3); }
+.profile__actions { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; gap: var(--space-4); padding: var(--space-4) var(--space-5); border: var(--border-soft); border-radius: var(--radius-lg); background: var(--ink-850); box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.08); }
+.profile__actions p { margin: 0; font-size: var(--step--1); }
+.profile__save { margin-left: auto; min-width: 160px; }
 .profile__logout { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3) var(--space-5); margin-top: var(--space-6); }
 .profile__logout h2 { margin-bottom: var(--space-1); }
 .profile__logout .profile__error { flex-basis: 100%; }
-.profile__logout-btn { color: var(--rose-400); border-color: color-mix(in oklab, var(--rose-400) 45%, transparent); }
 @media (max-width: 600px) {
   .profile__fields { grid-template-columns: 1fr; }
   .profile__card { padding: var(--space-4); }
   .profile__vibe { grid-template-columns: minmax(0, 1fr) 2ch; }
   .profile__vibe input { grid-row: 2; grid-column: 1 / -1; }
   .profile__vibe output { grid-column: 2; grid-row: 1; text-align: right; }
-  .profile__actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .profile__actions { padding: var(--space-3) var(--space-4); }
+  .profile__save { min-width: 0; flex: 1; }
 }
 </style>

@@ -1,6 +1,8 @@
 # Encore: group features and teammate integration guide
 
-This guide explains the original implementation and final behaviour, now integrated into `main`. For endpoint details, see [BACKEND_COMMUNITY_FEATURES.md](BACKEND_COMMUNITY_FEATURES.md); [GROUP_FEATURES_IMPLEMENTATION.md](GROUP_FEATURES_IMPLEMENTATION.md) is historical and contains superseded rules.
+This guide records the earlier community-feature implementation. For the current person-to-group workflow and integration details, read [HYBRID_GROUP_MATCHING.md](HYBRID_GROUP_MATCHING.md).
+
+> The hybrid guide is authoritative: direct applications and automatic proposals share each group's first-in, first-out queue. The first available entries hold places; later entries wait without seats. Hosts process only the head. Direct joining permits one pending application per seeker/concert; automatic proposals still require both approvals. Every entry expires 48 hours after creation, including waiting time. The earlier managed-versus-legacy placement restriction no longer applies.
 
 ## 1. What was added, and what changed later?
 
@@ -31,15 +33,15 @@ Each member contributes one vote per concept per intent: three of four choosing 
 2. The server finds published groups with stranger places, checking eligibility, blocks, rejections and hard compatibility against active members.
 3. It compares seeker wants with group About preferences, and group wants with seeker About preferences. Avoid overlap reduces the score.
 4. Filtering precedes pagination: **20 ranked results per page**, maximum 30, with qualitative compatibility and up to three supported reasons.
-5. The seeker can choose **Find my group** to opt into a real Gale–Shapley batch across eligible enrolled seekers and published managed groups, or choose a group manually. Only one pending request per concert is allowed.
-6. An algorithm-selected request reserves a place for up to 48 hours. The host reviews the seeker profile/preferences and accepts or rejects. Acceptance converts the reservation into exactly one membership. Manual pending requests do not reserve places.
-7. A user without a suitable assignment stays queued and can retry or leave. Withdrawing an algorithm-selected request releases its place and stops automatic enrollment. Rejected pairs are excluded from later rounds; expired requests release their places.
+5. **Browse groups** supports direct joining. The **Compare two** introduction explains the controls before cards appear: tap/prefer keeps one card and replaces its opponent; swipe left skips; swipe right or **Request to join** applies. Comparing is local and does not change automatic preferences. **List view** remains available, including an optional application message. Only one pending direct application per concert is allowed.
+6. A direct application joins the group's shared arrival-order queue. It holds a place if one is available; otherwise it waits. At the front, host approval converts the same hold to membership even if no additional places remain. Withdrawal, decline or expiry passes the hold to the next entry atomically.
+7. **Find my group** remains an operator-run Gale–Shapley round. A resulting proposal joins that same queue. Its refreshed result card shows the group identity, saved match reasons, queue/deadline and each approval; previous proposals are collapsed on the concert page. Once held at the front, the host and seeker approve in either order: the first keeps it pending, the second confirms membership. Seekers can decline at any position; host decisions are head-only. Waiting and held entries share the original 48-hour deadline, without a reset on promotion.
 
-There is **no second seeker acceptance**: Find my group explicitly authorizes a request to the selected group, and manual choice authorizes that group. Settings/member-preference or submitted seeker-answer changes invalidate consent and require review, withdrawal and resubmission. Approving another algorithm request from the same batch does not invalidate the remaining batch requests solely by changing membership counts.
+Direct joining needs **no second seeker acceptance** because applying already authorizes that group. Automatic matching requires both approvals. Settings/member-preference or submitted seeker-answer changes invalidate direct consent and require review, withdrawal and resubmission.
 
 Ranking uses **60% structured compatibility** (vibe, language, logistics, reliability) and **40% mutual concepts**. Profiles incorporate member data, not averaged complete compatibility scores. Custom wants have capped influence; sparse evidence receives limited confidence.
 
-**Flow:** saved preferences → explicit matching enrollment → directional preference lists → Gale–Shapley and stability verification → persisted round and reserved request → host decision → membership/capacity update → notifications. Manual choice skips the batch and uses the existing approval path.
+**Automatic flow:** saved preferences → operator-run Gale–Shapley → real proposal → shared queue → held at head → both approvals → membership. **Direct flow:** chosen group → application → same queue → held at head → host approval. Final confirmed capacity closes remaining waiting entries as `group_full`, without a permanent decline. Both use the same ledger and lifecycle notifications.
 
 ## 4. Group → group recommendations and invitations
 
@@ -79,7 +81,7 @@ Feedback updates existing reliability using both legacy and direct-group records
 
 ## 8. Legacy matching, backend safeguards and integration points
 
-Normal-user managed matching is available through GET/POST/DELETE `/api/me/concerts/:id/matching`; POST needs a UUID-v4 Idempotency-Key and returns only the caller's state. Managed assignments use reserved join requests so host approval cannot be bypassed. Legacy operator rounds retain their proposal-confirmation lifecycle. Kaki's swipe/mutual-chat flow remains separate.
+GET/POST/DELETE `/api/me/concerts/:id/matching` inspects, enrolls or leaves the caller's matching pool; POST needs a UUID-v4 Idempotency-Key. It does not run a global batch. Official rounds remain operator-only. The shared ledger records all pending queue entries, but only held entries and confirmed members occupy places. Queue position and response permission come from the server. Kaki's swipe/mutual-chat flow remains separate.
 
 Backend fixes aligned decline handling, matching retry keys, proposal expiry, shared capacity checks and transaction rollback on matching-write failure.
 

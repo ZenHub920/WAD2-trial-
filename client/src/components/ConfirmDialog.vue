@@ -53,7 +53,7 @@ watch(() => props.open, async (open) => {
             ref="confirmEl"
             type="button"
             class="btn"
-            :class="danger ? 'confirm__danger' : 'btn--primary'"
+            :class="danger ? 'btn--danger' : 'btn--primary'"
             :disabled="busy"
             @click="emit('confirm')"
           >
@@ -106,14 +106,6 @@ watch(() => props.open, async (open) => {
   margin-top: var(--space-6);
 }
 .confirm__actions .btn { white-space: normal; }
-
-.confirm__danger {
-  border: 1px solid var(--rose-400);
-  background: var(--rose-400);
-  color: #fff;
-}
-
-.confirm__danger:hover:not(:disabled) { background: var(--rose-500); border-color: var(--rose-500); }
 
 @keyframes confirm-in { from { opacity: 0; } }
 @keyframes confirm-rise { from { opacity: 0; transform: translateY(8px) scale(0.98); } }

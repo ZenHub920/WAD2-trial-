@@ -3,31 +3,45 @@ import assert from "node:assert/strict";
 import { createTestDb } from "../src/db/connection.js";
 import { createRepositories } from "../src/db/repositories.js";
 import { migrateCommunity } from "../src/db/communityMigrations.js";
+import { createMatchingService } from "../src/services/matchingService.js";
 import { makeUser, makeParty, makeSeeker } from "./helpers.js";
 
-let db, repos;
+let db, repos, matching;
 const answers = { about: ["supper"], wants: ["singalong"], avoid: [] };
-function optIn(user) {
-  db.prepare("UPDATE seeker_requests SET matching_opt_in=1 WHERE user_id=?").run(user);
+const row = (id) => db.prepare("SELECT * FROM match_proposals WHERE id=?").get(id);
+const remaining = () => repos.parties.findById("p1").remaining_capacity;
+function offer(user, party = "p1") {
+  // Keep each test round focused on the requested open seeker. Already reserved
+  // seekers retain their proposal and stay excluded by the common loader.
+  for (const other of ["one", "two", "three", "four"]) {
+    const seeker = repos.groups.seeker(other, "c1");
+    if (other !== user && seeker.status === "open") repos.recommendations.setJoiningMode(other, "c1", "direct");
+  }
+  repos.recommendations.setJoiningMode(user, "c1", "algorithm");
+  repos.groups.addPreference(user, party);
+  const result = matching.run("c1", { batchKey: `offer_${user}_${party}_${db.prepare("SELECT COUNT(*) n FROM match_rounds").get().n}` });
+  const proposal = db.prepare("SELECT mp.* FROM match_proposals mp JOIN seeker_requests s ON s.id=mp.seeker_request_id WHERE mp.round_id=? AND s.user_id=?")
+    .get(result.roundId, user);
+  assert.ok(proposal);
+  return proposal;
 }
-function automatic(user, party = "p1", round = "r1") {
-  optIn(user);
-  return repos.recommendations.requestJoin(user, party, { matchingRoundId: round });
+function manual(user, party = "p1") {
+  repos.recommendations.setJoiningMode(user, "c1", "direct");
+  return repos.recommendations.requestJoin(user, party);
 }
-function row(id) {
-  return db.prepare("SELECT * FROM group_join_requests WHERE id=?").get(id);
-}
-function remaining() {
-  return repos.parties.findById("p1").remaining_capacity;
+function approve(proposal) {
+  const seeker = repos.seekers.findById(proposal.seeker_request_id);
+  const host = repos.parties.findById(proposal.party_id).host_user_id;
+  assert.equal(repos.proposals.respond(seeker.user_id, proposal.id, "accept").status, "proposed");
+  assert.equal(repos.proposals.respond(host, proposal.id, "accept").status, "confirmed");
 }
 beforeEach(() => {
   db = createTestDb();
   repos = createRepositories(db);
+  matching = createMatchingService({ db, repos });
   for (const user of ["host", "otherHost", "friend", "one", "two", "three", "four"])
     repos.users.create(makeUser(user));
-  repos.concerts.create({
-    id: "c1", artist: "Act", venue: "Venue", city: "Singapore", event_date: "2030-01-01",
-  });
+  repos.concerts.create({ id: "c1", artist: "Act", venue: "Venue", city: "Singapore", event_date: "2030-01-01" });
   for (const [party, host] of [["p1", "host"], ["p2", "otherHost"]]) {
     repos.parties.create(makeParty(party, makeUser(host), { capacity: 3 }));
     repos.membership.configure(host, party, { strangerPlaces: 3 });
@@ -38,158 +52,174 @@ beforeEach(() => {
     repos.seekers.create(makeSeeker(`s_${user}`, makeUser(user)));
     repos.recommendations.savePersonal(user, "c1", answers);
   }
-  db.exec(`INSERT INTO match_rounds(id,concert_id,is_stable,seeker_count,party_count,total_capacity,
-    feasible_pairs,matched_count,metrics_json,timings_json)
-    VALUES('r1','c1',1,4,2,6,8,4,'{}','{}'),('r2','c1',1,4,2,6,8,4,'{}','{}')`);
 });
 afterEach(() => db.close());
 
-test("migration preserves manual requests and never infers automatic matching consent", () => {
-  const manual = repos.recommendations.requestJoin("one", "p1");
-  const before = row(manual.id);
-  migrateCommunity(db);
-  migrateCommunity(db);
-  assert.deepEqual(row(manual.id), before);
+test("repeat community migrations preserve pending manual requests without inventing algorithm history", () => {
+  const request = manual("one");
+  const before = db.prepare("SELECT * FROM group_join_requests WHERE id=?").get(request.id);
+  migrateCommunity(db); migrateCommunity(db);
+  assert.deepEqual(db.prepare("SELECT * FROM group_join_requests WHERE id=?").get(request.id), before);
   assert.equal(before.matching_round_id, null);
   assert.equal(repos.groups.seeker("one", "c1").matching_opt_in, false);
-  assert.equal(remaining(), 3);
-  assert.throws(() => repos.recommendations.requestJoin("two", "p1", { matchingRoundId: "r1" }), /consent_required/);
-  assert.equal(db.prepare("PRAGMA foreign_key_list(group_join_requests)").all()
-    .some((fk) => fk.from === "matching_round_id" && fk.table === "match_rounds"), true);
+  assert.equal(remaining(), 2);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM match_rounds").get().n, 0);
+  assert.throws(() => repos.recommendations.requestJoin("two", "p1", { matchingRoundId: "made-up" }), /direct_joining_mode_required/);
 });
 
-test("pending algorithm assignments reserve stranger slots alongside direct members, not hosts or friends", () => {
+test("real algorithm offers and direct members share stranger capacity while hosts and friends do not consume it", () => {
   repos.membership.configure("host", "p1", { strangerPlaces: 3, expectedFriends: 1 });
-  const invite = repos.membership.invite("host", "p1");
-  repos.membership.acceptInvite("friend", invite.token);
+  repos.membership.acceptInvite("friend", repos.membership.invite("host", "p1").token);
   repos.membership.saveAnswers("friend", "p1", answers);
   repos.membership.publish("host", "p1");
-  assert.equal(remaining(), 3);
-  optIn("one");
-  const manual = repos.recommendations.requestJoin("one", "p1");
-  assert.equal(repos.groups.seeker("one", "c1").matching_opt_in, false);
-  assert.equal(remaining(), 3);
-  repos.recommendations.respond("host", manual.id, "accept");
+  const request = manual("one");
   assert.equal(remaining(), 2);
-  const second = automatic("two"), third = automatic("three");
+  repos.recommendations.respond("host", request.id, "accept");
+  assert.equal(remaining(), 2);
+  const second = offer("two"), third = offer("three");
+  assert.equal(second.party_id, "p1");
+  assert.equal(third.party_id, "p1");
   assert.equal(remaining(), 0);
-  assert.throws(() => automatic("four"), /group_unavailable/);
   assert.throws(() => repos.membership.configure("host", "p1", { strangerPlaces: 2, expectedFriends: 1 }), /below_active_reservations/);
-  const version = repos.membership.settings("p1").version;
-  repos.recommendations.respond("host", second.id, "accept");
+  const fourth = offer("four");
+  assert.equal(fourth.party_id, "p1");
+  assert.equal(repos.proposals.forUser("four")[0].queueStatus, "waiting");
+  approve(second); approve(third);
+  assert.equal(row(fourth.id).status, "cancelled");
+  assert.equal(repos.proposals.declinedPairsForConcert("c1").has("s_four|p1"), false);
   assert.equal(remaining(), 0);
-  assert.equal(row(third.id).group_version, version);
-  repos.recommendations.respond("host", third.id, "accept");
-  assert.equal(remaining(), 0);
-  assert.equal(repos.membership.settings("p1").version, version);
   assert.equal(repos.parties.findById("p1").status, "matched");
-  assert.equal(db.prepare("SELECT COUNT(*) n FROM group_memberships WHERE party_id='p1' AND source='join' AND status='active'").get().n, 3);
-  assert.throws(() => repos.recommendations.respond("host", second.id, "accept"), /not_pending/);
-  assert.equal(repos.groups.seeker("two", "c1").matching_opt_in, false);
-  const details = repos.recommendations.requests("three").find((r) => r.id === third.id);
-  assert.equal(details.matchingRoundId, "r1");
-  assert.equal(details.hostName, "User host");
-  assert.equal(details.section, "ga_standing");
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM group_memberships WHERE party_id='p1' AND source IN('join','proposal') AND status='active'").get().n, 3);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM group_join_requests WHERE matching_round_id IS NOT NULL").get().n, 0);
 });
 
-test("an assigned request can be approved against its own full reservation", () => {
+test("an algorithm offer reserves its full seat while waiting for both host and seeker decisions", () => {
   repos.membership.configure("host", "p1", { strangerPlaces: 1 });
   repos.membership.publish("host", "p1");
-  const request = automatic("one");
-  repos.parties.setStatus("p1", "matched");
+  const proposal = offer("one");
   assert.equal(remaining(), 0);
-  repos.recommendations.respond("host", request.id, "accept");
-  assert.equal(row(request.id).status, "accepted");
+  assert.equal(repos.proposals.respond("host", proposal.id, "accept").status, "proposed");
+  assert.equal(repos.membership.active("one", "c1"), undefined);
+  assert.equal(remaining(), 0);
+  assert.equal(repos.proposals.respond("one", proposal.id, "accept").status, "confirmed");
+  assert.equal(row(proposal.id).status, "confirmed");
   assert.equal(remaining(), 0);
   assert.equal(repos.membership.active("one", "c1").party_id, "p1");
 });
 
-test("expiry, withdrawal and rejection release reservations with correct consent and decline history", () => {
-  const first = automatic("one");
-  db.prepare("UPDATE group_join_requests SET expires_at=0 WHERE id=?").run(first.id);
-  repos.parties.setStatus("p1", "matched");
+test("expiry and either participant declining release algorithm seats and preserve pair restrictions", () => {
+  const expired = offer("one");
+  db.prepare("UPDATE match_proposals SET expires_at=0 WHERE id=?").run(expired.id);
   assert.equal(remaining(), 3);
-  assert.equal(repos.recommendations.expire(), 1);
-  assert.equal(row(first.id).status, "expired");
-  assert.equal(repos.parties.findById("p1").status, "open");
-  assert.equal(repos.groups.seeker("one", "c1").matching_opt_in, true);
-  const renewed = automatic("one", "p1", "r2");
-  assert.equal(renewed.id, first.id);
-  assert.equal(row(first.id).matching_round_id, "r2");
-  repos.recommendations.respond("one", renewed.id, "withdraw");
+  assert.equal(repos.proposals.expire(), 1);
+  assert.equal(row(expired.id).status, "expired");
+  assert.equal(repos.groups.seeker("one", "c1").status, "open");
+  const declined = offer("two");
+  assert.equal(repos.proposals.respond("host", declined.id, "decline").status, "declined");
+  assert.ok(repos.proposals.declinedPairsForConcert("c1").has("s_two|p1"));
+  const partial = offer("three");
+  assert.equal(repos.proposals.respond("three", partial.id, "accept").status, "proposed");
+  assert.equal(repos.proposals.respond("host", partial.id, "decline").status, "declined");
   assert.equal(remaining(), 3);
-  assert.equal(repos.groups.seeker("one", "c1").matching_opt_in, false);
-  const declined = automatic("two");
-  repos.recommendations.respond("host", declined.id, "reject");
-  assert.equal(remaining(), 3);
-  assert.equal(repos.groups.seeker("two", "c1").matching_opt_in, true);
-  assert.equal(repos.proposals.declinedPairsForConcert("c1").has("s_two|p1"), true);
-  assert.throws(() => automatic("two"), /previously_declined/);
-  const other = automatic("two", "p2");
-  assert.equal(row(other.id).status, "pending");
+  assert.equal(repos.membership.active("three", "c1"), undefined);
 });
 
-test("actual preference changes still invalidate consent and cannot be bypassed by algorithm origin", () => {
-  const request = automatic("one");
-  repos.recommendations.savePersonal("one", "c1", { about: ["quiet"], wants: [], avoid: [] });
-  assert.throws(() => repos.recommendations.respond("host", request.id, "accept"), /preferences_changed/);
-  assert.equal(row(request.id).status, "pending");
-  repos.recommendations.respond("one", request.id, "withdraw");
-  const renewed = automatic("one", "p1", "r2");
-  repos.membership.saveAnswers("host", "p1", { about: ["quiet"], wants: [], avoid: [] });
-  assert.throws(() => repos.recommendations.respond("host", renewed.id, "accept"), /group_changed/);
+test("the second approval rechecks whole-group eligibility after the first participant agrees", () => {
+  const proposal = offer("one");
+  assert.equal(repos.proposals.respond("one", proposal.id, "accept").status, "proposed");
+  repos.users.block("host", "one");
+  assert.equal(repos.proposals.respond("host", proposal.id, "accept").error, "group_unavailable");
+  assert.equal(row(proposal.id).status, "proposed");
+  assert.equal(row(proposal.id).host_approved_at, null);
   assert.equal(repos.membership.active("one", "c1"), undefined);
 });
 
-test("taking a friend place releases the seeker's old reservation and stops automatic consent", () => {
-  const request = automatic("one");
+test("taking a friend place requires explicitly resolving an algorithm offer", () => {
+  const proposal = offer("one");
   repos.membership.configure("otherHost", "p2", { strangerPlaces: 3, expectedFriends: 1 });
   const invite = repos.membership.invite("otherHost", "p2");
+  assert.throws(() => repos.membership.acceptInvite("one", invite.token), /reserved|proposal|claim/);
+  repos.proposals.respond("one", proposal.id, "decline");
   repos.membership.acceptInvite("one", invite.token);
-  assert.equal(row(request.id).status, "withdrawn");
+  assert.equal(row(proposal.id).status, "declined");
   assert.equal(remaining(), 3);
   assert.equal(repos.groups.seeker("one", "c1").matching_opt_in, false);
   assert.equal(repos.membership.active("one", "c1").source, "friend");
 });
 
-test("cancelled groups release pending requests; leaving an approved group does not requeue the seeker", () => {
-  const pending = automatic("one");
+test("group cancellation releases unconfirmed offers and leaving a mutually approved group does not requeue", () => {
+  const pending = offer("one");
   repos.membership.cancel("host", "p1");
-  assert.equal(row(pending.id).status, "rejected");
+  assert.equal(row(pending.id).status, "cancelled");
   assert.equal(remaining(), 3);
-  const accepted = automatic("two", "p2");
-  repos.recommendations.respond("otherHost", accepted.id, "accept");
+  const accepted = offer("two", "p2");
+  approve(accepted);
   repos.membership.leave("two", "p2");
+  assert.equal(row(accepted.id).status, "cancelled");
   assert.equal(repos.groups.seeker("two", "c1").status, "withdrawn");
   assert.equal(repos.groups.seeker("two", "c1").matching_opt_in, false);
   assert.equal(repos.parties.findById("p2").remaining_capacity, 3);
 });
 
-test("round-linked inserts, reservations, audit records and notifications roll back together", () => {
+test("real round, proposal, claim and notification writes roll back as one transaction", () => {
   const notifications = db.prepare("SELECT COUNT(*) n FROM notifications").get().n;
   assert.throws(() => db.transaction(() => {
-    automatic("one");
-    automatic("two");
+    offer("one"); offer("two");
     assert.equal(remaining(), 1);
     throw new Error("abort_batch");
   }).immediate(), /abort_batch/);
   assert.equal(remaining(), 3);
-  assert.equal(db.prepare("SELECT COUNT(*) n FROM group_join_requests").get().n, 0);
-  assert.equal(db.prepare("SELECT COUNT(*) n FROM group_join_request_events").get().n, 0);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM match_rounds").get().n, 0);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM match_proposals").get().n, 0);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM active_seat_claims").get().n, 0);
   assert.equal(db.prepare("SELECT COUNT(*) n FROM notifications").get().n, notifications);
-  assert.equal(repos.groups.seeker("one", "c1").matching_opt_in, false);
 });
 
-test("approval failure restores the pending reservation, membership, consent and notifications", () => {
-  const request = automatic("one");
-  const notifications = db.prepare("SELECT COUNT(*) n FROM notifications").get().n;
-  db.exec(`CREATE TRIGGER refuse_join BEFORE INSERT ON group_memberships WHEN NEW.source='join'
+test("final approval failure preserves the first approval and rolls back membership, claim and notifications", () => {
+  const proposal = offer("one");
+  assert.equal(repos.proposals.respond("host", proposal.id, "accept").status, "proposed");
+  const notifications = db.prepare("SELECT * FROM notifications ORDER BY id").all();
+  db.exec(`CREATE TRIGGER refuse_join BEFORE INSERT ON group_memberships WHEN NEW.source='proposal'
     BEGIN SELECT RAISE(ABORT,'refuse_join'); END`);
-  assert.throws(() => repos.recommendations.respond("host", request.id, "accept"), /refuse_join/);
-  assert.equal(row(request.id).status, "pending");
+  assert.throws(() => repos.proposals.respond("one", proposal.id, "accept"), /refuse_join/);
+  assert.equal(row(proposal.id).status, "proposed");
+  assert.ok(row(proposal.id).host_approved_at);
+  assert.equal(row(proposal.id).seeker_approved_at, null);
   assert.equal(repos.membership.active("one", "c1"), undefined);
-  assert.equal(repos.groups.seeker("one", "c1").matching_opt_in, true);
   assert.equal(remaining(), 2);
-  assert.equal(db.prepare("SELECT COUNT(*) n FROM notifications").get().n, notifications);
-  assert.equal(db.prepare("SELECT COUNT(*) n FROM group_join_request_events WHERE request_id=? AND status='accepted'").get(request.id).n, 0);
+  assert.equal(db.prepare("SELECT status FROM active_seat_claims WHERE proposal_id=?").get(proposal.id).status, "proposed");
+  assert.deepEqual(db.prepare("SELECT * FROM notifications ORDER BY id").all(), notifications);
+});
+
+test("both decision makers receive offers and the first approval notifies only the other participant", () => {
+  const proposal = offer("one");
+  const initialHost = repos.notifications.unread("host");
+  const initialSeeker = repos.notifications.unread("one");
+  assert.ok(repos.notifications.list("host").some((n) => n.category === "match" && n.title.includes("proposal")));
+  assert.ok(repos.notifications.list("one").some((n) => n.category === "match" && n.title.includes("proposal")));
+  assert.equal(repos.notifications.unread("friend"), 0);
+  assert.equal(repos.proposals.respond("one", proposal.id, "accept").status, "proposed");
+  assert.equal(repos.notifications.unread("host"), initialHost + 1);
+  assert.equal(repos.notifications.unread("one"), initialSeeker);
+  assert.equal(repos.proposals.respond("one", proposal.id, "accept").error, "proposal_already_approved");
+  assert.equal(repos.notifications.unread("host"), initialHost + 1);
+  assert.equal(repos.proposals.respond("host", proposal.id, "accept").status, "confirmed");
+  assert.equal(repos.notifications.unread("host"), initialHost + 2);
+  assert.equal(repos.notifications.unread("one"), initialSeeker + 1);
+});
+
+test("host-first approval notifications respect category opt-outs and roll back with approval writes", () => {
+  repos.notifications.setSettings("host", { match: false });
+  const proposal = offer("one");
+  assert.equal(repos.notifications.unread("host"), 0);
+  const before = repos.notifications.list("one");
+  assert.throws(() => db.transaction(() => {
+    assert.equal(repos.proposals.respond("host", proposal.id, "accept").status, "proposed");
+    assert.equal(repos.notifications.unread("one"), before.length + 1);
+    throw new Error("rollback_approval");
+  }).immediate(), /rollback_approval/);
+  assert.deepEqual(repos.notifications.list("one"), before);
+  assert.equal(row(proposal.id).host_approved_at, null);
+  repos.proposals.respond("one", proposal.id, "accept");
+  assert.equal(repos.notifications.unread("host"), 0);
 });

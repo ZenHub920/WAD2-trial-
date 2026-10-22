@@ -50,7 +50,7 @@ for stable roommates — see §7.
 id, display_name, age_band ∈ {18-20, 21-24, 25-29, 30-34, 35+}
 home_region                        -- coarse geography, for transport sharing
 languages[]
-gender, companion_gender_pref ∈ {any, same_only}
+gender, companion_gender_pref ∈ {any, male, female}
 vibe: {singalong, photography, dancing, quiet, queue_early, merch} each ∈ [0,5]
 reliability ∈ [0,1]                -- derived from completed / no-show history
 verified ∈ {0,1}
@@ -86,8 +86,8 @@ which HR handles natively.
 1. `s.concert_id == p.concert_id`
 2. `s.user_id != p.host_user_id` (no self-match)
 3. **Affordability**: `s.spend_band_max >= p.spend_band`
-4. **Gender preference**, checked in both directions: if either side set `same_only`, the
-   genders must agree.
+4. **Gender preference**, checked in both directions: if either side set `male` or
+   `female`, the other side's gender must be that one. `any` accepts everyone.
 5. **Age policy**: if either side set `strict_age_policy`, the other's age band must fall
    within the stated tolerance.
 6. Neither user appears on the other's blocklist.

@@ -52,6 +52,13 @@ const REGION_ADJACENCY = {
 // Hard constraints
 // ---------------------------------------------------------------------------
 
+const PREF_GENDER = { male: 'm', female: 'f' };
+
+/** "any" accepts everyone; "male"/"female" accept only that stored gender. */
+function acceptsGender(pref, otherGender) {
+  return !PREF_GENDER[pref] || PREF_GENDER[pref] === otherGender;
+}
+
 /**
  * Decide whether a seeker and a party may appear on each other's preference lists.
  *
@@ -88,10 +95,10 @@ export function checkFeasibility(seeker, party, options = {}) {
   // Gender preference, enforced symmetrically.
   const seekerUser = seeker.user;
   const hostUser = party.host;
-  if (seekerUser.companion_gender_pref === 'same_only' && seekerUser.gender !== hostUser.gender) {
+  if (!acceptsGender(seekerUser.companion_gender_pref, hostUser.gender)) {
     return { feasible: false, reason: 'seeker_gender_pref' };
   }
-  if (hostUser.companion_gender_pref === 'same_only' && hostUser.gender !== seekerUser.gender) {
+  if (!acceptsGender(hostUser.companion_gender_pref, seekerUser.gender)) {
     return { feasible: false, reason: 'host_gender_pref' };
   }
 

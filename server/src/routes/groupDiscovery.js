@@ -9,7 +9,7 @@ export function registerGroupDiscoveryRoutes(router, { repos, requireUser }) {
     const limit=Number(req.query.limit??20),offset=Number(req.query.offset??0);
     if(!Number.isInteger(limit)||limit<1||limit>30||!Number.isInteger(offset)||offset<0)return res.status(400).json({error:'invalid_pagination'});
     const q=typeof req.query.q==='string'?req.query.q.trim().toLowerCase():'';
-    const filtered=groups.filter(g=>(!q||[g.hostName,g.artist,g.notes,...(g.reasons??[]).map(r=>r.label)].join(' ').toLowerCase().includes(q))
+    const filtered=groups.filter(g=>(!q||[g.name,g.hostName,g.artist,g.notes,...(g.reasons??[]).map(r=>r.label)].join(' ').toLowerCase().includes(q))
       &&(!req.query.section||g.section===req.query.section)&&(!req.query.arrival||g.arrivalPlan===req.query.arrival)
       &&(!req.query.spendBand||g.spendBand===Number(req.query.spendBand))&&(!req.query.minCapacity||g.remainingCapacity>=Number(req.query.minCapacity))
       &&(!req.query.activity||g.plans?.[req.query.activity])&&(!req.query.vibe||g.vibe?.[req.query.vibe]>0)
@@ -24,10 +24,14 @@ export function registerGroupDiscoveryRoutes(router, { repos, requireUser }) {
   router.get('/me/seeker-request/:concertId', requireUser, concertExists, (req, res) => {
     repos.proposals.expire();
     const request = repos.groups.seeker(req.user.id, req.params.concertId);
-    return send(res, request ? { ...request, user: undefined } : null, 'request');
+    return send(res, request ? { ...request, user: undefined,
+      maxPendingDirectApplications: repos.recommendations.maxPendingDirectApplications } : null, 'request');
   });
-  router.post('/me/seeker-request/:concertId/reopen', requireUser, concertExists, (req, res) =>
-    send(res, repos.groups.reopen(req.user.id, req.params.concertId), 'request'));
+  router.post('/me/seeker-request/:concertId/reopen', requireUser, concertExists, (req, res) => {
+    const result = repos.groups.reopen(req.user.id, req.params.concertId);
+    return send(res, result.error ? result : { ...result,
+      maxPendingDirectApplications: repos.recommendations.maxPendingDirectApplications }, 'request');
+  });
   router.get('/me/group-preferences/:concertId', requireUser, concertExists, (req, res) =>
     send(res, repos.groups.preferences(req.user.id, req.params.concertId), 'preferences'));
   router.put('/group-preferences/:partyId', requireUser, (req, res) =>

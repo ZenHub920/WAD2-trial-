@@ -68,11 +68,11 @@ test('profile is session-owned, private to its owner and only accepts whiteliste
   assert.deepEqual(initial.vibe, { singalong: 0, photography: 0, dancing: 0, quiet: 0, queue_early: 0, merch: 0 });
   const updated = await f.api('/me/profile', { method: 'PATCH', cookie: alice.cookie, body: {
     displayName: 'Alice Edit', ageBand: '30-34', homeRegion: 'north_east', gender: 'nb',
-    companionGenderPref: 'same_only', languages: ['ta', 'zh'], vibe: { dancing: 4, quiet: 2 },
+    companionGenderPref: 'female', languages: ['ta', 'zh'], vibe: { dancing: 4, quiet: 2 },
   } });
   assert.equal(updated.status, 200);
   assert.deepEqual(updated.body.profile, { ...initial, displayName: 'Alice Edit', ageBand: '30-34',
-    homeRegion: 'north_east', gender: 'nb', companionGenderPref: 'same_only', languages: ['ta', 'zh'],
+    homeRegion: 'north_east', gender: 'nb', companionGenderPref: 'female', languages: ['ta', 'zh'],
     vibe: { singalong: 0, photography: 0, dancing: 4, quiet: 2, queue_early: 0, merch: 0 } });
   assert.deepEqual((await f.api('/me/profile', { cookie: alice.cookie })).body.profile, updated.body.profile);
   assert.equal((await f.api('/me/profile', { cookie: bob.cookie })).body.profile.email, bob.email);

@@ -1,11 +1,14 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { api } from "../api.js";
 import LoadingSpinner from "./LoadingSpinner.vue";
 const props = defineProps({
   initial: { type: Object, default: () => ({}) },
   busy: Boolean,
   saving: Boolean,
+  /** Refuse to save with nothing chosen in any section. */
+  requireOne: Boolean,
+  submitLabel: { type: String, default: "Save preferences" },
 });
 const emit = defineEmits(["save"]);
 const concepts = ref([]),
@@ -16,17 +19,24 @@ const drafts = ref({ about: "", wants: "", avoid: "" });
 const matches = ref({ about: [], wants: [], avoid: [] });
 const originalText = ref({}), selected = ref({}), custom = ref({});
 const activeIntent = ref("about");
-const choiceQuery = ref("");
-const visibleConcepts = computed(() => concepts.value.filter(concept =>
-  concept.label.toLowerCase().includes(choiceQuery.value.trim().toLowerCase()),
-));
 function toggleChoice(intent, id) {
   const index = selected.value[intent].indexOf(id);
   if (index === -1) selected.value[intent].push(id);
   else selected.value[intent].splice(index, 1);
 }
+function customList(intent) {
+  return custom.value[intent].split("\n").map(text => text.trim()).filter(Boolean);
+}
+function removeCustom(intent, index) {
+  const list = customList(intent);
+  list.splice(index, 1);
+  custom.value[intent] = list.join("\n");
+}
+function conceptLabel(intent, id) {
+  return concepts.value.find(c => c.id === id)?.label ?? originalText.value[intent][id] ?? id;
+}
 function answerCount(intent) {
-  return selected.value[intent].length + custom.value[intent].split("\n").filter(text => text.trim()).length;
+  return selected.value[intent].length + customList(intent).length;
 }
 for (const intent of ["about", "wants", "avoid"]) {
   const answers = props.initial[intent] ?? [];
@@ -102,9 +112,14 @@ onMounted(async () => {
 function save() {
   if (Object.values(drafts.value).some((text) => text.trim())) {
     error.value =
-      "Choose a suggestion or keep your wording before saving.";
+      "You typed a preference but didn't add it. Press Add, or clear the box, before saving.";
     return;
   }
+  if (props.requireOne && !["about", "wants", "avoid"].some(answerCount)) {
+    error.value = "Choose at least one preference, or add your own, before continuing.";
+    return;
+  }
+  error.value = "";
   const answers = {};
   for (const k of ["about", "wants", "avoid"])
     answers[k] = [
@@ -131,7 +146,7 @@ function save() {
     <div class="preference-editor__sections" role="group" aria-label="Preference sections">
       <button v-for="(label, intent) in labels" :key="intent" type="button"
         :aria-pressed="activeIntent === intent" class="preference-editor__section"
-        @click="activeIntent = intent; choiceQuery = ''">
+        @click="activeIntent = intent">
         {{ label }}<span class="preference-editor__count">{{ answerCount(intent) }}</span>
       </button>
     </div>
@@ -141,43 +156,50 @@ function save() {
         <h3>{{ label }}</h3>
         <span class="group-muted">Choose any that apply</span>
       </div>
-      <label class="preference-editor__search">Find a preference
-        <input v-model="choiceQuery" type="search" placeholder="Search preference choices" :disabled="loading || busy">
-      </label>
       <div class="preference-editor__choices" role="group" :aria-label="label">
-        <button v-for="concept in visibleConcepts" :key="concept.id" type="button"
+        <button v-for="concept in concepts" :key="concept.id" type="button"
           class="preference-editor__choice" :aria-pressed="selected[intent].includes(concept.id)"
           :disabled="busy" @click="toggleChoice(intent, concept.id)">
           <span aria-hidden="true">{{ selected[intent].includes(concept.id) ? '✓' : '+' }}</span>{{ concept.label }}
         </button>
       </div>
-      <p v-if="!loading && !visibleConcepts.length" class="group-muted">No matching choices. Add your own below.</p>
-      <div class="preference-editor__custom">
-        <label>Add your own preference
-          <input v-model="drafts[intent]" maxlength="100" :disabled="busy"
-            placeholder="Describe a preference" @input="suggest(intent)">
-        </label>
-        <p v-if="suggestionsLoading[intent]" class="loading-state" role="status"><LoadingSpinner />Loading preference suggestions…</p>
-        <div v-if="drafts[intent].trim()" class="preference-editor__suggestions" aria-live="polite">
-          <p v-if="matches[intent].length">Choose a matching meaning, or keep your wording.</p>
-          <div class="preference-editor__suggestion-actions">
-            <button v-for="meaning in matches[intent]" :key="meaning.id" type="button"
-              class="btn btn--ghost" :disabled="busy" @click="confirmMeaning(intent, meaning)">{{ meaning.label }}</button>
-            <button type="button" class="btn btn--ghost" :disabled="busy" @click="keepCustom(intent)">Keep my wording</button>
+
+      <div class="preference-editor__chosen" aria-live="polite">
+        <h4>Preferences chosen <span class="group-muted">({{ answerCount(intent) }})</span></h4>
+        <ul v-if="answerCount(intent)" class="preference-editor__chips">
+          <li v-for="id in selected[intent]" :key="id">
+            <span>{{ conceptLabel(intent, id) }}</span>
+            <button type="button" :disabled="busy" :aria-label="`Remove ${conceptLabel(intent, id)}`" @click="toggleChoice(intent, id)">×</button>
+          </li>
+          <li v-for="(text, index) in customList(intent)" :key="`custom-${index}-${text}`" class="preference-editor__chip--custom">
+            <span>{{ text }}</span>
+            <button type="button" :disabled="busy" :aria-label="`Remove ${text}`" @click="removeCustom(intent, index)">×</button>
+          </li>
+        </ul>
+        <p v-else class="group-muted">Nothing chosen yet. Tap an option above, or add your own below.</p>
+
+        <div class="preference-editor__add">
+          <label :for="`custom-${intent}`">Add your own preference</label>
+          <div class="preference-editor__add-row">
+            <input :id="`custom-${intent}`" v-model="drafts[intent]" maxlength="100" :disabled="busy"
+              placeholder="e.g. Happy to share a taxi home" @input="suggest(intent)" @keydown.enter.prevent="keepCustom(intent)">
+            <button type="button" class="btn btn--ghost" :disabled="busy || !drafts[intent].trim()" @click="keepCustom(intent)">Add</button>
+          </div>
+          <p v-if="suggestionsLoading[intent]" class="loading-state" role="status"><LoadingSpinner />Looking for similar options…</p>
+          <div v-if="drafts[intent].trim() && matches[intent].length" class="preference-editor__suggestions">
+            <p class="group-muted">Did you mean one of these?</p>
+            <div class="preference-editor__suggestion-actions">
+              <button v-for="meaning in matches[intent]" :key="meaning.id" type="button"
+                class="btn btn--ghost" :disabled="busy" @click="confirmMeaning(intent, meaning)">{{ meaning.label }}</button>
+            </div>
           </div>
         </div>
-        <details :open="Boolean(custom[intent].trim())" class="preference-editor__custom-list">
-          <summary>Your custom preferences</summary>
-          <label>One preference per line
-            <textarea v-model="custom[intent]" maxlength="3000" rows="3" :disabled="busy" />
-          </label>
-        </details>
       </div>
     </section>
     <footer class="preference-editor__footer">
       <p class="group-muted">Save to apply changes from all three sections.</p>
       <button class="btn btn--primary" :disabled="busy || !concepts.length">
-        <LoadingSpinner v-if="saving" />{{ saving ? 'Saving…' : 'Save preferences' }}
+        <LoadingSpinner v-if="saving" />{{ saving ? 'Saving…' : submitLabel }}
       </button>
     </footer>
   </form>
@@ -194,16 +216,32 @@ function save() {
 .preference-editor__choice-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: var(--space-2); }
 .preference-editor__choice-head h3 { margin: 0; font-size: var(--step-1); }
 .preference-editor__choice-head span { font-size: var(--step--1); }
-.preference-editor__search { max-width: 420px; }
-.preference-editor__choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: var(--space-2); max-height: 250px; overflow-y: auto; padding: 3px; margin: -3px; align-content: start; }
+.preference-editor__choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: var(--space-2); align-content: start; }
 .preference-editor__choice { display: flex; gap: var(--space-2); align-items: center; text-align: left; min-height: 44px; padding: var(--space-2) var(--space-3); border: var(--border-soft); border-radius: var(--radius-sm); background: var(--ink-800); color: var(--text-200); cursor: pointer; font: inherit; font-size: var(--step--1); }
-.preference-editor__choice[aria-pressed='true'] { border-color: var(--accent-400); color: var(--accent-400); background: var(--ink-700); }
-.preference-editor__choice > span { width: 16px; flex: none; }
+/* Selected options are filled orchid: clearly "on" at a glance, and distinct
+   from the purple used for the section tabs and buttons around them. */
+.preference-editor__choice { transition: background-color var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast); }
+.preference-editor__choice:hover:not(:disabled) { border-color: var(--mint-400); }
+.preference-editor__choice[aria-pressed='true'] { border-color: var(--mint-500); background: var(--mint-500); color: #fff; font-weight: 600; box-shadow: 0 2px 8px color-mix(in oklab, var(--mint-500) 35%, transparent); }
+.preference-editor__choice[aria-pressed='true']:hover:not(:disabled) { background: var(--mint-400); border-color: var(--mint-400); }
+.preference-editor__choice > span { display: inline-grid; place-items: center; width: 20px; height: 20px; flex: none; border-radius: 50%; border: 1.5px solid currentColor; font-size: 12px; line-height: 1; }
+.preference-editor__choice[aria-pressed='true'] > span { background: #fff; border-color: #fff; color: var(--mint-500); font-weight: 700; }
+:root[data-theme='dark'] .preference-editor__choice[aria-pressed='true'] { color: #08070c; }
+:root[data-theme='dark'] .preference-editor__choice[aria-pressed='true'] > span { background: #08070c; border-color: #08070c; color: var(--mint-400); }
 .preference-editor__choice:disabled { cursor: not-allowed; opacity: .55; }
-.preference-editor__custom { display: grid; gap: var(--space-3); padding-top: var(--space-4); border-top: var(--border-hairline); }
-.preference-editor__custom > label { max-width: 560px; }
-.preference-editor__custom-list { max-width: 680px; }
-.preference-editor__custom-list summary { color: var(--text-300); font-size: var(--step--1); cursor: pointer; padding-block: var(--space-2); }
+.preference-editor__chosen { display: grid; gap: var(--space-3); padding: var(--space-4); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-850); }
+.preference-editor__chosen h4 { margin: 0; font-size: var(--step-0); color: var(--text-100); }
+.preference-editor__chosen > p { font-size: var(--step--1); }
+.preference-editor__chips { display: flex; flex-wrap: wrap; gap: var(--space-2); list-style: none; padding: 0; margin: 0; }
+.preference-editor__chips li { display: inline-flex; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3); border-radius: var(--radius-pill); background: var(--mint-500); color: #fff; font-size: var(--step--1); font-weight: 600; }
+.preference-editor__chips li.preference-editor__chip--custom { background: var(--ink-800); color: var(--mint-400); border: 1.5px solid var(--mint-400); }
+:root[data-theme='dark'] .preference-editor__chips li:not(.preference-editor__chip--custom) { color: #08070c; }
+.preference-editor__chips button { display: inline-grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: 50%; background: transparent; color: inherit; font-size: 1.1em; line-height: 1; cursor: pointer; }
+.preference-editor__chips button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.2); }
+.preference-editor__add { display: grid; gap: var(--space-2); padding-top: var(--space-3); border-top: var(--border-hairline); font-size: var(--step--1); }
+.preference-editor__add-row { display: flex; gap: var(--space-2); max-width: 560px; }
+.preference-editor__add-row input { flex: 1; min-width: 0; }
+.preference-editor__add-row .btn { flex: none; }
 .preference-editor__suggestions { display: grid; gap: var(--space-2); font-size: var(--step--1); }
 .preference-editor__suggestion-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .preference-editor__footer { display: flex; justify-content: space-between; align-items: center; gap: var(--space-4); border-top: var(--border-hairline); padding-top: var(--space-4); }

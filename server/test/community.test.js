@@ -33,6 +33,11 @@ beforeEach(() => {
   repos.seekers.create(makeSeeker("s1", makeUser("seeker")));
 });
 afterEach(() => db.close());
+function directRequest(user, party, input) {
+  const concert = repos.parties.findById(party).concert_id;
+  repos.recommendations.setJoiningMode(user, concert, "direct");
+  return repos.recommendations.requestJoin(user, party, input);
+}
 const answers = {
   about: ["supper", "singalong"],
   wants: ["post concert food"],
@@ -147,7 +152,7 @@ test("recommendations use member answers, preserve opposite intent, and publish 
     createMatchingService({ db, repos })
       .preview("c1")
       .profile.capacities.has("p1"),
-    false,
+    true,
   );
   const g = repos.recommendations
     .individual("seeker", "c1")
@@ -166,8 +171,8 @@ test("seeker chooses once and receiving host approves atomically without a secon
   repos.membership.saveAnswers("h1", "p1", answers);
   repos.membership.publish("h1", "p1");
   repos.recommendations.savePersonal("seeker", "c1", answers);
-  const request = repos.recommendations.requestJoin("seeker", "p1");
-  assert.equal(repos.parties.findById("p1").remaining_capacity, 2);
+  const request = directRequest("seeker", "p1");
+  assert.equal(repos.parties.findById("p1").remaining_capacity, 1);
   assert.throws(
     () => repos.recommendations.respond("seeker", request.id, "accept"),
     /request_not_found/,
@@ -183,7 +188,7 @@ test("seeker chooses once and receiving host approves atomically without a secon
     /not_pending/,
   );
   assert.throws(
-    () => repos.recommendations.requestJoin("seeker", "p2"),
+    () => directRequest("seeker", "p2"),
     /already_in_concert_group/,
   );
   assert.deepEqual(db.pragma("foreign_key_check"), []);
@@ -222,12 +227,12 @@ test("notification hooks are persistent, recipient scoped, deduplicated and obey
 });
 test("join request notifications and business writes share transaction rollback", () => {
   const operation = db.transaction(() => {
-    repos.recommendations.requestJoin("seeker", "p1");
+    directRequest("seeker", "p1");
     throw new Error("rollback");
   });
   assert.throws(operation, /rollback/);
   assert.equal(repos.notifications.unread("h1"), 0);
-  repos.recommendations.requestJoin("seeker", "p1");
+  directRequest("seeker", "p1");
   assert.equal(repos.notifications.unread("h1"), 1);
 });
 const windowInput = {
@@ -476,27 +481,24 @@ test("all community migrations repeat without discarding preferences, members or
   assert.equal(repos.membership.active("h1", "c1").party_id, "p1");
   assert.deepEqual(db.pragma("foreign_key_check"), []);
 });
-test("only one pending choice per concert is permitted; withdrawal can reopen and rejection remains final", () => {
-  const first = repos.recommendations.requestJoin("seeker", "p1");
-  assert.throws(
-    () => repos.recommendations.requestJoin("seeker", "p2"),
-    /withdraw_current/,
-  );
+test("one pending choice preserves independent application history and rejection remains final", () => {
+  const first = directRequest("seeker", "p1");
+  assert.throws(() => directRequest("seeker", "p2"), /pending_application_limit_reached/);
   repos.recommendations.respond("seeker", first.id, "withdraw");
-  const reopened = repos.recommendations.requestJoin("seeker", "p1");
-  assert.equal(reopened.id, first.id);
+  const reopened = directRequest("seeker", "p1");
+  assert.notEqual(reopened.id, first.id);
   assert.equal(
     db
       .prepare(
         "SELECT COUNT(*) n FROM group_join_request_events WHERE request_id=?",
       )
       .get(first.id).n,
-    3,
+    2,
   );
-  repos.recommendations.respond("h1", first.id, "reject");
+  repos.recommendations.respond("h1", reopened.id, "reject");
   assert.ok(repos.proposals.declinedPairsForConcert("c1").has("s1|p1"));
   assert.throws(
-    () => repos.recommendations.requestJoin("seeker", "p1"),
+    () => directRequest("seeker", "p1"),
     /previously_declined/,
   );
 });
@@ -505,7 +507,7 @@ test("changed group preferences require renewed seeker choice before host approv
   repos.membership.saveAnswers("h1", "p1", answers);
   repos.membership.publish("h1", "p1");
   repos.recommendations.savePersonal("seeker", "c1", answers);
-  const request = repos.recommendations.requestJoin("seeker", "p1");
+  const request = directRequest("seeker", "p1");
   repos.membership.saveAnswers("h1", "p1", {
     about: ["quiet"],
     wants: ["quiet"],
@@ -519,9 +521,9 @@ test("changed group preferences require renewed seeker choice before host approv
     repos.notifications.list("seeker").some((n) => n.title.includes("changed")),
   );
   repos.recommendations.respond("seeker", request.id, "withdraw");
-  repos.recommendations.requestJoin("seeker", "p1");
+  const renewed = directRequest("seeker", "p1");
   assert.equal(
-    repos.recommendations.respond("h1", request.id, "accept").status,
+    repos.recommendations.respond("h1", renewed.id, "accept").status,
     "accepted",
   );
 });
@@ -672,8 +674,14 @@ test("legacy feedback requires confirmation before cutoff, not proposal creation
   assert.ok(proposal);
   const party = repos.parties.findById(proposal.party_id);
   db.prepare("UPDATE parties SET created_at='2019-12-01 00:00:00' WHERE id=?").run(party.id);
-  db.prepare("UPDATE match_proposals SET created_at='2019-12-01 00:00:00',status='confirmed' WHERE id=?").run(proposal.id);
+  db.prepare("UPDATE match_proposals SET created_at='2019-12-01 00:00:00' WHERE id=?").run(proposal.id);
   const input = { partyId: party.id, ratedUserId: "seeker", showedUp: true, rating: 5 };
+  assert.equal(repos.proposals.respond("seeker", proposal.id, "accept").status, "proposed");
+  assert.equal(repos.membership.active("seeker", "c1"), undefined);
+  assert.throws(() => repos.feedback.submit(party.host_user_id, input), /participants_required/);
+  assert.equal(repos.proposals.respond(party.host_user_id, proposal.id, "accept").status, "confirmed");
+  // Historical confirmed proposals can predate explicit membership records.
+  db.prepare("DELETE FROM group_memberships WHERE party_id=? AND user_id='seeker'").run(party.id);
   assert.throws(() => repos.feedback.submit(party.host_user_id, input), /participants_required/);
   assert.ok(db.prepare("SELECT confirmed_at FROM match_proposals WHERE id=?").get(proposal.id).confirmed_at);
   db.prepare("UPDATE match_proposals SET confirmed_at='2019-12-01 00:00:00' WHERE id=?").run(proposal.id);
@@ -708,7 +716,7 @@ test("pending join preference changes notify requester and host atomically and r
   repos.membership.saveAnswers("h1", "p1", answers);
   repos.membership.publish("h1", "p1");
   repos.recommendations.savePersonal("seeker", "c1", answers);
-  repos.recommendations.requestJoin("seeker", "p1");
+  directRequest("seeker", "p1");
   const hostBefore = repos.notifications.unread("h1");
   const seekerBefore = repos.notifications.unread("seeker");
   const changed = { about: ["quiet"], wants: ["quiet"], avoid: [] };
@@ -754,7 +762,8 @@ test("explicit departed memberships cannot regain planning or feedback through l
   const proposal = db.prepare("SELECT * FROM match_proposals WHERE round_id=?").get(round.roundId);
   assert.ok(proposal);
   const party = repos.parties.findById(proposal.party_id);
-  db.prepare("UPDATE match_proposals SET status='confirmed' WHERE id=?").run(proposal.id);
+  assert.equal(repos.proposals.respond("seeker", proposal.id, "accept").status, "proposed");
+  assert.equal(repos.proposals.respond(party.host_user_id, proposal.id, "accept").status, "confirmed");
   db.prepare("UPDATE match_proposals SET confirmed_at='2019-12-01 00:00:00' WHERE id=?").run(proposal.id);
   repos.membership.attach(party, "seeker", "proposal");
   db.prepare(`UPDATE group_memberships SET joined_at='2019-12-01 00:00:00',
