@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { api, formatShortDate, formatDate } from '../api.js';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 
@@ -33,17 +33,44 @@ onMounted(async () => {
 
 const peopleCount = (c) => (c.open_seekers ?? 0) + (c.open_slots ?? 0);
 
-// The busiest upcoming show leads the page; a photo breaks ties.
-const featured = computed(() => {
-  const [best] = [...concerts.value].sort(
-    (a, b) => peopleCount(b) - peopleCount(a) || hasImage(b) - hasImage(a),
-  );
-  return best ?? null;
-});
-
-const upcoming = computed(() =>
-  concerts.value.filter((c) => c.id !== featured.value?.id).slice(0, 6),
+// The busiest upcoming shows rotate through the hero; a photo breaks ties.
+const slides = computed(() =>
+  [...concerts.value]
+    .sort((a, b) => peopleCount(b) - peopleCount(a) || hasImage(b) - hasImage(a))
+    .slice(0, 5),
 );
+
+const SLIDE_MS = 5000;
+const activeSlide = ref(0);
+const paused = ref(false);
+const featured = computed(() => slides.value[activeSlide.value] ?? null);
+let slideTimer = null;
+
+function startSlides() {
+  clearInterval(slideTimer);
+  slideTimer = setInterval(() => {
+    if (!paused.value && slides.value.length > 1) {
+      activeSlide.value = (activeSlide.value + 1) % slides.value.length;
+    }
+  }, SLIDE_MS);
+}
+
+// Picking a dot restarts the countdown so the chosen slide gets its full time.
+function goToSlide(i) {
+  activeSlide.value = i;
+  startSlides();
+}
+
+watch(slides, () => {
+  if (activeSlide.value >= slides.value.length) activeSlide.value = 0;
+});
+onMounted(startSlides);
+onUnmounted(() => clearInterval(slideTimer));
+
+const upcoming = computed(() => {
+  const shown = new Set(slides.value.map((c) => c.id));
+  return concerts.value.filter((c) => !shown.has(c.id)).slice(0, 6);
+});
 
 function hasImage(concert) {
   return Boolean(concert.hero_image_url) && !brokenImages.value.has(concert.id);
@@ -96,7 +123,7 @@ const steps = [
           </h1>
 
           <p class="lede hero__lede">
-            Your next concert, with your kind of people. Meet fans who share your taste and plan where to meet before the show.
+            Got your tickets? Find fans going to the same concert who share your taste, and plan where to meet before the show so no one has to go alone.
           </p>
 
           <div class="hero__actions">
@@ -105,30 +132,54 @@ const steps = [
           </div>
         </div>
 
-        <RouterLink
+        <div
           v-if="featured"
-          :to="`/concerts/${featured.id}`"
-          class="feature"
-          :aria-label="`${featured.artist}, ${formatDate(featured.event_date)} at ${featured.venue}. ${peopleLine(featured)}`"
+          class="carousel"
+          @mouseenter="paused = true"
+          @mouseleave="paused = false"
+          @focusin="paused = true"
+          @focusout="paused = false"
         >
-          <div class="poster poster--feature">
-            <img
-              v-if="hasImage(featured)"
-              :src="featured.hero_image_url"
-              alt=""
-              @error="markBroken(featured)"
+          <Transition name="slide-fade" mode="out-in">
+            <RouterLink
+              :key="featured.id"
+              :to="`/concerts/${featured.id}`"
+              class="feature"
+              :aria-label="`${featured.artist}, ${formatDate(featured.event_date)} at ${featured.venue}. ${peopleLine(featured)}`"
+            >
+              <div class="poster poster--feature">
+                <img
+                  v-if="hasImage(featured)"
+                  :src="featured.hero_image_url"
+                  alt=""
+                  @error="markBroken(featured)"
+                />
+                <span v-else class="poster__initial" aria-hidden="true">{{ featured.artist.charAt(0) }}</span>
+              </div>
+              <div class="feature__body">
+                <p class="feature__eyebrow mono">{{ peopleCount(featured) ? 'Most people looking' : 'Up next' }}</p>
+                <p class="feature__artist">{{ featured.artist }}</p>
+                <p class="feature__meta">{{ formatDate(featured.event_date) }} · {{ featured.venue }}</p>
+                <p class="people" :class="{ 'people--quiet': !peopleCount(featured) }">
+                  {{ peopleLine(featured) }}
+                </p>
+              </div>
+            </RouterLink>
+          </Transition>
+          <div v-if="slides.length > 1" class="carousel__dots" role="tablist" aria-label="Featured concerts">
+            <button
+              v-for="(slide, i) in slides"
+              :key="slide.id"
+              type="button"
+              role="tab"
+              class="carousel__dot"
+              :class="{ 'carousel__dot--active': i === activeSlide }"
+              :aria-selected="i === activeSlide"
+              :aria-label="slide.artist"
+              @click="goToSlide(i)"
             />
-            <span v-else class="poster__initial" aria-hidden="true">{{ featured.artist.charAt(0) }}</span>
           </div>
-          <div class="feature__body">
-            <p class="feature__eyebrow mono">{{ peopleCount(featured) ? 'Most people looking' : 'Up next' }}</p>
-            <p class="feature__artist">{{ featured.artist }}</p>
-            <p class="feature__meta">{{ formatDate(featured.event_date) }} · {{ featured.venue }}</p>
-            <p class="people" :class="{ 'people--quiet': !peopleCount(featured) }">
-              {{ peopleLine(featured) }}
-            </p>
-          </div>
-        </RouterLink>
+        </div>
         <div v-else-if="loading" class="feature feature--placeholder" aria-hidden="true" />
       </div>
     </section>
@@ -292,6 +343,42 @@ const steps = [
 .feature__meta {
   color: var(--text-300);
   font-size: var(--step--1);
+}
+
+/* Carousel: crossfades between featured shows and pauses while hovered. */
+.slide-fade-enter-active,
+.slide-fade-leave-active {
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.slide-fade-enter-from,
+.slide-fade-leave-to {
+  opacity: 0;
+}
+
+.carousel__dots {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.carousel__dot {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--ink-500);
+  cursor: pointer;
+  transition:
+    width var(--dur-base) var(--ease-out),
+    background var(--dur-base) var(--ease-out);
+}
+
+.carousel__dot--active {
+  width: 24px;
+  background: var(--accent-400);
 }
 
 /* ---------------------------------------------------------------- Poster -- */

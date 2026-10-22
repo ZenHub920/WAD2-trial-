@@ -1,6 +1,8 @@
 
 import { randomUUID } from 'node:crypto';
-import { reservedPlacesSql,availableCapacitySql } from './capacity.js';
+import { reservedPlacesSql,availableCapacitySql,queueablePlacesSql,expireJoinRequests } from './capacity.js';
+import { queueInfo } from './admissionQueue.js';
+import { groupImageUrl } from '../controllers/groupIdentityController.js';
 
 /**
  * ============================================================
@@ -20,20 +22,16 @@ import { reservedPlacesSql,availableCapacitySql } from './capacity.js';
  * match_proposals:
  *   Current operational assignment status.
  *
- * Only proposals with status:
- *
- *   - proposed
- *   - confirmed
- *
- * reserve party capacity.
- *
- * Declined, expired and cancelled proposals release capacity.
+ * The shared admission queue orders direct applications and automatic offers.
+ * Confirmed claims and the earliest eligible pending claims reserve capacity.
+ * Other pending offers wait without consuming another physical seat.
+ * Removing an entry transfers its held place to the next request atomically.
  *
  * Database writes that change multiple related records are
  * wrapped in better-sqlite3 transactions.
  */
 
-export function createProposalRepo(db) {
+export function createProposalRepo(db, repos = null) {
 
   const ACTIVE = "('proposed','confirmed')";
 
@@ -41,7 +39,10 @@ export function createProposalRepo(db) {
   // HELPER: CONVERT DATABASE ROW INTO API RESPONSE
   // ============================================================
 
-  const details = (p) => ({
+  const details = (p) => {
+    // Explain the actual matching snapshot, even after account preferences change.
+    const saved = p.score_breakdown_json ? JSON.parse(p.score_breakdown_json) : null;
+    return {
     id: p.id,
     roundId: p.round_id,
     concertId: p.concert_id,
@@ -53,17 +54,29 @@ export function createProposalRepo(db) {
     artist: p.artist,
     eventDate: p.event_date,
     section: p.section,
+    groupName: p.group_name ?? null,
+    imageUrl: groupImageUrl(p.group_image_path),
+    reasons: Array.isArray(saved?.discovery?.reasons) ? saved.discovery.reasons.slice(0, 3) : [],
+    confidence: saved?.discovery?.confidence ?? null,
 
     hostName: p.host_name,
     hostUserId: p.host_user_id,
     seekerName: p.seeker_name,
 
     status: p.status,
+    resolutionReason: p.resolution_reason ?? null,
     expiresAt: p.expires_at,
 
     seekerScore: p.seeker_score,
-    partyScore: p.party_score
-  });
+    partyScore: p.party_score,
+    seekerApproved: Boolean(p.seeker_approved_at),
+    hostApproved: Boolean(p.host_approved_at),
+    seekerApprovedAt: p.seeker_approved_at ?? null,
+    hostApprovedAt: p.host_approved_at ?? null,
+    approvalPolicy: p.approval_policy ?? 'mutual',
+    ...queueInfo(db, { proposalId: p.id }),
+    };
+  };
 
   // ============================================================
   // SHARED SQL: HYDRATE PROPOSALS WITH CONCERT AND USER DATA
@@ -78,6 +91,8 @@ export function createProposalRepo(db) {
       c.artist,
       c.event_date,
       p.section,
+      p.name AS group_name,
+      p.image_path AS group_image_path,
       p.host_user_id,
       h.display_name AS host_name,
       su.display_name AS seeker_name,
@@ -125,9 +140,9 @@ export function createProposalRepo(db) {
 
     const stillActive = db.prepare(`
       SELECT 1
-      FROM match_proposals
-      WHERE seeker_request_id = ?
-        AND status IN ${ACTIVE}
+      FROM active_seat_claims
+      WHERE seeker_request_id = ? AND
+        (status='confirmed' OR(status='proposed' AND expires_at>unixepoch('subsec')*1000))
     `).get(seekerId);
 
     // STEP 2:
@@ -191,6 +206,8 @@ export function createProposalRepo(db) {
   // All operations are atomic.
 
   const expire = db.transaction(() => {
+    // Proposal inboxes must also advance past elapsed direct applicants.
+    expireJoinRequests(db);
 
     const expired = db.prepare(`
       SELECT
@@ -221,7 +238,7 @@ export function createProposalRepo(db) {
     }
 
     return expired.length;
-  });
+  }).immediate;
 
   // ============================================================
   // EXPORTED REPOSITORY METHODS
@@ -241,7 +258,7 @@ export function createProposalRepo(db) {
      * must also roll back.
      */
 
-    createFromRound(roundId) {
+    createFromRound: db.transaction((roundId) => {
 
       const matches = db.prepare(`
         SELECT
@@ -270,13 +287,16 @@ export function createProposalRepo(db) {
       `);
 
       for (const match of matches) {
-        const party = db.prepare(`SELECT ${availableCapacitySql()} capacity,p.status FROM parties p WHERE p.id = ?`).get(match.party_id);
-        if (!party || party.status === 'cancelled' || reserved.get({ id: match.party_id }).n >= party.capacity) {
+        const party = db.prepare(`SELECT ${queueablePlacesSql('p.id')} queueable_places,p.status FROM parties p WHERE p.id = ?`).get(match.party_id);
+        if (!party || party.status === 'cancelled' || party.queueable_places < 1) {
           throw new Error('party_capacity_exceeded');
         }
-        if (db.prepare('SELECT 1 FROM group_settings WHERE party_id=?').get(match.party_id)) {
-          throw new Error('managed_group_requires_host_approval');
-        }
+        const request = db.prepare('SELECT joining_mode,status,user_id FROM seeker_requests WHERE id=?').get(match.seeker_request_id);
+        if (request?.joining_mode !== 'algorithm' || request.status === 'withdrawn') throw new Error('algorithm_mode_required');
+        const settings = db.prepare('SELECT published FROM group_settings WHERE party_id=?').get(match.party_id);
+        if (settings && !settings.published) throw new Error('group_unavailable');
+        if (repos?.recommendations && !repos.recommendations.feasible(request.user_id, repos.parties.findById(match.party_id)))
+          throw new Error('group_unavailable');
 
         const proposalId = `mp_${randomUUID()}`;
 
@@ -293,7 +313,7 @@ export function createProposalRepo(db) {
           expiresAt
         );
       }
-    },
+    }).immediate,
 
     // Expose the transaction defined above.
     expire,
@@ -433,151 +453,84 @@ export function createProposalRepo(db) {
     /**
      * ACCEPT OR DECLINE A PROPOSAL
      *
-     * Only the seeker who owns the proposal may respond.
+     * The owning seeker and receiving host each approve their own side.
      *
      * The proposal must still be pending.
      *
-     * Confirming preserves the capacity reservation.
+     * Both approvals confirm membership without consuming another place.
      *
      * Declining releases it and records the declined pair.
      */
 
     respond: db.transaction((userId, proposalId, decision) => {
-
-      // STEP 1: Validate the requested action.
-
-      if (!['accept', 'decline'].includes(decision)) {
-
-        return {
-          error: 'invalid_decision',
-          status: 400
-        };
-      }
-
-      // STEP 2: Load the proposal.
-
-      const proposal = db.prepare(`
-        ${JOINED}
-
-        WHERE mp.id = ?
-      `).get(proposalId);
-
-      // STEP 3: Verify ownership.
-      //
-      // A host cannot accept an offer on behalf of a seeker.
-
-      if (!proposal || proposal.seeker_user_id !== userId) {
-
-        return {
-          error: 'proposal_not_found',
-          status: 404
-        };
-      }
-
-      // STEP 4: Only pending offers can be changed.
-
-      if (proposal.status !== 'proposed') {
-
-        return {
-          error: 'proposal_not_pending',
-          status: 409
-        };
-      }
-
-      // STEP 5: Check expiration.
-      //
-      // An expired offer cannot be accepted.
-
+      if (!['accept', 'decline'].includes(decision)) return { error: 'invalid_decision', status: 400 };
+      const proposal = db.prepare(`${JOINED} WHERE mp.id=?`).get(proposalId);
+      if (!proposal || (proposal.seeker_user_id !== userId && proposal.host_user_id !== userId))
+        return { error: 'proposal_not_found', status: 404 };
+      if (proposal.status !== 'proposed') return { error: 'proposal_not_pending', status: 409 };
       if (proposal.expires_at <= Date.now()) {
-
-        db.prepare(`
-          UPDATE match_proposals
-          SET status = 'expired'
-          WHERE id = ?
-        `).run(proposalId);
-
-        refresh(
-          proposal.party_id,
-          proposal.seeker_request_id
-        );
-
-        return {
-          error: 'proposal_expired',
-          status: 409
-        };
+        db.prepare("UPDATE match_proposals SET status='expired' WHERE id=?").run(proposalId);
+        refresh(proposal.party_id,proposal.seeker_request_id);
+        return { error: 'proposal_expired', status: 409 };
       }
-
-      // STEP 6: Determine the next status.
-
-      const nextStatus = decision === 'accept'
-        ? 'confirmed'
-        : 'declined';
-      if(nextStatus==='confirmed') {
-        const party = db.prepare(`SELECT p.status, ${availableCapacitySql()} AS capacity
-          FROM parties p WHERE p.id=?`).get(proposal.party_id);
-        const request = db.prepare('SELECT status FROM seeker_requests WHERE id=?').get(proposal.seeker_request_id);
-        if (!party || party.status === 'cancelled' || request?.status === 'withdrawn'
-          || db.prepare('SELECT 1 FROM tickets WHERE source_party_id=?').get(proposal.party_id)) {
-          return { error: 'group_unavailable', status: 409 };
-        }
-        if (db.prepare('SELECT 1 FROM group_settings WHERE party_id=?').get(proposal.party_id)) {
-          return { error: 'managed_group_requires_host_approval', status: 409 };
-        }
-        if (reserved.get({ id: proposal.party_id }).n > party.capacity) {
-          return { error: 'party_capacity_exceeded', status: 409 };
-        }
-        if (db.prepare(`SELECT 1 FROM blocks WHERE
-          (blocker_user_id=? AND blocked_user_id=?) OR (blocker_user_id=? AND blocked_user_id=?)`)
-          .get(userId, proposal.host_user_id, proposal.host_user_id, userId)) {
-          return { error: 'group_unavailable', status: 409 };
-        }
-        const other=db.prepare("SELECT 1 FROM group_memberships WHERE user_id=? AND concert_id=? AND status='active' AND party_id<>?").get(userId,proposal.concert_id,proposal.party_id);
-        const hosted=db.prepare("SELECT 1 FROM parties WHERE host_user_id=? AND concert_id=? AND status<>'cancelled' AND id<>?").get(userId,proposal.concert_id,proposal.party_id);
-        if(other||hosted)return {error:'already_in_concert_group',status:409};
-        db.prepare(`INSERT INTO group_memberships(party_id,user_id,concert_id,source) VALUES(?,?,?,'proposal')
-          ON CONFLICT(party_id,user_id) DO UPDATE SET status='active',source='proposal',joined_at=datetime('now'),left_at=NULL`).run(proposal.party_id,userId,proposal.concert_id);
+      // Sweep both sources before checking FIFO: an expired earlier direct
+      // request must promote this offer even when its host has a stale inbox.
+      expire();
+      repos?.recommendations?.expire();
+      const role = proposal.seeker_user_id === userId ? 'seeker' : 'host';
+      const queue = queueInfo(db, { proposalId });
+      // Hosts work through the shared direct/automatic queue in arrival order.
+      // Applicants retain the ability to leave the queue at any position.
+      if ((decision === 'accept' || role === 'host') && (!queue.canHostRespond || !queue.seatReserved))
+        return { error: 'request_waiting_in_queue', status: 409 };
+      if (decision === 'decline') {
+        db.prepare("UPDATE match_proposals SET status='declined' WHERE id=?").run(proposalId);
+        db.prepare('INSERT OR IGNORE INTO match_declines(seeker_request_id,party_id) VALUES(?,?)')
+          .run(proposal.seeker_request_id,proposal.party_id);
+        refresh(proposal.party_id,proposal.seeker_request_id);
+        return { proposalId,status: 'declined' };
       }
-
-      // STEP 7: Persist the response.
-
-      db.prepare(`
-        UPDATE match_proposals
-        SET status = ?
-        WHERE id = ?
-      `).run(
-        nextStatus,
-        proposalId
-      );
-
-      // STEP 8:
-      // Declining releases capacity and prevents the
-      // same request-party pair from being proposed again.
-
-      if (nextStatus === 'declined') {
-
-        db.prepare(`
-          INSERT OR IGNORE INTO match_declines (
-            seeker_request_id,
-            party_id
-          )
-          VALUES (?, ?)
-        `).run(
-          proposal.seeker_request_id,
-          proposal.party_id
-        );
-
-        refresh(
-          proposal.party_id,
-          proposal.seeker_request_id
-        );
+      const seekerId = proposal.seeker_user_id;
+      const approvalColumn = role === 'seeker' ? 'seeker_approved_at' : 'host_approved_at';
+      if (proposal[approvalColumn]) return { error: 'proposal_already_approved',status:409 };
+      const party = db.prepare(`SELECT p.status,${availableCapacitySql()} capacity FROM parties p WHERE p.id=?`).get(proposal.party_id);
+      const request = db.prepare('SELECT status,joining_mode FROM seeker_requests WHERE id=?').get(proposal.seeker_request_id);
+      if (!party || party.status === 'cancelled' || request?.status === 'withdrawn' ||
+          db.prepare('SELECT 1 FROM tickets WHERE source_party_id=?').get(proposal.party_id))
+        return { error:'group_unavailable',status:409 };
+      if (request?.joining_mode !== 'algorithm') return { error:'algorithm_mode_required',status:409 };
+      const settings = db.prepare('SELECT published FROM group_settings WHERE party_id=?').get(proposal.party_id);
+      if (settings && !settings.published) return { error:'group_unavailable',status:409 };
+      if (reserved.get({id:proposal.party_id}).n > party.capacity) return {error:'party_capacity_exceeded',status:409};
+      const claim = db.prepare("SELECT 1 FROM active_seat_claims WHERE proposal_id=? AND status='proposed' AND seat_held=1 AND expires_at>?")
+        .get(proposalId,Date.now());
+      if (!claim) return {error:'claim_source_invalid',status:409};
+      if (repos?.recommendations && !repos.recommendations.feasible(seekerId,repos.parties.findById(proposal.party_id)))
+        return {error:'group_unavailable',status:409};
+      if (db.prepare(`SELECT 1 FROM blocks WHERE (blocker_user_id=? AND blocked_user_id=?) OR
+          (blocker_user_id=? AND blocked_user_id=?)`).get(seekerId,proposal.host_user_id,proposal.host_user_id,seekerId))
+        return {error:'group_unavailable',status:409};
+      if (db.prepare("SELECT 1 FROM group_memberships WHERE user_id=? AND concert_id=? AND status='active' AND party_id<>?")
+          .get(seekerId,proposal.concert_id,proposal.party_id) ||
+          db.prepare("SELECT 1 FROM parties WHERE host_user_id=? AND concert_id=? AND status<>'cancelled'").get(seekerId,proposal.concert_id))
+        return {error:'already_in_concert_group',status:409};
+      db.prepare(`UPDATE match_proposals SET ${approvalColumn}=datetime('now') WHERE id=?`).run(proposalId);
+      const approvals = db.prepare('SELECT seeker_approved_at,host_approved_at FROM match_proposals WHERE id=?').get(proposalId);
+      if (!approvals.seeker_approved_at || !approvals.host_approved_at) {
+        return {proposalId,status:'proposed',seekerApproved:Boolean(approvals.seeker_approved_at),hostApproved:Boolean(approvals.host_approved_at),
+          ...queueInfo(db, { proposalId })};
       }
-
-      // STEP 9: Return the updated state.
-
-      return {
-        proposalId,
-        status: nextStatus
-      };
-    })
+      db.prepare("UPDATE match_proposals SET status='confirmed' WHERE id=?").run(proposalId);
+      if (repos?.membership) repos.membership.attach(repos.parties.findById(proposal.party_id),seekerId,'proposal');
+      else db.prepare(`INSERT INTO group_memberships(party_id,user_id,concert_id,source) VALUES(?,?,?,'proposal')
+        ON CONFLICT(party_id,user_id) DO UPDATE SET status='active',source='proposal',joined_at=datetime('now'),left_at=NULL`)
+        .run(proposal.party_id,seekerId,proposal.concert_id);
+      db.prepare(`INSERT INTO group_member_preferences(party_id,user_id,answers_json) VALUES(?,?,?)
+        ON CONFLICT(party_id,user_id) DO NOTHING`).run(proposal.party_id,seekerId,
+        db.prepare('SELECT answers_json FROM seeker_discovery_preferences WHERE user_id=? AND concert_id=?')
+          .get(seekerId,proposal.concert_id)?.answers_json ?? '{"about":[],"wants":[],"avoid":[]}');
+      db.prepare('UPDATE seeker_requests SET matching_opt_in=0 WHERE id=?').run(proposal.seeker_request_id);
+      return {proposalId,status:'confirmed',seekerApproved:true,hostApproved:true,...queueInfo(db, { proposalId })};
+    }).immediate
   };
 }

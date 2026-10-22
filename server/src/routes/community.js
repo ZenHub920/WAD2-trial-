@@ -12,6 +12,9 @@ export function registerCommunityRoutes(
         res.json({ [key]: result });
       } catch (e) {
         if (e.status) return res.status(e.status).json({ error: e.message });
+        if (e.code?.startsWith("SQLITE_CONSTRAINT") && [
+          "seat_capacity_exceeded", "seeker_already_reserved", "claim_source_invalid", "claim_assignment_conflict",
+        ].includes(e.message)) return res.status(409).json({ error: e.message });
         next(e);
       }
     });
@@ -30,8 +33,17 @@ export function registerCommunityRoutes(
   route("post", "/groups/:id/friend-invites", "invitation", (r) =>
     repos.membership.invite(r.user.id, r.params.id),
   );
-  route("post", "/group-friend-invites/:token/accept", "membership", (r) =>
-    repos.membership.acceptInvite(r.user.id, r.params.token),
+  route("post", "/group-friend-invites/:token/accept", "membership", (r) => {
+    // Everyone in a group has answered, so the group's profile includes them.
+    if (!repos.membership.preferences(r.user.id))
+      throw Object.assign(new Error("save_group_preferences_first"), { status: 409 });
+    return repos.membership.acceptInvite(r.user.id, r.params.token);
+  });
+  route("get", "/me/preferences", "preferences", (r) =>
+    repos.membership.preferences(r.user.id),
+  );
+  route("put", "/me/preferences", "preferences", (r) =>
+    repos.membership.savePreferences(r.user.id, r.body),
   );
   route("post", "/groups/:id/leave", "membership", (r) =>
     repos.membership.leave(r.user.id, r.params.id),
@@ -52,10 +64,22 @@ export function registerCommunityRoutes(
     repos.recommendations.savePersonal(r.user.id, r.params.concertId, r.body),
   );
   route("post", "/groups/:id/join-requests", "request", (r) =>
-    repos.recommendations.requestJoin(r.user.id, r.params.id),
+    repos.recommendations.requestJoin(r.user.id, r.params.id, r.body ?? {}),
   );
   route("get", "/me/group-join-requests", "requests", (r) =>
-    repos.recommendations.requests(r.user.id),
+    repos.recommendations.requests(r.user.id, r.query),
+  );
+  route("get", "/me/hosted-group-join-requests", "requests", (r) =>
+    repos.recommendations.requests(r.user.id, { ...r.query, scope: "hosted" }),
+  );
+  route("get", "/me/current-group-memberships", "groups", (r) =>
+    repos.recommendations.currentMemberships(r.user.id),
+  );
+  route("put", "/me/seeker-requests/:concertId/joining-mode", "request", (r) =>
+    repos.recommendations.setJoiningMode(r.user.id, r.params.concertId, r.body?.mode),
+  );
+  route("post", "/group-join-requests/:id/withdraw", "request", (r) =>
+    repos.recommendations.respond(r.user.id, r.params.id, "withdraw"),
   );
   route("post", "/group-join-requests/:id/respond", "request", (r) =>
     repos.recommendations.respond(r.user.id, r.params.id, r.body?.action),

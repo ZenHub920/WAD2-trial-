@@ -11,7 +11,7 @@
 import { createProposalRepo } from './proposalRepository.js';
 import { createGroupDiscoveryRepo } from './groupDiscoveryRepository.js';
 import { createMembershipRepo } from './membershipRepository.js';
-import { reservedPlacesSql,availableCapacitySql } from './capacity.js';
+import { reservedPlacesSql,availableCapacitySql,queueablePlacesSql } from './capacity.js';
 import { createRecommendationRepo } from './recommendationRepository.js';
 import { createNotificationRepo } from './notificationRepository.js';
 import { createMeetupRepo } from './meetupRepository.js';
@@ -57,6 +57,7 @@ function mapParty(row) {
 
         // NEW: Available slots after previous assignments
         remaining_capacity: row.remaining_capacity ?? row.capacity,
+        queueable_places: row.queueable_places,
 
         section: row.section,
         spend_band: row.spend_band,
@@ -68,6 +69,8 @@ function mapParty(row) {
         // classifier permanently blind to the constraint even once it is stored.
         min_size: row.min_size ?? null,
         notes: row.notes,
+        name: row.name ?? null,
+        image_path: row.image_path ?? null,
         status: row.status,
         host: row.host_id ? mapUser(prefixed(row, 'host_')) : undefined,
     };
@@ -90,6 +93,8 @@ function mapSeeker(row) {
         notes: row.notes,
         status: row.status,
         matching_opt_in: row.matching_opt_in === 1,
+        joining_mode: row.joining_mode ?? 'algorithm',
+        joiningMode: row.joining_mode ?? 'algorithm',
         user: row.user_id_joined ? mapUser(prefixed(row, 'user_')) : undefined,
     };
 }
@@ -354,9 +359,9 @@ export function createPartyRepo(db) {
       const id = data.id ?? `p_${randomUUID().slice(0, 8)}`;
       db.prepare(`
         INSERT INTO parties (id, host_user_id, concert_id, capacity, section, spend_band,
-                             arrival_plan, plans_json, strict_age_policy, min_age_band, notes)
+                             arrival_plan, plans_json, strict_age_policy, min_age_band, notes, name)
         VALUES (@id, @host_user_id, @concert_id, @capacity, @section, @spend_band,
-                @arrival_plan, @plans_json, @strict_age_policy, @min_age_band, @notes)
+                @arrival_plan, @plans_json, @strict_age_policy, @min_age_band, @notes, @name)
       `).run({
         id,
         host_user_id: data.host_user_id,
@@ -369,13 +374,22 @@ export function createPartyRepo(db) {
         strict_age_policy: data.strict_age_policy ? 1 : 0,
         min_age_band: data.min_age_band ?? null,
         notes: data.notes ?? null,
+        name: data.name ?? null,
       });
       return this.findById(id);
     },
 
+    setName(id, name) {
+      db.prepare('UPDATE parties SET name = ? WHERE id = ?').run(name ?? null, id);
+    },
+
+    setImage(id, filename) {
+      db.prepare('UPDATE parties SET image_path = ? WHERE id = ?').run(filename ?? null, id);
+    },
+
     findById(id) {
       const row = db.prepare(`
-        SELECT p.*, ${availableCapacitySql()} AS capacity, ${USER_COLUMNS('u', 'host_')}
+        SELECT p.*, ${availableCapacitySql()} AS capacity, ${queueablePlacesSql('p.id')} AS queueable_places, ${USER_COLUMNS('u', 'host_')}
         FROM parties p JOIN users u ON u.id = p.host_user_id
         WHERE p.id = ?
       `).get(id);
@@ -425,6 +439,18 @@ openForConcert(concertId) {
   return rows.map(mapParty);
   }
     ,
+  /** Queue admission stays open while at least one stranger place is unconfirmed. */
+  queueableForConcert(concertId) {
+    return db.prepare(`SELECT p.*,${availableCapacitySql()} capacity,
+      ${availableCapacitySql()}-${reservedPlacesSql('p.id')} remaining_capacity,
+      ${queueablePlacesSql('p.id')} queueable_places,${USER_COLUMNS('u','host_')}
+      FROM parties p JOIN users u ON u.id=p.host_user_id
+      WHERE p.concert_id=? AND p.status IN('open','matched')
+        AND ${queueablePlacesSql('p.id')}>0
+        AND NOT EXISTS(SELECT 1 FROM tickets t WHERE t.source_party_id=p.id)
+        AND NOT EXISTS(SELECT 1 FROM group_settings gs WHERE gs.party_id=p.id AND gs.published=0)
+      ORDER BY p.id`).all(concertId).map(mapParty);
+  },
   /**
    * Update a hosted party's operational status.
    *
@@ -686,10 +712,10 @@ export function createSeekerRepo(db) {
       db.prepare(`
         INSERT INTO seeker_requests (id, user_id, concert_id, section_pref, spend_band_max,
                                      arrival_pref, plans_wanted_json, strict_age_policy,
-                                     age_tolerance, notes)
+                                     age_tolerance, notes, joining_mode)
         VALUES (@id, @user_id, @concert_id, @section_pref, @spend_band_max,
                 @arrival_pref, @plans_wanted_json, @strict_age_policy,
-                @age_tolerance, @notes)
+                @age_tolerance, @notes, @joining_mode)
       `).run({
         id,
         user_id: data.user_id,
@@ -701,6 +727,7 @@ export function createSeekerRepo(db) {
         strict_age_policy: data.strict_age_policy ? 1 : 0,
         age_tolerance: data.age_tolerance ?? 1,
         notes: data.notes ?? null,
+        joining_mode: data.joining_mode ?? 'algorithm',
       });
       return this.findById(id);
     },
@@ -931,10 +958,9 @@ export function createRoundRepo(db) {
 
           AND NOT EXISTS (
             SELECT 1
-            FROM match_proposals mp
-
-            WHERE mp.seeker_request_id = s.id
-              AND mp.status IN ('proposed', 'confirmed')
+            FROM active_seat_claims sc
+            WHERE sc.seeker_request_id=s.id AND
+              (sc.status='confirmed' OR(sc.status='proposed' AND sc.expires_at>unixepoch('subsec')*1000))
           )
           AND NOT EXISTS (
             SELECT 1 FROM group_memberships gm JOIN parties p ON p.id=gm.party_id
@@ -956,10 +982,9 @@ export function createRoundRepo(db) {
 
           AND NOT EXISTS (
             SELECT 1
-            FROM match_proposals mp
-
-            WHERE mp.party_id = p.id
-              AND mp.status IN ('proposed', 'confirmed')
+            FROM active_seat_claims sc
+            WHERE sc.party_id=p.id AND
+              (sc.status='confirmed' OR(sc.status='proposed' AND sc.expires_at>unixepoch('subsec')*1000))
           )
       `).get(concertId).n;
 
@@ -1559,8 +1584,8 @@ export function createRepositories(db) {
     // Kaki Finder messaging. Separate from `conversations` above, which is the
     // buyer–seller chat on a ticket listing.
     kakiChat: createKakiChatRepo(db),
-    proposals: createProposalRepo(db),
   };
+  repos.proposals = createProposalRepo(db, repos);
   repos.groups = createGroupDiscoveryRepo(db, repos);
   repos.membership = createMembershipRepo(db, repos);
   repos.recommendations = createRecommendationRepo(db, repos);

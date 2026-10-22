@@ -345,6 +345,47 @@ code, pre, .mono {
   color: var(--text-100);
 }
 
+/* Intent colours. Green says yes, red changes or removes something.
+   --danger is for actions that end something for other people too (cancel a
+   group, cancel a meetup); --danger-ghost for lighter ones (decline,
+   withdraw, leave, remove). A "Cancel" that only closes a form stays ghost. */
+.btn--success {
+  background: var(--mint-500);
+  color: #fff;
+}
+
+.btn--success:hover:not(:disabled) {
+  background: var(--mint-400);
+  color: #fff;
+}
+
+.btn--danger {
+  background: var(--rose-500);
+  color: #fff;
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: var(--rose-400);
+  color: #fff;
+}
+
+.btn--danger-ghost {
+  background: transparent;
+  color: var(--rose-500);
+  border: 1px solid color-mix(in oklab, var(--rose-400) 55%, transparent);
+}
+
+.btn--danger-ghost:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--rose-400) 10%, transparent);
+  border-color: var(--rose-400);
+  color: var(--rose-500);
+}
+
+:root[data-theme='dark'] .btn--danger-ghost,
+:root[data-theme='dark'] .btn--danger-ghost:hover:not(:disabled) {
+  color: var(--rose-400);
+}
+
 .btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;

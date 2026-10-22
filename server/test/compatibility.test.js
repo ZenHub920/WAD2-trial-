@@ -43,7 +43,7 @@ describe('Hard constraints', () => {
   test('enforces the seeker gender preference', () => {
     const seeker = makeSeeker(
       's1',
-      makeUser('u1', { gender: 'f', companion_gender_pref: 'same_only' }),
+      makeUser('u1', { gender: 'f', companion_gender_pref: 'female' }),
     );
     const party = makeParty('p1', makeUser('u2', { gender: 'm' }));
     assert.equal(checkFeasibility(seeker, party).reason, 'seeker_gender_pref');
@@ -53,7 +53,7 @@ describe('Hard constraints', () => {
     const seeker = makeSeeker('s1', makeUser('u1', { gender: 'm' }));
     const party = makeParty(
       'p1',
-      makeUser('u2', { gender: 'f', companion_gender_pref: 'same_only' }),
+      makeUser('u2', { gender: 'f', companion_gender_pref: 'female' }),
     );
     assert.equal(checkFeasibility(seeker, party).reason, 'host_gender_pref');
   });
@@ -61,13 +61,22 @@ describe('Hard constraints', () => {
   test('satisfied gender preferences pass', () => {
     const seeker = makeSeeker(
       's1',
-      makeUser('u1', { gender: 'f', companion_gender_pref: 'same_only' }),
+      makeUser('u1', { gender: 'f', companion_gender_pref: 'male' }),
     );
     const party = makeParty(
       'p1',
-      makeUser('u2', { gender: 'f', companion_gender_pref: 'same_only' }),
+      makeUser('u2', { gender: 'm', companion_gender_pref: 'female' }),
     );
     assert.equal(checkFeasibility(seeker, party).feasible, true);
+  });
+
+  test('a male or female preference excludes unspecified genders', () => {
+    const seeker = makeSeeker(
+      's1',
+      makeUser('u1', { gender: 'f', companion_gender_pref: 'male' }),
+    );
+    const party = makeParty('p1', makeUser('u2', { gender: 'unspecified' }));
+    assert.equal(checkFeasibility(seeker, party).reason, 'seeker_gender_pref');
   });
 
   test('enforces a party minimum age band', () => {

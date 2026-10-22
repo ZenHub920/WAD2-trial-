@@ -9,6 +9,7 @@ import '../assets/groups.css';
 import MatchProposalCard from '../components/MatchProposalCard.vue';
 import { useCountUp } from '../composables/useCountUp.js';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
+import BackLink from '../components/BackLink.vue';
 
 const props = defineProps({ id: { type: String, required: true } });
 const router = useRouter();
@@ -265,11 +266,18 @@ const forecastFirstChoice = useCountUp(
   () => Math.round((preview.value?.metrics?.firstChoiceRate ?? 0) * 100),
   { duration: 1100 },
 );
+const pendingProposals = computed(() => myProposals.value.filter(proposal => proposal.status === 'proposed'));
+const confirmedProposals = computed(() => myProposals.value.filter(proposal => proposal.status === 'confirmed'));
+const pastProposals = computed(() => myProposals.value.filter(proposal => !['proposed', 'confirmed'].includes(proposal.status)));
+const visibleProposals = computed(() => [...pendingProposals.value, ...confirmedProposals.value]);
+const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
+  proposal.canHostRespond !== false && proposal.queueStatus !== 'waiting'
+  && !(proposal.role === 'host' ? proposal.hostApproved : proposal.seekerApproved)).length);
 </script>
 
 <template>
   <div class="container section">
-    <RouterLink to="/concerts" class="back">← All concerts</RouterLink>
+    <BackLink fallback="/concerts" fallback-label="All concerts" />
 
     <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading concert details…</p>
 
@@ -366,7 +374,14 @@ const forecastFirstChoice = useCountUp(
         </aside>
       </header>
       <section class="my-result card" aria-labelledby="my-result-title">
-        <h2 id="my-result-title">Your match proposals</h2>
+        <header class="my-result__head">
+          <div>
+            <p class="my-result__eyebrow">Go together</p>
+            <h2 id="my-result-title">Your automatic matches</h2>
+            <p class="my-result__intro">Review your group offer, see who has approved, and follow its place in the queue.</p>
+          </div>
+          <button v-if="sessionReady && currentUser" type="button" class="btn btn--ghost" :disabled="resultLoading" @click="refreshMyProposals"><LoadingSpinner v-if="resultLoading" />Refresh status</button>
+        </header>
         <p v-if="!sessionReady || resultLoading" class="loading-state" role="status"><LoadingSpinner />Loading your proposals…</p>
         <p v-else-if="!currentUser">
           <RouterLink to="/login">Sign in</RouterLink> to see your matching offers.
@@ -375,14 +390,24 @@ const forecastFirstChoice = useCountUp(
           <p>Could not load your current match proposals. Please try again.</p>
           <button type="button" class="btn btn--ghost" @click="refreshMyProposals">Try again</button>
         </div>
-        <p v-else-if="!myProposals.length">No proposals for this concert yet.</p>
+        <div v-else-if="!myProposals.length" class="my-result__empty">
+          <h3>No group offer yet</h3>
+          <p>Join automatic matching to be considered in the next matching round. An offer becomes a confirmed place after both you and the host approve.</p>
+          <RouterLink :to="{ path: '/groups', query: { concertId: id, mode: 'algorithm' } }" class="btn btn--primary">Find my group</RouterLink>
+        </div>
         <template v-else>
+          <p v-if="needsReplyCount" class="my-result__summary" role="status">{{ needsReplyCount === 1 ? 'One match is ready for your reply.' : `${needsReplyCount} matches are ready for your reply.` }}</p>
+          <p v-else-if="pendingProposals.length" class="my-result__summary">{{ pendingProposals.length === 1 ? 'Your offer is pending.' : 'Your offers are pending.' }} Check the queue and approval progress below.</p>
           <MatchProposalCard
-            v-for="proposal in myProposals"
+            v-for="proposal in visibleProposals"
             :key="proposal.id"
             :proposal="proposal"
             @updated="refreshMyProposals"
           />
+          <details v-if="pastProposals.length" class="my-result__past">
+            <summary>Previous proposals ({{ pastProposals.length }})</summary>
+            <MatchProposalCard v-for="proposal in pastProposals" :key="proposal.id" :proposal="proposal" @updated="refreshMyProposals" />
+          </details>
         </template>
       </section>
 
@@ -466,7 +491,7 @@ const forecastFirstChoice = useCountUp(
             <button type="submit" class="btn btn--primary" :disabled="participationBusy">
               {{ participationBusy ? 'Working…' : participation ? 'Save preferences' : 'Join companion finder' }}
             </button>
-            <button v-if="participation" type="button" class="btn btn--ghost" :disabled="participationBusy" @click="leaveParticipation">Leave companion finder</button>
+            <button v-if="participation" type="button" class="btn btn--danger-ghost" :disabled="participationBusy" @click="leaveParticipation">Leave companion finder</button>
           </div>
         </form>
       </section>
@@ -479,7 +504,18 @@ const forecastFirstChoice = useCountUp(
 <style scoped>
 .my-result { display: grid; gap: var(--space-3); margin-bottom: var(--space-6); padding: var(--space-5); }
 .my-result h2 { font-size: var(--step-1); }
-.my-result p { margin: 0; color: var(--text-300); }
+.my-result > p, .my-result__head p { margin: 0; }
+.my-result__head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--space-4); padding-bottom: var(--space-4); border-bottom: var(--border-hairline); }
+.my-result__head > div { display: grid; gap: var(--space-2); min-width: 0; flex: 1 1 20rem; }
+.my-result__head .btn { white-space: normal; }
+.my-result__eyebrow { color: var(--accent-400); font-size: var(--step--2); font-weight: 700; }
+.my-result__intro, .my-result__summary { color: var(--text-300); font-size: var(--step--1); }
+.my-result__empty { display: grid; justify-items: start; gap: var(--space-3); padding-block: var(--space-4); }
+.my-result__empty h3 { font-size: var(--step-0); }
+.my-result__empty p { color: var(--text-300); max-width: var(--measure); font-size: var(--step--1); }
+.my-result__empty .btn { white-space: normal; }
+.my-result__past { padding-top: var(--space-3); border-top: var(--border-hairline); }
+.my-result__past summary { color: var(--text-300); cursor: pointer; font-size: var(--step--1); }
 .kaki-join { display: grid; gap: var(--space-4); margin-bottom: var(--space-6); padding: var(--space-5); }
 .kaki-join__intro h2 { font-size: var(--step-1); }
 .kaki-join__intro p { margin-top: var(--space-2); color: var(--text-300); }
@@ -491,17 +527,6 @@ const forecastFirstChoice = useCountUp(
 .kaki-join__error { color: var(--rose-400); }
 @media (max-width: 600px) { .kaki-join__fields { grid-template-columns: 1fr; } }
 
-
-.back {
-  display: inline-block;
-  margin-bottom: var(--space-5);
-  color: var(--text-400);
-  text-decoration: none;
-  font-size: var(--step--1);
-  transition: color var(--dur-fast) var(--ease-out);
-}
-
-.back:hover { color: var(--accent-400); }
 
 /* ---- Head --------------------------------------------------------------- */
 
