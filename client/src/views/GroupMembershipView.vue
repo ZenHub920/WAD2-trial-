@@ -89,7 +89,7 @@ async function act(fn, done = "Saved.") {
     return true;
   } catch (e) {
     error.value = ({
-      members_or_preferences_incomplete: "Every friend you're expecting needs to join before you can publish.",
+      members_or_preferences_incomplete: "Every expected friend must join, and every member, including the host, must save their preferences in Profile before publishing.",
       expected_friends_below_current_members: "The number of friends can't be lower than the friends already in your group.",
       configure_group_first: "Save your group before creating an invitation.",
       invitation_unavailable: "This invitation has expired or is no longer available. Ask the host for a new link.",

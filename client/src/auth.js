@@ -15,7 +15,7 @@ export function setCurrentUser(user) {
 export async function refreshSession() {
   const version = ++sessionVersion;
   sessionReady.value = false;
-  localStorage.removeItem('encore-user');
+  try { localStorage.removeItem('encore-user'); } catch { /* Session restoration does not require browser storage. */ }
   try {
     const user = (await api.me()).user;
     if (version === sessionVersion) currentUser.value = user;

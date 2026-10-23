@@ -91,6 +91,16 @@ notifications stay unchanged. The badge disappears when everything is read.
 
 Route changes reset resource-specific drafts. Notification refreshes and weather
 checks preserve unsaved settings and availability.
+Profile preferences wait for session restoration and saved answers before the
+editor opens; switching accounts discards stale preference responses. Companion
+filter options retain the full eligible pool, and failed ranking requests still
+respect the selected filters. Group messages update open channels live, and a
+failed send keeps the draft.
+
+Group channels require both active group membership and a host-granted channel
+place. Leaving the group revokes that grant; rejoining requires the host to add
+you again. Cancelling a group closes its channel without deleting message history.
+Sending a channel reply clears the sender's notification for that thread.
 
 ### Account sessions
 
@@ -143,6 +153,10 @@ Only the first held entry can be approved. Direct applications need host approva
 automatic proposals need both host and seeker approval. Confirmation converts
 the existing hold into membership. Withdrawal, decline or expiry promotes waiters
 without restarting their deadlines.
+
+Pending admissions must be explicitly resolved before accepting a friend invitation,
+including an invitation to the same group. Automatic confirmation copies the
+concert-specific preferences used for matching, without replacing account preferences.
 
 `GET`, `POST` and `DELETE /api/me/concerts/:id/matching` read the caller's state,
 join the automatic pool and switch back to direct joining respectively. POST

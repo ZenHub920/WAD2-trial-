@@ -6,6 +6,7 @@ import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../src/db/connection.js';
 import { createApp } from '../src/app.js';
+import { migrateGroupChannels } from '../src/db/groupChannelRepository.js';
 
 let db, repos, server, base, cookies;
 
@@ -175,4 +176,60 @@ test('a group message notifies the room once, named, and not the sender', async 
   await call('/group-channels/p1', 'member');
   assert.equal((await call('/me/notifications', 'member')).body.notifications
     .filter((n) => n.path === '/groups/p1/channel').length, 0);
+});
+
+test('leaving the group revokes channel access and requires a new host grant after rejoining', async () => {
+  await call('/group-channels/p1/members', 'host', 'POST', { userId: cookies.memberId });
+  await call('/group-channels/p1/messages', 'host', 'POST', { body: 'Before leaving' });
+  db.prepare("UPDATE group_memberships SET status='left' WHERE party_id='p1' AND user_id=?")
+    .run(cookies.memberId);
+  assert.equal((await call('/group-channels/p1', 'member')).status, 404);
+  assert.equal((await call('/group-channels/p1/messages', 'member', 'POST', { body: 'Stale tab' })).status, 404);
+  assert.deepEqual((await call('/me/group-channels', 'member')).body.channels, []);
+  assert.equal((await call('/group-channels/unread', 'member')).body.total, 0);
+  assert.equal(repos.groupChannels.memberIds('p1').includes(cookies.memberId), false);
+  assert.deepEqual((await call('/group-channels/p1', 'host')).body.channel.members.map((m) => m.displayName), ['host']);
+
+  db.prepare("UPDATE group_memberships SET status='active' WHERE party_id='p1' AND user_id=?")
+    .run(cookies.memberId);
+  assert.equal((await call('/group-channels/p1', 'member')).status, 404);
+  assert.equal((await call('/group-channels/p1/members', 'host', 'POST', { userId: cookies.memberId })).status, 200);
+  db.prepare("DELETE FROM group_memberships WHERE party_id='p1' AND user_id=?").run(cookies.memberId);
+  assert.equal((await call('/group-channels/p1', 'member')).status, 404);
+});
+
+test('cancelling a group removes its channel and prevents the host from reopening it', async () => {
+  await call('/group-channels/p1/members', 'host', 'POST', { userId: cookies.memberId });
+  await call('/group-channels/p1/messages', 'host', 'POST', { body: 'Old plan' });
+  db.prepare("UPDATE parties SET status='cancelled' WHERE id='p1'").run();
+  for (const who of ['host', 'member']) {
+    assert.deepEqual((await call('/me/group-channels', who)).body.channels, []);
+    assert.equal((await call('/group-channels/unread', who)).body.total, 0);
+    assert.equal((await call('/group-channels/p1', who)).status, 404);
+    assert.equal((await call('/group-channels/p1/messages', who, 'POST', { body: 'Stale plan' })).status, 404);
+  }
+  assert.equal((await call('/group-channels/p1/candidates', 'host')).status, 404);
+  assert.equal((await call('/group-channels/p1/members', 'host', 'POST', { userId: cookies.otherId })).status, 404);
+  assert.deepEqual(repos.groupChannels.memberIds('p1'), []);
+});
+
+test('channel migration clears legacy grants without removing eligible members or history', async () => {
+  await call('/group-channels/p1/members', 'host', 'POST', { userId: cookies.memberId });
+  await call('/group-channels/p1/messages', 'host', 'POST', { body: 'Keep history' });
+  db.prepare("INSERT INTO group_channel_members(party_id,user_id) VALUES('p1',?)").run(cookies.strangerId);
+  migrateGroupChannels(db);
+  migrateGroupChannels(db);
+  assert.deepEqual(repos.groupChannels.memberIds('p1').sort(), [cookies.hostId, cookies.memberId].sort());
+  assert.equal((await call('/group-channels/p1', 'member')).body.channel.messages[0].body, 'Keep history');
+});
+
+test('replying in a channel clears the sender notification and rearms the next message', async () => {
+  await call('/group-channels/p1/members', 'host', 'POST', { userId: cookies.memberId });
+  await call('/group-channels/p1/messages', 'host', 'POST', { body: 'Question' });
+  assert.equal(repos.notifications.unread(cookies.memberId), 1);
+  await call('/group-channels/p1/messages', 'member', 'POST', { body: 'Answer' });
+  assert.equal((await call('/group-channels/unread', 'member')).body.total, 0);
+  assert.equal(repos.notifications.unread(cookies.memberId), 0);
+  await call('/group-channels/p1/messages', 'host', 'POST', { body: 'Next question' });
+  assert.equal(repos.notifications.unread(cookies.memberId), 1);
 });

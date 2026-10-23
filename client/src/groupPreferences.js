@@ -14,18 +14,25 @@ export const myPreferences = ref(undefined);
 export const preferencesReady = computed(() => Boolean(myPreferences.value));
 
 let pending = null;
+let generation = 0;
 export function loadMyPreferences() {
   if (myPreferences.value !== undefined) return Promise.resolve(myPreferences.value);
+  const version = generation, userId = currentUser.value?.id;
   pending ??= api.myPreferences()
-    .then(r => (myPreferences.value = r.preferences))
-    .finally(() => { pending = null; });
+    .then(r => {
+      if (version === generation && currentUser.value?.id === userId) myPreferences.value = r.preferences;
+      return r.preferences;
+    })
+    .finally(() => { if (version === generation) pending = null; });
   return pending;
 }
 
 export async function saveMyPreferences(answers) {
-  myPreferences.value = (await api.saveMyPreferences(answers)).preferences;
+  const version = generation, userId = currentUser.value?.id;
+  const result = await api.saveMyPreferences(answers);
+  if (version === generation && currentUser.value?.id === userId) myPreferences.value = result.preferences;
   return myPreferences.value;
 }
 
 // A different account has different answers.
-watch(() => currentUser.value?.id, () => { myPreferences.value = undefined; });
+watch(() => currentUser.value?.id, () => { generation++; pending = null; myPreferences.value = undefined; });

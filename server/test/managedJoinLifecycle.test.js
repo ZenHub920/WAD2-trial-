@@ -147,6 +147,46 @@ test("taking a friend place requires explicitly resolving an algorithm offer", (
   assert.equal(repos.membership.active("one", "c1").source, "friend");
 });
 
+test("a same-group friend invitation cannot bypass a pending automatic offer", () => {
+  const proposal = offer("one");
+  repos.membership.configure("host", "p1", { strangerPlaces: 3, expectedFriends: 1 });
+  const invite = repos.membership.invite("host", "p1");
+  assert.throws(() => repos.membership.acceptInvite("one", invite.token), /active_matching_proposal_exists/);
+  assert.equal(row(proposal.id).status, "proposed");
+  assert.equal(repos.membership.active("one", "c1"), undefined);
+  assert.equal(remaining(), 2);
+  repos.proposals.respond("one", proposal.id, "decline");
+  repos.membership.acceptInvite("one", invite.token);
+  assert.equal(row(proposal.id).status, "declined");
+  assert.equal(repos.membership.active("one", "c1").source, "friend");
+  assert.equal(remaining(), 3);
+});
+
+test("a same-group friend invitation cannot silently supersede a direct application", () => {
+  const request = manual("one");
+  repos.membership.configure("host", "p1", { strangerPlaces: 3, expectedFriends: 1 });
+  const invite = repos.membership.invite("host", "p1");
+  assert.throws(() => repos.membership.acceptInvite("one", invite.token), /active_matching_proposal_exists/);
+  assert.equal(db.prepare("SELECT status FROM group_join_requests WHERE id=?").get(request.id).status, "pending");
+  assert.equal(repos.membership.active("one", "c1"), undefined);
+  repos.recommendations.respond("one", request.id, "withdraw");
+  repos.membership.acceptInvite("one", invite.token);
+  assert.equal(db.prepare("SELECT status FROM group_join_requests WHERE id=?").get(request.id).status, "withdrawn");
+  assert.equal(repos.membership.active("one", "c1").source, "friend");
+  assert.equal(remaining(), 3);
+});
+
+test("automatic admission copies the concert answers used for scoring instead of older account answers", () => {
+  repos.membership.savePreferences("one", { about: ["quiet"] });
+  repos.recommendations.savePersonal("one", "c1", { about: ["dancing"] });
+  const proposal = offer("one");
+  approve(proposal);
+  assert.deepEqual(repos.membership.detail("one", "p1").myAnswers, repos.recommendations.answers("one", "c1"));
+  assert.equal(repos.membership.profile("p1").about.dancing, 0.5);
+  assert.equal(repos.membership.profile("p1").about.quiet, undefined);
+  assert.equal(repos.membership.preferences("one").about[0].key, "quiet");
+});
+
 test("group cancellation releases unconfirmed offers and leaving a mutually approved group does not requeue", () => {
   const pending = offer("one");
   repos.membership.cancel("host", "p1");

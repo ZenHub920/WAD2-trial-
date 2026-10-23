@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { request } from 'node:http';
 
 import { createApp } from '../src/app.js';
 import { createTestDb } from '../src/db/connection.js';
@@ -31,19 +32,33 @@ async function fixture(t) {
   const base = `http://127.0.0.1:${server.address().port}`;
 
   async function api(path, { method = 'GET', as, body } = {}) {
-    const response = await fetch(`${base}/api${path}`, {
-      method,
-      headers: {
-        ...(as ? { cookie: people[as].cookie } : {}),
-        ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
-      },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+    return new Promise((resolve, reject) => {
+      const req = request(`${base}/api${path}`, {
+        method,
+        headers: {
+          ...(as ? { cookie: people[as].cookie } : {}),
+          ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+        },
+      }, (response) => {
+        let text = '';
+        response.setEncoding('utf8');
+        response.on('data', (chunk) => { text += chunk; });
+        response.on('error', reject);
+        response.on('end', () => {
+          try {
+            resolve({
+              status: response.statusCode,
+              body: response.statusCode === 204 ? null : JSON.parse(text),
+              cookie: response.headers['set-cookie']?.[0]?.split(';')[0],
+            });
+          } catch (error) {
+            reject(error);
+          }
+        });
+      });
+      req.on('error', reject);
+      req.end(body === undefined ? undefined : JSON.stringify(body));
     });
-    return {
-      status: response.status,
-      body: response.status === 204 ? null : await response.json(),
-      cookie: response.headers.get('set-cookie')?.split(';')[0],
-    };
   }
 
   const people = {};
