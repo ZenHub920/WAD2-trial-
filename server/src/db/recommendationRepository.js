@@ -215,6 +215,18 @@ export function createRecommendationRepo(db, repos) {
           throw communityError("active_seat_claim_exists");
         repos.membership.ensureFree(user, concert, "");
         if (seeker.status !== "open") throw communityError("open_seeker_request_required");
+        /**
+         * Preferences are required HERE and nowhere else.
+         *
+         * Picking a group yourself is a judgement you have already made, so
+         * direct joining asks nothing. Automatic matching has no such judgement
+         * to borrow: Gale-Shapley ranks on the answers, and a seeker with none
+         * enters the round as a blank, scoring alike against every group and
+         * taking a place from somebody the host would have preferred. Better to
+         * say so than to match badly and quietly.
+         */
+        if (mode === "algorithm" && !answersJson(user, concert))
+          throw communityError("save_discovery_preferences_first");
       }
       // Choosing an algorithm mode explicitly enrols an open, unassigned seeker.
       // Re-selecting the current mode never resolves a real offer or membership.
@@ -249,8 +261,6 @@ export function createRecommendationRepo(db, repos) {
       if (db.prepare(`SELECT 1 FROM group_join_requests WHERE party_id=? AND user_id=?
         AND status IN('pending','accepted')`).get(id, user))
         throw communityError("join_request_already_exists");
-      if (repos.membership.settings(id) && !answersJson(user, p.concert_id))
-        throw communityError("save_discovery_preferences_first");
       if (
         db
           .prepare(

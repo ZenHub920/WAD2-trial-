@@ -1,12 +1,17 @@
 <script setup>
 /**
- * Group features unlock once the user has said what they enjoy.
+ * Preferences are an invitation, not a toll gate.
  *
- * Preferences are answered once, on the account, and copied into every group
- * the user creates or joins. Until they exist this shows the questions in
- * place of the group pages — navigation included — so suggestions are based
- * on real answers from the first look. With `summary`, people who have
- * answered see a one-line reminder they can expand to edit.
+ * They are answered once on the account and copied into every group the user
+ * creates or joins, and they are what automatic matching ranks on — so this
+ * asks for them up front and explains what they buy. But browsing groups and
+ * applying to one are judgements the user makes themselves, and those stay
+ * open whether or not the questions are ever answered. Only automatic
+ * matching refuses without them, and it refuses at the point of switching it
+ * on, where the reason makes sense.
+ *
+ * With `summary`, people who have answered see a one-line reminder they can
+ * expand to edit.
  */
 import { onMounted, ref } from 'vue';
 import { myPreferences, loadMyPreferences, saveMyPreferences } from '../groupPreferences.js';
@@ -33,7 +38,7 @@ async function save(answers) {
   try {
     await saveMyPreferences(answers);
     editing.value = false;
-    notice.value = unlocking ? 'Preferences saved. Groups are unlocked.' : 'Preferences saved. Your groups now use them.';
+    notice.value = unlocking ? 'Preferences saved. Automatic matching is available now.' : 'Preferences saved. Your groups now use them.';
     emit('saved', myPreferences.value);
   } catch {
     error.value = 'Could not save your preferences. Please try again.';
@@ -44,24 +49,29 @@ async function save(answers) {
 <template>
   <p v-if="error && !myPreferences" class="group-error" role="alert">{{ error }}</p>
   <p v-else-if="myPreferences === undefined" class="loading-state" role="status"><LoadingSpinner />Loading your preferences…</p>
-  <section v-else-if="!myPreferences" class="card group-panel pref-gate" aria-labelledby="pref-gate-heading">
+  <template v-else-if="!myPreferences">
+  <section class="card group-panel pref-gate" aria-labelledby="pref-gate-heading">
     <div class="pref-gate__intro">
-      <span class="pref-gate__step">Getting started</span>
-      <h2 id="pref-gate-heading">Before we start, let's get to know you</h2>
-      <p class="group-muted">Tell us what you enjoy at concerts so we can suggest groups that suit you. You only do this once, and your answers are shared automatically with any group you create or join.</p>
+      <span class="pref-gate__step">Optional</span>
+      <h2 id="pref-gate-heading">Tell us what you enjoy</h2>
+      <p class="group-muted">This takes a moment and only has to be done once. Your answers are shared with any group you create or join, and they are what automatic matching uses to rank groups for you. You can skip it and browse groups below — only automatic matching needs them.</p>
       <ol class="pref-gate__guide">
         <li><span>1</span><div><strong>Pick what you enjoy</strong><p>Tap any options below, or type your own. Use the three tabs for what you enjoy, what you look for in companions, and what you'd rather avoid.</p></div></li>
         <li><span>2</span><div><strong>Check your choices</strong><p>Everything you pick appears under "Preferences chosen". Tap × to remove one.</p></div></li>
-        <li><span>3</span><div><strong>Save to unlock groups</strong><p>Press "Save and unlock groups" at the bottom to open everything below.</p></div></li>
+        <li><span>3</span><div><strong>Save when you are ready</strong><p>Press "Save preferences" at the bottom. You can change them any time.</p></div></li>
       </ol>
-      <ul class="pref-gate__locked" aria-label="Unlocks after saving">
-        <li v-for="item in ['Browse groups', 'My groups', 'Create group']" :key="item">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>{{ item }}
+      <ul class="pref-gate__locked" aria-label="What these are used for">
+        <li v-for="item in ['Automatic matching', 'Group suggestions', 'What hosts see about you']" :key="item">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5 11-11" /></svg>{{ item }}
         </li>
       </ul>
     </div>
-    <PreferenceEditor :busy="saving" :saving="saving" require-one submit-label="Save and unlock groups" @save="save" />
+    <PreferenceEditor :busy="saving" :saving="saving" require-one submit-label="Save preferences" @save="save" />
   </section>
+    <p v-if="error" class="group-error" role="alert">{{ error }}</p>
+    <slot name="before" />
+    <slot :preferences="null" />
+  </template>
   <template v-else>
     <p v-if="notice && !summary" class="group-success" role="status">✓ {{ notice }}</p>
     <section v-if="summary" class="card group-panel pref-summary" aria-labelledby="pref-summary-heading">
@@ -82,7 +92,7 @@ async function save(answers) {
 </template>
 
 <style scoped>
-.pref-gate { border: 2px solid var(--mint-400); }
+.pref-gate { border: var(--border-soft); }
 .pref-gate__intro { display: grid; gap: var(--space-2); }
 .pref-gate__step { width: fit-content; padding: 2px var(--space-2); border-radius: var(--radius-pill); background: var(--mint-500); color: #fff; font-size: var(--step--2); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .pref-gate__intro h2 { font-size: var(--step-2); }

@@ -164,6 +164,7 @@ test("mode switches require explicit application resolution and preserve histori
   assert.throws(() => repos.recommendations.setJoiningMode("one", "c1", "algorithm"), /withdraw_pending_applications_first/);
   assert.equal(row(request.id).status, "pending");
   repos.recommendations.respond("one", request.id, "withdraw");
+  repos.membership.savePreferences("one", { about: ['singalong'], wants: ['supper after'], avoid: [] });
   const updated = repos.recommendations.setJoiningMode("one", "c1", "algorithm");
   assert.equal(updated.matching_opt_in, true);
   assert.equal(updated.joining_mode, "algorithm");

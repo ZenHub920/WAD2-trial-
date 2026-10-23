@@ -61,7 +61,7 @@ function failureMessage(err) {
     already_in_concert_group: 'You already belong to or host a group for this concert. Open your current group below.',
     already_group_member: 'You are already a member of this group.',
     previously_declined: 'This seeker–group pairing was declined earlier. Choose another group.',
-    save_discovery_preferences_first: 'Save your preferences below before applying.',
+    save_discovery_preferences_first: 'Automatic matching ranks groups using your preferences, so save them above before switching it on. Direct joining works without them.',
     join_request_already_exists: 'You already have an active application to this group.',
     group_changed_withdraw_and_resubmit: 'The group changed after you applied. Withdraw the request, review the group and apply again.',
     preferences_changed_withdraw_and_resubmit: 'Your preferences changed after you applied. Withdraw the request and apply again with your latest answers.',
@@ -81,7 +81,7 @@ async function load() {
     comparisonSession.value = ''; loadedDataContext = key;
   }
   error.value = '';
-  if (!id || !currentUser.value || !sessionReady.value || !preferencesReady.value) { loading.value = false; return; }
+  if (!id || !currentUser.value || !sessionReady.value) { loading.value = false; return; }
   loading.value = true;
   try {
     const [listing, preferences, request, applications, state, attendance, offers] = await Promise.all([

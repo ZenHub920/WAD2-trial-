@@ -53,6 +53,7 @@ test("increasing managed stranger places promotes the existing queue before anot
 });
 
 test("natural algorithm-head expiry never advertises a free queued seat and a direct host action promotes its successor", async () => {
+  repos.membership.savePreferences("first", { about: ['singalong'], wants: ['supper after'], avoid: [] });
   repos.recommendations.setJoiningMode("first", "c1", "algorithm");
   const round = createMatchingService({ db, repos }).run("c1", { batchKey: "elapsed-head-action" });
   const proposal = repos.proposals.forUser("first")[0];
@@ -73,6 +74,7 @@ test("natural algorithm-head expiry never advertises a free queued seat and a di
 
 test("refreshing proposals advances past a naturally elapsed direct head before returning approval controls", async () => {
   const direct=repos.recommendations.requestJoin("first","p1");
+  repos.membership.savePreferences("second", { about: ['singalong'], wants: ['supper after'], avoid: [] });
   repos.recommendations.setJoiningMode("second","c1","algorithm");
   createMatchingService({db,repos}).run("c1",{batchKey:"elapsed-direct-inbox"});
   const automatic=repos.proposals.forUser("second")[0];
