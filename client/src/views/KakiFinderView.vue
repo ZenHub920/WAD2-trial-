@@ -16,6 +16,7 @@ import {
   applyFilters,
   clearDecision,
   loadPool,
+  loadRecommendations,
   readDecisions,
   writeDecision,
 } from '../kaki.js';
@@ -31,6 +32,18 @@ const decisions = ref({});
 
 const filters = ref({ ...EMPTY_FILTERS });
 const applied = ref({ ...EMPTY_FILTERS });
+
+/**
+ * Ranking state.
+ *
+ * `ranked` is false until the questionnaire is answered — before that the deck
+ * is whatever the filters leave, in pool order, and the page says so rather
+ * than implying an order that means nothing.
+ */
+const ranked = ref(false);
+const rankingSolver = ref(null);
+const stablePartnerId = ref(null);
+const ranking = ref(false);
 
 /** The person on the match screen. */
 const matchedWith = ref(null);
@@ -83,9 +96,28 @@ const sections = computed(() =>
  */
 const deck = ref([]);
 
-function buildDeck() {
+/**
+ * The deck comes back ordered from the server, which filtered and THEN ranked.
+ * Decisions are removed here rather than there, because an undo from the
+ * history screen has to take effect without another round trip.
+ */
+async function buildDeck() {
+  ranking.value = true;
+  try {
+    const result = await loadRecommendations(applied.value);
+    ranked.value = result.ranked;
+    rankingSolver.value = result.solver ?? null;
+    stablePartnerId.value = result.stablePartnerId ?? null;
+    people.value = result.people;
+  } catch {
+    // The ranked endpoint is an enhancement; the pool already loaded.
+    ranked.value = false;
+  } finally {
+    ranking.value = false;
+  }
   const decided = new Set(Object.keys(decisions.value));
-  deck.value = applyFilters(people.value, applied.value, decided);
+  // Already filtered server-side; this only drops what has been swiped.
+  deck.value = people.value.filter((person) => !decided.has(person.id));
 }
 
 /** Count under the CURRENTLY EDITED filters, so Apply can preview its result. */
@@ -98,10 +130,10 @@ function resetFilters() {
   filters.value = { ...EMPTY_FILTERS };
 }
 
-function applyAndContinue() {
+async function applyAndContinue() {
   applied.value = { ...filters.value };
-  buildDeck();
   stage.value = 'deck';
+  await buildDeck();
 }
 
 /* ---- Age range ----------------------------------------------------------
@@ -272,6 +304,19 @@ function backToDeck() {
 
     <!-- ------------------------------------------------------------ Deck -->
     <section v-else-if="stage === 'deck'" class="kaki__panel">
+      <!-- Say what order this is in. Ranked or not, the viewer should never
+           have to guess whether the deck means anything. -->
+      <p v-if="ranking" class="rank-note loading-state" role="status"><LoadingSpinner />Ranking your matches…</p>
+      <p v-else-if="ranked" class="rank-note rank-note--on">
+        Ordered by how well you match, using your questionnaire answers.
+        <span v-if="stablePartnerId">Your strongest mutual match is first.</span>
+      </p>
+      <p v-else class="rank-note">
+        Filtered, not ranked.
+        <RouterLink to="/profile#preferences">Tell us what you enjoy</RouterLink>
+        and we will order these by how well you match.
+      </p>
+
       <div v-if="swipeError" class="notice notice--error" role="alert">
         <p>Could not save this change. Please try again.</p>
         <RouterLink v-if="swipeError.status === 401" to="/login">Sign in</RouterLink>
@@ -419,6 +464,9 @@ function backToDeck() {
   text-align: center;
   margin: 0;
 }
+
+.rank-note { margin-bottom: var(--space-4); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--ink-850); color: var(--text-300); font-size: var(--step--1); }
+.rank-note--on { border-left: 3px solid var(--accent-500); color: var(--text-200); }
 
 .kaki__state {
   padding: var(--space-6) 0;

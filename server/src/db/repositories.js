@@ -165,6 +165,16 @@ export function createUserRepo(db) {
             return db.prepare('SELECT * FROM users WHERE lower(email) = lower(?)').get(email);
         },
 
+        /**
+         * The account-level questionnaire answers, or null when unanswered.
+         * One questionnaire serves group matching and companion ranking alike,
+         * so it is read from the user rather than from either feature.
+         */
+        groupAnswers(id) {
+            return db.prepare('SELECT answers_json FROM user_group_preferences WHERE user_id = ?')
+                .get(id)?.answers_json ?? null;
+        },
+
         /** Stores the filename only; pass null to fall back to the silhouette. */
         setAvatar(id, filename) {
             db.prepare('UPDATE users SET avatar_path = ? WHERE id = ?').run(filename ?? null, id);

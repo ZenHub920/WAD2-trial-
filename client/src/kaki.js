@@ -116,6 +116,24 @@ export function applyFilters(people, filters, excludeIds = new Set()) {
 }
 
 /* Decisions use the stable concert:user identity returned by the pool. */
+/**
+ * The ranked deck for the current filters.
+ *
+ * Filters go to the SERVER rather than being applied here, because the ranking
+ * has to run on what survives them: the algorithm orders the people the viewer
+ * would accept, and a stable partner chosen from a wider pool would be a
+ * partner they had already filtered away.
+ */
+export async function loadRecommendations(filters = {}) {
+  return api.kakiRecommendations({
+    artist: filters.artist,
+    date: filters.date,
+    section: filters.section,
+    ageMin: filters.ageMin,
+    ageMax: filters.ageMax,
+  });
+}
+
 export async function readDecisions() {
   return (await api.kakiDecisions()).decisions;
 }

@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router';
 import { api, LABELS } from '../api.js';
 import { currentUser, refreshSession, setCurrentUser, signOut } from '../auth.js';
 import AvatarPicker from '../components/AvatarPicker.vue';
+import PreferenceEditor from '../components/PreferenceEditor.vue';
+import { myPreferences, loadMyPreferences, saveMyPreferences } from '../groupPreferences.js';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import ProfileNotifications from '../components/ProfileNotifications.vue';
 
@@ -56,6 +58,30 @@ async function removeAvatar() {
   }
 }
 
+/* ---- The questionnaire --------------------------------------------------
+ * One set of answers for the whole site: group suggestions read them, and so
+ * does companion ranking. It lives here because it belongs to the account
+ * rather than to either feature, and because a page that asks for it twice
+ * invites two different answers.
+ */
+const prefSaving = ref(false);
+const prefNotice = ref('');
+const prefError = ref('');
+
+async function savePreferences(answers) {
+  prefSaving.value = true;
+  prefError.value = '';
+  prefNotice.value = '';
+  try {
+    await saveMyPreferences(answers);
+    prefNotice.value = 'Saved. Groups and companion matching now use these.';
+  } catch {
+    prefError.value = 'Could not save your answers. Please try again.';
+  } finally {
+    prefSaving.value = false;
+  }
+}
+
 const ageBands = ['18-20', '21-24', '25-29', '30-34', '35+'];
 const regions = { north: 'North', north_east: 'North East', east: 'East', west: 'West', central: 'Central' };
 const genders = { f: 'Female', m: 'Male', nb: 'Non-binary', unspecified: 'Prefer not to say' };
@@ -97,7 +123,10 @@ async function loadProfile() {
   }
 }
 
-onMounted(loadProfile);
+onMounted(() => {
+  loadProfile();
+  loadMyPreferences().catch(() => { prefError.value = 'Could not load your answers.'; });
+});
 
 async function save() {
   if (saving.value) return;
@@ -212,6 +241,26 @@ async function save() {
       <p class="profile__hint">
         {{ profile.verified ? 'Profile verified' : 'Profile not verified' }} · Reliability {{ Math.round(profile.reliability * 100) }}%
       </p>
+
+      <!-- The site's one questionnaire. Groups and companion ranking both
+           read these answers, which is why it is here and not in either. -->
+      <section id="preferences" class="profile__card" aria-labelledby="profile-preferences">
+        <h2 id="profile-preferences">Tell us what you enjoy</h2>
+        <p class="profile__hint">
+          Optional, and answered once. Groups use these to suggest a fit, and the companion finder
+          uses them to order who you see. Without them you can still browse and filter normally.
+        </p>
+        <p v-if="prefNotice" class="profile__success" role="status">{{ prefNotice }}</p>
+        <p v-if="prefError" class="profile__error" role="alert">{{ prefError }}</p>
+        <PreferenceEditor
+          :initial="myPreferences ?? undefined"
+          :busy="prefSaving"
+          :saving="prefSaving"
+          require-one
+          submit-label="Save answers"
+          @save="savePreferences"
+        />
+      </section>
 
       <section class="profile__card" aria-labelledby="profile-vibe">
         <h2 id="profile-vibe">Your concert vibe</h2>

@@ -89,6 +89,8 @@ export function createRoutes({
   router.delete('/concerts/:id/participation', requireUser, participation.leave);
 
   router.get('/kaki/pool', requireUser, kaki.pool);
+  // Ranked by the questionnaire; falls back to the filtered pool without one.
+  router.get('/kaki/recommendations', requireUser, kaki.recommendations);
   router.get('/kaki/decisions', requireUser, kaki.decisions);
   router.put('/kaki/decisions/:concertId/:targetUserId', requireUser, kaki.setDecision);
   router.delete('/kaki/decisions/:concertId/:targetUserId', requireUser, kaki.deleteDecision);

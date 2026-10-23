@@ -134,6 +134,15 @@ export const api = {
     }),
 
   kakiPool: () => request('/kaki/pool'),
+  /** The deck, filtered then ranked. Unranked until the questionnaire is answered. */
+  kakiRecommendations: (filters = {}) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== '' && value !== null && value !== undefined) query.set(key, value);
+    }
+    const qs = query.toString();
+    return request(`/kaki/recommendations${qs ? `?${qs}` : ''}`);
+  },
   kakiDecisions: () => request('/kaki/decisions'),
   kakiMatches: () => request('/kaki/matches'),
   putKakiDecision: (concertId, targetUserId, decision) =>
