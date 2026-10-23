@@ -18,6 +18,7 @@ import { createMeetupRepo } from './meetupRepository.js';
 import { createFeedbackRepo } from './feedbackRepository.js';
 import { createKakiChatRepo } from './kakiChatRepository.js';
 import { createGroupChannelRepo } from './groupChannelRepository.js';
+import { createKakiPreferenceGate } from '../services/kakiPreferenceGate.js';
 import { randomUUID } from 'node:crypto';
 import { readMessagePage } from './messagePage.js';
 
@@ -1375,6 +1376,7 @@ const kakiEligiblePair = (actor, concert, target) => `(
 )`;
 
 export function createKakiRepo(db) {
+  const preferenceEligible = createKakiPreferenceGate(db);
   const concerts = db.prepare(`
     SELECT c.* FROM concerts c
     WHERE ${kakiJoined('@viewer', 'c.id')}
@@ -1458,7 +1460,7 @@ export function createKakiRepo(db) {
           decision: row.decision,
           at: row.decided_at,
           mutual: row.decision === 'like' && row.reverse_decision === 'like'
-            && Boolean(row.actor_is_candidate),
+            && Boolean(row.actor_is_candidate) && preferenceEligible(viewer, row.target_user_id),
         };
       }
       return result;
@@ -1466,6 +1468,8 @@ export function createKakiRepo(db) {
     setDecision: db.transaction((actor, concert, target, decision) => {
       const pair = { actor, concert, target };
       if (!eligible.get(pair)) return null;
+      // Passing and withdrawing remain available even after a preference change.
+      if (decision === 'like' && !preferenceEligible(actor, target)) return null;
       const at = Date.now();
       upsert.run({ ...pair, decision, at });
       return { decision, at, mutual: decision === 'like' && Boolean(reciprocal.get(pair)) };
