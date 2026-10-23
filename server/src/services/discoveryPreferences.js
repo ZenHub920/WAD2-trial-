@@ -1,3 +1,6 @@
+import { averageTraits, deriveTraits, validateQuiz } from "./preferenceQuiz.js";
+import { dealbreakerHit, scoreTraits } from "./traitScoring.js";
+
 export const CONCEPTS = [
   {
     id: "post_supper",
@@ -88,6 +91,39 @@ export function withoutRetired(answers) {
       output[intent] = output[intent].filter(
         (item) => !RETIRED.has(item?.key ?? item?.conceptId),
       );
+  if (Array.isArray(output.dealbreakers))
+    output.dealbreakers = output.dealbreakers.filter((key) => !RETIRED.has(key));
+  return output;
+}
+
+/**
+ * How many dealbreakers one person may hold.
+ *
+ * A veto is powerful — it removes somebody however well they score elsewhere —
+ * and a list of twelve of them is not a set of dealbreakers, it is a search for
+ * nobody. Capping it forces the choice that makes the rest of the scoring
+ * meaningful: these three I will not accept, everything else is a preference.
+ */
+export const DEALBREAKER_LIMIT = 3;
+
+/**
+ * Dealbreakers must be things the person already listed under "avoid".
+ *
+ * Keeping the two in step means a veto is always visible as an ordinary
+ * preference as well, so nobody is filtered out by a rule its owner has
+ * forgotten they set.
+ */
+export function validateDealbreakers(input, avoid = []) {
+  if (input === undefined || input === null) return [];
+  if (!Array.isArray(input) || input.length > DEALBREAKER_LIMIT)
+    throw Object.assign(new Error("too_many_dealbreakers"), { status: 400 });
+  const allowed = new Set(avoid.map((item) => item.key));
+  const output = [];
+  for (const key of input) {
+    if (typeof key !== "string" || !allowed.has(key))
+      throw Object.assign(new Error("dealbreaker_not_in_avoid"), { status: 400 });
+    if (!output.includes(key)) output.push(key);
+  }
   return output;
 }
 export const normalize = (value) =>
@@ -164,24 +200,50 @@ export function validateAnswers(input) {
       }
     }
   }
+  // Derived here rather than taken from the request: the client says which
+  // option was picked, so it cannot hand itself a flattering personality.
+  output.quiz = validateQuiz(input.quiz);
+  const traits = deriveTraits(output.quiz);
+  if (Object.keys(traits).length) output.traits = traits;
+  output.dealbreakers = validateDealbreakers(input.dealbreakers, output.avoid);
   return output;
 }
 export function aggregateAnswers(answers) {
+  const normalized = answers.map(withoutRetired);
   const profile = {
     about: {},
     wants: {},
     avoid: {},
     respondents: answers.length,
   };
-  for (const a of answers.map(withoutRetired))
+  for (const a of normalized)
     for (const intent of ["about", "wants", "avoid"])
       for (const item of a[intent] ?? []) {
         profile[intent][item.key] =
           (profile[intent][item.key] ?? 0) + 1 / answers.length;
       }
+  const traits = averageTraits(normalized.map((a) => a.traits));
+  if (Object.keys(traits).length) profile.traits = traits;
+  // A group is only as accepting as its least accepting member, so one
+  // member's veto stands for the whole group rather than being averaged away.
+  const dealbreakers = [
+    ...new Set(normalized.flatMap((a) => a.dealbreakers ?? [])),
+  ];
+  if (dealbreakers.length) profile.dealbreakers = dealbreakers;
   return profile;
 }
 export const individualProfile = (answers) => aggregateAnswers([answers]);
+
+/**
+ * How much of a comparison the concept lists carry once a quiz exists.
+ *
+ * The concepts are the person's own words about the night and stay the larger
+ * half. The quiz dimensions are a smaller, steadier signal: they come from
+ * fixed options, so they are comparable between two people in a way free text
+ * is not, but they are inferred rather than stated and should not be able to
+ * overrule what somebody told us outright.
+ */
+const CONCEPT_SHARE = 0.65;
 export function compareProfiles(a, b) {
   const direction = (from, to) => {
     let total = 0,
@@ -240,11 +302,38 @@ export function compareProfiles(a, b) {
     });
   }
   const reasons = [...supported.values()].slice(0, 3);
+
+  // A veto is checked before any of the arithmetic below, and ends the
+  // comparison: no amount of agreeing about supper makes up for the one thing
+  // somebody said they would not accept.
+  const blockedBy = dealbreakerHit(a, b);
+  const blockedByThem = dealbreakerHit(b, a);
+  const blocked = Boolean(blockedBy || blockedByThem);
+
+  // The quiz dimensions are scored by their own rules and then blended with
+  // the concept lists. Without a quiz on both sides there is nothing to blend,
+  // and the result is exactly what it was before the quiz existed.
+  const traits = blocked ? null : scoreTraits(a.traits, b.traits);
+  const blend = (conceptScore, vetoed) => {
+    if (vetoed) return 0;
+    if (!traits) return conceptScore;
+    return CONCEPT_SHARE * conceptScore + (1 - CONCEPT_SHARE) * traits.score;
+  };
+  const seekerScore = blend(ab.score, blockedBy);
+  const groupScore = blend(ba.score, blockedByThem);
+
   return {
-    score: Math.round(((ab.score + ba.score) / 2) * 10000) / 10000,
-    seekerScore: ab.score,
-    groupScore: ba.score,
+    score: blocked
+      ? 0
+      : Math.round(((seekerScore + groupScore) / 2) * 10000) / 10000,
+    seekerScore,
+    groupScore,
     reasons,
+    blocked,
+    blockedBy: blockedBy ?? null,
+    blockedByThem: blockedByThem ?? null,
+    traits: traits ? { score: traits.score, parts: traits.parts } : null,
+    traitReasons: traits ? traits.reasons : [],
     confidence:
       a.respondents && b.respondents && evidence.length
         ? "supported"

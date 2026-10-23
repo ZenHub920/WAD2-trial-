@@ -8,6 +8,12 @@ import { reservedPlacesSql, availableCapacitySql, expireJoinRequests } from "./c
 import { groupImageUrl } from "../controllers/groupIdentityController.js";
 export const communityError = (message, status = 409) =>
   Object.assign(new Error(message), { status });
+/**
+ * What counts as having answered. The fill-in-the-blank cards count on their
+ * own: somebody who taps through the deck has told us more about who they want
+ * to stand with than somebody who ticked one concept chip.
+ */
+const ANSWER_LISTS = ["about", "wants", "avoid", "quiz"];
 const hash = (token) => createHash("sha256").update(token).digest("hex");
 export function createMembershipRepo(db, repos) {
   const party = (id) => {
@@ -102,11 +108,11 @@ export function createMembershipRepo(db, repos) {
     preferences(user) {
       const json = userAnswersJson(user);
       const answers = json ? withoutRetired(JSON.parse(json)) : null;
-      return answers && ["about", "wants", "avoid"].some((k) => answers[k]?.length) ? answers : null;
+      return answers && ANSWER_LISTS.some((k) => answers[k]?.length) ? answers : null;
     },
     savePreferences: db.transaction((user, input) => {
       const answers = validateAnswers(input);
-      if (!["about", "wants", "avoid"].some((k) => answers[k].length))
+      if (!ANSWER_LISTS.some((k) => answers[k]?.length))
         throw communityError("choose_at_least_one_preference", 400);
       const json = JSON.stringify(answers);
       const previous = userAnswersJson(user);

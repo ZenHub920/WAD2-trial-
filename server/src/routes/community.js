@@ -1,4 +1,5 @@
 import { CONCEPTS, suggestions } from "../services/discoveryPreferences.js";
+import { publicQuiz } from "../services/preferenceQuiz.js";
 import { createMeetupWeather } from "../services/meetupWeather.js";
 export function registerCommunityRoutes(
   router,
@@ -57,6 +58,9 @@ export function registerCommunityRoutes(
   route("get", "/preference-concepts", "concepts", (r) =>
     typeof r.query.q === "string" ? suggestions(r.query.q) : CONCEPTS,
   );
+  // The deck is served rather than duplicated in the client, so the prompts
+  // on screen cannot drift from the ones the scoring understands.
+  route("get", "/preference-quiz", "cards", () => publicQuiz());
   route("get", "/me/discovery-preferences/:concertId", "preferences", (r) =>
     repos.recommendations.answers(r.user.id, r.params.concertId),
   );

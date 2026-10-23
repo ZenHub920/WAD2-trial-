@@ -18,7 +18,13 @@ export function migrateUserPreferences(db) {
     `);
     // Automatic matching saves an empty set on the user's behalf; that is not
     // an answer, so it neither seeds nor counts as having preferences.
-    const answered = (column) => `(json_array_length(${column},'$.about') + json_array_length(${column},'$.wants') + json_array_length(${column},'$.avoid')) > 0`;
+    // Finishing the fill-in-the-blank cards is answering, even with none of
+    // the three lists touched, so a quiz-only row must survive this cleanup.
+    // COALESCE because json_array_length is NULL for a path the row lacks, and
+    // one NULL would make the whole sum NULL and quietly spare empty rows.
+    const answered = (column) =>
+      `(COALESCE(json_array_length(${column},'$.about'),0) + COALESCE(json_array_length(${column},'$.wants'),0)`
+      + ` + COALESCE(json_array_length(${column},'$.avoid'),0) + COALESCE(json_array_length(${column},'$.quiz'),0)) > 0`;
     // INSERT OR IGNORE keeps the first row per user, so newest go first.
     db.exec(`
       DELETE FROM user_group_preferences WHERE NOT ${answered('answers_json')};
