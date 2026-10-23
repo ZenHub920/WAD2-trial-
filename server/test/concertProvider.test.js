@@ -51,3 +51,16 @@ test('concert changes notify participants once and preserve their groups and mee
     assert.equal(db.prepare('SELECT status FROM concert_participants').get().status, 'joined');
   } finally { db.close(); }
 });
+
+test('same-day time changes and a legacy cancellation are audited against the persisted provider ID', () => {
+  const db = createTestDb();
+  try {
+    const concert = normalizeTicketmasterEvent(raw);
+    importTicketmasterConcerts(db, [{ ...concert, id: 'legacy-id' }]);
+    db.prepare("UPDATE concerts SET provider_status=NULL WHERE id='legacy-id'").run();
+    importTicketmasterConcerts(db, [{ ...concert, provider_status: 'canceled' }]);
+    assert.equal(db.prepare('SELECT concert_id FROM concert_updates').get().concert_id, 'legacy-id');
+    importTicketmasterConcerts(db, [{ ...concert, event_time: '21:00:00', provider_status: 'canceled' }]);
+    assert.equal(db.prepare('SELECT count(*) n FROM concert_updates').get().n, 2);
+  } finally { db.close(); }
+});

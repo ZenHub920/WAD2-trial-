@@ -20,6 +20,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api.js';
+import { fetchChatUpdates } from '../chatPages.js';
 import { onChatEvent, connectionState, refreshUnread } from '../chatLive.js';
 import UserAvatar from '../components/UserAvatar.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
@@ -115,6 +116,11 @@ async function load({ quiet = false } = {}) {
     error.value = null;
   }
   try {
+    if (quiet && messages.value.length) {
+      const updates = await fetchChatUpdates((options) => api.kakiConversation(props.id, options), messages.value.at(-1).id);
+      const known = new Set(messages.value.map((m) => m.id));
+      messages.value.push(...updates.filter((m) => !known.has(m.id)));
+    }
     const data = await api.kakiConversation(props.id);
     conversation.value = data.conversation;
     const latest = new Map(data.messages.map((m) => [m.id, m]));

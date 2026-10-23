@@ -5,9 +5,11 @@ import { createMeetupWeather } from './meetupWeather.js';
 import { singaporeCoordinates } from './providerCache.js';
 
 export function createMeetupIntegrations({ repos, fetchImpl = globalThis.fetch, now = Date.now, env = process.env, travel = createSingaporeTravel({ fetchImpl, now, env }), weather = createMeetupWeather({ fetchImpl, now, env }) } = {}) {
-  const assertCurrent = (user, id, version) => {
+  const assertCurrent = (user, id, version, participantIds) => {
     const current = repos.meetups.access(user, id);
     if (version !== undefined && current.version !== version) throw communityError('stale_meetup_version');
+    if (participantIds && JSON.stringify([...repos.meetups.participants(current)].sort()) !== JSON.stringify(participantIds))
+      throw communityError('stale_meetup_membership');
   };
   return {
     weather,
@@ -51,11 +53,11 @@ export function createMeetupIntegrations({ repos, fetchImpl = globalThis.fetch, 
       const deadline = now() + 10000;
       await Promise.all(Array.from({ length: Math.min(4, jobs.length) }, async () => {
         while (jobIndex < jobs.length && now() <= deadline) {
-          assertCurrent(user, id, input.version);
+          assertCurrent(user, id, input.version, input.participantIds);
           await jobs[jobIndex++]();
         }
       }));
-      assertCurrent(user, id, input.version);
+      assertCurrent(user, id, input.version, input.participantIds);
       const options = matrices.map(({ option, results, people }) => {
         const complete = people > 0 && people === option.locationRespondents && results.length === people && results.every((r) => r.status === 'available' && Number.isFinite(r.durationMinutes) && !r.stale);
         const durations = complete ? results.map((r) => r.durationMinutes) : [];

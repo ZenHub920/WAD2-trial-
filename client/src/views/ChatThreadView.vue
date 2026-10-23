@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { api } from '../api.js';
+import { fetchChatUpdates } from '../chatPages.js';
 import { currentUser } from '../auth.js';
 import { formatMoney } from '../market.js';
 import MarketIcon from '../components/market/MarketIcon.vue';
@@ -81,7 +82,7 @@ async function load() {
 async function poll() {
   if (document.hidden || !conversation.value) return;
   try {
-    append((await api.conversation(props.id, lastMessageId.value)).messages);
+    append(await fetchChatUpdates((options) => api.conversation(props.id, null, options), lastMessageId.value));
   } catch {
     // A missed poll is harmless; the next one catches up.
   }
@@ -93,8 +94,10 @@ async function send() {
   sending.value = true;
   sendError.value = '';
   try {
+    const previousNewest = lastMessageId.value;
     const { message } = await api.sendMessage(props.id, body);
     draft.value = '';
+    if (previousNewest) append(await fetchChatUpdates((options) => api.conversation(props.id, null, options), previousNewest));
     append([message]);
   } catch (err) {
     sendError.value = err.message === 'message_too_long'

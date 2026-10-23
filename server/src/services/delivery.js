@@ -39,7 +39,11 @@ export function createDeliveryService({ db, repos, webPush, env = process.env, n
   function accessibleChat(user, path) {
     let match = /^\/groups\/([^/]+)\/channel$/.exec(path);
     if (match) return Boolean(db.prepare(`SELECT 1 FROM group_channel_members m JOIN parties p ON p.id=m.party_id
-      WHERE m.party_id=? AND m.user_id=? AND p.status<>'cancelled' AND (p.host_user_id=m.user_id OR EXISTS(
+      WHERE m.party_id=? AND m.user_id=? AND p.status<>'cancelled' AND NOT EXISTS(
+        SELECT 1 FROM blocks b JOIN group_channel_members x ON x.user_id=b.blocker_user_id
+        JOIN group_channel_members y ON y.user_id=b.blocked_user_id
+        WHERE x.party_id=m.party_id AND y.party_id=m.party_id)
+      AND (p.host_user_id=m.user_id OR EXISTS(
         SELECT 1 FROM group_memberships gm WHERE gm.party_id=m.party_id AND gm.user_id=m.user_id AND gm.status='active'))`)
       .get(match[1],user));
     match = /^\/kaki\/chat\/([^/]+)$/.exec(path);
@@ -181,7 +185,8 @@ export function createDeliveryService({ db, repos, webPush, env = process.env, n
           if(!current) continue;
           db.transaction(()=>{
             for(const user of repos.meetups.participants(current))
-              notify(user,'meetup',`weather:meetup:${m.id}:${m.version}`,'Rain is forecast near your meetup; check your plan',`/meetups/${m.id}`);
+              notify(user,'meetup',`weather:meetup:${m.id}:${m.version}`,
+                forecast.precision === 'local_area' ? 'Rain is forecast near your meetup; check your plan' : 'Rain is forecast in Singapore; check your meetup plan',`/meetups/${m.id}`);
           }).immediate();
         }
       },{intervalMs});

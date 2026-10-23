@@ -162,8 +162,11 @@ export function createMeetupRepo(db, repos) {
       return {
         ...m,
         participantCount: ids.length,
+        participantIds: [...ids].sort(),
         availability: db.prepare('SELECT * FROM meetup_availability WHERE meetup_id=?').all(id).filter((a) => ids.includes(a.user_id)),
-        places: db.prepare('SELECT p.*,COUNT(v.user_id) AS votes FROM meetup_places p LEFT JOIN meetup_votes v ON v.meetup_id=p.meetup_id AND v.place_id=p.id WHERE p.meetup_id=? GROUP BY p.id ORDER BY p.rowid').all(id),
+        places: db.prepare(`SELECT p.*,(SELECT COUNT(*) FROM meetup_votes v WHERE v.meetup_id=p.meetup_id AND v.place_id=p.id
+          AND v.user_id IN(SELECT value FROM json_each(?))) AS votes FROM meetup_places p WHERE p.meetup_id=? ORDER BY p.rowid`)
+          .all(JSON.stringify(ids), id),
       };
     },
     create: db.transaction((user, input = {}) => {

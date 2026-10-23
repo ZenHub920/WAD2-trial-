@@ -28,6 +28,16 @@ beforeEach(()=>{
 });
 afterEach(async()=>{await service.stop();db.close();});
 
+test('blocking after enqueue suppresses both the group popup and its authenticated title', async()=>{
+  const {id:subscriptionId}=service.subscribe('member',subscription());
+  repos.groupChannels.send('p1','host','Hello');
+  const note=db.prepare("SELECT id FROM notifications WHERE user_id='member'").get();
+  repos.users.block('member','host');
+  assert.equal(service.notification('member',note.id,subscriptionId),null);
+  await service.runOnce();
+  assert.equal(sendCalls.length,0);
+});
+
 test('subscriptions validate push provider URLs and key shapes before storing any network target',()=>{
   assert.ok(validatePushSubscription(subscription()));
   for(const endpoint of ['http://fcm.googleapis.com/p','https://127.0.0.1/p','https://fcm.googleapis.com.attacker.test/p',

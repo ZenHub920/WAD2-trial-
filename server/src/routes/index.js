@@ -20,6 +20,8 @@ import { createGroupIdentityController } from '../controllers/groupIdentityContr
 import { openStream } from '../services/realtime.js';
 import { createGroupChannelController } from '../controllers/groupChannelController.js';
 import { registerAccountSecurityRoutes } from './accountSecurity.js';
+import { registerPushRoutes } from './push.js';
+import { registerMeetupIntegrationRoutes } from './meetupIntegrations.js';
 
 export function createRoutes({
   db,
@@ -30,6 +32,8 @@ export function createRoutes({
   avatars = null,
   realtime = null,
   security = null,
+  delivery = null,
+  meetupIntegrations = null,
 })  {
   const router = Router();
   const concerts = createConcertController(repos);
@@ -57,6 +61,8 @@ export function createRoutes({
     next();
   };
   if (security) registerAccountSecurityRoutes(router, { security, sessions });
+  if (delivery) registerPushRoutes(router, { delivery, requireUser });
+  if (meetupIntegrations) registerMeetupIntegrationRoutes(router, { integrations: meetupIntegrations });
   const requireOperator = (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'authentication_required' });
     if (!req.user.is_operator) return res.status(403).json({ error: 'operator_required' });
@@ -197,6 +203,6 @@ export function createRoutes({
 
 
   registerGroupDiscoveryRoutes(router, { repos, requireUser });
-  registerCommunityRoutes(router, { repos, requireUser,requireOperator,db });
+  registerCommunityRoutes(router, { repos, requireUser,requireOperator,db, weather: meetupIntegrations?.weather });
   return router;
 }
