@@ -13,6 +13,7 @@
     "test": "node --test",
     "operator:grant": "node src/db/grantOperator.js",
     "sync:concerts": "node src/db/syncTicketmaster.js",
+    "push:keys": "node src/config/generatePushKeys.js",
     "bench": "node bench/evaluate.js",
     "bench:scale": "node bench/evaluate.js --scale"
   },

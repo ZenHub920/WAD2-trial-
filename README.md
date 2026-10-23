@@ -3,6 +3,9 @@
 Encore helps concertgoers find people to attend shows with. Group matching uses
 the Gale-Shapley stable matching algorithm.
 
+For the current Kaki workflow, backend improvements, public API inventory and credential setup, see
+[Backend integrations and operations](docs/BACKEND_INTEGRATIONS_AND_OPERATIONS.md).
+
 People miss shows when their friends do not share their taste in music. Ticket
 resale addresses ticket supply, while first-come-first-served forums pair people
 by response time. Those pairings can fall apart before the show.

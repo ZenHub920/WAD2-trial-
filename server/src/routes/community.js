@@ -3,9 +3,8 @@ import { publicQuiz } from "../services/preferenceQuiz.js";
 import { createMeetupWeather } from "../services/meetupWeather.js";
 export function registerCommunityRoutes(
   router,
-  { repos, requireUser, requireOperator, db },
+  { repos, requireUser, requireOperator, db, weather = createMeetupWeather() },
 ) {
-  const weather = createMeetupWeather();
   const route = (method, path, key, fn) =>
     router[method](path, requireUser, (req, res, next) => {
       try {

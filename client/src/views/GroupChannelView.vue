@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api.js';
+import { fetchChatUpdates } from '../chatPages.js';
 import { onChatEvent, refreshUnread } from '../chatLive.js';
 import { currentUser } from '../auth.js';
 import UserAvatar from '../components/UserAvatar.vue';
@@ -58,6 +59,11 @@ async function scrollToEnd() {
 async function load({ quiet = false } = {}) {
   if (!quiet) loading.value = true;
   try {
+    if (quiet && channel.value?.messages.length) {
+      const updates = await fetchChatUpdates(async (options) => (await api.groupChannel(props.id, options)).channel, channel.value.messages.at(-1).id);
+      const known = new Set(channel.value.messages.map((m) => m.id));
+      channel.value.messages.push(...updates.filter((m) => !known.has(m.id)));
+    }
     const latest = (await api.groupChannel(props.id)).channel;
     if (quiet && channel.value) {
       const known = new Set(latest.messages.map((m) => m.id));
