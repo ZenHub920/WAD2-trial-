@@ -23,6 +23,7 @@ import AdminVerificationsView from './views/AdminVerificationsView.vue';
 import KakiFinderView from './views/KakiFinderView.vue';
 import KakiChatListView from './views/KakiChatListView.vue';
 import KakiChatView from './views/KakiChatView.vue';
+import GroupChannelView from './views/GroupChannelView.vue';
 import ProfileHistoryView from './views/ProfileHistoryView.vue';
 import ProfileView from './views/ProfileView.vue';
 import NotFoundView from './views/NotFoundView.vue';
@@ -64,6 +65,15 @@ const router = createRouter({
     { path: '/kaki', name: 'kaki', component: KakiFinderView, meta: { title: 'Find a companion' } },
     { path: '/groups', name: 'groups', component: GroupExplorerView, meta: { title: 'Groups', requiresAuth: true } },
     { path: '/groups/connect', name: 'group-connections', component: GroupConnectionsView, meta: { title: 'My groups', requiresAuth: true } },
+    {
+      // The group's shared room. Membership is the host's to grant, so this
+      // 404s for anybody they have not added.
+      path: '/groups/:id/channel',
+      name: 'group-channel',
+      component: GroupChannelView,
+      props: true,
+      meta: { title: 'Group channel', requiresAuth: true },
+    },
     { path:'/groups/invite/:token',component:GroupMembershipView,props:true,meta:{title:'Join your friends',requiresAuth:true} },
     { path:'/groups/:id/members',component:GroupMembershipView,props:true,meta:{title:'Group members',requiresAuth:true} },
     { path:'/meetups',component:MeetupView,meta:{title:'Meetup planning',requiresAuth:true} },

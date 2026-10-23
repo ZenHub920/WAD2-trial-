@@ -18,6 +18,7 @@ import { createAdminController } from '../controllers/adminController.js';
 import { createAvatarController } from '../controllers/avatarController.js';
 import { createGroupIdentityController } from '../controllers/groupIdentityController.js';
 import { openStream } from '../services/realtime.js';
+import { createGroupChannelController } from '../controllers/groupChannelController.js';
 
 export function createRoutes({
   db,
@@ -35,6 +36,7 @@ export function createRoutes({
   const tickets = createTicketController(repos, images);
   const kaki = createKakiController(repos);
   const kakiChat = createKakiChatController(repos, realtime);
+  const groupChannels = createGroupChannelController(repos, realtime);
   const avatar = avatars ? createAvatarController(repos, avatars) : null;
   const groupIdentity = createGroupIdentityController(repos, avatars);
   const profile = createProfileController(repos);
@@ -125,6 +127,20 @@ export function createRoutes({
   router.post('/kaki/conversations/:id/messages', requireUser, kakiChat.send);
   router.patch('/kaki/conversations/:id/messages/:messageId', requireUser, kakiChat.edit);
   router.delete('/kaki/conversations/:id/messages/:messageId', requireUser, kakiChat.remove);
+
+  /* ---- Group channels ---------------------------------------------------
+   * The group's shared room. Listed before the :partyId routes so `unread`
+   * is never read as a party id.
+   */
+  router.get('/group-channels/unread', requireUser, groupChannels.unread);
+  router.get('/me/group-channels', requireUser, groupChannels.list);
+  router.get('/group-channels/:partyId', requireUser, groupChannels.open);
+  router.post('/group-channels/:partyId/read', requireUser, groupChannels.markRead);
+  router.post('/group-channels/:partyId/messages', requireUser, groupChannels.send);
+  router.delete('/group-channels/:partyId/messages/:messageId', requireUser, groupChannels.remove);
+  router.get('/group-channels/:partyId/candidates', requireUser, groupChannels.candidates);
+  router.post('/group-channels/:partyId/members', requireUser, groupChannels.addMember);
+  router.delete('/group-channels/:partyId/members/me', requireUser, groupChannels.leave);
   router.put('/kaki/conversations/:id/background', requireUser, kakiChat.setBackground);
   router.post('/kaki/conversations/:id/read', requireUser, kakiChat.markRead);
 

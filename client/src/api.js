@@ -181,6 +181,25 @@ export const api = {
       method: 'PUT', body: JSON.stringify({ background }),
     }),
 
+  /* ---- Group channels ----------------------------------------------------
+   * The group's shared room. Membership is granted by the host from the people
+   * the group has already accepted, and is separate from group membership.
+   */
+  groupChannels: () => request('/me/group-channels'),
+  groupChannelsUnread: () => request('/group-channels/unread'),
+  groupChannel: (partyId) => request(`/group-channels/${encodeURIComponent(partyId)}`),
+  groupChannelCandidates: (partyId) => request(`/group-channels/${encodeURIComponent(partyId)}/candidates`),
+  addToGroupChannel: (partyId, userId) =>
+    request(`/group-channels/${encodeURIComponent(partyId)}/members`, { method: 'POST', body: JSON.stringify({ userId }) }),
+  leaveGroupChannel: (partyId) =>
+    request(`/group-channels/${encodeURIComponent(partyId)}/members/me`, { method: 'DELETE' }),
+  sendGroupChannelMessage: (partyId, body) =>
+    request(`/group-channels/${encodeURIComponent(partyId)}/messages`, { method: 'POST', body: JSON.stringify({ body }) }),
+  deleteGroupChannelMessage: (partyId, messageId) =>
+    request(`/group-channels/${encodeURIComponent(partyId)}/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE' }),
+  readGroupChannel: (partyId) =>
+    request(`/group-channels/${encodeURIComponent(partyId)}/read`, { method: 'POST' }),
+
   blockedUsers: () => request('/me/blocked'),
   blockUser: (userId) => request(`/users/${encodeURIComponent(userId)}/block`, { method: 'PUT' }),
   unblockUser: (userId) => request(`/users/${encodeURIComponent(userId)}/block`, { method: 'DELETE' }),
