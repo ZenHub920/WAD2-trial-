@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue';
 import { api } from '../api.js';
 import LoadingSpinner from './LoadingSpinner.vue';
 import '../assets/groups.css';
+import { browserPushStatus, enableBrowserPush, disableBrowserPush } from '../browserPush.js';
 
 const categories = {
   chat: 'Companion and ticket messages',
@@ -16,6 +17,26 @@ const loading = ref(true);
 const saving = ref(false);
 const error = ref('');
 const notice = ref('');
+const push = ref(null);
+const pushBusy = ref(false);
+const pushError = ref('');
+async function loadPush() {
+  try { push.value = await browserPushStatus(); }
+  catch { pushError.value = 'Could not check browser notifications.'; }
+}
+async function togglePush() {
+  pushBusy.value = true;
+  pushError.value = '';
+  try {
+    if (push.value?.enabled) await disableBrowserPush();
+    else await enableBrowserPush();
+    await loadPush();
+  } catch (error) {
+    pushError.value = error.message === 'push_permission_denied'
+      ? 'Notifications are blocked. Allow them in your browser settings to enable pop-ups.'
+      : 'Could not update browser notifications. Please try again.';
+  } finally { pushBusy.value = false; }
+}
 async function load() {
   loading.value = true;
   error.value = '';
@@ -43,6 +64,7 @@ async function save() {
   }
 }
 onMounted(load);
+onMounted(loadPush);
 </script>
 
 <template>
@@ -59,6 +81,17 @@ onMounted(load);
       <button class="btn btn--primary" type="submit" :disabled="saving"><LoadingSpinner v-if="saving" />{{ saving ? 'Saving…' : 'Save notification preferences' }}</button>
     </form>
     <button v-if="error && !settings" class="btn btn--ghost" type="button" :disabled="loading" @click="load">Try again</button>
+    <div class="card group-panel">
+      <h3>Notifications on this device</h3>
+      <p>Get message and meetup pop-ups even when Encore is in the background. Your category preferences above still apply.</p>
+      <p v-if="pushError" role="alert" class="group-error">{{ pushError }}</p>
+      <p v-if="push && !push.supported">This browser does not support push notifications here. Use HTTPS or localhost; on iPhone and iPad, add Encore to your Home Screen and open it there.</p>
+      <p v-else-if="push && !push.configured">Browser notifications will be available after the server's notification keys are configured.</p>
+      <button v-else-if="push" class="btn btn--ghost" type="button" :disabled="pushBusy" @click="togglePush">
+        {{ pushBusy ? 'Updating…' : push.enabled ? 'Turn off on this device' : 'Enable browser notifications' }}
+      </button>
+      <p class="push-hint">Delivery depends on your browser, operating system and notification settings. Logging out turns off notifications on this device.</p>
+    </div>
   </section>
 </template>
 
@@ -66,4 +99,5 @@ onMounted(load);
 .profile-notifications { display: grid; gap: var(--space-4); margin-top: var(--space-7); padding-top: var(--space-6); border-top: var(--border-hairline); min-width: 0; }
 .profile-notifications h2 { font-size: var(--step-2); }
 .profile-notifications > .btn { justify-self: start; }
+.push-hint { color: var(--text-400); font-size: var(--step--1); }
 </style>
