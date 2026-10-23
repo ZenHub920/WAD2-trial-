@@ -1,6 +1,6 @@
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { publicUser } from './publicUser.js';
 import { validProfile } from './profileController.js';
+import { hashPassword, verifyPassword } from '../services/passwords.js';
 
 export function createUserController(repos, sessions, images = null) {
   return {
@@ -51,7 +51,7 @@ export function createUserController(repos, sessions, images = null) {
       if (!email || !password) return res.status(400).json({ error: 'email_and_password_required' });
 
       const user = repos.users.findByEmail(email);
-      if (!user?.password_hash || !verifyPassword(password, user.password_hash)) {
+      if (!user?.password_hash || !verifyPassword(password, user.password_hash) || sessions.allowed?.(user.id) === false) {
         return res.status(401).json({ error: 'invalid_credentials' });
       }
       sessions.start(req, res, user.id);
@@ -88,6 +88,9 @@ function validateRegistration(body = {}) {
   if (typeof body.password !== 'string' || body.password.length < 8) {
     return 'password_must_be_at_least_8_characters';
   }
+  if (body.password.length > 1024) return 'password_must_be_at_most_1024_characters';
+  if (body.display_name.trim().length > 80) return 'display_name_must_be_at_most_80_characters';
+  if (body.email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email.trim())) return 'invalid_email';
   const fields = {
     age_band: 'ageBand', home_region: 'homeRegion', gender: 'gender',
     companion_gender_pref: 'companionGenderPref', languages: 'languages', vibe: 'vibe',
@@ -98,18 +101,4 @@ function validateRegistration(body = {}) {
   }
   if (!validProfile(preferences)) return 'invalid_profile';
   return null;
-}
-
-function hashPassword(password) {
-  const salt = randomBytes(16).toString('hex');
-  const hash = scryptSync(password, salt, 64).toString('hex');
-  return `scrypt$${salt}$${hash}`;
-}
-
-function verifyPassword(password, stored) {
-  const [, salt, expectedHex] = stored.split('$');
-  if (!salt || !expectedHex) return false;
-  const actual = scryptSync(password, salt, 64);
-  const expected = Buffer.from(expectedHex, 'hex');
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
