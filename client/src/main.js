@@ -12,6 +12,7 @@ import AlgorithmView from './views/AlgorithmView.vue';
 import RoundView from './views/RoundView.vue';
 import MethodView from './views/MethodView.vue';
 import LoginView from './views/LoginView.vue';
+import AccountSecurityView from './views/AccountSecurityView.vue';
 import ConcertsView from './views/ConcertsView.vue';
 import ListingView from './views/ListingView.vue';
 import MyListingsView from './views/MyListingsView.vue';
@@ -49,6 +50,7 @@ const router = createRouter({
     { path: '/rounds/:id', name: 'round', component: RoundView, props: true, meta: { title: 'Group matching results' } },
     { path: '/method', name: 'method', component: MethodView, meta: { title: 'How it works' } },
     { path: '/login', name: 'login', component: LoginView, meta: { title: 'Sign in' } },
+    { path: '/account/security', name: 'account-security', component: AccountSecurityView, meta: { title: 'Account security' } },
     { path: '/list-ticket', name: 'list-ticket', component: ListingView, meta: { title: 'List a ticket' } },
     { path: '/my-listings', name: 'my-listings', component: MyListingsView, meta: { title: 'My listings' } },
     { path: '/tickets/:id', name: 'ticket-detail', component: TicketDetailView, props: true, meta: { title: 'Ticket details' } },
