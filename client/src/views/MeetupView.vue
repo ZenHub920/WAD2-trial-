@@ -5,6 +5,7 @@ import { api } from "../api.js";
 import { currentUser } from "../auth.js";
 import LoadingSpinner from "../components/LoadingSpinner.vue";
 import BackLink from "../components/BackLink.vue";
+import MeetupLocationSearch from "../components/MeetupLocationSearch.vue";
 import "../assets/groups.css";
 const props = defineProps({ id: String });
 const route = useRoute(),
@@ -16,6 +17,9 @@ const board = ref(null),
   loading = ref(true),
   notice = ref(""),
   weather = ref(null),
+  rainfall = ref(null),
+  travelRecommendations = ref(null),
+  transport = ref(null),
   comment = ref(""),
   slots = ref({});
 const form = reactive({
@@ -30,6 +34,8 @@ const place = reactive({
   sheltered: true,
 });
 const position = reactive({ latitude: 1.3, longitude: 103.85, label: "" });
+const travelOptions = reactive({ mode: 'transit', maxTravelMinutes: 60, shelteredOnly: false });
+const transportOptions = reactive({ busStopCode: '', trainLine: '' });
 const statuses = { planning: "Collecting availability", proposed: "Awaiting required approvals", confirmed: "Meetup confirmed", cancelled: "Meetup cancelled" };
 const iso = (ms) => new Date(ms).toISOString();
 const time = (ms) =>
@@ -41,6 +47,7 @@ async function load() {
   if (props.id) {
     const data = (await api.meetup(props.id)).meetup;
     board.value = data;
+    travelRecommendations.value = null;
     slots.value = Object.fromEntries(
       data.grid.map((s) => {
         const own = data.availability.find(
@@ -66,6 +73,8 @@ watch(
     notice.value = "";
     board.value = null;
     weather.value = null;
+    rainfall.value = null;
+    transport.value = null;
     loading.value = true;
     try {
       await load();
@@ -143,12 +152,28 @@ async function getWeather() {
   busy.value = true;
   error.value = "";
   try {
-    weather.value = (await api.meetupWeather(props.id)).weather;
+    const { environment } = await api.meetupEnvironment(props.id);
+    weather.value = environment.forecast;
+    rainfall.value = environment.rainfall;
   } catch (e) {
     error.value = "Could not load the weather forecast. Please try again.";
   } finally {
     busy.value = false;
   }
+}
+async function getTravelSuggestions() {
+  if (busy.value) return;
+  busy.value = true; error.value = '';
+  try { travelRecommendations.value = (await api.meetupTravelSuggestions(props.id, travelOptions)).recommendations; }
+  catch { error.value = 'Could not refresh travel options. Reload the plan if it has changed.'; }
+  finally { busy.value = false; }
+}
+async function getTransport() {
+  if (busy.value) return;
+  busy.value = true; error.value = '';
+  try { transport.value = (await api.meetupTransport(props.id, Object.fromEntries(Object.entries(transportOptions).filter(([, value]) => value)))).transport; }
+  catch { error.value = 'Could not check transport. Use a five-digit bus stop code, or choose a train line.'; }
+  finally { busy.value = false; }
 }
 </script>
 <template>
@@ -250,6 +275,7 @@ async function getWeather() {
               step="any"
           /></label>
         </div>
+        <MeetupLocationSearch :meetup-id="id" label="Find your approximate starting place" @selected="location => Object.assign(position, location)" />
         <button class="btn btn--ghost" @click="assignLocation">
           Apply this location to selected times
         </button>
@@ -292,6 +318,7 @@ async function getWeather() {
         @submit.prevent="act(() => api.proposeMeetupPlace(id, place))"
       >
         <h2>Suggest a meeting place</h2>
+        <MeetupLocationSearch :meetup-id="id" @selected="location => Object.assign(place, { label: location.label, latitude: location.latitude, longitude: location.longitude })" />
         <label
           >Place name<input v-model="place.label" required maxlength="150"
         /></label>
@@ -321,9 +348,16 @@ async function getWeather() {
       </form>
       <section class="card group-panel">
         <h2>Recommended options</h2>
+        <div class="group-controls">
+          <label>Travel by<select v-model="travelOptions.mode"><option value="transit">Public transport</option><option value="walk">Walking</option></select></label>
+          <label>Journey budget (minutes)<input v-model.number="travelOptions.maxTravelMinutes" type="number" min="5" max="180" /></label>
+          <label class="group-check"><input v-model="travelOptions.shelteredOnly" type="checkbox" />Only places marked sheltered</label>
+        </div>
+        <button class="btn btn--ghost" :disabled="busy || board.status === 'cancelled'" @click="getTravelSuggestions">Compare travel options</button>
+        <p v-if="travelRecommendations" class="group-muted" role="status">{{ travelRecommendations.message }}</p>
         <p v-if="!board.suggestions.length">No meeting options yet. Add a public meeting place and ask participants to save their availability.</p>
         <article
-          v-for="s in board.suggestions"
+          v-for="s in (travelRecommendations?.options ?? board.suggestions)"
           :key="`${s.placeId}:${s.startsAt}`"
         >
           <p>
@@ -333,6 +367,8 @@ async function getWeather() {
             available, {{ s.totalDistanceKm === null ? 'distance unavailable' : `${s.totalDistanceKm} km combined distance` }}
             ({{ s.locationRespondents }} locations supplied)
           </p>
+          <p v-if="s.totalTravelMinutes !== null && s.totalTravelMinutes !== undefined" class="group-muted">{{ s.totalTravelMinutes }} minutes combined journey time; longest journey {{ s.maximumTravelMinutes }} minutes. {{ s.reachableCount }}/{{ s.locationRespondents }} supplied locations within your journey budget.</p>
+          <p v-if="s.basis === 'straight_line_distance'" class="group-muted">Straight-line distance estimate. Fresh route times are unavailable for this option.</p>
           <div class="group-actions">
             <button
               class="btn btn--ghost"
@@ -381,9 +417,27 @@ async function getWeather() {
         >
           Approve plan</button
         ><button class="btn btn--ghost" :disabled="busy" @click="getWeather">
-          Check short-range weather
+          Check weather and recent rainfall
         </button>
         <p v-if="weather">{{ weather.message ?? 'Weather is unavailable right now.' }}</p>
+        <p v-if="weather?.stale" class="group-muted">This is a cached forecast; check again before travelling.</p>
+        <p v-if="rainfall?.status === 'available'" class="group-muted">Recent rainfall: {{ rainfall.millimetres }} mm at {{ rainfall.station }}, {{ rainfall.distanceKm }} km from the meeting place ({{ time(Date.parse(rainfall.observedAt)) }}). This is an observation, not a forecast.</p>
+      </section>
+      <section class="card group-panel">
+        <h2>Getting there today</h2>
+        <p>Check current train advisories, station crowds and bus arrivals. These describe travel now; they do not predict conditions on the concert date.</p>
+        <div class="group-controls">
+          <label>Bus stop code (optional)<input v-model="transportOptions.busStopCode" maxlength="5" inputmode="numeric" placeholder="e.g. 83139" /></label>
+          <label>Station crowds (optional)<select v-model="transportOptions.trainLine"><option value="">Choose a line</option><option v-for="line in ['CCL','CEL','CGL','DTL','EWL','NEL','NSL','TEL']" :key="line">{{ line }}</option></select></label>
+        </div>
+        <button class="btn btn--ghost" :disabled="busy" @click="getTransport">Check LTA transport updates</button>
+        <template v-if="transport">
+          <p v-if="transport.trains.status !== 'available'">Train updates are unavailable. Try again later.</p>
+          <template v-else><p>{{ transport.trains.serviceStatus === 'normal' ? 'LTA reports normal train service.' : 'LTA reports a train service disruption.' }}<span v-if="transport.trains.stale"> Saved update; check again before travelling.</span></p><p v-for="(message, index) in transport.trains.messages" :key="index">{{ message.content }}</p></template>
+          <template v-if="transport.buses"><p v-if="transport.buses.status !== 'available'">Bus arrivals are unavailable for this stop.</p><template v-else><p v-if="!transport.buses.services.length">No bus services reported at this stop.</p><p v-if="transport.buses.stale">Showing saved bus arrivals; refresh before travelling.</p><p v-for="service in transport.buses.services" :key="service.service">Bus {{ service.service }}: {{ service.arrivals.length ? service.arrivals.map(a => `${time(Date.parse(a.estimatedArrival))}${a.wheelchairAccessible ? ' (wheelchair accessible)' : ''}`).join(', ') : 'No arrival time reported' }}</p></template></template>
+          <template v-if="transport.crowding"><p v-if="transport.crowding.status !== 'available'">Station crowd information is unavailable.</p><details v-else><summary>Station crowd levels {{ transport.crowding.stale ? '(saved)' : '' }}</summary><p v-for="station in transport.crowding.stations" :key="station.station">{{ station.station }}: {{ station.level || 'Not reported' }} ({{ station.observedAt }})</p></details></template>
+        </template>
+        <small class="group-muted">Data: <a href="https://www.onemap.gov.sg/apidocs/" target="_blank" rel="noopener noreferrer">OneMap / Singapore Land Authority</a>, <a href="https://datamall.lta.gov.sg/" target="_blank" rel="noopener noreferrer">LTA DataMall</a>, and <a href="https://data.gov.sg/datasets/d_f131f6e343bf8168e4057a04c4326a0a/view" target="_blank" rel="noopener noreferrer">NEA via data.gov.sg</a>. Shelter status is suggested by participants.</small>
       </section>
       <section class="card group-panel">
         <h2>Discuss and revise</h2>
