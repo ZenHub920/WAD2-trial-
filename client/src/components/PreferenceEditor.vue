@@ -240,7 +240,7 @@ function save() {
       </div>
     </section>
     <footer class="preference-editor__footer">
-      <p class="group-muted">Save to apply changes from all three sections.</p>
+      <p class="group-muted">Save to apply your quiz answers and preferences.</p>
       <button class="btn btn--primary" :disabled="busy || !concepts.length">
         <LoadingSpinner v-if="saving" />{{ saving ? 'Saving…' : submitLabel }}
       </button>

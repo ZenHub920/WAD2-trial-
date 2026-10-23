@@ -68,10 +68,12 @@ filter category at a time for seating, budget, arrival, activities, vibe, minimu
 places or preferred groups, without checkboxes. Active filters appear as removable
 chips; Clear all filters resets them without changing the selected sort order.
 
-The shared preference editor shows one section at a time: personal interests,
-companion preferences or things to avoid. Choices are searchable toggle buttons
-with selection counts. Custom wording and meaning suggestions remain available;
-Save preferences applies all three sections. Group discovery and membership use
+The shared preference editor shows one section at a time: a seven-sentence quiz,
+personal interests, companion preferences or things to avoid. Quiz prompts and
+answer endings form complete sentences. Preference choices are searchable toggle
+buttons with selection counts. Custom wording and meaning suggestions remain
+available; Save preferences applies the quiz answers and all preference sections.
+Group discovery and membership use
 the same editor, with responsive panels, consistent field sizes and aligned card
 actions across group pages.
 
