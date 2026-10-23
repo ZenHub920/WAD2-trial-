@@ -8,10 +8,11 @@
  *
  * THE GATE
  * --------
- * A pair may use a conversation only while BOTH hold:
+ * A pair may use a conversation only while all three hold:
  *
  *   1. mutual 'like' in kaki_decisions for that concert, and
  *   2. neither has blocked the other.
+ *   3. neither person's current hard dealbreakers exclude the other.
  *
  * The gate is re-evaluated on every read and every write, not just when the
  * conversation is created. That matters: a block placed after matching, or a
@@ -25,6 +26,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { readMessagePage } from './messagePage.js';
+import { createKakiPreferenceGate } from '../services/kakiPreferenceGate.js';
 
 /** The two ids in the canonical order the table's CHECK constraint requires. */
 function ordered(x, y) {
@@ -54,9 +56,12 @@ const NOT_BLOCKED = `(
 )`;
 
 export function createKakiChatRepo(db) {
+  const preferenceEligible = createKakiPreferenceGate(db);
   const mutualAndOpen = db.prepare(`SELECT 1 AS ok WHERE ${MUTUAL} AND ${NOT_BLOCKED}`);
   const mutualOnly = db.prepare(`SELECT 1 AS ok WHERE ${MUTUAL}`);
   const blockedEitherWay = db.prepare(`SELECT 1 AS ok WHERE NOT ${NOT_BLOCKED}`);
+  const canChat = (me, other, concert) => Boolean(mutualAndOpen.get({ me, other, concert })?.ok)
+    && preferenceEligible(me, other);
 
   const findPair = db.prepare(`
     SELECT * FROM conversations
@@ -242,7 +247,7 @@ export function createKakiChatRepo(db) {
    * raises one notification per conversation.
    */
   const unreadTotal = db.prepare(`
-    SELECT COUNT(DISTINCT c.id) AS n
+    SELECT DISTINCT c.id,c.user_a_id,c.user_b_id
     FROM messages m
     JOIN conversations c ON c.id = m.conversation_id
     WHERE (c.user_a_id = @user OR c.user_b_id = @user)
@@ -278,7 +283,7 @@ export function createKakiChatRepo(db) {
   return {
     /** Mutual like AND not blocked — the full right to talk. */
     canChat(me, other, concert) {
-      return Boolean(mutualAndOpen.get({ me, other, concert })?.ok);
+      return canChat(me, other, concert);
     },
 
     /**
@@ -290,11 +295,13 @@ export function createKakiChatRepo(db) {
     chatBarrier(me, other, concert) {
       if (blockedEitherWay.get({ me, other })?.ok) return 'blocked';
       if (!mutualOnly.get({ me, other, concert })?.ok) return 'not_matched';
+      if (!preferenceEligible(me, other)) return 'preferences_changed';
       return null;
     },
 
     /** Idempotent: the pair gets one thread per concert, whoever opens it. */
     openFor({ concertId, me, other }) {
+      if (!canChat(me, other, concertId)) throw Object.assign(new Error('conversation_closed'), { status: 403 });
       const [a, b] = ordered(me, other);
       const existing = findPair.get({ concert: concertId, a, b });
       if (existing) return findById.get(existing.id);
@@ -305,7 +312,7 @@ export function createKakiChatRepo(db) {
     },
 
     findById: (id) => findById.get(id),
-    forUser: (me) => listForUser.all({ me }),
+    forUser: (me) => listForUser.all({ me }).filter((c) => preferenceEligible(c.user_a_id, c.user_b_id)),
     messages: (conversationId) => listMessages.all(conversationId),
     messagePage(conversationId, options) {
       const { rows, page } = readMessagePage(db, 'kaki', conversationId, options);
@@ -313,6 +320,11 @@ export function createKakiChatRepo(db) {
     },
 
     addMessage(conversationId, senderId, body, replyTo = null) {
+      const conversation = findById.get(conversationId);
+      const other = conversation?.user_a_id === senderId ? conversation.user_b_id
+        : conversation?.user_b_id === senderId ? conversation.user_a_id : null;
+      if (!other || !canChat(senderId, other, conversation.concert_id))
+        throw Object.assign(new Error('conversation_closed'), { status: 403 });
       const id = `km_${randomUUID().slice(0, 12)}`;
       insertMessage.run({
         id, conversation: conversationId, sender: senderId, body, replyTo,
@@ -348,7 +360,8 @@ export function createKakiChatRepo(db) {
     unread: (conversationId, userId) =>
       unreadCount.get({ conversation: conversationId, user: userId }).n,
 
-    unreadTotal: (userId) => unreadTotal.get({ user: userId }).n,
+    unreadTotal: (userId) => unreadTotal.all({ user: userId })
+      .filter((c) => preferenceEligible(c.user_a_id, c.user_b_id)).length,
 
     background: (conversationId, userId) =>
       readSettings.get(conversationId, userId)?.background ?? 'default',
