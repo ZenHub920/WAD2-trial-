@@ -40,7 +40,7 @@
 import { classifyInstance, CLASS } from '../matching/classify.js';
 import { selectSolver } from '../matching/registry.js';
 import { compareProfiles, individualProfile } from './discoveryPreferences.js';
-import { dealbreakerHit } from './traitScoring.js';
+import { preferenceEligibility } from './preferenceEligibility.js';
 
 const EMPTY_ANSWERS = { about: [], wants: [], avoid: [] };
 
@@ -88,7 +88,8 @@ export function recommendCompanions(people, viewerId, answersFor) {
   const vetoed = [];
   const eligible = [];
   for (const person of people) {
-    const hit = dealbreakerHit(mine, profiles.get(person.user.id));
+    const eligibility = preferenceEligibility(mine, profiles.get(person.user.id));
+    const hit = eligibility.own ?? eligibility.other;
     if (hit) vetoed.push({ id: person.id, userId: person.user.id, dealbreaker: hit });
     else eligible.push(person);
   }
@@ -113,7 +114,7 @@ export function recommendCompanions(people, viewerId, answersFor) {
       ids.map((id) => [
         id,
         ids
-          .filter((other) => other !== id)
+          .filter((other) => other !== id && preferenceEligibility(profiles.get(id), profiles.get(other)).eligible)
           .sort((a, b) => scoreFrom(id, b) - scoreFrom(id, a) || a.localeCompare(b)),
       ]),
     );

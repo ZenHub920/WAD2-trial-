@@ -110,6 +110,12 @@ export function createKakiChatController(repos, realtime = null) {
       const ctx = open(req, res);
       if (!ctx) return undefined;
 
+      let messagePage;
+      try { messagePage = chat.messagePage(ctx.conversation.id, req.query); }
+      catch (error) {
+        if (error.status) return res.status(error.status).json({ error: error.message });
+        throw error;
+      }
       const before = chat.lastReadRowid(ctx.conversation.id, req.user.id);
       const after = chat.markReadToLatest(ctx.conversation.id, req.user.id);
       const notificationsRead = repos.notifications.readConversation(req.user.id, `/kaki/chat/${ctx.conversation.id}`);
@@ -125,7 +131,8 @@ export function createKakiChatController(repos, realtime = null) {
       return res.json({
         notificationsRead,
         conversation: shapeConversation(ctx.conversation, req.user.id, chat),
-        messages: chat.messages(ctx.conversation.id)
+        page: messagePage.page,
+        messages: messagePage.rows
           .map((m) => shapeMessage(m, req.user.id, theirLastRead)),
       });
     },

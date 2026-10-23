@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { checkFeasibility, scorePair } from '../matching/compatibility.js';
 import { groupImageUrl } from '../controllers/groupIdentityController.js';
+import { preferenceEligibility } from '../services/preferenceEligibility.js';
 
 const fail = (error, status = 409) => ({ error, status });
 
@@ -47,6 +48,8 @@ export function createGroupDiscoveryRepo(db, repos) {
     const members = p => [p.host_user_id, ...db.prepare("SELECT user_id FROM group_memberships WHERE party_id=? AND status='active'").all(p.id).map(r => r.user_id)];
     const fromMembers = members(from), toMembers = members(to);
     if (fromMembers.some(a => toMembers.some(b => blocked(a, b, blocklist)))) return fail('blocked_pair', 403);
+    if (!preferenceEligibility(repos.membership.profile(from.id), repos.membership.profile(to.id)).eligible)
+      return fail('incompatible_group_preferences');
     return { from, to };
   };
   const connectionRow = id => db.prepare('SELECT * FROM group_connections WHERE id = ?').get(id);

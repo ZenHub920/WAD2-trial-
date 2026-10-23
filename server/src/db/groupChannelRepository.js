@@ -24,6 +24,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { readMessagePage } from './messagePage.js';
 
 export function migrateGroupChannels(db) {
   db.exec(`
@@ -215,8 +216,9 @@ export function createGroupChannelRepo(db, repos) {
     },
 
     /** The room itself. Membership is re-checked here, not only when added. */
-    open(partyId, userId) {
+    open(partyId, userId, options = {}) {
       const row = requireMember(partyId, userId);
+      const paged = readMessagePage(db, 'group', partyId, options);
       const concert = repos.concerts.findById(row.concert_id);
       return {
         partyId,
@@ -225,7 +227,9 @@ export function createGroupChannelRepo(db, repos) {
           : null,
         isHost: row.host_user_id === userId,
         members: memberRows.all(partyId).map(shapeMember),
-        messages: messageRows.all(partyId).map((m) => shapeMessage(m, userId)),
+        page: paged.page,
+        messages: paged.rows.map((m) => ({ ...m, ...db.prepare('SELECT display_name,avatar_path FROM users WHERE id=?').get(m.sender_user_id) }))
+          .map((m) => shapeMessage(m, userId)),
       };
     },
 

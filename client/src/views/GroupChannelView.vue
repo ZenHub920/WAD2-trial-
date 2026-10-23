@@ -19,6 +19,23 @@ const props = defineProps({ id: { type: String, required: true } });
 const router = useRouter();
 
 const channel = ref(null);
+const historyPage = ref(null);
+const loadingHistory = ref(false);
+async function loadOlder() {
+  if (!historyPage.value?.nextCursor || loadingHistory.value) return;
+  loadingHistory.value = true;
+  const height = list.value?.scrollHeight ?? 0;
+  const top = list.value?.scrollTop ?? 0;
+  try {
+    const { channel: older } = await api.groupChannel(props.id, { before: historyPage.value.nextCursor });
+    const known = new Set(channel.value.messages.map((m) => m.id));
+    channel.value.messages = [...older.messages.filter((m) => !known.has(m.id)), ...channel.value.messages];
+    historyPage.value = older.page;
+    await nextTick();
+    if (list.value) list.value.scrollTop = top + list.value.scrollHeight - height;
+  } catch { actionError.value = 'Could not load older messages.'; }
+  finally { loadingHistory.value = false; }
+}
 const loading = ref(true);
 const error = ref(null);
 const draft = ref('');
@@ -41,7 +58,12 @@ async function scrollToEnd() {
 async function load({ quiet = false } = {}) {
   if (!quiet) loading.value = true;
   try {
-    channel.value = (await api.groupChannel(props.id)).channel;
+    const latest = (await api.groupChannel(props.id)).channel;
+    if (quiet && channel.value) {
+      const known = new Set(latest.messages.map((m) => m.id));
+      latest.messages = [...channel.value.messages.filter((m) => !known.has(m.id)), ...latest.messages];
+    } else historyPage.value = latest.page;
+    channel.value = latest;
     error.value = null;
     refreshUnread();
     if (!quiet) await scrollToEnd();
@@ -200,6 +222,7 @@ onUnmounted(() => stopListening?.());
       </section>
 
       <div ref="list" class="stream">
+        <button v-if="historyPage?.nextCursor" class="btn btn--ghost" :disabled="loadingHistory" @click="loadOlder">{{ loadingHistory ? 'Loading…' : 'Load older messages' }}</button>
         <p v-if="!channel.messages.length" class="empty">
           No messages yet. Say hello to the group.
         </p>

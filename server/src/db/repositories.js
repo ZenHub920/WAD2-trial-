@@ -19,6 +19,7 @@ import { createFeedbackRepo } from './feedbackRepository.js';
 import { createKakiChatRepo } from './kakiChatRepository.js';
 import { createGroupChannelRepo } from './groupChannelRepository.js';
 import { randomUUID } from 'node:crypto';
+import { readMessagePage } from './messagePage.js';
 
 // ---------------------------------------------------------------------------
 // Row mapping
@@ -1558,6 +1559,7 @@ export function createConversationRepo(db) {
     },
 
     /** Messages after a message id; row order keeps same-millisecond messages distinct. */
+    messagePage(conversationId, options) { return readMessagePage(db, 'market', conversationId, options); },
     messages(conversationId, after = null) {
       return db.prepare(`
         SELECT * FROM ticket_messages

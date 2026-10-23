@@ -29,6 +29,23 @@ const router = useRouter();
 
 const conversation = ref(null);
 const messages = ref([]);
+const historyPage = ref(null);
+const loadingHistory = ref(false);
+async function loadOlder() {
+  if (!historyPage.value?.nextCursor || loadingHistory.value) return;
+  loadingHistory.value = true;
+  const height = scroller.value?.scrollHeight ?? 0;
+  const top = scroller.value?.scrollTop ?? 0;
+  try {
+    const data = await api.kakiConversation(props.id, { before: historyPage.value.nextCursor });
+    const known = new Set(messages.value.map((m) => m.id));
+    messages.value = [...data.messages.filter((m) => !known.has(m.id)), ...messages.value];
+    historyPage.value = data.page;
+    await nextTick();
+    if (scroller.value) scroller.value.scrollTop = top + scroller.value.scrollHeight - height;
+  } catch { error.value = 'Could not load older messages. Please try again.'; }
+  finally { loadingHistory.value = false; }
+}
 const backgrounds = ref(['default']);
 const loading = ref(true);
 const closed = ref(false);
@@ -100,7 +117,9 @@ async function load({ quiet = false } = {}) {
   try {
     const data = await api.kakiConversation(props.id);
     conversation.value = data.conversation;
-    messages.value = data.messages;
+    const latest = new Map(data.messages.map((m) => [m.id, m]));
+    messages.value = quiet ? [...messages.value.filter((m) => !latest.has(m.id)), ...data.messages] : data.messages;
+    if (!quiet) historyPage.value = data.page;
     closed.value = false;
     error.value = null;
     signInRequired.value = false;
@@ -448,6 +467,9 @@ watch(() => props.id, async () => {
 
     <!-- ----------------------------------------------------------- bubbles -->
     <div v-else ref="scroller" class="scroll">
+      <button v-if="historyPage?.nextCursor" class="btn btn--ghost" :disabled="loadingHistory" @click="loadOlder">
+        {{ loadingHistory ? 'Loading…' : 'Load older messages' }}
+      </button>
       <p v-if="!messages.length" class="empty">
         Say hello to {{ conversation?.other.displayName }}.
       </p>

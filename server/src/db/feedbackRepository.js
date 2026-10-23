@@ -154,9 +154,12 @@ export function createFeedbackRepo(db, repos) {
       const result = [];
       for (const p of db
         .prepare(
-          "SELECT p.*,c.event_date,c.artist FROM parties p JOIN concerts c ON c.id=p.concert_id",
+          `SELECT p.*,c.event_date,c.artist FROM parties p JOIN concerts c ON c.id=p.concert_id
+          WHERE p.host_user_id=@user OR EXISTS(SELECT 1 FROM group_memberships gm WHERE gm.party_id=p.id AND gm.user_id=@user)
+          OR EXISTS(SELECT 1 FROM match_proposals mp JOIN seeker_requests s ON s.id=mp.seeker_request_id
+            WHERE mp.party_id=p.id AND mp.status='confirmed' AND s.user_id=@user)`,
         )
-        .all()) {
+        .all({user})) {
         if (!Number.isFinite(end(p)) || Date.now() <= end(p) || !eligibleMember(user, p)) continue;
         const users = [
           ...new Set([

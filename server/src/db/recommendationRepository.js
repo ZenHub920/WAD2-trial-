@@ -10,6 +10,7 @@ import {
 } from "../services/discoveryPreferences.js";
 import { checkFeasibility, scorePair } from "../matching/compatibility.js";
 import { groupImageUrl } from "../controllers/groupIdentityController.js";
+import { preferenceEligibility } from "../services/preferenceEligibility.js";
 export function createRecommendationRepo(db, repos) {
   const maxPendingDirectApplications = 1;
   const EMPTY = '{"about":[],"wants":[],"avoid":[]}';
@@ -61,6 +62,7 @@ export function createRecommendationRepo(db, repos) {
     };
   };
   const feasible = (user, p) => {
+    if (!preferenceEligibility(personal(user, p.concert_id), repos.membership.profile(p.id)).eligible) return false;
     const seeker = repos.groups.seeker(user, p.concert_id);
     if (!seeker) return false;
     const members = db
@@ -88,6 +90,7 @@ export function createRecommendationRepo(db, repos) {
     if (!repos.membership.settings(p.id)) return scorePair(seeker, p);
     const base = scorePair(seeker, aggregateParty(p));
     const discovery = compareProfiles(personal(seeker.user_id, p.concert_id), repos.membership.profile(p.id));
+    if (discovery.blocked) return { ...base, seekerToParty: 0, partyToSeeker: 0, discovery };
     return {
       ...base,
       seekerToParty: 0.6 * base.seekerToParty + 0.4 * discovery.seekerScore,
@@ -151,8 +154,8 @@ export function createRecommendationRepo(db, repos) {
         .filter((card) => visible(repos.parties.findById(card.id)))
         .filter(
           (card) =>
-            !request ||
-            feasible(user, repos.parties.findById(card.id)),
+            preferenceEligibility(personal(user, concert), repos.membership.profile(card.id)).eligible &&
+            (!request || feasible(user, repos.parties.findById(card.id))),
         )
         .map((card) => rankIndividual(user, card))
         .sort(

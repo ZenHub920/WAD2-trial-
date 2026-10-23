@@ -195,15 +195,16 @@ test('live discovery persists stable event IDs without returning local concerts 
 
     const beforeFailure = db.prepare('SELECT * FROM concerts ORDER BY id').all();
     providerStatus = 500;
+    db.prepare('UPDATE provider_cache SET synced_at=0').run();
     const failed = await fetch(`${base}/concerts/external`);
-    assert.equal(failed.status, 502);
-    assert.deepEqual(await failed.json(), { error: 'concert_provider_unavailable' });
+    assert.equal(failed.status, 200);
+    assert.equal((await failed.json()).stale, true);
     assert.deepEqual(db.prepare('SELECT * FROM concerts ORDER BY id').all(), beforeFailure);
 
     delete process.env.TICKETMASTER_API_KEY;
     const unconfigured = await fetch(`${base}/concerts/external`);
-    assert.equal(unconfigured.status, 503);
-    assert.deepEqual(await unconfigured.json(), { error: 'concert_provider_not_configured' });
+    assert.equal(unconfigured.status, 200);
+    assert.equal((await unconfigured.json()).reason, 'concert_provider_not_configured');
     assert.deepEqual(db.prepare('SELECT * FROM concerts ORDER BY id').all(), beforeFailure);
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
