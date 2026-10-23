@@ -80,7 +80,7 @@ defineExpose({ answers });
     <header class="quiz__head">
       <div>
         <h3 id="quiz-heading">Finish the sentence</h3>
-        <p class="quiz__sub">Seven of these. Tap whichever sounds most like you.</p>
+        <p class="quiz__sub">Complete seven sentences. Tap the ending that sounds most like you.</p>
       </div>
       <p class="quiz__count" aria-live="polite">{{ answered }} / {{ cards.length || 7 }}</p>
     </header>
@@ -114,7 +114,7 @@ defineExpose({ answers });
         <button v-if="!onLast" type="button" class="btn btn--ghost" :disabled="busy" @click="skip">
           {{ picked[card.id] ? 'Next' : 'Skip this one' }}
         </button>
-        <p v-else class="quiz__done">That's the last one — save below.</p>
+        <p v-else class="quiz__done">That's the last sentence. Save your answers below.</p>
       </footer>
     </template>
   </section>

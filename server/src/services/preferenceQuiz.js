@@ -58,7 +58,7 @@ export const QUIZ_CARDS = [
   {
     id: 'looking',
     prompt: "I'm mainly here to ____",
-    hint: 'The one thing worth getting right.',
+    hint: 'Choose what you want from a concert companion.',
     options: [
       {
         id: 'stand_with',
@@ -85,7 +85,7 @@ export const QUIZ_CARDS = [
   {
     id: 'love_it_when',
     prompt: 'I love it when ____',
-    hint: 'Pick the one you can already picture.',
+    hint: 'Which moment would you enjoy most?',
     options: [
       {
         id: 'whole_section_screaming',
@@ -112,7 +112,7 @@ export const QUIZ_CARDS = [
   {
     id: 'doors_open',
     prompt: 'When the doors open, I head ____',
-    hint: 'Where you actually want to spend the show.',
+    hint: "Choose where you'd like to spend the show.",
     options: [
       {
         id: 'barricade',
@@ -138,27 +138,27 @@ export const QUIZ_CARDS = [
   },
   {
     id: 'artist_means',
-    prompt: 'This artist is ____ to me',
-    hint: 'How deep it goes.',
+    prompt: 'When it comes to this artist, ____',
+    hint: 'How much of a fan are you?',
     options: [
       {
         id: 'waited_years',
-        text: "the one I've waited years to see",
+        text: "I've waited years to see them",
         effects: { fandom: 5, energy: 4 },
       },
       {
         id: 'long_loved',
-        text: "someone I've loved for a long time",
+        text: "I've loved them for a long time",
         effects: { fandom: 4 },
       },
       {
         id: 'few_songs',
-        text: 'a few songs I really like',
+        text: 'I really like a few of their songs',
         effects: { fandom: 2 },
       },
       {
         id: 'here_for_the_night',
-        text: "new to me — I'm here for the night out",
+        text: "they're new to me, and I'm here for the night out",
         effects: { fandom: 1, extraversion: 4 },
       },
     ],
@@ -166,7 +166,7 @@ export const QUIZ_CARDS = [
   {
     id: 'stranger_in_queue',
     prompt: "Put me next to a stranger in the queue and I'll ____",
-    hint: 'Be honest rather than impressive.',
+    hint: "Choose what you'd usually do.",
     options: [
       {
         id: 'life_story',
@@ -185,7 +185,7 @@ export const QUIZ_CARDS = [
       },
       {
         id: 'headphones',
-        text: 'put my headphones on until the doors move',
+        text: 'put my headphones on until the doors open',
         effects: { extraversion: 1 },
       },
     ],
@@ -193,7 +193,7 @@ export const QUIZ_CARDS = [
   {
     id: 'plan_changes',
     prompt: 'If the plan changes an hour before, I ____',
-    hint: 'What you would really do.',
+    hint: 'How would you respond?',
     options: [
       {
         id: 'roll_with_it',
@@ -220,7 +220,7 @@ export const QUIZ_CARDS = [
   {
     id: 'after_encore',
     prompt: 'After the encore, the night ____',
-    hint: 'How you like it to end.',
+    hint: 'How do you like to end the night?',
     options: [
       {
         id: 'carries_on',
@@ -239,7 +239,7 @@ export const QUIZ_CARDS = [
       },
       {
         id: 'straight_home',
-        text: 'ends quietly — I go straight home',
+        text: 'ends quietly. I go straight home',
         effects: { horizon: 'one_night', extraversion: 1, energy: 2 },
       },
     ],
