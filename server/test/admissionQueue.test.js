@@ -22,6 +22,8 @@ function fixture(capacity = 1, managed = false) {
   const matching = createMatchingService({ db, repos });
   let batch = 0;
   const offer = user => {
+    // Automatic matching ranks on these, and now refuses without them.
+    repos.membership.savePreferences(user, { about: ['singalong'], wants: ['supper after'], avoid: [] });
     repos.recommendations.setJoiningMode(user, 'c1', 'algorithm');
     const round = matching.run('c1', { batchKey: `queue_batch_${++batch}` });
     assert.equal(round.empty, false);
