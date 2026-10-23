@@ -18,6 +18,7 @@ export function rankMeetupOptions({
   participantCount,
   durationMinutes = 30,
   maxDistanceKm = 15,
+  limit = 20,
 }) {
   const duration = durationMinutes * 60000,
     options = [];
@@ -61,5 +62,5 @@ export function rankMeetupOptions({
         a.startsAt - b.startsAt ||
         a.placeId.localeCompare(b.placeId),
     )
-    .slice(0, 20);
+    .slice(0, limit);
 }
