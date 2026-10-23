@@ -23,6 +23,9 @@ const titles = {
   'Seeker preferences changed; review and resubmit the join request': 'Companion preferences changed; review your group join request',
 };
 let timer;
+function onPush(event) {
+  if (event.data?.type === 'encore-notification') open.value ? load() : refreshUnread();
+}
 
 async function load() {
   if (loading.value) return;
@@ -80,12 +83,14 @@ watch(open, async (visible) => {
 watch(() => route.fullPath, () => { open.value = false; });
 watch(notificationRevision, () => open.value ? load() : refreshUnread());
 onMounted(() => {
+  navigator.serviceWorker?.addEventListener('message', onPush);
   document.addEventListener('click', outside);
   document.addEventListener('keydown', onKeydown);
   refreshUnread();
   timer = setInterval(() => open.value ? load() : refreshUnread(), 30000);
 });
 onUnmounted(() => {
+  navigator.serviceWorker?.removeEventListener('message', onPush);
   clearInterval(timer);
   document.removeEventListener('click', outside);
   document.removeEventListener('keydown', onKeydown);
