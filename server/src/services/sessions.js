@@ -29,9 +29,11 @@ function cookieOptions() {
   return { ...COOKIE_OPTIONS, secure: process.env.NODE_ENV === 'production' };
 }
 
-export function createSessionService(repos) {
+export function createSessionService(repos, { isAllowed = () => true } = {}) {
   return {
+    allowed(userId) { return isAllowed(userId); },
     start(req, res, userId) {
+      if (!isAllowed(userId)) throw Object.assign(new Error('account_unavailable'), { status: 403 });
       const previous = cookieToken(req);
       if (previous) repos.sessions.delete(tokenHash(previous));
       const token = randomBytes(32).toString('hex');
@@ -43,7 +45,7 @@ export function createSessionService(repos) {
       const token = cookieToken(req);
       if (!token) return null;
       const userId = repos.sessions.findUserId(tokenHash(token), Date.now());
-      return userId ? repos.users.findById(userId) : null;
+      return userId && isAllowed(userId) ? repos.users.findById(userId) : null;
     },
 
     end(req, res) {

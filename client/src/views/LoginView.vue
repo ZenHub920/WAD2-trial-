@@ -110,7 +110,7 @@ async function submit() {
         </label>
         <label for="password">
           Password
-          <input id="password" v-model="password" required type="password" :minlength="isRegistering ? 8 : 1" :autocomplete="isRegistering ? 'new-password' : 'current-password'" :placeholder="isRegistering ? 'At least 8 characters' : 'Your password'" />
+          <input id="password" v-model="password" required type="password" maxlength="1024" :minlength="isRegistering ? 8 : 1" :autocomplete="isRegistering ? 'new-password' : 'current-password'" :placeholder="isRegistering ? 'At least 8 characters' : 'Your password'" />
         </label>
 
         <p v-if="error" class="form-message form-message--error" role="alert">{{ error }}</p>
@@ -120,11 +120,13 @@ async function submit() {
           {{ loading ? 'Working…' : isRegistering ? 'Create account' : 'Sign in' }}
         </button>
       </form>
+      <RouterLink v-if="!isRegistering" class="recovery-link" to="/account/security">Forgot your password?</RouterLink>
     </section>
   </div>
 </template>
 
 <style scoped>
+.recovery-link { display: inline-block; margin-top: var(--space-4); color: var(--text-300); font-size: var(--step--1); }
 .auth {
   min-height: 68vh;
   display: grid;
