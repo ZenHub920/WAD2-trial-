@@ -186,6 +186,7 @@ async function save() {
     <header class="profile__head">
       <h1>Profile</h1>
       <p>Manage your profile, concert preferences and notifications.</p>
+      <RouterLink to="/account/security" class="btn btn--ghost">Account security</RouterLink>
     </header>
 
     <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading your profile…</p>

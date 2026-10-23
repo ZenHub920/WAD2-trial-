@@ -19,6 +19,7 @@ import { createAvatarController } from '../controllers/avatarController.js';
 import { createGroupIdentityController } from '../controllers/groupIdentityController.js';
 import { openStream } from '../services/realtime.js';
 import { createGroupChannelController } from '../controllers/groupChannelController.js';
+import { registerAccountSecurityRoutes } from './accountSecurity.js';
 
 export function createRoutes({
   db,
@@ -28,6 +29,7 @@ export function createRoutes({
   images,
   avatars = null,
   realtime = null,
+  security = null,
 })  {
   const router = Router();
   const concerts = createConcertController(repos);
@@ -54,6 +56,7 @@ export function createRoutes({
     if (!req.user) return res.status(401).json({ error: 'authentication_required' });
     next();
   };
+  if (security) registerAccountSecurityRoutes(router, { security, sessions });
   const requireOperator = (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'authentication_required' });
     if (!req.user.is_operator) return res.status(403).json({ error: 'operator_required' });

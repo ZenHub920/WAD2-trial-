@@ -22,6 +22,7 @@ import { migrateHybrid } from './hybridMigrations.js';
 import { migrateUserPreferences } from './userPreferencesMigration.js';
 import { migrateGroupChannels } from './groupChannelRepository.js';
 import { migrateProviders } from './providerMigrations.js';
+import { migrateAccountSecurity } from './accountSecurityRepository.js';
 const here = dirname(fileURLToPath(import.meta.url));
 
 let db = null;
@@ -51,6 +52,7 @@ export function getDb() {
   migrateGroupChannels(db);
   migrateNotifications(db);
   migrateProviders(db);
+  migrateAccountSecurity(db);
   return db;
 }
 
@@ -250,6 +252,7 @@ export function createTestDb({ hybrid = true } = {}) {
   migrateGroupChannels(testDb);
   migrateNotifications(testDb);
   migrateProviders(testDb);
+  migrateAccountSecurity(testDb);
   return testDb;
 }
 

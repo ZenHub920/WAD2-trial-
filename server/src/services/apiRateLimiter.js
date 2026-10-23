@@ -19,7 +19,8 @@ export function ratePolicy(method, rawPath) {
   if (path === '/auth/password/change' || path === '/auth/sessions') return 'credentials';
   if (method === 'POST' && /\/messages$/.test(path)) return 'chat';
   if (method === 'POST' && /\/reports$/.test(path)) return 'reports';
-  if (/\/weather$|\/travel(?:\/|$)|\/places\/search$|\/external\/concerts|\/transport(?:\/|$)/.test(path)) return 'provider';
+  if (/\/(weather|environment|travel-suggestions|locations|transport)$|\/travel(?:\/|$)|\/places\/search$|\/concerts\/external$/.test(path)) return 'provider';
+  if (method !== 'GET' && /^\/me\/push\//.test(path)) return 'provider';
   return null;
 }
 
