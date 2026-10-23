@@ -1,8 +1,8 @@
 <script setup>
-import { onMounted, ref } from 'vue';
+import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api, LABELS } from '../api.js';
-import { currentUser, refreshSession, setCurrentUser, signOut } from '../auth.js';
+import { currentUser, sessionReady, refreshSession, setCurrentUser, signOut } from '../auth.js';
 import AvatarPicker from '../components/AvatarPicker.vue';
 import PreferenceEditor from '../components/PreferenceEditor.vue';
 import { myPreferences, loadMyPreferences, saveMyPreferences } from '../groupPreferences.js';
@@ -65,6 +65,7 @@ async function removeAvatar() {
  * invites two different answers.
  */
 const prefSaving = ref(false);
+const prefLoading = ref(true);
 const prefNotice = ref('');
 const prefError = ref('');
 
@@ -96,6 +97,7 @@ const loadError = ref(null);
 const saveError = ref('');
 const sessionExpired = ref(false);
 const saved = ref(false);
+let profileRequest = 0;
 
 function fillForm(value) {
   form.value = {
@@ -110,23 +112,35 @@ function fillForm(value) {
 }
 
 async function loadProfile() {
+  const requestId = ++profileRequest;
   loading.value = true;
   loadError.value = null;
   try {
     const response = await api.profile();
+    if (requestId !== profileRequest) return;
     profile.value = response.profile;
     fillForm(response.profile);
   } catch (error) {
-    loadError.value = error;
+    if (requestId === profileRequest) loadError.value = error;
   } finally {
-    loading.value = false;
+    if (requestId === profileRequest) loading.value = false;
   }
 }
 
-onMounted(() => {
+watch([() => currentUser.value?.id, sessionReady], ([userId, ready], _previous, onCleanup) => {
+  let stale = false;
+  onCleanup(() => { stale = true; profileRequest++; });
+  if (!ready) return;
+  profile.value = null;
+  form.value = null;
+  prefLoading.value = true;
+  prefError.value = '';
   loadProfile();
-  loadMyPreferences().catch(() => { prefError.value = 'Could not load your answers.'; });
-});
+  if (!userId) { prefLoading.value = false; return; }
+  loadMyPreferences()
+    .catch(() => { if (!stale) prefError.value = 'Could not load your answers.'; })
+    .finally(() => { if (!stale) prefLoading.value = false; });
+}, { immediate: true });
 
 async function save() {
   if (saving.value) return;
@@ -180,7 +194,7 @@ async function save() {
       <RouterLink v-if="loadError.status === 401" to="/login" class="btn btn--primary">Sign in</RouterLink>
       <button v-else class="btn btn--ghost" type="button" @click="loadProfile">Retry</button>
     </div>
-    <form v-else-if="form" class="profile__form" @submit.prevent="save">
+    <div v-else-if="form" class="profile__form">
       <!-- Outside the save flow on purpose: a picture applies the moment it is
            chosen, so nobody picks one, forgets to press Save, and loses it. -->
       <section class="profile__card" aria-labelledby="profile-picture">
@@ -200,7 +214,7 @@ async function save() {
         <div class="profile__fields">
           <label class="profile__field">
             Display name
-            <input v-model="form.displayName" type="text" autocomplete="nickname" required />
+            <input v-model="form.displayName" form="profile-form" type="text" autocomplete="nickname" required />
           </label>
           <label class="profile__field">
             <span>Email <span class="profile__hint">Only visible to you.</span></span>
@@ -208,25 +222,25 @@ async function save() {
           </label>
           <label class="profile__field">
             Age range
-            <select v-model="form.ageBand" required>
+            <select v-model="form.ageBand" form="profile-form" required>
               <option v-for="band in ageBands" :key="band" :value="band">{{ band }}</option>
             </select>
           </label>
           <label class="profile__field">
             Home region
-            <select v-model="form.homeRegion" required>
+            <select v-model="form.homeRegion" form="profile-form" required>
               <option v-for="(label, value) in regions" :key="value" :value="value">{{ label }}</option>
             </select>
           </label>
           <label class="profile__field">
             Gender
-            <select v-model="form.gender" required>
+            <select v-model="form.gender" form="profile-form" required>
               <option v-for="(label, value) in genders" :key="value" :value="value">{{ label }}</option>
             </select>
           </label>
           <label class="profile__field">
             Companion preference
-            <select v-model="form.companionGenderPref" required>
+            <select v-model="form.companionGenderPref" form="profile-form" required>
               <option v-for="(label, value) in companionPreferences" :key="value" :value="value">{{ label }}</option>
             </select>
           </label>
@@ -234,7 +248,7 @@ async function save() {
         <fieldset class="profile__choices">
           <legend>Languages you speak</legend>
           <label v-for="(label, value) in languages" :key="value">
-            <input v-model="form.languages" type="checkbox" :value="value" /> {{ label }}
+            <input v-model="form.languages" form="profile-form" type="checkbox" :value="value" /> {{ label }}
           </label>
         </fieldset>
       </section>
@@ -252,7 +266,9 @@ async function save() {
         </p>
         <p v-if="prefNotice" class="profile__success" role="status">{{ prefNotice }}</p>
         <p v-if="prefError" class="profile__error" role="alert">{{ prefError }}</p>
+        <p v-if="prefLoading" class="loading-state" role="status"><LoadingSpinner />Loading your answers…</p>
         <PreferenceEditor
+          v-if="!prefLoading && myPreferences !== undefined"
           :initial="myPreferences ?? undefined"
           :busy="prefSaving"
           :saving="prefSaving"
@@ -268,7 +284,7 @@ async function save() {
         <div class="profile__vibes">
           <label v-for="(label, axis) in LABELS.vibe" :key="axis" class="profile__vibe">
             <span>{{ label }}</span>
-            <input v-model.number="form.vibe[axis]" type="range" min="0" max="4" step="1" :aria-valuetext="`${form.vibe[axis]} out of 4`" />
+            <input v-model.number="form.vibe[axis]" form="profile-form" type="range" min="0" max="4" step="1" :aria-valuetext="`${form.vibe[axis]} out of 4`" />
             <output>{{ form.vibe[axis] }}</output>
           </label>
         </div>
@@ -276,15 +292,15 @@ async function save() {
 
       <!-- Sticks to the bottom of the screen while the form is in view, so Save
            is always one click away without scrolling back down. -->
-      <div class="profile__actions">
+      <form id="profile-form" class="profile__actions" @submit.prevent="save">
         <p v-if="saveError" class="profile__error" role="alert">{{ saveError }} <RouterLink v-if="sessionExpired" to="/login">Sign in</RouterLink></p>
         <p v-else-if="saved" class="profile__success" role="status">✓ Profile saved</p>
         <button type="submit" class="btn btn--primary profile__save" :disabled="saving">
           <LoadingSpinner v-if="saving" />
           {{ saving ? 'Saving…' : 'Save profile' }}
         </button>
-      </div>
-    </form>
+      </form>
+    </div>
     <ProfileNotifications v-if="currentUser" />
 
     <section v-if="currentUser" class="profile__card profile__logout" aria-labelledby="profile-logout">

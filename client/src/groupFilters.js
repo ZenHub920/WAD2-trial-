@@ -2,7 +2,7 @@
 export function filterGroups(groups, filters = {}) {
   const query = (filters.query ?? '').trim().toLowerCase();
   return groups.filter(g =>
-    (!query || [g.artist, g.tourName, g.hostName, g.notes].filter(Boolean).join(' ').toLowerCase().includes(query))
+    (!query || [g.name, g.artist, g.tourName, g.hostName, g.notes].filter(Boolean).join(' ').toLowerCase().includes(query))
     && (!filters.section || g.section === filters.section)
     && (!filters.minCapacity || g.remainingCapacity >= Number(filters.minCapacity))
     && (!filters.spendBand || g.spendBand === Number(filters.spendBand))

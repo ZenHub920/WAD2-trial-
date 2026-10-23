@@ -69,6 +69,7 @@ export function createGroupChannelController(repos, realtime) {
     send(req, res) {
       return send(res, () => {
         const message = repos.groupChannels.send(req.params.partyId, req.user.id, req.body?.body);
+        repos.notifications.readConversation(req.user.id, `/groups/${req.params.partyId}/channel`);
         fanOut(req.params.partyId, 'group-message', { messageId: message.id });
         repos.notifications.chatMessage({
           messageId: message.id,

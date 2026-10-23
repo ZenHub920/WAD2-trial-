@@ -67,8 +67,8 @@ async function send() {
   sending.value = true;
   actionError.value = '';
   try {
-    draft.value = '';
     await api.sendGroupChannelMessage(props.id, body);
+    draft.value = '';
     await load({ quiet: true });
     await scrollToEnd();
   } catch (err) {
@@ -128,10 +128,10 @@ function when(iso) {
 
 let stopListening = null;
 onMounted(() => {
-  stopListening = onChatEvent((event) => {
-    if (event?.partyId && event.partyId !== props.id) return;
+  stopListening = onChatEvent((type, data) => {
+    if (type !== 'ready' && (!['group-message', 'group-members'].includes(type) || data.partyId !== props.id)) return;
     load({ quiet: true });
-    if (isHost.value) loadCandidates();
+    if (isHost.value && (type === 'ready' || type === 'group-members')) loadCandidates();
   });
   load().then(loadCandidates);
 });
@@ -231,6 +231,7 @@ onUnmounted(() => stopListening?.());
       <form class="composer" @submit.prevent="send">
         <input
           v-model="draft"
+          :disabled="sending"
           class="composer__input"
           :placeholder="`Message the ${channel.concert?.artist} group`"
           maxlength="2000"

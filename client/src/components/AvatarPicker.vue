@@ -88,7 +88,7 @@ function onFile(event) {
 
     <input
       ref="input"
-      class="sr-only"
+      hidden
       type="file"
       accept="image/png,image/jpeg,image/gif,image/webp"
       :disabled="busy || reading"

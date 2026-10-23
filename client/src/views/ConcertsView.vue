@@ -62,6 +62,9 @@ const discovered = computed(() => {
   }
   const local = new Map(activity.value.map((concert) => [concert.id, concert]));
   const events = new Map(concerts.value.map((concert) => [concert.id, concert]));
+  for (const concert of activity.value) {
+    if (!events.has(concert.id)) events.set(concert.id, concert);
+  }
   for (const listing of listings.value) {
     if (!events.has(listing.concert.id)) {
       events.set(listing.concert.id, local.get(listing.concert.id) ?? listing.concert);
@@ -146,7 +149,7 @@ function clearFilters() {
         <p v-if="ticketError" class="concert-error" role="alert">Could not load tickets for sale. Ticket counts and resale prices are unavailable; concert discovery is still shown.</p>
         <div v-if="concertError" class="concert-empty" role="alert">
           <h3>Ticketmaster discovery unavailable</h3>
-          <p>{{ concertError === 'concert_provider_not_configured' ? 'Ticketmaster discovery is not configured.' : 'Live concerts could not be loaded. Any available fan listings are still shown below.' }}</p>
+          <p>{{ concertError === 'concert_provider_not_configured' ? 'Ticketmaster discovery is not configured.' : 'Live concerts could not be loaded. Available local concerts and fan listings are still shown below.' }}</p>
         </div>
         <div v-if="!matchingConcerts.length && !concertError" class="concert-empty">
           <h3>{{ hasFilters ? 'No concerts match your filters' : 'No upcoming concerts available' }}</h3>

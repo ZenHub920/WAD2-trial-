@@ -164,6 +164,7 @@ function timeOf(value) {
         <textarea
           id="chat-draft"
           v-model="draft"
+          :disabled="sending"
           rows="1"
           maxlength="2000"
           placeholder="Write a message…"

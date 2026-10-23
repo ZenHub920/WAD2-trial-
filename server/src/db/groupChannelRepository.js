@@ -50,6 +50,30 @@ export function migrateGroupChannels(db) {
     -- matters, and rowid order inside a party comes free from the table order.
     CREATE INDEX IF NOT EXISTS idx_group_channel_msgs
       ON group_channel_messages(party_id);
+    CREATE TRIGGER IF NOT EXISTS revoke_group_channel_member
+      AFTER UPDATE OF status ON group_memberships WHEN NEW.status <> 'active'
+      BEGIN
+        DELETE FROM group_channel_members WHERE party_id = OLD.party_id AND user_id = OLD.user_id;
+      END;
+    CREATE TRIGGER IF NOT EXISTS delete_group_channel_member
+      AFTER DELETE ON group_memberships
+      BEGIN
+        DELETE FROM group_channel_members WHERE party_id = OLD.party_id AND user_id = OLD.user_id;
+      END;
+    CREATE TRIGGER IF NOT EXISTS cancel_group_channel
+      AFTER UPDATE OF status ON parties WHEN NEW.status = 'cancelled'
+      BEGIN
+        DELETE FROM group_channel_members WHERE party_id = NEW.id;
+      END;
+    DELETE FROM group_channel_members
+    WHERE NOT EXISTS (
+      SELECT 1 FROM parties p WHERE p.id = group_channel_members.party_id AND p.status <> 'cancelled'
+        AND (p.host_user_id = group_channel_members.user_id OR EXISTS (
+          SELECT 1 FROM group_memberships gm
+          WHERE gm.party_id = group_channel_members.party_id
+            AND gm.user_id = group_channel_members.user_id AND gm.status = 'active'
+        ))
+    );
   `);
 }
 
@@ -92,21 +116,21 @@ export function createGroupChannelRepo(db, repos) {
    */
   function ensureHost(partyId) {
     const row = party(partyId);
-    if (row) addMember.run(partyId, row.host_user_id, row.host_user_id, partyId);
+    if (row && row.status !== 'cancelled') addMember.run(partyId, row.host_user_id, row.host_user_id, partyId);
     return row;
   }
 
   /** 404 rather than 403 for a non-member: ids should not be probeable. */
   function requireMember(partyId, userId) {
     const row = ensureHost(partyId);
-    if (!row) throw fail('group_not_found', 404);
+    if (!row || row.status === 'cancelled') throw fail('group_not_found', 404);
     if (!channelMember.get(partyId, userId)) throw fail('group_channel_not_found', 404);
     return row;
   }
 
   function requireHost(partyId, userId) {
     const row = ensureHost(partyId);
-    if (!row) throw fail('group_not_found', 404);
+    if (!row || row.status === 'cancelled') throw fail('group_not_found', 404);
     if (row.host_user_id !== userId) throw fail('group_host_required', 403);
     return row;
   }

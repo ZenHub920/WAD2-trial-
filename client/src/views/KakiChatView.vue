@@ -269,6 +269,7 @@ async function acknowledgeRead() {
  * would fight the scroll position and flicker the thread.
  */
 function handleEvent(type, data) {
+  if (!['ready', 'message', 'message-updated', 'read'].includes(type)) return;
   if (data.conversationId && data.conversationId !== props.id) return;
 
   if (type === 'ready') {

@@ -289,6 +289,9 @@ export function createMembershipRepo(db, repos) {
       if (p.status === "cancelled" || !s)
         throw communityError("group_unavailable");
       if (member(user, p.id)) throw communityError("already_group_member");
+      // A friend invitation must not bypass an unresolved stranger-place offer,
+      // even when both entry paths lead to this same group.
+      ensureFree(user, p.concert_id, "");
       const blocks = repos.users.blocklist();
       const members = db.prepare(
         "SELECT user_id FROM group_memberships WHERE party_id=? AND status='active'",

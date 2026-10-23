@@ -3,7 +3,7 @@
  * Finder stages preserve filters while a frozen deck keeps each cursor stable.
  * A swipe advances only after the server has stored its decision.
  */
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 import SwipeDeck from '../components/SwipeDeck.vue';
 import KakiCard from '../components/kaki/KakiCard.vue';
@@ -77,6 +77,9 @@ const dates = computed(() => {
     : people.value;
   return [...new Set(pool.map((p) => p.eventDate))].sort();
 });
+watch(() => filters.value.artist, () => {
+  if (filters.value.date && !dates.value.includes(filters.value.date)) filters.value.date = '';
+});
 
 const sections = computed(() =>
   [...new Set(people.value.map((p) => p.sectionPref))].sort(),
@@ -102,22 +105,25 @@ const deck = ref([]);
  * history screen has to take effect without another round trip.
  */
 async function buildDeck() {
+  if (ranking.value) return;
   ranking.value = true;
+  deck.value = [];
+  stablePartnerId.value = null;
   try {
     const result = await loadRecommendations(applied.value);
     ranked.value = result.ranked;
     rankingSolver.value = result.solver ?? null;
     stablePartnerId.value = result.stablePartnerId ?? null;
-    people.value = result.people;
+    const decided = new Set(Object.keys(decisions.value));
+    deck.value = result.people.filter((person) => !decided.has(person.id));
   } catch {
     // The ranked endpoint is an enhancement; the pool already loaded.
     ranked.value = false;
+    const decided = new Set(Object.keys(decisions.value));
+    deck.value = applyFilters(people.value, applied.value, decided);
   } finally {
     ranking.value = false;
   }
-  const decided = new Set(Object.keys(decisions.value));
-  // Already filtered server-side; this only drops what has been swiped.
-  deck.value = people.value.filter((person) => !decided.has(person.id));
 }
 
 /** Count under the CURRENTLY EDITED filters, so Apply can preview its result. */
@@ -200,7 +206,7 @@ function backToDeck() {
         v-if="stage !== 'filters'"
         class="kaki__back"
         aria-label="Back"
-        :disabled="swipePending"
+        :disabled="swipePending || ranking"
         @click="stage === 'matched' ? backToDeck() : stage = 'filters'"
       >
         ←
@@ -221,7 +227,7 @@ function backToDeck() {
           class="kaki__icon-btn"
           aria-label="Edit filters"
           title="Edit filters"
-          :disabled="swipePending"
+          :disabled="swipePending || ranking"
           @click="stage = 'filters'"
         >
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -322,12 +328,12 @@ function backToDeck() {
         <RouterLink v-if="swipeError.status === 401" to="/login">Sign in</RouterLink>
         <p v-else class="mono">{{ swipeError.message }}</p>
       </div>
-      <p v-if="deck.length === 0" class="kaki__state">
+      <p v-if="!ranking && deck.length === 0" class="kaki__state">
         No one left under these filters.
         <button class="btn btn--text" @click="stage = 'filters'">Change filters</button>
       </p>
       <SwipeDeck
-        v-else
+        v-else-if="!ranking"
         :items="deck"
         :show-profile="false"
         noun-singular="profile"

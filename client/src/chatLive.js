@@ -34,7 +34,7 @@ let source = null;
 
 /**
  * Subscribe to chat events. Returns an unsubscribe function.
- * Events: 'message', 'message-updated', 'read', 'ready'.
+ * Events: 'message', 'message-updated', 'read', 'group-message', 'group-members', 'ready'.
  */
 export function onChatEvent(handler) {
   handlers.add(handler);
@@ -76,7 +76,7 @@ function connect() {
     dispatch('ready', {});
   });
 
-  for (const type of ['message', 'message-updated', 'read']) {
+  for (const type of ['message', 'message-updated', 'read', 'group-message', 'group-members']) {
     source.addEventListener(type, (event) => {
       let data;
       try { data = JSON.parse(event.data); } catch { return; }
@@ -86,6 +86,7 @@ function connect() {
         const mine = data.unreadFor[currentUser.value.id];
         if (typeof mine === 'number') unreadTotal.value = mine;
       }
+      if (type === 'read' && data.readerId === currentUser.value?.id) refreshUnread();
       dispatch(type, data);
     });
   }

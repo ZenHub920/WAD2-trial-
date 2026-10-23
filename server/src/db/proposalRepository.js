@@ -526,9 +526,11 @@ export function createProposalRepo(db, repos = null) {
         ON CONFLICT(party_id,user_id) DO UPDATE SET status='active',source='proposal',joined_at=datetime('now'),left_at=NULL`)
         .run(proposal.party_id,seekerId,proposal.concert_id);
       db.prepare(`INSERT INTO group_member_preferences(party_id,user_id,answers_json) VALUES(?,?,?)
-        ON CONFLICT(party_id,user_id) DO NOTHING`).run(proposal.party_id,seekerId,
-        db.prepare('SELECT answers_json FROM seeker_discovery_preferences WHERE user_id=? AND concert_id=?')
-          .get(seekerId,proposal.concert_id)?.answers_json ?? '{"about":[],"wants":[],"avoid":[]}');
+        ON CONFLICT(party_id,user_id) DO UPDATE SET answers_json=excluded.answers_json`).run(proposal.party_id,seekerId,
+        repos?.recommendations
+          ? JSON.stringify(repos.recommendations.answers(seekerId,proposal.concert_id))
+          : db.prepare('SELECT answers_json FROM seeker_discovery_preferences WHERE user_id=? AND concert_id=?')
+            .get(seekerId,proposal.concert_id)?.answers_json ?? '{"about":[],"wants":[],"avoid":[]}');
       db.prepare('UPDATE seeker_requests SET matching_opt_in=0 WHERE id=?').run(proposal.seeker_request_id);
       return {proposalId,status:'confirmed',seekerApproved:true,hostApproved:true,...queueInfo(db, { proposalId })};
     }).immediate

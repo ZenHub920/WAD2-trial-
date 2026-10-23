@@ -280,6 +280,7 @@ test('client filters cover text, seating, capacity, spending, arrival, plans, vi
   assert.equal(filterGroups([a, b], { activity: 'pre_meetup', vibe: 'dancing' }).length, 2);
   assert.equal(filterGroups([a, b])[0].id, b.id);
   assert.equal(filterGroups([a, b], { query: 'nonexistent' }).length, 0);
+  assert.deepEqual(filterGroups([{ ...a, name: 'Front Row Crew' }, b], { query: 'front row' }).map(g => g.id), [a.id]);
 });
 test('saved preference priority never overrides feasibility or changes group ranking', () => {
   const s = makeSeeker('s', makeUser('u'));
