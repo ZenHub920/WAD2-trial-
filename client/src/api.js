@@ -64,6 +64,7 @@ export const api = {
   notificationSettings: ()=>request('/me/notification-preferences'),
   saveNotificationSettings: data=>request('/me/notification-preferences',{method:'PUT',body:JSON.stringify(data)}),
   preferenceConcepts: (q='') => request(`/preference-concepts?q=${encodeURIComponent(q)}`),
+  preferenceQuiz: () => request('/preference-quiz'),
   groupMembership: id=>request(`/groups/${encodeURIComponent(id)}/membership`),
   myPreferences: ()=>request('/me/preferences'),
   saveMyPreferences: data=>request('/me/preferences',{method:'PUT',body:JSON.stringify(data)}),

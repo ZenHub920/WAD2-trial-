@@ -40,6 +40,7 @@
 import { classifyInstance, CLASS } from '../matching/classify.js';
 import { selectSolver } from '../matching/registry.js';
 import { compareProfiles, individualProfile } from './discoveryPreferences.js';
+import { dealbreakerHit } from './traitScoring.js';
 
 const EMPTY_ANSWERS = { about: [], wants: [], avoid: [] };
 
@@ -67,6 +68,7 @@ export function recommendCompanions(people, viewerId, answersFor) {
       ranked: false,
       reason: 'questionnaire_not_answered',
       stablePartnerId: null,
+      vetoed: [],
       people,
     };
   }
@@ -80,11 +82,23 @@ export function recommendCompanions(people, viewerId, answersFor) {
     profiles.set(id, profileFor(answersFor(id)) ?? individualProfile(EMPTY_ANSWERS));
   }
 
+  // A dealbreaker is a filter, not a bad score, so it is applied BEFORE the
+  // instance is built: the solver never sees somebody the viewer has refused,
+  // and the partner it finds is stable among people they would actually accept.
+  const vetoed = [];
+  const eligible = [];
+  for (const person of people) {
+    const hit = dealbreakerHit(mine, profiles.get(person.user.id));
+    if (hit) vetoed.push({ id: person.id, userId: person.user.id, dealbreaker: hit });
+    else eligible.push(person);
+  }
+
   /** How well `them` answers what `me` said they want. */
   const scoreFrom = (meId, themId) =>
     compareProfiles(profiles.get(meId), profiles.get(themId)).seekerScore;
 
-  const ids = [...profiles.keys()];
+  const ids = [viewerId, ...new Set(eligible.map((person) => person.user.id))]
+    .filter((id, index, all) => all.indexOf(id) === index);
   const instance = classifyInstance({ people: ids });
   // selectSolver returns the registry's decision, not the function: the solver
   // itself plus what it had to relax and what it can still promise afterwards.
@@ -108,13 +122,15 @@ export function recommendCompanions(people, viewerId, answersFor) {
     if (pair) stablePartnerId = pair[0] === viewerId ? pair[1] : pair[0];
   }
 
-  const scored = people.map((person) => {
+  const scored = eligible.map((person) => {
     const comparison = compareProfiles(mine, profiles.get(person.user.id));
     return {
       ...person,
       compatibility: comparison.score,
       fitForYou: comparison.seekerScore,
-      reasons: comparison.reasons,
+      // Concept agreement first, then what the quiz dimensions agree on, so a
+      // card leads with the person's own words and falls back on the quiz.
+      reasons: [...comparison.reasons, ...comparison.traitReasons].slice(0, 4),
       stableMatch: person.user.id === stablePartnerId,
     };
   });
@@ -135,6 +151,9 @@ export function recommendCompanions(people, viewerId, answersFor) {
       : null,
     // `stable: false` is a real answer for roommates, not an error.
     stable: stable ? stable.stable : null,
+    // Reported rather than silently dropped: a deck that shrank for a reason
+    // the viewer set themselves should be able to say so.
+    vetoed,
     people: scored,
   };
 }

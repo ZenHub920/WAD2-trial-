@@ -266,6 +266,11 @@ async function save() {
         </p>
         <p v-if="prefNotice" class="profile__success" role="status">{{ prefNotice }}</p>
         <p v-if="prefError" class="profile__error" role="alert">{{ prefError }}</p>
+        <!-- Mounted only once the saved answers are in hand. The editor reads
+             `initial` when it is created, so rendering it while they are still
+             loading showed an empty questionnaire to someone who had already
+             answered — and saving from there would have replaced their answers
+             with nothing. -->
         <p v-if="prefLoading" class="loading-state" role="status"><LoadingSpinner />Loading your answers…</p>
         <PreferenceEditor
           v-if="!prefLoading && myPreferences !== undefined"
