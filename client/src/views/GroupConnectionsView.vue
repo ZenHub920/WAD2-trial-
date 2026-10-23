@@ -25,6 +25,10 @@ const automaticOffers = ref([]);
 const groupsLoading = ref(true), loading = ref(false), busy = ref(false);
 const error = ref(''), message = ref('');
 const offset = ref(0), total = ref(0);
+/** One screen of candidates; the server pages in the same size. */
+const PAGE_SIZE = 20;
+const hasPreviousPage = computed(() => offset.value > 0);
+const hasNextPage = computed(() => offset.value + PAGE_SIZE < total.value);
 const allConcerts = ref([]), hostConcertId = ref('');
 const selectedConcert = computed(() => allConcerts.value.find(concert => concert.id === hostConcertId.value));
 const hostForm = reactive({ name: '', capacity: 2, section: 'standing_pen', spend_band: 2, arrival_plan: 'doors', plans: {}, notes: '' });
@@ -360,7 +364,12 @@ async function host() {
           <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading groups…</p>
           <div v-else-if="visible.length" class="group-grid"><GroupListingCard v-for="g in visible" :key="g.id" :group="g"><p v-if="g.invitation">Invitation: {{ g.invitation.status === 'pending' ? 'Awaiting a response' : g.invitation.status === 'accepted' ? 'Groups connected' : 'Declined' }}</p><button v-else class="btn btn--primary" :disabled="busy" @click="act(() => api.inviteGroup(sourceId, g.id))">Invite group to connect</button></GroupListingCard></div>
           <div v-else class="card group-panel empty-state"><h3>No groups match right now</h3><p>Try different filters. Only published groups open to connections at this concert appear here.</p></div>
-          <nav class="group-actions" aria-label="Connection candidates pages"><button class="btn btn--ghost" :disabled="busy || loading || offset === 0" @click="offset = Math.max(0, offset - 20); loadCandidates()">Previous 20</button><span>{{ total }} results</span><button class="btn btn--ghost" :disabled="busy || loading || offset + 20 >= total" @click="offset += 20; loadCandidates()">Next 20</button></nav>
+          <!-- A page button exists only when that page does. -->
+          <nav class="group-actions" aria-label="Connection candidates pages">
+            <button v-if="hasPreviousPage" class="btn btn--ghost" :disabled="busy || loading" @click="offset = Math.max(0, offset - PAGE_SIZE); loadCandidates()">Previous {{ PAGE_SIZE }}</button>
+            <span>{{ total }} results</span>
+            <button v-if="hasNextPage" class="btn btn--ghost" :disabled="busy || loading" @click="offset += PAGE_SIZE; loadCandidates()">Next {{ PAGE_SIZE }}</button>
+          </nav>
         </template>
       </template>
 
