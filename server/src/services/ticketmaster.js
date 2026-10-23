@@ -34,6 +34,11 @@ export function normalizeTicketmasterEvent(event) {
     venue: venue.name,
     city: venue.city.name,
     event_date: date,
+    event_time: typeof event?.dates?.start?.localTime === 'string' ? event.dates.start.localTime : null,
+    event_timezone: typeof event?.dates?.timezone === 'string' ? event.dates.timezone : venue.timezone ?? 'Asia/Singapore',
+    provider_status: event?.dates?.status?.code ?? 'onsale',
+    venue_latitude: Number.isFinite(Number(venue?.location?.latitude)) ? Number(venue.location.latitude) : null,
+    venue_longitude: Number.isFinite(Number(venue?.location?.longitude)) ? Number(venue.location.longitude) : null,
     hero_image_url: httpsUrl(image?.url),
     image_attribution: image?.attribution || null,
     official_url: httpsUrl(event.url),
@@ -58,6 +63,7 @@ export async function searchTicketmaster({
   fetchImpl = fetch,
   url = DISCOVERY_URL,
   now = new Date(),
+  maxPages = 3,
 } = {}) {
   if (!apiKey) throw new Error('TICKETMASTER_API_KEY is required');
   const requestUrl = new URL(url);
@@ -71,10 +77,22 @@ export async function searchTicketmaster({
     ...(keyword ? { keyword } : {}),
   });
 
-  const response = await fetchImpl(requestUrl, { signal: AbortSignal.timeout(10000) });
-  if (!response.ok) throw new Error(`Ticketmaster returned HTTP ${response.status}`);
-  const data = await response.json();
-  return (data?._embedded?.events ?? [])
-    .map(normalizeTicketmasterEvent)
-    .filter((event) => event !== null);
+  const events = new Map();
+  for (let page = 0; page < Math.min(10, Math.max(1, maxPages)); page++) {
+    requestUrl.searchParams.set('page', String(page));
+    const response = await fetchImpl(new URL(requestUrl), { signal: AbortSignal.timeout(10000) });
+    if (!response.ok) {
+      const error = new Error(`Ticketmaster returned HTTP ${response.status}`);
+      error.status = response.status;
+      error.retryAfter = response.headers?.get('retry-after');
+      throw error;
+    }
+    const data = await response.json();
+    for (const raw of data?._embedded?.events ?? []) {
+      const event = normalizeTicketmasterEvent(raw);
+      if (event) events.set(event.id, event);
+    }
+    if (page + 1 >= (data?.page?.totalPages ?? 1)) break;
+  }
+  return [...events.values()];
 }

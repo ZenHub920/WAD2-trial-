@@ -19,6 +19,23 @@ const POLL_MS = 4000;
 
 const conversation = ref(null);
 const messages = ref([]);
+const historyPage = ref(null);
+const loadingHistory = ref(false);
+async function loadOlder() {
+  if (!historyPage.value?.nextCursor || loadingHistory.value) return;
+  loadingHistory.value = true;
+  const height = listEl.value?.scrollHeight ?? 0;
+  const top = listEl.value?.scrollTop ?? 0;
+  try {
+    const body = await api.conversation(props.id, null, { before: historyPage.value.nextCursor });
+    const known = new Set(messages.value.map((m) => m.id));
+    messages.value = [...body.messages.filter((m) => !known.has(m.id)), ...messages.value];
+    historyPage.value = body.page;
+    await nextTick();
+    if (listEl.value) listEl.value.scrollTop = top + listEl.value.scrollHeight - height;
+  } catch { sendError.value = 'Could not load older messages.'; }
+  finally { loadingHistory.value = false; }
+}
 const loading = ref(true);
 const error = ref(null);
 const draft = ref('');
@@ -52,6 +69,7 @@ async function load() {
   try {
     const body = await api.conversation(props.id);
     conversation.value = body.conversation;
+    historyPage.value = body.page;
     append(body.messages);
   } catch (err) {
     error.value = err;
@@ -143,6 +161,7 @@ function timeOf(value) {
       </RouterLink>
 
       <ol ref="listEl" class="messages" aria-live="polite" aria-label="Messages">
+        <li v-if="historyPage?.nextCursor"><button class="btn btn--ghost" :disabled="loadingHistory" @click="loadOlder">{{ loadingHistory ? 'Loading…' : 'Load older messages' }}</button></li>
         <li v-if="!messages.length" class="messages__empty">
           {{ conversation.role === 'buyer'
             ? `Say hi to ${conversation.other.displayName}. Ask about the seats, transfer, or price.`

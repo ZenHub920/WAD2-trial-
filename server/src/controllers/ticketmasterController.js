@@ -1,26 +1,16 @@
-import { searchTicketmaster } from '../services/ticketmaster.js';
-import { importTicketmasterConcerts } from '../db/ticketmasterConcerts.js';
+import { createConcertProvider } from '../services/concertProvider.js';
 
-export function createTicketmasterController(db) {
+export function createTicketmasterController(db, provider = createConcertProvider({db})) {
   return {
     async discover(req, res, next) {
-      if (!process.env.TICKETMASTER_API_KEY) {
-        return res.status(503).json({ error: 'concert_provider_not_configured' });
-      }
       const keyword = req.query.keyword;
       if (keyword !== undefined && (typeof keyword !== 'string' || keyword.length > 100)) {
         return res.status(400).json({ error: 'invalid_keyword' });
       }
-      let events;
       try {
-        events = await searchTicketmaster({ keyword: keyword?.trim() });
-      } catch {
-        return res.status(502).json({ error: 'concert_provider_unavailable' });
-      }
-      try {
-        importTicketmasterConcerts(db, events);
-        res.json({ events });
+        res.json(await provider.discover({ keyword: keyword?.trim() }));
       } catch (error) {
+        if (error.status) return res.status(error.status).json({ error: error.message });
         next(error);
       }
     },

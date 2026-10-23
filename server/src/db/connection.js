@@ -21,6 +21,7 @@ import { migrateGenderPref } from './genderPrefMigration.js';
 import { migrateHybrid } from './hybridMigrations.js';
 import { migrateUserPreferences } from './userPreferencesMigration.js';
 import { migrateGroupChannels } from './groupChannelRepository.js';
+import { migrateProviders } from './providerMigrations.js';
 const here = dirname(fileURLToPath(import.meta.url));
 
 let db = null;
@@ -49,6 +50,7 @@ export function getDb() {
   migrateHybrid(db);
   migrateGroupChannels(db);
   migrateNotifications(db);
+  migrateProviders(db);
   return db;
 }
 
@@ -247,6 +249,7 @@ export function createTestDb({ hybrid = true } = {}) {
   if (hybrid) migrateHybrid(testDb);
   migrateGroupChannels(testDb);
   migrateNotifications(testDb);
+  migrateProviders(testDb);
   return testDb;
 }
 

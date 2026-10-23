@@ -117,8 +117,8 @@ export const api = {
   startChat: (ticketId) => request(`/tickets/${encodeURIComponent(ticketId)}/conversations`, { method: 'POST' }),
   conversations: () => request('/conversations'),
   /** With `after`, only messages newer than that message id — what polling uses. */
-  conversation: (id, after) =>
-    request(`/conversations/${encodeURIComponent(id)}${after ? `?after=${encodeURIComponent(after)}` : ''}`),
+  conversation: (id, after, options = {}) =>
+    request(`/conversations/${encodeURIComponent(id)}?${new URLSearchParams({ ...options, ...(after ? {after} : {}) })}`),
   sendMessage: (id, body) =>
     request(`/conversations/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify({ body }) }),
 
@@ -173,7 +173,7 @@ export const api = {
     request(`/kaki/concerts/${encodeURIComponent(concertId)}/conversations/${encodeURIComponent(userId)}`, {
       method: 'POST',
     }),
-  kakiConversation: (id) => request(`/kaki/conversations/${encodeURIComponent(id)}`),
+  kakiConversation: (id, options = {}) => request(`/kaki/conversations/${encodeURIComponent(id)}?${new URLSearchParams(options)}`),
   sendKakiMessage: (id, body, replyTo = null) =>
     request(`/kaki/conversations/${encodeURIComponent(id)}/messages`, {
       method: 'POST', body: JSON.stringify({ body, replyTo }),
@@ -197,7 +197,7 @@ export const api = {
    */
   groupChannels: () => request('/me/group-channels'),
   groupChannelsUnread: () => request('/group-channels/unread'),
-  groupChannel: (partyId) => request(`/group-channels/${encodeURIComponent(partyId)}`),
+  groupChannel: (partyId, options = {}) => request(`/group-channels/${encodeURIComponent(partyId)}?${new URLSearchParams(options)}`),
   groupChannelCandidates: (partyId) => request(`/group-channels/${encodeURIComponent(partyId)}/candidates`),
   addToGroupChannel: (partyId, userId) =>
     request(`/group-channels/${encodeURIComponent(partyId)}/members`, { method: 'POST', body: JSON.stringify({ userId }) }),

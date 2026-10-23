@@ -33,7 +33,7 @@ export function createGroupChannelController(repos, realtime) {
 
     open(req, res) {
       return send(res, () => {
-        const channel = repos.groupChannels.open(req.params.partyId, req.user.id);
+        const channel = repos.groupChannels.open(req.params.partyId, req.user.id, req.query);
         // Opening is reading; the badge should not survive the visit.
         repos.groupChannels.markRead(req.params.partyId, req.user.id);
         repos.notifications.readConversation(req.user.id, `/groups/${req.params.partyId}/channel`);

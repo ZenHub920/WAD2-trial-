@@ -24,6 +24,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { readMessagePage } from './messagePage.js';
 
 /** The two ids in the canonical order the table's CHECK constraint requires. */
 function ordered(x, y) {
@@ -306,6 +307,10 @@ export function createKakiChatRepo(db) {
     findById: (id) => findById.get(id),
     forUser: (me) => listForUser.all({ me }),
     messages: (conversationId) => listMessages.all(conversationId),
+    messagePage(conversationId, options) {
+      const { rows, page } = readMessagePage(db, 'kaki', conversationId, options);
+      return { rows: rows.map((m) => messageById.get(m.id)), page };
+    },
 
     addMessage(conversationId, senderId, body, replyTo = null) {
       const id = `km_${randomUUID().slice(0, 12)}`;

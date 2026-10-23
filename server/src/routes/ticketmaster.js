@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { createTicketmasterController } from '../controllers/ticketmasterController.js';
 
-export function createTicketmasterRoutes(db) {
+export function createTicketmasterRoutes(db, provider) {
   const router = Router();
-  const controller = createTicketmasterController(db);
+  const controller = createTicketmasterController(db, provider);
 
   router.get('/concerts/external', controller.discover);
 

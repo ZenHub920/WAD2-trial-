@@ -39,13 +39,19 @@ export function createChatController(repos) {
       if (!participantOf(conversation, req.user.id)) {
         return res.status(404).json({ error: 'conversation_not_found' });
       }
-      const after = typeof req.query.after === 'string' ? req.query.after : null;
-      const messages = repos.conversations.messages(conversation.id, after).map(publicMessage);
+      let paged;
+      try { paged = repos.conversations.messagePage(conversation.id, req.query); }
+      catch (error) {
+        if (error.status) return res.status(error.status).json({ error: error.message });
+        throw error;
+      }
+      const messages = paged.rows.map(publicMessage);
       const notificationsRead = repos.notifications.readConversation(req.user.id, `/chat/${conversation.id}`);
       res.json({
         notificationsRead,
         conversation: publicConversation(conversation, req.user.id),
         messages,
+        page: paged.page,
       });
     },
 
