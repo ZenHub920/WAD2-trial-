@@ -19,7 +19,9 @@ export function migrateMeetups(db) {
   CREATE TABLE IF NOT EXISTS meetup_comments(id TEXT PRIMARY KEY,meetup_id TEXT NOT NULL REFERENCES meetups(id),user_id TEXT NOT NULL REFERENCES users(id),body TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT(datetime('now')));
   CREATE TABLE IF NOT EXISTS meetup_approvals(meetup_id TEXT NOT NULL REFERENCES meetups(id),version INTEGER NOT NULL,user_id TEXT NOT NULL REFERENCES users(id),PRIMARY KEY(meetup_id,version,user_id));
   CREATE INDEX IF NOT EXISTS idx_meetup_party ON meetups(party_id);
-  CREATE INDEX IF NOT EXISTS idx_meetup_connection ON meetups(connection_id);`);
+  CREATE INDEX IF NOT EXISTS idx_meetup_connection ON meetups(connection_id);
+  CREATE INDEX IF NOT EXISTS idx_meetup_creator ON meetups(creator_id);
+  CREATE INDEX IF NOT EXISTS idx_meetup_kaki ON meetups(kaki_conversation_id);`);
 }
 export const coordinates = (lat, lon) =>
   Number.isFinite(lat) &&
@@ -135,8 +137,17 @@ export function createMeetupRepo(db, repos) {
     participants,
     list(user) {
       return db
-        .prepare("SELECT * FROM meetups ORDER BY rowid DESC")
-        .all()
+        .prepare(`WITH relevant_parties(id) AS(
+          SELECT id FROM parties WHERE host_user_id=?
+          UNION SELECT party_id FROM group_memberships WHERE user_id=? AND status='active'
+          UNION SELECT mp.party_id FROM match_proposals mp JOIN seeker_requests s ON s.id=mp.seeker_request_id WHERE mp.status='confirmed' AND s.user_id=?
+        ) SELECT m.* FROM meetups m WHERE
+          m.creator_id=? OR
+          m.party_id IN (SELECT id FROM relevant_parties) OR
+          m.connection_id IN (SELECT id FROM group_connections WHERE party_a_id IN(SELECT id FROM relevant_parties) OR party_b_id IN(SELECT id FROM relevant_parties)) OR
+          m.kaki_conversation_id IN(SELECT id FROM conversations WHERE user_a_id=? OR user_b_id=?)
+          ORDER BY m.rowid DESC`)
+        .all(user,user,user,user,user,user)
         .filter((m) => participants(m).includes(user))
         .map((m) => ({
           id: m.id,
@@ -144,6 +155,16 @@ export function createMeetupRepo(db, repos) {
           status: m.status,
           version: m.version,
         }));
+    },
+    // Server-internal input. Public detail deliberately returns only the caller's origins.
+    planningInput(user, id) {
+      const m = access(user, id), ids = participants(m);
+      return {
+        ...m,
+        participantCount: ids.length,
+        availability: db.prepare('SELECT * FROM meetup_availability WHERE meetup_id=?').all(id).filter((a) => ids.includes(a.user_id)),
+        places: db.prepare('SELECT p.*,COUNT(v.user_id) AS votes FROM meetup_places p LEFT JOIN meetup_votes v ON v.meetup_id=p.meetup_id AND v.place_id=p.id WHERE p.meetup_id=? GROUP BY p.id ORDER BY p.rowid').all(id),
+      };
     },
     create: db.transaction((user, input = {}) => {
       const starts = timestamp(input.startsAt),
