@@ -131,6 +131,48 @@ test('missing routes retain distance fallback and stale access is rechecked afte
   await assert.rejects(changed.locations('friend', id, 'MRT'), /meetup_not_found/); assert.equal(reads, 1);
   assert.deepEqual(repos.meetups.list('outsider'), []);
 });
+test('departed participants cannot influence travel suggestions through retained vote history', async (t) => {
+  const { db, repos, id, a, b } = setup(t);
+  repos.meetups.vote('host', id, a);
+  repos.meetups.vote('friend', id, b);
+  assert.equal(repos.meetups.planningInput('host', id).places.find((p) => p.id === b).votes, 1);
+  repos.membership.leave('friend', 'p1');
+  // Keep historical rows; filtering must not depend on deleting evidence of a vote.
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM meetup_votes WHERE meetup_id=? AND user_id=?').get(id, 'friend').n, 1);
+  const input = repos.meetups.planningInput('host', id);
+  assert.equal(input.participantCount, 1);
+  assert.equal(input.places.find((p) => p.id === a).votes, 1);
+  assert.equal(input.places.find((p) => p.id === b).votes, 0);
+  assert.equal(input.availability.some((r) => r.user_id === 'friend'), false);
+  const service = createMeetupIntegrations({ repos, now: () => now, travel: { configured: false } });
+  const result = await service.suggestions('host', id);
+  assert.equal(result.options.find((o) => o.placeId === b).votes, 0);
+});
+test('a participant leaving during an awaited route rejects the entire stale group travel result', async (t) => {
+  const { repos, id } = setup(t);
+  let announceStarted, release;
+  const started = new Promise((resolve) => { announceStarted = resolve; });
+  const providerGate = new Promise((resolve) => { release = resolve; });
+  const service = createMeetupIntegrations({ repos, now: () => now, travel: { configured: true, route: async () => {
+    announceStarted();
+    await providerGate;
+    return { status: 'available', durationMinutes: 10 };
+  } } });
+  const version = repos.meetups.access('host', id).version;
+  const completion = service.suggestions('host', id).then((value) => ({ value }), (error) => ({ error }));
+  await started;
+  try {
+    repos.membership.leave('friend', 'p1');
+    // The host retains access and the meetup version did not change: a version-only
+    // check cannot detect that one of the computed journeys is no longer eligible.
+    assert.equal(repos.meetups.access('host', id).version, version);
+    assert.equal(repos.meetups.participants(repos.meetups.access('host', id)).includes('friend'), false);
+  } finally { release(); }
+  const outcome = await completion;
+  assert.equal(outcome.value, undefined);
+  assert.equal(outcome.error?.message, 'stale_meetup_membership');
+  assert.equal(outcome.error?.status, 409);
+});
 test('a partial route matrix never promotes unmeasured journeys or changes distance ranking', async (t) => {
   const { repos, id, a } = setup(t);
   const service = createMeetupIntegrations({ repos, now: () => now, travel: { configured: true, route: async ({ destination }) => destination.id === a ? { status: 'available', durationMinutes: 2 } : { status: 'unavailable', reason: 'route_not_found' } } });
