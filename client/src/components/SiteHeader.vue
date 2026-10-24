@@ -45,7 +45,7 @@ onUnmounted(() => {
           <RouterLink to="/groups">Groups</RouterLink>
           <RouterLink v-if="currentUser" to="/messages" class="nav__messages">
             Messages
-            <span v-if="unreadTotal > 0" class="nav__badge" :aria-label="`${unreadTotal} ${unreadTotal === 1 ? 'companion' : 'companions'} waiting on a reply`">{{ unreadTotal > 99 ? '99+' : unreadTotal }}</span>
+            <span v-if="unreadTotal > 0" class="nav__badge" :aria-label="`${unreadTotal} unread ${unreadTotal === 1 ? 'chat' : 'chats'}`">{{ unreadTotal > 99 ? '99+' : unreadTotal }}</span>
           </RouterLink>
         </div>
         <div class="nav__account">

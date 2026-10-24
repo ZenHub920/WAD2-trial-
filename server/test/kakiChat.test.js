@@ -29,6 +29,7 @@ async function fixture(t) {
     const response = await fetch(`http://127.0.0.1:${server.address().port}/api${path}`, {
       method,
       headers: {
+        'X-Requested-With': 'Encore',
         ...(cookie ? { cookie } : {}),
         ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
       },

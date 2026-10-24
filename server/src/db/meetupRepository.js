@@ -22,6 +22,8 @@ export function migrateMeetups(db) {
   CREATE INDEX IF NOT EXISTS idx_meetup_connection ON meetups(connection_id);
   CREATE INDEX IF NOT EXISTS idx_meetup_creator ON meetups(creator_id);
   CREATE INDEX IF NOT EXISTS idx_meetup_kaki ON meetups(kaki_conversation_id);`);
+  if (!db.prepare("PRAGMA table_info(meetup_availability)").all().some((column) => column.name === "travel_mode"))
+    db.exec("ALTER TABLE meetup_availability ADD COLUMN travel_mode TEXT NOT NULL DEFAULT 'transit' CHECK(travel_mode IN ('transit','drive'))");
 }
 export const coordinates = (lat, lon) =>
   Number.isFinite(lat) &&
@@ -289,6 +291,7 @@ export function createMeetupRepo(db, repos) {
           end <= start ||
           start % SLOT_MS ||
           end % SLOT_MS ||
+          (r.travelMode !== undefined && !["transit", "drive"].includes(r.travelMode)) ||
           (hasCoordinates && !coordinates(r.latitude, r.longitude))
         )
           throw communityError("invalid_availability", 400);
@@ -298,6 +301,7 @@ export function createMeetupRepo(db, repos) {
           latitude: hasCoordinates ? r.latitude : null,
           longitude: hasCoordinates ? r.longitude : null,
           label: typeof r.label === "string" ? r.label.slice(0, 100) : null,
+          travelMode: r.travelMode ?? "transit",
         };
       });
       rows.sort((a, b) => a.start - b.start);
@@ -307,7 +311,7 @@ export function createMeetupRepo(db, repos) {
       db.prepare(
         "DELETE FROM meetup_availability WHERE meetup_id=? AND user_id=?",
       ).run(id, user);
-      const insert = db.prepare("INSERT INTO meetup_availability VALUES(?,?,?,?,?,?,?)");
+      const insert = db.prepare("INSERT INTO meetup_availability(meetup_id,user_id,starts_at,ends_at,latitude,longitude,label,travel_mode) VALUES(?,?,?,?,?,?,?,?)");
       for (const r of rows)
         insert.run(
           id,
@@ -317,6 +321,7 @@ export function createMeetupRepo(db, repos) {
           r.latitude,
           r.longitude,
           r.label,
+          r.travelMode,
         );
       return { saved: true };
     }).immediate,

@@ -25,11 +25,11 @@ function tokenHash(token) {
   return createHash('sha256').update(token).digest('hex');
 }
 
-function cookieOptions() {
-  return { ...COOKIE_OPTIONS, secure: process.env.NODE_ENV === 'production' };
+function cookieOptions(env) {
+  return { ...COOKIE_OPTIONS, secure: env.NODE_ENV === 'production' };
 }
 
-export function createSessionService(repos, { isAllowed = () => true } = {}) {
+export function createSessionService(repos, { isAllowed = () => true, env = process.env } = {}) {
   return {
     allowed(userId) { return isAllowed(userId); },
     start(req, res, userId) {
@@ -38,7 +38,7 @@ export function createSessionService(repos, { isAllowed = () => true } = {}) {
       if (previous) repos.sessions.delete(tokenHash(previous));
       const token = randomBytes(32).toString('hex');
       repos.sessions.create(tokenHash(token), userId, Date.now() + SESSION_AGE_MS);
-      res.cookie(COOKIE_NAME, token, { ...cookieOptions(), maxAge: SESSION_AGE_MS });
+      res.cookie(COOKIE_NAME, token, { ...cookieOptions(env), maxAge: SESSION_AGE_MS });
     },
 
     current(req) {
@@ -51,7 +51,7 @@ export function createSessionService(repos, { isAllowed = () => true } = {}) {
     end(req, res) {
       const token = cookieToken(req);
       if (token) repos.sessions.delete(tokenHash(token));
-      res.clearCookie(COOKIE_NAME, cookieOptions());
+      res.clearCookie(COOKIE_NAME, cookieOptions(env));
     },
   };
 }

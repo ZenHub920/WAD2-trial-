@@ -1,6 +1,7 @@
 const SOURCES = {
   kaki: ['messages', 'conversation_id'],
   group: ['group_channel_messages', 'party_id'],
+  connection: ['connection_channel_messages', 'connection_id'],
   market: ['ticket_messages', 'conversation_id'],
 };
 const invalid = () => Object.assign(new Error('invalid_message_cursor'), { status: 400 });

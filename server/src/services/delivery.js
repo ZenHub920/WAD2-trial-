@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { ECDH, randomUUID } from 'node:crypto';
 import { createJobRepository } from '../db/deliveryRepository.js';
 
 const DAY = 86400000;
@@ -7,6 +7,11 @@ const validPath = (value) => typeof value === 'string' && /^\/(?!\/)[a-zA-Z0-9/_
 const allowedHost = (host) => host === 'fcm.googleapis.com'
   || host === 'updates.push.services.mozilla.com' || host.endsWith('.push.services.mozilla.com')
   || host === 'web.push.apple.com' || host.endsWith('.push.apple.com') || host.endsWith('.notify.windows.com');
+const previewTitles = {
+  chat: 'You have a new message', group: 'You have a group update',
+  match: 'You have a matching update', meetup: 'Your meetup has an update',
+  feedback: 'Concert feedback is available',
+};
 export function validatePushSubscription(input) {
   if (!input || typeof input.endpoint !== 'string' || input.endpoint.length > 2048) throw fail('invalid_push_subscription');
   let endpoint;
@@ -15,10 +20,14 @@ export function validatePushSubscription(input) {
     || !allowedHost(endpoint.hostname)) throw fail('invalid_push_endpoint');
   const keys = input.keys;
   for (const [key, bytes] of [['p256dh',65],['auth',16]]) {
-    if (typeof keys?.[key] !== 'string' || !/^[A-Za-z0-9_-]+$/.test(keys[key]) || Buffer.from(keys[key],'base64url').length !== bytes)
+    if (typeof keys?.[key] !== 'string' || keys[key].length > 100 || !/^[A-Za-z0-9_-]+$/.test(keys[key])
+      || Buffer.from(keys[key],'base64url').length !== bytes || Buffer.from(keys[key],'base64url').toString('base64url') !== keys[key])
       throw fail('invalid_push_keys');
   }
   if (Buffer.from(keys.p256dh,'base64url')[0] !== 4) throw fail('invalid_push_keys');
+  // Length alone does not establish that this is a usable P-256 public point.
+  try { ECDH.convertKey(Buffer.from(keys.p256dh,'base64url'),'prime256v1'); }
+  catch { throw fail('invalid_push_keys'); }
   return { endpoint: endpoint.href, p256dh: keys.p256dh, auth: keys.auth };
 }
 
@@ -28,7 +37,9 @@ export function createDeliveryService({ db, repos, webPush, env = process.env, n
   const workerId = randomUUID();
   const handlers = new Map();
   const schedules = new Map();
-  let timer, running = null, stopping = false;
+  const scheduledBuckets = new Map();
+  let timer, running = null, stopping = false, started = false, wakePending = false;
+  let reconciliationMs = 60000;
   const configured = Boolean(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY && env.VAPID_SUBJECT);
   const notify = (user, category, key, title, path) => {
     if (!validPath(path)) throw new Error('invalid_notification_path');
@@ -37,7 +48,9 @@ export function createDeliveryService({ db, repos, webPush, env = process.env, n
       .run(randomUUID(),user,category,key,title,path,user,category);
   };
   function accessibleChat(user, path) {
-    let match = /^\/groups\/([^/]+)\/channel$/.exec(path);
+    let match = /^\/groups\/connections\/([^/]+)\/channel$/.exec(path);
+    if (match) return repos.connectionChannels?.canAccess(user, match[1]) ?? false;
+    match = /^\/groups\/([^/]+)\/channel$/.exec(path);
     if (match) return Boolean(db.prepare(`SELECT 1 FROM group_channel_members m JOIN parties p ON p.id=m.party_id
       WHERE m.party_id=? AND m.user_id=? AND p.status<>'cancelled' AND NOT EXISTS(
         SELECT 1 FROM blocks b JOIN group_channel_members x ON x.user_id=b.blocker_user_id
@@ -74,13 +87,17 @@ export function createDeliveryService({ db, repos, webPush, env = process.env, n
       const id = /^\/meetups\/([^/]+)$/.exec(row.resource_path)?.[1];
       if (id) try { repos.meetups.access(user,id); } catch { return null; }
     }
-    return { id: row.id, title: row.title, path: row.resource_path, category: row.category };
+    // The inbox keeps useful titles, but lock-screen previews never reveal names,
+    // private group titles, chat contents or precise meeting details.
+    return { id: row.id, title: previewTitles[row.category] ?? 'You have an Encore update', path: row.resource_path, category: row.category };
   };
   handlers.set('notification.push', async ({ notificationId,subscriptionId }) => {
     if (!configured) return;
     const subscription = db.prepare('SELECT * FROM push_subscriptions WHERE id=?').get(subscriptionId);
     if (!subscription || !currentNotification(subscription.user_id,notificationId)) return;
     try {
+      // Revalidate persisted legacy records before allowing any outbound request.
+      validatePushSubscription({endpoint:subscription.endpoint,keys:{p256dh:subscription.p256dh,auth:subscription.auth}});
       // Never include message bodies or a person's identity in queued push payloads.
       const client=webPush??(await import('web-push')).default;
       await client.sendNotification({ endpoint:subscription.endpoint,keys:{p256dh:subscription.p256dh,auth:subscription.auth} },
@@ -93,6 +110,13 @@ export function createDeliveryService({ db, repos, webPush, env = process.env, n
         db.prepare('DELETE FROM push_subscriptions WHERE id=?').run(subscriptionId);
         return;
       }
+      if (error.message === 'invalid_push_endpoint' || error.message === 'invalid_push_keys' || error.message === 'invalid_push_subscription') {
+        db.prepare('DELETE FROM push_subscriptions WHERE id=?').run(subscriptionId);
+        return;
+      }
+      // These indicate a permanently rejected request/configuration, not a
+      // temporary outage. Keep the device, but do not pay for six futile retries.
+      if ([400,401,403,413].includes(error.statusCode)) error.permanent = true;
       const after = error?.headers?.['retry-after'];
       if (after) error.retryAfterMs = /^\d+$/.test(after) ? Number(after)*1000 : Math.max(0,Date.parse(after)-now());
       throw error;
@@ -102,7 +126,15 @@ export function createDeliveryService({ db, repos, webPush, env = process.env, n
     repos.proposals.expire();
     repos.recommendations.expire();
     db.prepare('DELETE FROM sessions WHERE expires_at<=?').run(now());
-    jobs.prune();
+  });
+  handlers.set('jobs.cleanup', () => {
+    // Catch up with a large historical backlog without monopolising SQLite or
+    // imposing continuous scans on installations with little expired work.
+    if (jobs.prune() === 1000) {
+      const availableAt=now()+60000;
+      jobs.enqueue({key:`cleanup:followup:${Math.floor(availableAt/60000)}`,
+        type:'jobs.cleanup',availableAt});
+    }
   });
   handlers.set('reminders.scan', () => db.transaction(() => {
     const time = now();
@@ -134,6 +166,7 @@ export function createDeliveryService({ db, repos, webPush, env = process.env, n
   }).immediate());
   schedules.set('lifecycle.sweep',60000);
   schedules.set('reminders.scan',300000);
+  schedules.set('jobs.cleanup',3600000);
   const api = {
     jobs,
     publicConfig: () => ({ configured, publicKey:configured?env.VAPID_PUBLIC_KEY:null }),
@@ -141,13 +174,15 @@ export function createDeliveryService({ db, repos, webPush, env = process.env, n
       if (!configured) throw fail('push_not_configured',503);
       const s = validatePushSubscription(input);
       const existing = db.prepare('SELECT * FROM push_subscriptions WHERE endpoint=?').get(s.endpoint);
-      if (existing?.user_id!==user && db.prepare('SELECT COUNT(*) n FROM push_subscriptions WHERE user_id=?').get(user).n>=10)
+      // Endpoints are device capabilities. Knowing one never authorises another
+      // account to delete, transfer or replace its keys. The owner must unlink.
+      if (existing && existing.user_id !== user) throw fail('push_subscription_conflict',409);
+      if (existing && (existing.p256dh !== s.p256dh || existing.auth !== s.auth)) throw fail('push_subscription_conflict',409);
+      if (!existing && db.prepare('SELECT COUNT(*) n FROM push_subscriptions WHERE user_id=?').get(user).n>=10)
         throw fail('push_subscription_limit',409);
-      // Rotate id on an account switch: old queued jobs cannot reach the new owner.
-      if (existing && existing.user_id!==user) db.prepare('DELETE FROM push_subscriptions WHERE id=?').run(existing.id);
-      const id = existing?.user_id===user?existing.id:randomUUID();
+      const id = existing?.id ?? randomUUID();
       db.prepare(`INSERT INTO push_subscriptions(id,user_id,endpoint,p256dh,auth,created_at,updated_at) VALUES(?,?,?,?,?,?,?)
-        ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh,auth=excluded.auth,updated_at=excluded.updated_at`)
+        ON CONFLICT(endpoint) DO UPDATE SET updated_at=excluded.updated_at`)
         .run(id,user,s.endpoint,s.p256dh,s.auth,now(),now());
       return { subscribed:true,id };
     }).immediate,
@@ -191,12 +226,18 @@ export function createDeliveryService({ db, repos, webPush, env = process.env, n
         }
       },{intervalMs});
     },
-    enqueue:jobs.enqueue,
+    enqueue(input) { jobs.enqueue(input); api.wake(); },
     async runOnce({maxJobs=50}={}) {
+      if (!Number.isSafeInteger(maxJobs) || maxJobs<1 || maxJobs>100) throw new Error('invalid_job_batch_size');
       if (running) return running;
       running = (async () => {
-        for (const [type,interval] of schedules)
-          jobs.enqueue({key:`scheduled:${type}:${Math.floor(now()/interval)}`,type});
+        for (const [type,interval] of schedules) {
+          const bucket=Math.floor(now()/interval);
+          if(scheduledBuckets.get(type)!==bucket) {
+            jobs.enqueue({key:`scheduled:${type}:${bucket}`,type});
+            scheduledBuckets.set(type,bucket);
+          }
+        }
         let processed=0;
         while (!stopping && processed<maxJobs) {
           const job=jobs.claim(workerId);
@@ -210,7 +251,7 @@ export function createDeliveryService({ db, repos, webPush, env = process.env, n
             if (!handler) throw new Error('job_handler_unavailable');
             await handler(job.payload);
             jobs.complete(job);
-          } catch (error) { jobs.retry(job,error); logger.warn?.('Background job will retry',{type:job.type,attempt:job.attempts}); }
+          } catch (error) { jobs.retry(job,error); logger.warn?.('Background job attempt failed',{type:job.type,attempt:job.attempts}); }
           finally { clearInterval(heartbeat); }
           processed++;
         }
@@ -218,15 +259,40 @@ export function createDeliveryService({ db, repos, webPush, env = process.env, n
       })();
       try { return await running; } finally { running=null; }
     },
-    start({intervalMs=15000}={}) {
-      if (timer) return;
-      stopping=false;
-      const tick=()=>api.runOnce().catch(()=>logger.warn?.('Background job scan failed'));
-      timer=setInterval(tick,Math.max(1000,intervalMs));
-      timer.unref?.();
-      void tick();
+    // Event-driven wake-ups cover normal HTTP mutations; an inexpensive bounded
+    // reconciliation checks writes from other processes and recovers after sleep.
+    wake() {
+      if (!started || stopping) return;
+      wakePending = true;
+      if (!running) schedule(0);
     },
-    async stop() { stopping=true;clearInterval(timer);timer=null;if(running) await running; },
+    start({intervalMs=60000}={}) {
+      if (started) return;
+      if (!Number.isFinite(intervalMs)) throw new Error('invalid_job_interval');
+      reconciliationMs = Math.max(1000,Math.min(60000,intervalMs));
+      started=true;stopping=false;
+      schedule(0);
+    },
+    async stop() { stopping=true;started=false;clearTimeout(timer);timer=null;if(running) await running; },
   };
+  function schedule(delay) {
+    if (!started || stopping) return;
+    clearTimeout(timer);
+    timer=setTimeout(async()=>{
+      timer=null;wakePending=false;
+      try { await api.runOnce(); } catch { logger.warn?.('Background job scan failed'); }
+      if (!started || stopping) return;
+      try {
+        const time=now();
+        const due=jobs.nextAvailableAt();
+        const scheduleDelay=Math.min(...Array.from(schedules.values(),interval=>interval-(time%interval)));
+        schedule(wakePending?0:Math.max(0,Math.min(reconciliationMs,scheduleDelay,due===null?Infinity:due-time)));
+      } catch {
+        logger.warn?.('Background job schedule lookup failed');
+        schedule(reconciliationMs);
+      }
+    },delay);
+    timer.unref?.();
+  }
   return api;
 }

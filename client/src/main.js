@@ -25,6 +25,7 @@ import KakiFinderView from './views/KakiFinderView.vue';
 import KakiChatListView from './views/KakiChatListView.vue';
 import KakiChatView from './views/KakiChatView.vue';
 import GroupChannelView from './views/GroupChannelView.vue';
+import ConnectionChannelView from './views/ConnectionChannelView.vue';
 import ProfileHistoryView from './views/ProfileHistoryView.vue';
 import ProfileView from './views/ProfileView.vue';
 import NotFoundView from './views/NotFoundView.vue';
@@ -67,6 +68,7 @@ const router = createRouter({
     { path: '/kaki', name: 'kaki', component: KakiFinderView, meta: { title: 'Find a companion' } },
     { path: '/groups', name: 'groups', component: GroupExplorerView, meta: { title: 'Groups', requiresAuth: true } },
     { path: '/groups/connect', name: 'group-connections', component: GroupConnectionsView, meta: { title: 'My groups', requiresAuth: true } },
+    { path: '/groups/connections/:id/channel', name: 'connection-channel', component: ConnectionChannelView, props: true, meta: { title: 'Connected groups chat', requiresAuth: true } },
     {
       // The group's shared room. Membership is the host's to grant, so this
       // 404s for anybody they have not added.

@@ -9,6 +9,8 @@ const defaults = {
   chat: { limit: 120, windowMs: minute },
   reports: { limit: 10, windowMs: 60 * minute },
   provider: { limit: 60, windowMs: minute },
+  push: { limit: 30, windowMs: minute },
+  pushRead: { limit: 120, windowMs: minute },
 };
 
 export function ratePolicy(method, rawPath) {
@@ -20,12 +22,12 @@ export function ratePolicy(method, rawPath) {
   if (method === 'POST' && /\/messages$/.test(path)) return 'chat';
   if (method === 'POST' && /\/reports$/.test(path)) return 'reports';
   if (/\/(weather|environment|travel-suggestions|locations|transport)$|\/travel(?:\/|$)|\/places\/search$|\/concerts\/external$/.test(path)) return 'provider';
-  if (method !== 'GET' && /^\/me\/push\//.test(path)) return 'provider';
+  if (/^\/me\/push\//.test(path)) return method === 'GET' ? 'pushRead' : 'push';
   return null;
 }
 
 /** Persistent per-instance budget; trusted proxy configuration is owned by Express. */
-export function createApiRateLimiter({ db, now = Date.now, policies = {} } = {}) {
+export function createApiRateLimiter({ db, now = Date.now, policies = {}, identifyUser = (req) => req.user?.id } = {}) {
   const memory = new Map();
   const configured = { ...defaults, ...policies };
   let requests = 0;
@@ -56,7 +58,12 @@ export function createApiRateLimiter({ db, now = Date.now, policies = {} } = {})
     const ip = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
     const hash = createHash('sha256').update(String(ip)).digest('hex');
     requests += 1;
-    const count = increment(`${policyName}:${hash}:${window}`, expiresAt, time);
+    let count = increment(`${policyName}:ip:${hash}:${window}`, expiresAt, time);
+    const userId = identifyUser(req);
+    if (userId) {
+      const userHash = createHash('sha256').update(String(userId)).digest('hex');
+      count = Math.max(count, increment(`${policyName}:user:${userHash}:${window}`, expiresAt, time));
+    }
     res.set('RateLimit-Limit', String(policy.limit));
     res.set('RateLimit-Remaining', String(Math.max(0, policy.limit - count)));
     res.set('RateLimit-Reset', String(Math.ceil(expiresAt / 1000)));

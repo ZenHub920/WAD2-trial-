@@ -4,7 +4,7 @@ import { createSingaporeTravel } from './singaporeTravel.js';
 import { createMeetupWeather } from './meetupWeather.js';
 import { singaporeCoordinates } from './providerCache.js';
 
-export function createMeetupIntegrations({ repos, fetchImpl = globalThis.fetch, now = Date.now, env = process.env, travel = createSingaporeTravel({ fetchImpl, now, env }), weather = createMeetupWeather({ fetchImpl, now, env }) } = {}) {
+export function createMeetupIntegrations({ db, repos, fetchImpl = globalThis.fetch, now = Date.now, env = process.env, travel = createSingaporeTravel({ db, fetchImpl, now, env }), weather = createMeetupWeather({ db, fetchImpl, now, env }) } = {}) {
   const assertCurrent = (user, id, version, participantIds) => {
     const current = repos.meetups.access(user, id);
     if (version !== undefined && current.version !== version) throw communityError('stale_meetup_version');
@@ -20,8 +20,8 @@ export function createMeetupIntegrations({ repos, fetchImpl = globalThis.fetch, 
       assertCurrent(user, id);
       return result;
     },
-    async suggestions(user, id, { mode = 'transit', maxTravelMinutes = 60, shelteredOnly = false } = {}) {
-      if (!['transit', 'walk'].includes(mode) || !Number.isInteger(maxTravelMinutes) || maxTravelMinutes < 5 || maxTravelMinutes > 180) throw communityError('invalid_travel_options', 400);
+    async suggestions(user, id, { shelteredOnly = false } = {}) {
+      if (typeof shelteredOnly !== 'boolean') throw communityError('invalid_travel_options', 400);
       const input = repos.meetups.planningInput(user, id);
       if (input.status === 'cancelled') throw communityError('meetup_cancelled');
       const places = input.places.filter((p) => !shelteredOnly || p.sheltered);
@@ -44,7 +44,9 @@ export function createMeetupIntegrations({ repos, fetchImpl = globalThis.fetch, 
           remaining -= people.length;
           const destination = places.find((p) => p.id === option.placeId);
           for (const origin of people) jobs.push(async () => {
-            const result = await travel.route({ origin, destination, mode, startsAt: option.startsAt - maxTravelMinutes * 60000 });
+            // Keep one fixed departure reference for comparable schedule estimates.
+            // It is independent of any user budget and is never a ranking threshold.
+            const result = await travel.route({ origin, destination, mode: origin.travel_mode === 'drive' ? 'drive' : 'transit', startsAt: option.startsAt - 3600000 });
             entry.results.push(result);
           });
         }
@@ -59,23 +61,31 @@ export function createMeetupIntegrations({ repos, fetchImpl = globalThis.fetch, 
       }));
       assertCurrent(user, id, input.version, input.participantIds);
       const options = matrices.map(({ option, results, people }) => {
-        const complete = people > 0 && people === option.locationRespondents && results.length === people && results.every((r) => r.status === 'available' && Number.isFinite(r.durationMinutes) && !r.stale);
+        const validRoute = (r) => r.status === 'available' && Number.isFinite(r.durationMinutes) && r.durationMinutes >= 0 && r.durationMinutes <= 1440 && !r.stale;
+        const complete = people > 0 && people === option.locationRespondents && results.length === people && results.every(validRoute);
         const durations = complete ? results.map((r) => r.durationMinutes) : [];
-        return { ...option, mode, basis: complete ? 'route_times' : 'straight_line_distance', reachableCount: complete ? durations.filter((d) => d <= maxTravelMinutes).length : option.reachableCount, totalTravelMinutes: complete ? durations.reduce((a, b) => a + b, 0) : null, maximumTravelMinutes: complete ? Math.max(...durations) : null, routedRespondents: results.filter((r) => r.status === 'available' && !r.stale).length, missingLocationCount: option.availableCount - people, fallbackReason: complete ? null : travel.configured === false ? 'onemap_not_configured' : people === 0 ? 'starting_locations_not_supplied' : results.find((r) => r.status !== 'available')?.reason || 'route_budget_or_freshness_limit' };
+        return { ...option, mode: 'member_preferences', basis: complete ? 'route_times' : 'straight_line_distance', totalTravelMinutes: complete ? durations.reduce((a, b) => a + b, 0) : null, maximumTravelMinutes: complete ? Math.max(...durations) : null, routedRespondents: results.filter(validRoute).length, missingLocationCount: option.availableCount - people, fallbackReason: complete ? null : travel.configured === false ? 'onemap_not_configured' : people === 0 ? 'starting_locations_not_supplied' : results.find((r) => r.status !== 'available')?.reason || 'route_budget_or_freshness_limit' };
       });
       // Compare travel durations only when the entire shortlist has a complete matrix.
       // Partial provider availability must never make an unknown journey look shorter.
       const routeRanking = options.length > 0 && options.every((o) => o.basis === 'route_times' && o.missingLocationCount === 0);
-      options.sort((a, b) => b.availableCount - a.availableCount || (routeRanking ? b.reachableCount - a.reachableCount || a.totalTravelMinutes - b.totalTravelMinutes || a.maximumTravelMinutes - b.maximumTravelMinutes : (a.totalDistanceKm ?? Infinity) - (b.totalDistanceKm ?? Infinity) || (a.maximumDistanceKm ?? Infinity) - (b.maximumDistanceKm ?? Infinity)) || b.votes - a.votes || a.startsAt - b.startsAt || a.placeId.localeCompare(b.placeId));
-      return { status: 'available', version: input.version, rankingBasis: routeRanking ? 'route_times' : 'straight_line_distance', options, maxTravelMinutes, shortlistedPlaces: placeIds.length, routesRequested: jobIndex, message: routeRanking ? 'Ranked by attendance, journeys within the time budget, combined journey time, then the longest journey. Transit times use schedules for a departure one travel budget before the meeting; confirm the actual journey nearer the day.' : 'Ranked by attendance and straight-line distance. Complete fresh routes were unavailable for every shortlisted option; any route times shown are supplementary estimates. Add more places to compare alternatives.' };
+      options.sort((a, b) => b.availableCount - a.availableCount || (routeRanking ? a.totalTravelMinutes - b.totalTravelMinutes || a.maximumTravelMinutes - b.maximumTravelMinutes : (a.totalDistanceKm ?? Infinity) - (b.totalDistanceKm ?? Infinity) || (a.maximumDistanceKm ?? Infinity) - (b.maximumDistanceKm ?? Infinity)) || b.votes - a.votes || a.startsAt - b.startsAt || a.placeId.localeCompare(b.placeId));
+      return { status: 'available', version: input.version, rankingBasis: routeRanking ? 'route_times' : 'straight_line_distance', options, shortlistedPlaces: placeIds.length, routesRequested: jobIndex, message: routeRanking ? 'Ranked by attendance, combined journey time, then the longest journey, using each person’s saved car or public-transport method. Transit schedules use a fixed departure one hour before the meeting for comparison; driving estimates do not predict future traffic. Confirm the actual journey nearer the day.' : 'Ranked by attendance and straight-line distance. Complete fresh routes were unavailable for every shortlisted option; any route times shown are supplementary estimates. Add more places to compare alternatives.' };
     },
     async transport(user, id, { busStopCode, trainLine } = {}) {
-      assertCurrent(user, id);
+      const current = repos.meetups.access(user, id);
+      const participantIds = [...repos.meetups.participants(current)].sort();
       if (busStopCode !== undefined && (typeof busStopCode !== 'string' || !/^\d{5}$/.test(busStopCode))) throw communityError('invalid_bus_stop', 400);
       if (trainLine !== undefined && !['CCL', 'CEL', 'CGL', 'DTL', 'EWL', 'NEL', 'NSL', 'TEL'].includes(trainLine)) throw communityError('invalid_train_line', 400);
-      const [trains, buses, crowding] = await Promise.all([travel.trainAlerts(), busStopCode ? travel.busArrivals(busStopCode) : null, trainLine ? travel.crowding(trainLine) : null]);
-      assertCurrent(user, id);
-      return { trains, buses, crowding, message: 'Live transport information is for travel now, not a prediction for a future meetup.' };
+      const place = current.selected_place_id ? repos.meetups.detail(user, id).places.find((p) => p.id === current.selected_place_id) : null;
+      const [trains, buses, crowding, parking] = await Promise.all([
+        travel.trainAlerts(),
+        busStopCode ? travel.busArrivals(busStopCode) : null,
+        trainLine ? travel.crowding(trainLine) : null,
+        place && travel.parking ? travel.parking(place) : { status: 'unavailable', reason: 'choose_a_meeting_place_first' },
+      ]);
+      assertCurrent(user, id, current.version, participantIds);
+      return { trains, buses, crowding, parking, message: 'Crowd levels, parking spaces and train advisories describe current conditions, not a prediction for a future meetup or the journey home.' };
     },
     async environment(user, id) {
       const m = repos.meetups.detail(user, id), place = m.places.find((p) => p.id === m.selected_place_id);

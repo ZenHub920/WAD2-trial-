@@ -36,6 +36,7 @@ async function fixture(t) {
       const req = request(`${base}/api${path}`, {
         method,
         headers: {
+        'X-Requested-With': 'Encore',
           ...(as ? { cookie: people[as].cookie } : {}),
           ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
         },

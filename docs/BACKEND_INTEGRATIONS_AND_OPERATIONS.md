@@ -20,6 +20,8 @@ Kaki Finder currently works as follows:
 
 The separate **automatic seeker-to-group flow** uses Gale–Shapley/deferred acceptance over seekers and groups with capacity. It still requires **both host and seeker approval**. Direct search remains the paired-card choice flow: preferring a card narrows the deck; choosing to apply sends one pending application for host approval. Direct and automatic offers share the existing FIFO admission queue and seat accounting. Group-to-group invitations still need the receiving host's approval; they connect groups without silently merging memberships.
 
+Accepted group connections now also provide one shared chat for both groups' current members, listed under **Messages → Groups** and linked from accepted invitations. Its planner uses the connection scope, its messages use existing notification/push delivery, and access follows current group membership. Original host-managed single-group channels remain separate. See [MEETUP_TRAVEL_UPDATE.md](MEETUP_TRAVEL_UPDATE.md).
+
 ## What changed
 
 | Area | Behaviour and data flow |
@@ -27,8 +29,8 @@ The separate **automatic seeker-to-group flow** uses Gale–Shapley/deferred acc
 | Hard dealbreakers | Shared mutual eligibility checks exclude incompatible candidates before ranking and recheck applications, offers and group invitations before acceptance. A veto cannot be outweighed by a high average score. |
 | Reliable notifications | Message/event → SQLite inbox and transactional job → leased background worker → encrypted Web Push → service worker verifies the current signed-in recipient → operating-system popup. Read, muted, expired, suspended or inaccessible notifications are suppressed. |
 | Background operations | Durable jobs expire applications/offers, advance the existing seat queue, issue expiry/meetup/feedback reminders, recheck weather and refresh concerts. Jobs retry with backoff and recover abandoned leases. Automatic matching rounds remain operator controlled. |
-| Travel planning | Availability and private starting locations + proposed places → bounded OneMap journey queries → aggregate travel ranking. Attendance comes first, then reachable people, combined travel time and the longest journey. Incomplete route data uses a clearly labelled distance fallback. |
-| Transport and weather | Authorized planner requests → server adapters → cached LTA/NEA data. The UI shows live bus arrivals, train disruptions/crowding, forecasts and nearby rainfall with timestamps and precision labels. |
+| Travel planning | Availability, private starting locations and each person's car/public-transport method + proposed places → bounded OneMap journey queries → aggregate travel ranking. Attendance comes first, then combined travel time and the longest journey. Budgets are not ranking factors. Incomplete route data uses a clearly labelled distance fallback. |
+| Transport and weather | Authorized planner requests → server adapters → cached LTA/NEA data. The UI shows bus loads, station crowds, train disruptions, nearby car parking, forecasts and recent rainfall. Conditions are labelled current; arrival timestamps are omitted from the planner. |
 | Account safety | Trusted-origin email link → expiring, single-use hashed token → verification or password reset. Password changes/resets and global sign-out revoke sessions; suspended accounts lose access. Existing users are not suddenly required to verify email. |
 | Moderation | Report → operator-only queue → retained message evidence → review/dismiss/warn/suspend → immutable audit record. Ordinary users cannot retrieve moderation evidence. |
 | Concert refresh | Bounded paged Ticketmaster search → durable cache/import → change audit → alerts for date/time/venue/status changes. Known omitted events receive bounded individual refreshes; disappearance alone never implies cancellation. Confirmed meetup plans are not rewritten. |
@@ -65,8 +67,9 @@ The server starts its job worker automatically; `ENABLE_BACKGROUND_JOBS=false` d
 | **Ticketmaster Discovery** — event search and event detail | Import/refresh Singapore music events, images, official links, seating map URLs and event changes. | Registered Consumer Key; server-only. |
 | **OneMap authentication** | Obtain/renew the server's access token. | Register a OneMap account; server email/password or manually supplied token. |
 | **OneMap Search** | Search public addresses/venues and fill in meeting-place coordinates. | OneMap access token. |
-| **OneMap Routing** | Walking and scheduled public-transport journey estimates for proposed meeting options. | OneMap access token. |
-| **LTA DataMall Bus Arrival v3** | Bus arrivals, load and wheelchair-accessible vehicle flags for a selected bus stop. | Registered DataMall Account Key. |
+| **OneMap Routing** | Driving and scheduled public-transport journey estimates for proposed meeting options. | OneMap access token. |
+| **LTA DataMall Bus Arrival v3** | Bus load and wheelchair-accessible vehicle flags for up to three approaching vehicles at a selected stop; arrival times are retained only for API compatibility. | Registered DataMall Account Key. |
+| **LTA Car Park Availability v2** | Nearby reporting car parks and current available car lots around the selected meetup proposal. | Same DataMall Account Key; no extra SDK key. |
 | **LTA Train Service Alerts** | Current rail disruptions and advisories. | Same DataMall key. |
 | **LTA Passenger Crowd Density (real time)** | Current crowd levels for a selected train line/station. | Same DataMall key; coverage depends on LTA. |
 | **NEA 2-hour weather forecast via data.gov.sg** | Local-area warning for meetings covered by the forecast period. | Public access; optional data.gov.sg key. |
@@ -86,9 +89,9 @@ Web Push also communicates with the subscription's browser-managed push service 
 4. Keep the existing Ticketmaster Consumer Key in `TICKETMASTER_API_KEY`. No ticket purchase/payment API is enabled.
 5. Credentials belong only in ignored `server/.env` or a deployment secret store. `.env.*` variants and `server/secrets/` are ignored; the tracked example contains blank values. Never place secrets in `VITE_` variables, frontend code or Git.
 
-These integrations use public/free-access services with quotas; no paid fallback, billing account or automatic paid upgrade is configured. The app adds caches, request coalescing, timeouts and bounded queries. Ticketmaster's conservative daily request counter persists; OneMap/LTA/NEA adapter budgets are per process and reset on restart, so they are not a substitute for provider account quotas. Hosting, your SMTP plan and any future provider terms are outside the app's control. Review provider terms before commercial deployment. Do not enable a paid subscription to run these features.
+These integrations use public/free-access services with quotas; no paid fallback, billing account or automatic paid upgrade is configured. The app adds caches, request coalescing, timeouts and bounded queries. The security update persists Ticketmaster daily counters and OneMap/LTA/NEA HTTP-attempt budgets in SQLite, including authentication/retries. Processes with separate databases do not share counters, and application limits are not substitutes for provider account quotas. Hosting, your SMTP plan and any future provider terms are outside the app's control. Review provider terms before commercial deployment. Do not enable a paid subscription to run these features.
 
-OneMap/LTA need your new accounts before live verification. Browser push needs local VAPID configuration and a browser permission grant; SMTP needs your local credentials. Automated tests use mocked external providers and delivery transports. See [API_MEETUP_SETUP.md](API_MEETUP_SETUP.md) and [WEB_PUSH_AND_BACKGROUND_JOBS.md](WEB_PUSH_AND_BACKGROUND_JOBS.md) for endpoint details and limitations.
+New developers need their own configured accounts or authorised development access. In the subsequent security update, supplied local OneMap/LTA credentials passed live provider and authenticated planner smoke tests. Browser push still needs a browser permission/subscription test; SMTP needs local credentials. Automated regression tests use mocked external providers and delivery transports. See [API_MEETUP_SETUP.md](API_MEETUP_SETUP.md), [WEB_PUSH_AND_BACKGROUND_JOBS.md](WEB_PUSH_AND_BACKGROUND_JOBS.md) and [API_SECURITY_HARDENING_REPORT.md](API_SECURITY_HARDENING_REPORT.md) for current verification and limitations.
 
 ## How MusicBrainz would help
 

@@ -1,3 +1,4 @@
+import { providerJson } from './providerCache.js';
 const DISCOVERY_URL = 'https://app.ticketmaster.com/discovery/v2/events.json';
 
 /** Return concert fields understood by encore, not a provider-specific response body. */
@@ -66,6 +67,7 @@ export async function searchTicketmaster({
   maxPages = 3,
 } = {}) {
   if (!apiKey) throw new Error('TICKETMASTER_API_KEY is required');
+  if (url !== DISCOVERY_URL) throw new Error('invalid_concert_provider_url');
   const requestUrl = new URL(url);
   requestUrl.search = new URLSearchParams({
     apikey: apiKey,
@@ -80,14 +82,7 @@ export async function searchTicketmaster({
   const events = new Map();
   for (let page = 0; page < Math.min(10, Math.max(1, maxPages)); page++) {
     requestUrl.searchParams.set('page', String(page));
-    const response = await fetchImpl(new URL(requestUrl), { signal: AbortSignal.timeout(10000) });
-    if (!response.ok) {
-      const error = new Error(`Ticketmaster returned HTTP ${response.status}`);
-      error.status = response.status;
-      error.retryAfter = response.headers?.get('retry-after');
-      throw error;
-    }
-    const data = await response.json();
+    const data = await providerJson((target, options) => fetchImpl(new URL(target), options), requestUrl);
     for (const raw of data?._embedded?.events ?? []) {
       const event = normalizeTicketmasterEvent(raw);
       if (event) events.set(event.id, event);

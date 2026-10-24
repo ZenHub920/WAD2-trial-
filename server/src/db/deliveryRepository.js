@@ -15,6 +15,7 @@ export function migrateDelivery(db) {
       attempts INTEGER NOT NULL DEFAULT 0,lease_owner TEXT,leased_until INTEGER,
       last_error TEXT,created_at INTEGER NOT NULL,completed_at INTEGER);
       CREATE INDEX IF NOT EXISTS idx_jobs_due ON background_jobs(status,available_at,leased_until);
+      CREATE INDEX IF NOT EXISTS idx_jobs_retention ON background_jobs(status,completed_at,available_at);
       DROP TRIGGER IF EXISTS enqueue_notification_push;
       CREATE TRIGGER enqueue_notification_push AFTER INSERT ON notifications BEGIN
         INSERT OR IGNORE INTO background_jobs(id,job_key,type,payload_json,available_at,created_at)
@@ -42,18 +43,23 @@ export function migrateDelivery(db) {
 }
 
 export function createJobRepository(db, { now = Date.now, maxAttempts = 6, leaseMs = 60000 } = {}) {
+  if (!Number.isSafeInteger(maxAttempts) || maxAttempts<1 || maxAttempts>10 || !Number.isFinite(leaseMs) || leaseMs<1000)
+    throw new Error('invalid_job_configuration');
   const enqueue = ({ key, type, payload = {}, availableAt = now() }) => {
-    if (!key || !type || !Number.isFinite(availableAt)) throw new Error('invalid_background_job');
+    if (typeof key !== 'string' || !key || key.length>512 || typeof type !== 'string' || !type || type.length>100
+      || !Number.isFinite(availableAt)) throw new Error('invalid_background_job');
+    const serialized=JSON.stringify(payload);
+    if (typeof serialized !== 'string' || Buffer.byteLength(serialized)>16384) throw new Error('invalid_background_job');
     db.prepare(`INSERT OR IGNORE INTO background_jobs
       (id,job_key,type,payload_json,available_at,created_at) VALUES(?,?,?,?,?,?)`)
-      .run(randomUUID(), key, type, JSON.stringify(payload), availableAt, now());
+      .run(randomUUID(), key, type, serialized, availableAt, now());
   };
   return {
     enqueue,
     claim: db.transaction((owner) => {
       const time = now();
-      db.prepare(`UPDATE background_jobs SET status='dead',lease_owner=NULL,leased_until=NULL,last_error='attempt_limit'
-        WHERE status IN('queued','running') AND attempts>=? AND COALESCE(leased_until,0)<=?`).run(maxAttempts,time);
+      db.prepare(`UPDATE background_jobs SET status='dead',completed_at=?,lease_owner=NULL,leased_until=NULL,last_error='attempt_limit'
+        WHERE status IN('queued','running') AND attempts>=? AND COALESCE(leased_until,0)<=?`).run(time,maxAttempts,time);
       const row = db.prepare(`SELECT * FROM background_jobs WHERE attempts<? AND available_at<=?
         AND (status='queued' OR(status='running' AND leased_until<=?))
         ORDER BY CASE type WHEN 'lifecycle.sweep' THEN 0 WHEN 'reminders.scan' THEN 1 ELSE 2 END,available_at,id LIMIT 1`)
@@ -75,13 +81,22 @@ export function createJobRepository(db, { now = Date.now, maxAttempts = 6, lease
       // Persist only machine error codes, never provider bodies, endpoints or credentials.
       const code = Number.isInteger(error?.statusCode) ? `provider_${error.statusCode}` : 'delivery_failed';
       const delay = Math.max(Math.min(3600000,1000*2**job.attempts), Math.min(3600000,Number(error?.retryAfterMs)||0));
-      return db.prepare(`UPDATE background_jobs SET status=?,available_at=?,lease_owner=NULL,leased_until=NULL,last_error=?
+      const dead=job.attempts>=maxAttempts || error?.permanent === true;
+      return db.prepare(`UPDATE background_jobs SET status=?,available_at=?,completed_at=?,lease_owner=NULL,leased_until=NULL,last_error=?
         WHERE id=? AND status='running' AND lease_owner=?`)
-        .run(job.attempts>=maxAttempts?'dead':'queued',now()+delay,code,job.id,job.leaseOwner).changes;
+        .run(dead?'dead':'queued',now()+delay,dead?now():null,code,job.id,job.leaseOwner).changes;
     },
-    prune(retentionMs = 30*86400000) {
-      db.prepare(`DELETE FROM background_jobs WHERE status IN('completed','dead') AND COALESCE(completed_at,available_at)<?`)
-        .run(now()-retentionMs);
+    nextAvailableAt() {
+      return db.prepare(`SELECT min(CASE WHEN status='running' THEN leased_until ELSE available_at END) due
+        FROM background_jobs WHERE status IN('queued','running')`).get().due;
+    },
+    prune(retentionMs = 30*86400000, limit=1000) {
+      if (!Number.isFinite(retentionMs) || retentionMs<86400000 || !Number.isSafeInteger(limit) || limit<1 || limit>10000)
+        throw new Error('invalid_job_retention');
+      // Batches prevent a large historical queue from blocking interactive work.
+      return db.prepare(`DELETE FROM background_jobs WHERE id IN(SELECT id FROM background_jobs
+        WHERE status IN('completed','dead') AND COALESCE(completed_at,available_at)<? ORDER BY available_at LIMIT ?)`)
+        .run(now()-retentionMs,limit).changes;
     },
   };
 }

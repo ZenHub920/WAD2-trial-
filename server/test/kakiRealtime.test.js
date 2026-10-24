@@ -40,6 +40,7 @@ async function fixture(t) {
     const response = await fetch(`${base()}${path}`, {
       method,
       headers: {
+        'X-Requested-With': 'Encore',
         ...(cookie ? { cookie } : {}),
         ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
       },
