@@ -19,6 +19,7 @@ import { createAvatarController } from '../controllers/avatarController.js';
 import { createGroupIdentityController } from '../controllers/groupIdentityController.js';
 import { openStream } from '../services/realtime.js';
 import { createGroupChannelController } from '../controllers/groupChannelController.js';
+import { createConnectionChannelController } from '../controllers/connectionChannelController.js';
 import { registerAccountSecurityRoutes } from './accountSecurity.js';
 import { registerPushRoutes } from './push.js';
 import { registerMeetupIntegrationRoutes } from './meetupIntegrations.js';
@@ -43,6 +44,7 @@ export function createRoutes({
   const kaki = createKakiController(repos);
   const kakiChat = createKakiChatController(repos, realtime);
   const groupChannels = createGroupChannelController(repos, realtime);
+  const connectionChannels = createConnectionChannelController(repos, realtime);
   const avatar = avatars ? createAvatarController(repos, avatars) : null;
   const groupIdentity = createGroupIdentityController(repos, avatars);
   const profile = createProfileController(repos);
@@ -54,6 +56,26 @@ export function createRoutes({
   router.use((req, res, next) => {
     req.user = sessions.current(req);
     next();
+  });
+
+  // Commit attendance/block changes first, then invalidate only affected rooms.
+  // Include the old audience so a departed member's open tab closes promptly.
+  router.use((req, res, next) => {
+    const membershipMutation = /^(?:\/groups\/[^/]+\/(?:leave|cancel|settings|publish|join-requests)|\/group-friend-invites\/[^/]+\/accept|\/group-join-requests\/[^/]+\/respond|\/group-connections|\/proposals\/[^/]+\/(?:accept|decline)|\/users\/[^/]+\/block|\/concerts\/[^/]+\/parties|\/tickets)(?:\/|$)/;
+    if (!realtime || !req.user || ['GET', 'HEAD', 'OPTIONS'].includes(req.method) || !membershipMutation.test(req.path)) return next();
+    const before = new Map(repos.connectionChannels.audiences(req.user.id).map((room) => [room.connectionId, room.memberIds]));
+    res.once('finish', () => {
+      if (res.statusCode >= 400) return;
+      try {
+        const after = new Map(repos.connectionChannels.audiences(req.user.id).map((room) => [room.connectionId, room.memberIds]));
+        for (const id of new Set([...before.keys(), ...after.keys()])) {
+          const previous = before.get(id) ?? [], current = after.get(id) ?? [];
+          if (JSON.stringify(previous) !== JSON.stringify(current))
+            realtime.emitTo([...new Set([...previous, ...current])], 'connection-members', { connectionId: id });
+        }
+      } catch { console.warn('connection_membership_event_failed'); }
+    });
+    return next();
   });
 
   const requireUser = (req, res, next) => {
@@ -152,6 +174,17 @@ export function createRoutes({
   router.get('/group-channels/:partyId/candidates', requireUser, groupChannels.candidates);
   router.post('/group-channels/:partyId/members', requireUser, groupChannels.addMember);
   router.delete('/group-channels/:partyId/members/me', requireUser, groupChannels.leave);
+
+  // A connection room includes all active members of both accepted groups.
+  router.get('/connection-channels/unread', requireUser, connectionChannels.unread);
+  router.get('/me/connection-channels', requireUser, connectionChannels.list);
+  router.get('/connection-channels/:connectionId', requireUser, connectionChannels.open);
+  router.post('/connection-channels/:connectionId/read', requireUser, connectionChannels.read);
+  router.get('/connection-channels/:connectionId/messages/:messageId', requireUser, connectionChannels.message);
+  router.post('/connection-channels/:connectionId/messages', requireUser, connectionChannels.send);
+  router.patch('/connection-channels/:connectionId/messages/:messageId', requireUser, connectionChannels.edit);
+  router.delete('/connection-channels/:connectionId/messages/:messageId', requireUser, connectionChannels.remove);
+  router.put('/connection-channels/:connectionId/background', requireUser, connectionChannels.background);
   router.put('/kaki/conversations/:id/background', requireUser, kakiChat.setBackground);
   router.post('/kaki/conversations/:id/read', requireUser, kakiChat.markRead);
 

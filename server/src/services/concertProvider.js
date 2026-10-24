@@ -1,6 +1,7 @@
 import { searchTicketmaster, normalizeTicketmasterEvent } from './ticketmaster.js';
 import { importTicketmasterConcerts } from '../db/ticketmasterConcerts.js';
 import { migrateProviders } from '../db/providerMigrations.js';
+import { providerJson } from './providerCache.js';
 
 const bounded = (value, fallback, min, max) => Number.isFinite(Number(value))
   ? Math.max(min, Math.min(max, Number(value))) : fallback;
@@ -81,10 +82,13 @@ export function createConcertProvider({ db, env = process.env, fetchImpl = fetch
     for (const event of known.filter((e) => !seen.has(e.id))) {
       const url = new URL(`https://app.ticketmaster.com/discovery/v2/events/${encodeURIComponent(event.source_event_id)}.json`);
       url.searchParams.set('apikey', env.TICKETMASTER_API_KEY);
-      const response = await request(url, { signal: AbortSignal.timeout(10000) });
-      if (response.status === 404) continue; // Absence is not evidence of cancellation.
-      if (!response.ok) throw new Error('concert_sync_deferred');
-      const normalized = normalizeTicketmasterEvent(await response.json());
+      let data;
+      try { data = await providerJson(request, url); }
+      catch (error) {
+        if (error.upstreamStatus === 404) continue; // Absence is not evidence of cancellation.
+        throw new Error('concert_sync_deferred');
+      }
+      const normalized = normalizeTicketmasterEvent(data);
       if (normalized) importTicketmasterConcerts(db, [normalized]);
     }
     return { count: result.events.length, syncedAt: result.syncedAt };

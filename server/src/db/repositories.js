@@ -18,6 +18,7 @@ import { createMeetupRepo } from './meetupRepository.js';
 import { createFeedbackRepo } from './feedbackRepository.js';
 import { createKakiChatRepo } from './kakiChatRepository.js';
 import { createGroupChannelRepo } from './groupChannelRepository.js';
+import { createConnectionChannelRepo } from './connectionChannelRepository.js';
 import { createKakiPreferenceGate } from '../services/kakiPreferenceGate.js';
 import { randomUUID } from 'node:crypto';
 import { readMessagePage } from './messagePage.js';
@@ -1612,5 +1613,6 @@ export function createRepositories(db) {
   // The group's shared room. Needs `repos` for concert lookup, so it is built
   // here rather than in the literal above.
   repos.groupChannels = createGroupChannelRepo(db, repos);
+  repos.connectionChannels = createConnectionChannelRepo(db, repos);
   return repos;
 }

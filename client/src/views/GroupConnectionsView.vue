@@ -386,7 +386,7 @@ async function host() {
         <div class="connected">
           <h3 class="invites__title">Connected</h3>
           <p v-if="!accepted.length" class="group-muted">No connected groups yet. Publish your group and invite another group to connect.</p>
-          <article v-for="c in accepted" :key="c.id" class="connection"><p class="invite__who">{{ describe(c) }}</p><p v-if="c.partyA.notes" class="group-notes"><strong>{{ c.partyA.hostName }}:</strong> {{ c.partyA.notes }}</p><p v-if="c.partyB.notes" class="group-notes"><strong>{{ c.partyB.hostName }}:</strong> {{ c.partyB.notes }}</p><div class="connection__foot"><span class="connection__since">Connected {{ whenConnected(c.respondedAt) }}</span><RouterLink class="btn btn--ghost" :to="{ path: '/meetups', query: { connectionId: c.id } }">Plan meetup</RouterLink></div></article>
+          <article v-for="c in accepted" :key="c.id" class="connection"><p class="invite__who">{{ describe(c) }}</p><p v-if="c.partyA.notes" class="group-notes"><strong>{{ c.partyA.hostName }}:</strong> {{ c.partyA.notes }}</p><p v-if="c.partyB.notes" class="group-notes"><strong>{{ c.partyB.hostName }}:</strong> {{ c.partyB.notes }}</p><div class="connection__foot"><span class="connection__since">Connected {{ whenConnected(c.respondedAt) }}</span><RouterLink class="btn btn--primary" :to="`/groups/connections/${encodeURIComponent(c.id)}/channel`">Open shared chat</RouterLink><RouterLink class="btn btn--ghost" :to="{ path: '/meetups', query: { connectionId: c.id } }">Plan meetup</RouterLink></div></article>
         </div>
       </section>
     </template>

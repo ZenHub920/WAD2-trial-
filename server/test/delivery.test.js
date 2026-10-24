@@ -1,5 +1,6 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { createECDH } from 'node:crypto';
 import express from 'express';
 import { createTestDb } from '../src/db/connection.js';
 import { createRepositories } from '../src/db/repositories.js';
@@ -10,8 +11,9 @@ import { makeUser, makeParty, makeSeeker } from './helpers.js';
 
 let db,repos,clock,sendCalls,service;
 const env={VAPID_PUBLIC_KEY:'public-key',VAPID_PRIVATE_KEY:'private-key',VAPID_SUBJECT:'mailto:test@example.org'};
+const receiver=createECDH('prime256v1');receiver.generateKeys();
 const subscription=(suffix='one')=>({endpoint:`https://fcm.googleapis.com/fcm/send/${suffix}`,
-  keys:{p256dh:Buffer.concat([Buffer.from([4]),Buffer.alloc(64,1)]).toString('base64url'),auth:Buffer.alloc(16,2).toString('base64url')}});
+  keys:{p256dh:receiver.getPublicKey().toString('base64url'),auth:Buffer.alloc(16,2).toString('base64url')}});
 function notification({user='member',id='n1',category='group',path='/groups'}={}) {
   db.prepare(`INSERT INTO notifications(id,user_id,category,event_key,title,resource_path) VALUES(?,?,?,?,?,?)`)
     .run(id,user,category,`event:${id}`,'Private notification title',path);
@@ -46,6 +48,27 @@ test('subscriptions validate push provider URLs and key shapes before storing an
   assert.throws(()=>validatePushSubscription({...subscription(),keys:{auth:'bad',p256dh:'bad'}}),/invalid_push_keys/);
   assert.deepEqual(service.publicConfig(),{configured:true,publicKey:'public-key'});
   assert.equal(JSON.stringify(service.publicConfig()).includes('private-key'),false);
+  assert.throws(()=>validatePushSubscription({...subscription(),keys:{...subscription().keys,
+    p256dh:Buffer.concat([Buffer.from([4]),Buffer.alloc(64,1)]).toString('base64url')}}),/invalid_push_keys/);
+  assert.throws(()=>validatePushSubscription({...subscription(),keys:{...subscription().keys,
+    auth:`${subscription().keys.auth}=`}}),/invalid_push_keys/);
+});
+
+test('duplicate device subscriptions are idempotent and never silently replace encryption keys',()=>{
+  const first=service.subscribe('member',subscription());
+  assert.deepEqual(service.subscribe('member',subscription()),first);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM push_subscriptions').get().n,1);
+  assert.throws(()=>service.subscribe('member',{...subscription(),keys:{...subscription().keys,
+    auth:Buffer.alloc(16,9).toString('base64url')}}),/push_subscription_conflict/);
+  assert.equal(db.prepare('SELECT auth FROM push_subscriptions').get().auth,subscription().keys.auth);
+});
+
+test('a missing VAPID configuration never stores subscriptions or exposes partial secrets',async()=>{
+  const worker=createDeliveryService({db,repos,env:{VAPID_PRIVATE_KEY:'private-only'},now:()=>clock});
+  assert.deepEqual(worker.publicConfig(),{configured:false,publicKey:null});
+  assert.throws(()=>worker.subscribe('member',subscription()),/push_not_configured/);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM push_subscriptions').get().n,0);
+  await worker.stop();
 });
 
 test('group message inbox and push jobs commit atomically and roll back together',()=>{
@@ -70,7 +93,7 @@ test('worker sends private-key options server-side and payload carries no messag
   assert.deepEqual(JSON.parse(sendCalls[0][1]),{notificationId:'n1',subscriptionId:id});
   assert.equal(sendCalls[0][2].vapidDetails.privateKey,'private-key');
   assert.equal(service.notification('other','n1',id),null);
-  assert.equal(service.notification('member','n1',id).title,'Private notification title');
+  assert.equal(service.notification('member','n1',id).title,'You have a group update');
 });
 
 test('read, muted, old and revoked chat notifications are suppressed before delivery',async()=>{
@@ -84,25 +107,28 @@ test('read, muted, old and revoked chat notifications are suppressed before deli
   await service.runOnce();assert.equal(sendCalls.length,0);
 });
 
-test('account switch rotates subscription identity so old jobs cannot reach the new owner',async()=>{
+test('another account cannot transfer, replace keys or delete an existing endpoint',async()=>{
   const old=service.subscribe('member',subscription());notification();
-  const next=service.subscribe('other',subscription());assert.notEqual(old.id,next.id);
+  assert.throws(()=>service.subscribe('other',subscription()),/push_subscription_conflict/);
+  assert.throws(()=>service.subscribe('other',{...subscription(),keys:{...subscription().keys,auth:Buffer.alloc(16,3).toString('base64url')}}),/push_subscription_conflict/);
   assert.equal(service.notification('other','n1',old.id),null);
-  await service.runOnce();assert.equal(sendCalls.length,0);
-  service.unsubscribe('member',subscription().endpoint);
-  assert.equal(db.prepare('SELECT user_id FROM push_subscriptions').get().user_id,'other');
   service.unsubscribe('other',subscription().endpoint);
+  assert.equal(db.prepare('SELECT user_id FROM push_subscriptions').get().user_id,'member');
+  service.unsubscribe('member',subscription().endpoint);
+  const next=service.subscribe('other',subscription('fresh-browser-capability'));assert.notEqual(old.id,next.id);
+  await service.runOnce();assert.equal(sendCalls.length,0);
+  service.unsubscribe('other',subscription('fresh-browser-capability').endpoint);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM push_subscriptions').get().n,0);
 });
 
-test('suspended users cannot retrieve or receive queued popups and the device limit applies to transfers',async()=>{
+test('suspended users cannot retrieve or receive queued popups and each user has a device limit',async()=>{
   const {id}=service.subscribe('member',subscription());notification();
   db.exec('CREATE TABLE IF NOT EXISTS account_security(user_id TEXT PRIMARY KEY,suspended_at INTEGER)');
   db.prepare('INSERT INTO account_security(user_id,suspended_at) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET suspended_at=excluded.suspended_at')
     .run('member',clock);
   assert.equal(service.notification('member','n1',id),null);await service.runOnce();assert.equal(sendCalls.length,0);
   for(let i=0;i<10;i++) service.subscribe('other',subscription(`other-${i}`));
-  assert.throws(()=>service.subscribe('other',subscription()),/push_subscription_limit/);
+  assert.throws(()=>service.subscribe('other',subscription('extra')),/push_subscription_limit/);
   assert.equal(db.prepare('SELECT user_id FROM push_subscriptions WHERE id=?').get(id).user_id,'member');
 });
 
@@ -120,6 +146,87 @@ test('410 removes an expired browser subscription; transient failures retry with
   const expired=createDeliveryService({db,repos,env,now:()=>clock,logger:{warn(){}},webPush:{async sendNotification(){throw {statusCode:410};}}});
   notification({id:'n2'});clock+=1000;await expired.runOnce();
   assert.equal(db.prepare('SELECT COUNT(*) n FROM push_subscriptions').get().n,0);
+});
+
+test('invalid persisted endpoints never trigger outbound requests and only that device is removed',async()=>{
+  const bad=service.subscribe('member',subscription('bad'));service.subscribe('member',subscription('good'));
+  db.prepare('UPDATE push_subscriptions SET endpoint=? WHERE id=?').run('https://127.0.0.1/private',bad.id);
+  notification();await service.runOnce();
+  assert.equal(sendCalls.length,1);
+  assert.equal(sendCalls[0][0].endpoint,subscription('good').endpoint);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM push_subscriptions').get().n,1);
+});
+
+test('404 cleans one invalid device and permanent configuration rejection has no retry loop',async()=>{
+  const gone=service.subscribe('member',subscription('gone'));service.subscribe('member',subscription('valid'));notification();
+  let attempts=0;
+  const worker=createDeliveryService({db,repos,env,now:()=>clock,logger:{warn(){}},webPush:{async sendNotification(s){
+    attempts++;throw {statusCode:s.endpoint===subscription('gone').endpoint?404:401};
+  }}});
+  await worker.runOnce();
+  assert.equal(attempts,2);assert.equal(db.prepare('SELECT 1 FROM push_subscriptions WHERE id=?').get(gone.id),undefined);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM push_subscriptions').get().n,1);
+  const permanent=db.prepare("SELECT * FROM background_jobs WHERE type='notification.push' AND status='dead'").get();
+  assert.equal(permanent.attempts,1);assert.equal(permanent.last_error,'provider_401');
+  clock+=3600001;await worker.runOnce();assert.equal(attempts,2);
+});
+
+test('transient retries stop after six attempts and batch sizes are bounded',async()=>{
+  service.subscribe('member',subscription());notification();let attempts=0;
+  const worker=createDeliveryService({db,repos,env,now:()=>clock,logger:{warn(){}},webPush:{async sendNotification(){attempts++;throw {statusCode:503};}}});
+  for(let i=0;i<10;i++){await worker.runOnce();clock+=3600001;}
+  assert.equal(attempts,6);
+  const row=db.prepare("SELECT * FROM background_jobs WHERE type='notification.push'").get();
+  assert.equal(row.status,'dead');assert.equal(row.attempts,6);assert.ok(row.completed_at);
+  for(const maxJobs of [0,101,Infinity,NaN,1.5]) await assert.rejects(worker.runOnce({maxJobs}),/invalid_job_batch_size/);
+});
+
+test('completed queue retention is bounded and cannot delete live or recent work',()=>{
+  const jobs=createJobRepository(db,{now:()=>clock});
+  for(let i=0;i<4;i++) {
+    jobs.enqueue({key:`old:${i}`,type:'test'});const job=jobs.claim('worker');jobs.complete(job);
+  }
+  clock+=31*86400000;
+  jobs.enqueue({key:'live',type:'test'});
+  assert.equal(jobs.prune(undefined,2),2);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM background_jobs WHERE status='completed'").get().n,2);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM background_jobs WHERE status='queued'").get().n,1);
+  assert.equal(jobs.nextAvailableAt(),clock);
+  assert.throws(()=>jobs.enqueue({key:'oversized',type:'test',payload:{value:'x'.repeat(17000)}}),/invalid_background_job/);
+});
+
+test('retention drains a historical backlog in delayed bounded batches and stops when caught up',async()=>{
+  clock=Math.floor(clock/3600000)*3600000+1000;
+  const old=clock-31*86400000;
+  const insert=db.prepare(`INSERT INTO background_jobs(id,job_key,type,payload_json,available_at,status,created_at,completed_at)
+    VALUES(?,?,'retention.fixture','{}',?,?,?,?)`);
+  db.transaction(()=>{
+    for(let i=0;i<2050;i++) insert.run(`aged-${i}`,`aged:${i}`,old,'completed',old,old);
+    insert.run('recent','recent',clock,'completed',clock,clock);
+  })();
+  service.enqueue({key:'live',type:'retention.fixture',availableAt:clock+86400000});
+  const aged=()=>db.prepare("SELECT COUNT(*) n FROM background_jobs WHERE job_key LIKE 'aged:%'").get().n;
+  const pending=()=>db.prepare("SELECT COUNT(*) n FROM background_jobs WHERE job_key LIKE 'cleanup:followup:%' AND status='queued'").get().n;
+  await service.runOnce();assert.equal(aged(),1050);assert.equal(pending(),1);
+  await service.runOnce();assert.equal(aged(),1050);assert.equal(pending(),1);
+  clock+=60001;await service.runOnce();assert.equal(aged(),50);assert.equal(pending(),1);
+  clock+=60001;await service.runOnce();assert.equal(aged(),0);assert.equal(pending(),0);
+  await service.runOnce();assert.equal(pending(),0);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM background_jobs WHERE job_key LIKE 'cleanup:followup:%'").get().n,2);
+  assert.equal(db.prepare("SELECT status FROM background_jobs WHERE job_key='live'").get().status,'queued');
+  assert.equal(db.prepare("SELECT status FROM background_jobs WHERE job_key='recent'").get().status,'completed');
+});
+
+test('an event wake delivers queued work before the long idle reconciliation interval',async()=>{
+  service.subscribe('member',subscription());
+  service.start({intervalMs:60000});
+  await new Promise(resolve=>setTimeout(resolve,20));
+  notification();service.wake();
+  const deadline=Date.now()+1000;
+  while(sendCalls.length===0 && Date.now()<deadline) await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(sendCalls.length,1);
+  service.wake();await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(sendCalls.length,1);
 });
 
 test('job leases prevent concurrent claims and recover after crash with owner-guarded completion',()=>{
@@ -179,9 +286,16 @@ test('push routes require auth, scope subscriptions and never expose secret conf
   const base=`http://127.0.0.1:${server.address().port}`;
   try {
     const denied=await fetch(`${base}/me/push/config`);assert.equal(denied.status,401);
+    const unauthSubscribe=await fetch(`${base}/me/push/subscriptions`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(subscription())});
+    assert.equal(unauthSubscribe.status,401);
     const result=await fetch(`${base}/me/push/config`,{headers:{'x-user':'member'}});
     assert.deepEqual(await result.json(),{configured:true,publicKey:'public-key'});
     const {id}=service.subscribe('member',subscription());notification();
+    const transfer=await fetch(`${base}/me/push/subscriptions`,{method:'POST',headers:{'content-type':'application/json','x-user':'other'},body:JSON.stringify(subscription())});
+    assert.equal(transfer.status,409);
+    assert.equal(transfer.headers.get('cache-control'),'no-store');
+    const status=await fetch(`${base}/me/push/status`,{method:'POST',headers:{'content-type':'application/json','x-user':'other'},body:JSON.stringify({endpoint:subscription().endpoint})});
+    assert.deepEqual(await status.json(),{enabled:false});
     const other=await fetch(`${base}/me/push/notifications/n1?subscriptionId=${id}`,{headers:{'x-user':'other'}});
     assert.equal(other.status,404);assert.equal(other.headers.get('cache-control'),'no-store');
   } finally {await new Promise(resolve=>server.close(resolve));}

@@ -43,6 +43,15 @@ test('malformed push and cross-origin navigation are ignored',async()=>{
   await completion;assert.equal(external.calls.length,1);
 });
 
+test('malformed notification lookup JSON and oversized push ids are ignored safely',async()=>{
+  const jsonError=worker({response:{ok:true,async json(){throw new Error('invalid_json');}}});
+  await push(jsonError);assert.equal(jsonError.shown.length,0);
+  const invalid=worker({response:{ok:true,async json(){return {notification:{id:'n1',title:'x'.repeat(161),path:'/groups'}};}}});
+  await push(invalid);assert.equal(invalid.shown.length,0);
+  const oversized=worker();await push(oversized,{notificationId:'x'.repeat(129),subscriptionId:'s1'});
+  assert.equal(oversized.calls.length,0);
+});
+
 test('notification click focuses an existing app window on its same-origin route',async()=>{
   const opened=[];const instance=worker({windows:[{url:'https://encore.example/',async navigate(url){opened.push(url);},async focus(){opened.push('focus');}}]});
   let completion;instance.listeners.notificationclick({notification:{close(){},data:{path:'/meetups/m1'}},waitUntil:(promise)=>{completion=promise;}});

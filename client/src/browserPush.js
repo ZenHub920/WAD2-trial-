@@ -1,7 +1,7 @@
 // Permission is requested only from the profile button's user gesture.
 async function call(path,options={}) {
   const response=await fetch(`/api/me/push${path}`,{credentials:'same-origin',...options,
-    headers:{'content-type':'application/json'}});
+    headers:{'content-type':'application/json','X-Requested-With':'Encore'}});
   const body=await response.json();
   if(!response.ok) throw Object.assign(new Error(body.error||'push_request_failed'),{status:response.status});
   return body;
@@ -29,14 +29,24 @@ export async function enableBrowserPush() {
   let subscription=await registration.pushManager.getSubscription();
   const desired=keyBytes(config.publicKey);
   const oldKey=subscription?.options?.applicationServerKey;
-  if(oldKey && Array.from(new Uint8Array(oldKey)).join()!==Array.from(desired).join()) {
-    await call('/subscriptions',{method:'DELETE',body:JSON.stringify({endpoint:subscription.endpoint})});
-    await subscription.unsubscribe();subscription=null;
+  if(subscription) {
+    const linked=await call('/status',{method:'POST',body:JSON.stringify({endpoint:subscription.endpoint})});
+    const keyChanged=oldKey && Array.from(new Uint8Array(oldKey)).join()!==Array.from(desired).join();
+    if(!linked.enabled || keyChanged) {
+      // Account switching must create a fresh browser capability, never transfer
+      // the previous account's database record to the newly logged-in account.
+      if(linked.enabled) await call('/subscriptions',{method:'DELETE',body:JSON.stringify({endpoint:subscription.endpoint})});
+      if(!await subscription.unsubscribe()) throw new Error('push_unsubscribe_failed');
+      subscription=null;
+    }
   }
   subscription??=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:desired});
   try {
     await call('/subscriptions',{method:'POST',body:JSON.stringify(subscription.toJSON())});
-  } catch(error) { await subscription.unsubscribe();throw error; }
+  } catch(error) {
+    // Do not leave an unregistered capability alive after a failed registration.
+    await subscription.unsubscribe().catch(()=>{});throw error;
+  }
   return browserPushStatus();
 }
 export async function disableBrowserPush({server=true}={}) {

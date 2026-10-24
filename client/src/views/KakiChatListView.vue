@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api.js';
 import { onChatEvent, refreshUnread } from '../chatLive.js';
+import { currentUser } from '../auth.js';
 import { formatMoney, formatRelative } from '../market.js';
 import UserAvatar from '../components/UserAvatar.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
@@ -40,6 +41,9 @@ const unblockingId = ref(null);
 
 const companionUnread = computed(() => conversations.value.filter((c) => c.unread > 0).length);
 const groupUnread = computed(() => channels.value.filter((c) => c.unread > 0).length);
+const channelLink = channel => channel.connectionId
+  ? `/groups/connections/${encodeURIComponent(channel.connectionId)}/channel`
+  : `/groups/${encodeURIComponent(channel.partyId)}/channel`;
 const tabs = computed(() => [
   { id: 'companion', label: 'Companions', icon: 'companion', count: companionUnread.value },
   { id: 'tickets', label: 'Tickets', icon: 'ticket' },
@@ -80,15 +84,20 @@ async function loadTickets() {
   }
 }
 
-async function loadChannels() {
-  channelsLoading.value = true;
+let channelsRequest = 0;
+async function loadChannels({ quiet = false } = {}) {
+  const request = ++channelsRequest, userId = currentUser.value?.id;
+  if (!quiet) channelsLoading.value = true;
   try {
-    channels.value = (await api.groupChannels()).channels;
-    channelsError.value = null;
+    const results = await Promise.allSettled([api.groupChannels(), api.connectionChannels()]);
+    if (request !== channelsRequest || currentUser.value?.id !== userId) return;
+    channels.value = results.flatMap(result => result.status === 'fulfilled' ? result.value.channels : []);
+    channels.value.sort((a, b) => String(b.lastMessage?.createdAt ?? '').localeCompare(String(a.lastMessage?.createdAt ?? '')) || a.name.localeCompare(b.name));
+    channelsError.value = results.find(result => result.status === 'rejected')?.reason ?? null;
   } catch (err) {
-    channelsError.value = err;
+    if (request === channelsRequest && currentUser.value?.id === userId) channelsError.value = err;
   } finally {
-    channelsLoading.value = false;
+    if (request === channelsRequest && currentUser.value?.id === userId) channelsLoading.value = false;
   }
 }
 
@@ -150,9 +159,9 @@ function when(iso) {
 
 let stopListening = null;
 onMounted(() => {
-  stopListening = onChatEvent(() => {
-    load({ quiet: true });
-    loadChannels();
+  stopListening = onChatEvent(type => {
+    if (type === 'ready' || !type.startsWith('group-') && !type.startsWith('connection-')) load({ quiet: true });
+    if (type === 'ready' || type.startsWith('group-') || type.startsWith('connection-')) loadChannels({ quiet: true });
     refreshUnread();
   });
   load();
@@ -161,6 +170,12 @@ onMounted(() => {
   loadBlocked();
 });
 onUnmounted(() => stopListening?.());
+watch(() => currentUser.value?.id, userId => {
+  channelsRequest++;
+  channels.value = [];
+  channelsError.value = null;
+  if (userId) loadChannels();
+});
 </script>
 
 <template>
@@ -266,19 +281,18 @@ onUnmounted(() => stopListening?.());
       <p v-else class="empty">No ticket conversations yet. Message a seller from a listing in <RouterLink to="/concerts">Concerts</RouterLink>.</p>
     </section>
 
-    <!-- Group channels. A room appears here only once its host has added you;
-         being accepted into the group is not the same as being in its chat. -->
+    <!-- Single-group channels and accepted connections share the Groups inbox. -->
     <section v-show="tab === 'groups'" class="inbox__section" aria-labelledby="group-messages">
       <h2 id="group-messages" class="sr-only">Group messages</h2>
       <p v-if="channelsLoading" class="empty loading-state" role="status"><LoadingSpinner />Loading group channels…</p>
-      <div v-else-if="channelsError" class="notice notice--error" role="alert">
-        <p>{{ channelsError.status === 401 ? 'Sign in to see your group channels.' : 'Could not load group channels.' }}</p>
+      <div v-if="!channelsLoading && channelsError" class="notice notice--error" role="alert">
+        <p>{{ channelsError.status === 401 ? 'Sign in to see your group channels.' : channels.length ? 'Some group chats could not be refreshed. You can still open the chats shown below.' : 'Could not load group channels.' }}</p>
         <RouterLink v-if="channelsError.status === 401" :to="{ name: 'login', query: { redirect: '/messages' } }">Sign in</RouterLink>
         <button v-else class="btn btn--ghost" type="button" @click="loadChannels">Retry</button>
       </div>
-      <ul v-else-if="channels.length" class="threads">
-        <li v-for="channel in channels" :key="channel.partyId">
-          <RouterLink :to="`/groups/${channel.partyId}/channel`" class="thread">
+      <ul v-if="!channelsLoading && channels.length" class="threads">
+        <li v-for="channel in channels" :key="channel.connectionId ? `connection:${channel.connectionId}` : `group:${channel.partyId}`">
+          <RouterLink :to="channelLink(channel)" class="thread">
             <span class="thread__group" aria-hidden="true">{{ (channel.concert.artist || '?').slice(0, 1) }}</span>
             <span class="thread__text">
               <span class="thread__top">
@@ -286,19 +300,19 @@ onUnmounted(() => stopListening?.());
                 <span class="thread__time">{{ when(channel.lastMessage?.createdAt) }}</span>
               </span>
               <span class="thread__preview" :class="{ 'thread__preview--muted': !channel.lastMessage }">
-                {{ channel.lastMessage?.body ?? 'No messages yet' }}
+                {{ channel.lastMessage?.deleted ? 'Message deleted' : channel.lastMessage?.body ?? 'No messages yet' }}
               </span>
               <span class="thread__context">
-                {{ channel.memberCount }} {{ channel.memberCount === 1 ? 'member' : 'members' }}{{ channel.isHost ? ' · you host this group' : '' }}
+                {{ channel.connectionId ? 'Connected groups · ' : '' }}{{ channel.memberCount }} {{ channel.memberCount === 1 ? 'member' : 'members' }}{{ channel.isHost ? ' · you host a group' : '' }}
               </span>
             </span>
             <span v-if="channel.unread > 0" class="thread__unread" :aria-label="`${channel.unread} unread messages`">{{ channel.unread > 9 ? '9+' : channel.unread }}</span>
           </RouterLink>
         </li>
       </ul>
-      <p v-else class="empty">
-        No group channels yet. A group's host adds people to its channel from the members the group has accepted —
-        <RouterLink to="/groups">find a group</RouterLink> to get started.
+      <p v-if="!channelsLoading && !channelsError && !channels.length" class="empty">
+        No group chats yet. Your host can add you to your group's channel. Accepted group connections also open a shared chat for both groups.
+        <RouterLink to="/groups">Find a group</RouterLink> to get started.
       </p>
     </section>
   </div>

@@ -31,10 +31,12 @@ export const connectionState = ref('idle');
 const handlers = new Set();
 
 let source = null;
+let unreadRequest = 0;
+const unreadByKind = { companion: 0, group: 0, connection: 0 };
 
 /**
  * Subscribe to chat events. Returns an unsubscribe function.
- * Events: 'message', 'message-updated', 'read', 'group-message', 'group-members', 'ready'.
+ * Events include companion, group and connection messages, reads and membership updates.
  */
 export function onChatEvent(handler) {
   handlers.add(handler);
@@ -49,13 +51,19 @@ function dispatch(type, data) {
 
 export async function refreshUnread() {
   const userId = currentUser.value?.id;
+  const request = ++unreadRequest;
   if (!userId) {
     unreadTotal.value = 0;
     return;
   }
   try {
-    const { total } = await api.kakiUnread();
-    if (currentUser.value?.id === userId) unreadTotal.value = total;
+    const kinds = ['companion', 'group', 'connection'];
+    const results = await Promise.allSettled([api.kakiUnread(), api.groupChannelsUnread(), api.connectionChannelsUnread()]);
+    if (currentUser.value?.id !== userId || request !== unreadRequest) return;
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled' && Number.isFinite(result.value.total)) unreadByKind[kinds[index]] = result.value.total;
+    });
+    unreadTotal.value = Object.values(unreadByKind).reduce((sum, total) => sum + total, 0);
   } catch {
     // A failed badge refresh is not worth surfacing; the next event corrects it.
   }
@@ -76,17 +84,14 @@ function connect() {
     dispatch('ready', {});
   });
 
-  for (const type of ['message', 'message-updated', 'read', 'group-message', 'group-members']) {
+  for (const type of ['message', 'message-updated', 'read', 'group-message', 'group-members', 'connection-message', 'connection-read', 'connection-members']) {
     source.addEventListener(type, (event) => {
       let data;
       try { data = JSON.parse(event.data); } catch { return; }
 
-      // The server sends each recipient's total in one event; take ours.
-      if (type === 'message' && data.unreadFor && currentUser.value) {
-        const mine = data.unreadFor[currentUser.value.id];
-        if (typeof mine === 'number') unreadTotal.value = mine;
-      }
-      if (type === 'read' && data.readerId === currentUser.value?.id) refreshUnread();
+      // Each endpoint applies its own room-membership rules before counting.
+      if (['message', 'group-message', 'group-members', 'connection-message', 'connection-members'].includes(type)
+        || (['read', 'connection-read'].includes(type) && data.readerId === currentUser.value?.id)) refreshUnread();
       dispatch(type, data);
     });
   }
@@ -102,6 +107,8 @@ function disconnect() {
   source = null;
   connectionState.value = 'idle';
   unreadTotal.value = 0;
+  unreadRequest++;
+  for (const kind of Object.keys(unreadByKind)) unreadByKind[kind] = 0;
 }
 
 /** Follow the session: connect on sign-in, drop everything on sign-out. */

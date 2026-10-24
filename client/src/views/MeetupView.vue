@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api } from "../api.js";
 import { currentUser } from "../auth.js";
@@ -33,9 +33,17 @@ const place = reactive({
   longitude: 103.85,
   sheltered: true,
 });
-const position = reactive({ latitude: 1.3, longitude: 103.85, label: "" });
-const travelOptions = reactive({ mode: 'transit', maxTravelMinutes: 60, shelteredOnly: false });
-const transportOptions = reactive({ busStopCode: '', trainLine: '' });
+const position = reactive({ latitude: 1.3, longitude: 103.85, label: "", travelMode: 'transit' });
+const travelOptions = reactive({ shelteredOnly: false });
+const transportOptions = reactive({ busStopCode: '', trainLine: '', busService: '' });
+const selectedSlotCount = computed(() => Object.values(slots.value).filter(slot => slot.selected).length);
+const busServices = computed(() => {
+  const services = transport.value?.buses?.services ?? [];
+  const wanted = transportOptions.busService.trim().toUpperCase();
+  return wanted ? services.filter(service => service.service.toUpperCase() === wanted) : services;
+});
+const busLoadLabel = load => ({ SEA: 'Seats available', SDA: 'Standing available', LSD: 'Limited standing space' })[load] ?? 'Crowding not reported';
+const stationCrowdLabel = level => ({ l: 'Low crowding', m: 'Moderate crowding', h: 'High crowding', low: 'Low crowding', moderate: 'Moderate crowding', high: 'High crowding' })[String(level ?? '').toLowerCase()] ?? 'Crowding not reported';
 const statuses = { planning: "Collecting availability", proposed: "Awaiting required approvals", confirmed: "Meetup confirmed", cancelled: "Meetup cancelled" };
 const iso = (ms) => new Date(ms).toISOString();
 const time = (ms) =>
@@ -48,6 +56,9 @@ async function load() {
     const data = (await api.meetup(props.id)).meetup;
     board.value = data;
     travelRecommendations.value = null;
+    transport.value = null;
+    weather.value = null;
+    rainfall.value = null;
     slots.value = Object.fromEntries(
       data.grid.map((s) => {
         const own = data.availability.find(
@@ -60,6 +71,7 @@ async function load() {
             latitude: own?.latitude ?? null,
             longitude: own?.longitude ?? null,
             label: own?.label ?? "",
+            travelMode: own?.travel_mode ?? own?.travelMode ?? 'transit',
           },
         ];
       }),
@@ -131,6 +143,7 @@ async function saveAvailability() {
         .map(([start, s]) => ({
           startsAt: iso(Number(start)),
           endsAt: iso(Number(start) + 1800000),
+          travelMode: s.travelMode ?? 'transit',
           ...(s.latitude !== null && s.longitude !== null
             ? { latitude: s.latitude, longitude: s.longitude, label: s.label }
             : {}),
@@ -146,6 +159,10 @@ function assignLocation() {
         longitude: position.longitude,
         label: position.label,
       });
+}
+function assignTravelMode() {
+  for (const slot of Object.values(slots.value))
+    if (slot.selected) slot.travelMode = position.travelMode;
 }
 async function getWeather() {
   if (busy.value) return;
@@ -171,7 +188,10 @@ async function getTravelSuggestions() {
 async function getTransport() {
   if (busy.value) return;
   busy.value = true; error.value = '';
-  try { transport.value = (await api.meetupTransport(props.id, Object.fromEntries(Object.entries(transportOptions).filter(([, value]) => value)))).transport; }
+  try {
+    const { busStopCode, trainLine } = transportOptions;
+    transport.value = (await api.meetupTransport(props.id, Object.fromEntries(Object.entries({ busStopCode, trainLine }).filter(([, value]) => value)))).transport;
+  }
   catch { error.value = 'Could not check transport. Use a five-digit bus stop code, or choose a train line.'; }
   finally { busy.value = false; }
 }
@@ -244,6 +264,7 @@ async function getTransport() {
         <p>
           Select 30-minute time periods. Your starting locations stay private.
         </p>
+        <p class="group-muted">Each participant chooses their own travel method. We can compare car and public transport journeys together.</p>
         <div class="group-controls">
           <label v-for="s in board.grid" :key="s.startsAt" class="group-check"
             ><input v-model="slots[s.startsAt].selected" type="checkbox" />{{
@@ -253,6 +274,10 @@ async function getTransport() {
             }}
             available</label
           >
+        </div>
+        <div class="group-controls">
+          <label>Travel method for selected times<select v-model="position.travelMode"><option value="transit">Public transport</option><option value="drive">Car</option></select></label>
+          <button type="button" class="btn btn--ghost" :disabled="busy || !selectedSlotCount" @click="assignTravelMode">Apply travel method to selected times</button>
         </div>
         <div class="group-controls">
           <label
@@ -276,19 +301,19 @@ async function getTransport() {
           /></label>
         </div>
         <MeetupLocationSearch :meetup-id="id" label="Find your approximate starting place" @selected="location => Object.assign(position, location)" />
-        <button class="btn btn--ghost" @click="assignLocation">
+        <button class="btn btn--ghost" :disabled="busy || !selectedSlotCount" @click="assignLocation">
           Apply this location to selected times
         </button>
         <p>
           Starting locations are optional. Use an approximate public place;
-          adjust individual time periods below if your location changes.
+          adjust individual time periods below if your location or travel method changes. Save your selected availability to share these choices with the planner.
         </p>
         <details>
-          <summary>Different locations during the day</summary>
+          <summary>Different locations or travel methods during the day</summary>
           <template v-for="s in board.grid" :key="s.startsAt"
             ><div v-if="slots[s.startsAt].selected" class="group-controls">
               <span>{{ time(s.startsAt) }}</span
-              ><label
+              ><label>Travel method<select v-model="slots[s.startsAt].travelMode"><option value="transit">Public transport</option><option value="drive">Car</option></select></label><label>Location label<input v-model="slots[s.startsAt].label" maxlength="150" placeholder="Approximate public place" /></label><label
                 >Latitude<input
                   v-model.number="slots[s.startsAt].latitude"
                   type="number"
@@ -348,9 +373,8 @@ async function getTransport() {
       </form>
       <section class="card group-panel">
         <h2>Recommended options</h2>
+        <p class="group-muted">Options consider how many people are available, then compare journeys using each person's saved travel method.</p>
         <div class="group-controls">
-          <label>Travel by<select v-model="travelOptions.mode"><option value="transit">Public transport</option><option value="walk">Walking</option></select></label>
-          <label>Journey budget (minutes)<input v-model.number="travelOptions.maxTravelMinutes" type="number" min="5" max="180" /></label>
           <label class="group-check"><input v-model="travelOptions.shelteredOnly" type="checkbox" />Only places marked sheltered</label>
         </div>
         <button class="btn btn--ghost" :disabled="busy || board.status === 'cancelled'" @click="getTravelSuggestions">Compare travel options</button>
@@ -367,7 +391,8 @@ async function getTransport() {
             available, {{ s.totalDistanceKm === null ? 'distance unavailable' : `${s.totalDistanceKm} km combined distance` }}
             ({{ s.locationRespondents }} locations supplied)
           </p>
-          <p v-if="s.totalTravelMinutes !== null && s.totalTravelMinutes !== undefined" class="group-muted">{{ s.totalTravelMinutes }} minutes combined journey time; longest journey {{ s.maximumTravelMinutes }} minutes. {{ s.reachableCount }}/{{ s.locationRespondents }} supplied locations within your journey budget.</p>
+          <p v-if="s.travelModes" class="group-muted">Travel methods: {{ s.travelModes.transit }} by public transport · {{ s.travelModes.drive }} by car.</p>
+          <p v-if="s.totalTravelMinutes !== null && s.totalTravelMinutes !== undefined" class="group-muted">{{ s.totalTravelMinutes }} minutes combined journey time; longest journey {{ s.maximumTravelMinutes }} minutes.</p>
           <p v-if="s.basis === 'straight_line_distance'" class="group-muted">Straight-line distance estimate. Fresh route times are unavailable for this option.</p>
           <div class="group-actions">
             <button
@@ -422,20 +447,37 @@ async function getTransport() {
         <p v-if="weather">{{ weather.message ?? 'Weather is unavailable right now.' }}</p>
         <p v-if="weather?.stale" class="group-muted">This is a cached forecast; check again before travelling.</p>
         <p v-if="rainfall?.status === 'available'" class="group-muted">Recent rainfall: {{ rainfall.millimetres }} mm at {{ rainfall.station }}, {{ rainfall.distanceKm }} km from the meeting place ({{ time(Date.parse(rainfall.observedAt)) }}). This is an observation, not a forecast.</p>
+        <div class="meetup-parking">
+          <h3>Driving to the meetup?</h3>
+          <p class="group-muted">Check nearby car parks around the proposed meeting place. Available lots describe conditions now and may change before your meetup.</p>
+          <button type="button" class="btn btn--ghost" :disabled="busy" @click="getTransport">Check nearby parking</button>
+          <template v-if="transport?.parking">
+            <p v-if="transport.parking.status !== 'available'">Parking information is unavailable right now. Please try again later.</p>
+            <template v-else>
+              <p v-if="transport.parking.stale" class="group-muted">Showing saved parking availability. Refresh before travelling.</p>
+              <p v-if="transport.parking.coverage === 'bounded_snapshot'" class="group-muted">Showing a limited set of reporting car parks; other parking may be available.</p>
+              <p v-if="!transport.parking.carparks.length">No reported car parks within {{ transport.parking.radiusKm }} km of this meeting place.</p>
+              <ul v-else class="meetup-parking__list">
+                <li v-for="carpark in transport.parking.carparks" :key="carpark.id"><strong>{{ carpark.name }}</strong><span>Approx. {{ carpark.distanceKm }} km away · {{ carpark.availableLots }} {{ carpark.availableLots === 1 ? 'car lot' : 'car lots' }} available</span></li>
+              </ul>
+            </template>
+          </template>
+        </div>
       </section>
       <section class="card group-panel">
-        <h2>Getting there today</h2>
-        <p>Check current train advisories, station crowds and bus arrivals. These describe travel now; they do not predict conditions on the concert date.</p>
+        <h2>Travel and the journey home</h2>
+        <p>Check current train advisories, station crowds and bus crowd levels before heading out or leaving the concert. Station crowd levels describe density at the station, rather than inside train carriages. These updates describe travel now; they do not predict conditions on the concert date.</p>
         <div class="group-controls">
           <label>Bus stop code (optional)<input v-model="transportOptions.busStopCode" maxlength="5" inputmode="numeric" placeholder="e.g. 83139" /></label>
+          <label>Bus service (optional)<input v-model="transportOptions.busService" maxlength="10" placeholder="e.g. 36" /></label>
           <label>Station crowds (optional)<select v-model="transportOptions.trainLine"><option value="">Choose a line</option><option v-for="line in ['CCL','CEL','CGL','DTL','EWL','NEL','NSL','TEL']" :key="line">{{ line }}</option></select></label>
         </div>
         <button class="btn btn--ghost" :disabled="busy" @click="getTransport">Check LTA transport updates</button>
         <template v-if="transport">
           <p v-if="transport.trains.status !== 'available'">Train updates are unavailable. Try again later.</p>
           <template v-else><p>{{ transport.trains.serviceStatus === 'normal' ? 'LTA reports normal train service.' : 'LTA reports a train service disruption.' }}<span v-if="transport.trains.stale"> Saved update; check again before travelling.</span></p><p v-for="(message, index) in transport.trains.messages" :key="index">{{ message.content }}</p></template>
-          <template v-if="transport.buses"><p v-if="transport.buses.status !== 'available'">Bus arrivals are unavailable for this stop.</p><template v-else><p v-if="!transport.buses.services.length">No bus services reported at this stop.</p><p v-if="transport.buses.stale">Showing saved bus arrivals; refresh before travelling.</p><p v-for="service in transport.buses.services" :key="service.service">Bus {{ service.service }}: {{ service.arrivals.length ? service.arrivals.map(a => `${time(Date.parse(a.estimatedArrival))}${a.wheelchairAccessible ? ' (wheelchair accessible)' : ''}`).join(', ') : 'No arrival time reported' }}</p></template></template>
-          <template v-if="transport.crowding"><p v-if="transport.crowding.status !== 'available'">Station crowd information is unavailable.</p><details v-else><summary>Station crowd levels {{ transport.crowding.stale ? '(saved)' : '' }}</summary><p v-for="station in transport.crowding.stations" :key="station.station">{{ station.station }}: {{ station.level || 'Not reported' }} ({{ station.observedAt }})</p></details></template>
+          <template v-if="transport.buses"><p v-if="transport.buses.status !== 'available'">Bus crowd information is unavailable for this stop.</p><template v-else><p v-if="!transport.buses.services.length">No bus services reported at this stop.</p><p v-else-if="!busServices.length">No crowd information reported for that bus service at this stop.</p><p v-if="transport.buses.stale" class="group-muted">Showing saved bus crowd levels; refresh before travelling.</p><article v-for="service in busServices" :key="service.service" class="meetup-transport-row"><strong>Bus {{ service.service }}</strong><ul v-if="service.crowdLevels?.length"><li v-for="(vehicle, index) in service.crowdLevels" :key="index">{{ vehicle.position === 1 ? 'Next bus' : `Following bus ${vehicle.position - 1}` }}: {{ busLoadLabel(vehicle.load) }}<span v-if="vehicle.wheelchairAccessible"> · Wheelchair accessible</span></li></ul><p v-else>Crowding not reported.</p></article></template></template>
+          <template v-if="transport.crowding"><p v-if="transport.crowding.status !== 'available'">Station crowd information is unavailable.</p><details v-else><summary>Station crowd levels {{ transport.crowding.stale ? '(saved)' : '' }}</summary><p v-if="!transport.crowding.stations.length">No crowd levels reported for this line.</p><p v-for="station in transport.crowding.stations" :key="station.station">{{ station.station }}: {{ stationCrowdLabel(station.level) }}<span v-if="Number.isFinite(Date.parse(station.observedAt))"> ({{ time(Date.parse(station.observedAt)) }})</span></p></details></template>
         </template>
         <small class="group-muted">Data: <a href="https://www.onemap.gov.sg/apidocs/" target="_blank" rel="noopener noreferrer">OneMap / Singapore Land Authority</a>, <a href="https://datamall.lta.gov.sg/" target="_blank" rel="noopener noreferrer">LTA DataMall</a>, and <a href="https://data.gov.sg/datasets/d_f131f6e343bf8168e4057a04c4326a0a/view" target="_blank" rel="noopener noreferrer">NEA via data.gov.sg</a>. Shelter status is suggested by participants.</small>
       </section>
@@ -468,3 +510,12 @@ async function getTransport() {
     >
   </div>
 </template>
+<style scoped>
+.meetup-transport-row { display: grid; gap: var(--space-2); padding-block: var(--space-3); border-top: var(--border-hairline); }
+.meetup-transport-row ul { display: grid; gap: var(--space-1); padding-left: var(--space-4); color: var(--text-300); }
+.meetup-parking { display: grid; justify-items: start; gap: var(--space-3); padding-top: var(--space-4); margin-top: var(--space-3); border-top: var(--border-hairline); }
+.meetup-parking h3 { font-size: var(--step-1); }
+.meetup-parking__list { display: grid; gap: var(--space-3); width: 100%; padding: 0; list-style: none; }
+.meetup-parking__list li { display: grid; gap: var(--space-1); padding: var(--space-3); background: var(--ink-750); border-radius: var(--radius-sm); }
+.meetup-parking__list span { color: var(--text-300); font-size: var(--step--1); }
+</style>

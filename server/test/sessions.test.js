@@ -18,7 +18,7 @@ async function start(db) {
     async request(path, { cookie, body, method = 'GET' } = {}) {
       const response = await fetch(`http://127.0.0.1:${server.address().port}/api${path}`, {
         method,
-        headers: { ...(cookie ? { cookie } : {}), ...(body ? { 'content-type': 'application/json' } : {}) },
+        headers: { 'X-Requested-With': 'Encore', ...(cookie ? { cookie } : {}), ...(body ? { 'content-type': 'application/json' } : {}) },
         body: body ? JSON.stringify(body) : undefined,
       });
       return {

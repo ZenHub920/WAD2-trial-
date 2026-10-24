@@ -28,6 +28,7 @@ async function request(path, options = {}) {
     ...fetchOptions,
     headers: {
       'content-type': 'application/json',
+      'X-Requested-With': 'Encore',
       ...extraHeaders
     }
   });
@@ -213,6 +214,17 @@ export const api = {
     request(`/group-channels/${encodeURIComponent(partyId)}/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE' }),
   readGroupChannel: (partyId) =>
     request(`/group-channels/${encodeURIComponent(partyId)}/read`, { method: 'POST' }),
+
+  /* Accepted connections share a room across both groups' current members. */
+  connectionChannels: () => request('/me/connection-channels'),
+  connectionChannelsUnread: () => request('/connection-channels/unread'),
+  connectionChannel: (connectionId, options = {}) => request(`/connection-channels/${encodeURIComponent(connectionId)}?${new URLSearchParams(options)}`),
+  connectionChannelMessage: (connectionId, messageId) => request(`/connection-channels/${encodeURIComponent(connectionId)}/messages/${encodeURIComponent(messageId)}`),
+  sendConnectionChannelMessage: (connectionId, body, replyTo = null) => request(`/connection-channels/${encodeURIComponent(connectionId)}/messages`, { method: 'POST', body: JSON.stringify({ body, replyTo }) }),
+  editConnectionChannelMessage: (connectionId, messageId, body) => request(`/connection-channels/${encodeURIComponent(connectionId)}/messages/${encodeURIComponent(messageId)}`, { method: 'PATCH', body: JSON.stringify({ body }) }),
+  deleteConnectionChannelMessage: (connectionId, messageId) => request(`/connection-channels/${encodeURIComponent(connectionId)}/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE' }),
+  readConnectionChannel: (connectionId) => request(`/connection-channels/${encodeURIComponent(connectionId)}/read`, { method: 'POST' }),
+  setConnectionChannelBackground: (connectionId, background) => request(`/connection-channels/${encodeURIComponent(connectionId)}/background`, { method: 'PUT', body: JSON.stringify({ background }) }),
 
   blockedUsers: () => request('/me/blocked'),
   blockUser: (userId) => request(`/users/${encodeURIComponent(userId)}/block`, { method: 'PUT' }),

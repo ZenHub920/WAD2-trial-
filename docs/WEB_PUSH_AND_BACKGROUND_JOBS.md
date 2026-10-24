@@ -70,7 +70,7 @@ routes using `registerPushRoutes(router, { delivery, requireUser })`.
 Call `delivery.registerWeatherChecks(integrations.weather)` to share the weather
 cache. Other periodic jobs use `registerTask(name, handler, { intervalMs })`; explicit
 one-off jobs use `enqueue({ key, type, payload, availableAt })`. Start with
-`delivery.start({ intervalMs: 15000 })` after application setup and `await delivery.stop()`
+`delivery.start({ intervalMs: 60000 })` after application setup and `await delivery.stop()`
 before closing the database. Completed schedule-bucket keys prevent duplicate runs.
 
 Configure server-only `VAPID_PRIVATE_KEY`, plus `VAPID_PUBLIC_KEY` and a valid contact

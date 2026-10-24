@@ -1,42 +1,81 @@
 import { createProviderCache, providerJson, providerError, singaporeCoordinates, boundedLimit } from './providerCache.js';
+import { createProviderBudget } from './providerBudget.js';
+import { distanceKm } from './meetupPlanning.js';
 
 const ONEMAP = 'https://www.onemap.gov.sg/api';
 const LTA = 'https://datamall2.mytransport.sg/ltaodataservice';
 const unavailable = (reason) => ({ status: 'unavailable', reason });
 const text = (value, length = 200) => typeof value === 'string' ? value.slice(0, length) : '';
-export function createSingaporeTravel({ fetchImpl = globalThis.fetch, now = Date.now, env = process.env } = {}) {
-  const oneCache = createProviderCache({ now, dailyLimit: boundedLimit(env.ONEMAP_DAILY_LIMIT, 1000, 10000), requestsPerMinute: 60 });
-  const ltaCache = createProviderCache({ now, dailyLimit: boundedLimit(env.LTA_DAILY_LIMIT, 1000, 10000), requestsPerMinute: 30 });
-  let token = env.ONEMAP_TOKEN || '', tokenExpiry = token ? Infinity : 0, authenticating = null;
+const object = (value) => value && typeof value === 'object' && !Array.isArray(value);
+const busLoads = { SEA: 'Seats available', SDA: 'Standing available', LSD: 'Limited standing' };
+const numeric = (value) => typeof value === 'number' || (typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value)) ? Number(value) : NaN;
+function expiryOf(value, fallback) {
+  try {
+    // An expiry hint only: signature/authentication remains the provider's responsibility.
+    const payload = JSON.parse(Buffer.from(value.split('.')[1], 'base64url').toString('utf8'));
+    return Number.isFinite(payload.exp) ? payload.exp * 1000 : fallback;
+  } catch { return fallback; }
+}
+export function createSingaporeTravel({ db, fetchImpl = globalThis.fetch, now = Date.now, env = process.env } = {}) {
+  // Logical cache misses can perform auth + retries; count actual HTTP attempts instead.
+  const oneCache = createProviderCache({ now, dailyLimit: Infinity, requestsPerMinute: Infinity });
+  const ltaCache = createProviderCache({ now, dailyLimit: Infinity, requestsPerMinute: Infinity });
+  const oneBudget = createProviderBudget({ db, provider: 'onemap', now, dailyLimit: boundedLimit(env.ONEMAP_DAILY_LIMIT, 1000, 10000), requestsPerMinute: 60 });
+  const ltaBudget = createProviderBudget({ db, provider: 'lta', now, dailyLimit: boundedLimit(env.LTA_DAILY_LIMIT, 1000, 10000), requestsPerMinute: 30 });
+  let token = typeof env.ONEMAP_TOKEN === 'string' ? env.ONEMAP_TOKEN : '', tokenExpiry = token ? expiryOf(token, now() + 12 * 3600000) : 0, authenticating = null;
   const credentials = Boolean(env.ONEMAP_EMAIL && env.ONEMAP_PASSWORD);
   const configured = Boolean(token || credentials);
+  async function request(budget, url, options) {
+    budget.consume();
+    try { return await providerJson(fetchImpl, url, options); }
+    catch (error) { budget.block(error.reason); throw error; }
+  }
   async function authenticate() {
     if (token && tokenExpiry > now() + 60000) return token;
-    if (!credentials) throw providerError('onemap_not_configured');
+    if (!credentials) throw providerError(token ? 'onemap_token_expired' : 'onemap_not_configured');
     if (!authenticating) authenticating = (async () => {
-      const json = await providerJson(fetchImpl, `${ONEMAP}/auth/post/getToken`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: env.ONEMAP_EMAIL, password: env.ONEMAP_PASSWORD }) });
-      if (typeof json.access_token !== 'string' || !Number.isFinite(Number(json.expiry_timestamp))) throw providerError('provider_authentication_failed');
-      token = json.access_token; tokenExpiry = Number(json.expiry_timestamp) * 1000;
+      let json;
+      try { json = await request(oneBudget, `${ONEMAP}/auth/post/getToken`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: env.ONEMAP_EMAIL, password: env.ONEMAP_PASSWORD }) }); }
+      catch (error) {
+        // OneMap documents 404 for an unregistered account/invalid credential input.
+        if ([400, 404].includes(error.upstreamStatus) || error.reason === 'invalid_provider_response') {
+          oneBudget.block('provider_authentication_failed'); throw providerError('provider_authentication_failed');
+        }
+        throw error;
+      }
+      if (!object(json) || typeof json.access_token !== 'string' || !json.access_token || json.access_token.length > 8192 || /\s/.test(json.access_token)
+        || !Number.isFinite(Number(json.expiry_timestamp)) || Number(json.expiry_timestamp) * 1000 <= now() + 60000) {
+        oneBudget.block('provider_authentication_failed'); throw providerError('provider_authentication_failed');
+      }
+      token = json.access_token; tokenExpiry = Math.min(Number(json.expiry_timestamp) * 1000, expiryOf(token, Infinity));
+      if (tokenExpiry <= now() + 60000) { oneBudget.block('provider_authentication_failed'); throw providerError('provider_authentication_failed'); }
       return token;
     })().finally(() => { authenticating = null; });
     return authenticating;
   }
   async function oneRead(path) {
     for (let attempt = 0; attempt < 2; attempt++) {
+      let usedToken;
       try {
-        const json = await providerJson(fetchImpl, `${ONEMAP}${path}`, { headers: { Authorization: await authenticate() } });
-        if (json.error) throw providerError('provider_authentication_failed');
+        usedToken = await authenticate();
+        // A single rejected cached token may be refreshed below. Backoff is set only
+        // after that bounded recovery fails, so a valid refresh remains possible.
+        oneBudget.consume();
+        const json = await providerJson(fetchImpl, `${ONEMAP}${path}`, { headers: { Authorization: usedToken } });
+        if (!object(json)) throw providerError('invalid_provider_response');
+        if (json.error) throw providerError(/token|auth|unauthori[sz]ed|expired/i.test(String(json.error)) ? 'provider_authentication_failed' : 'invalid_provider_response');
         return json;
       } catch (e) {
-        if (e.reason !== 'provider_authentication_failed' || !credentials || attempt) throw e;
-        token = ''; tokenExpiry = 0;
+        if (e.reason !== 'provider_authentication_failed' || !credentials || attempt || !usedToken) { oneBudget.block(e.reason); throw e; }
+        if (token === usedToken) { token = ''; tokenExpiry = 0; }
       }
     }
   }
   async function ltaRead(path, key, ttl, normalise) {
     if (!env.LTA_ACCOUNT_KEY) return unavailable('lta_not_configured');
     return ltaCache.read(key, async () => {
-      const json = await providerJson(fetchImpl, `${LTA}${path}`, { headers: { AccountKey: env.LTA_ACCOUNT_KEY, accept: 'application/json' } });
+      const json = await request(ltaBudget, `${LTA}${path}`, { headers: { AccountKey: env.LTA_ACCOUNT_KEY, accept: 'application/json' } });
+      if (!object(json)) throw providerError('invalid_provider_response');
       return { status: 'available', provider: 'LTA DataMall', ...normalise(json) };
     }, { ttl, staleFor: ttl * 2 });
   }
@@ -49,46 +88,95 @@ export function createSingaporeTravel({ fetchImpl = globalThis.fetch, now = Date
       return oneCache.read(`search:${q.toLowerCase()}`, async () => {
         const json = await oneRead(`/common/elastic/search?${new URLSearchParams({ searchVal: q, returnGeom: 'Y', getAddrDetails: 'Y', pageNum: '1' })}`);
         if (!Array.isArray(json.results)) throw providerError('invalid_provider_response');
-        const locations = json.results.slice(0, 20).map((row) => ({ label: text(row.SEARCHVAL || row.ADDRESS, 150), address: text(row.ADDRESS), latitude: Number(row.LATITUDE), longitude: Number(row.LONGITUDE), postalCode: /^\d{6}$/.test(row.POSTAL) ? row.POSTAL : null })).filter(singaporeCoordinates);
+        const locations = json.results.slice(0, 20).filter(object).map((row) => ({ label: text(row.SEARCHVAL || row.ADDRESS, 150), address: text(row.ADDRESS), latitude: Number(row.LATITUDE), longitude: Number(row.LONGITUDE), postalCode: /^\d{6}$/.test(row.POSTAL) ? row.POSTAL : null })).filter(singaporeCoordinates);
         return { status: 'available', provider: 'OneMap / Singapore Land Authority', locations };
       }, { ttl: 86400000, staleFor: 7 * 86400000 });
     },
     async route({ origin, destination, mode = 'transit', startsAt }) {
-      if (!singaporeCoordinates(origin) || !singaporeCoordinates(destination) || !['walk', 'transit'].includes(mode) || !Number.isFinite(startsAt)) return unavailable('invalid_route');
+      if (!singaporeCoordinates(origin) || !singaporeCoordinates(destination) || !['walk', 'transit', 'drive'].includes(mode) || !Number.isFinite(startsAt) || !Number.isFinite(new Date(startsAt + 8 * 3600000).getTime())) return unavailable('invalid_route');
       if (!configured) return unavailable('onemap_not_configured');
       const key = `route:${mode}:${origin.latitude},${origin.longitude}:${destination.latitude},${destination.longitude}:${Math.floor(startsAt / 1800000)}`;
       return oneCache.read(key, async () => {
-        const params = new URLSearchParams({ start: `${origin.latitude},${origin.longitude}`, end: `${destination.latitude},${destination.longitude}`, routeType: mode === 'walk' ? 'walk' : 'pt' });
+        const params = new URLSearchParams({ start: `${origin.latitude},${origin.longitude}`, end: `${destination.latitude},${destination.longitude}`, routeType: mode === 'transit' ? 'pt' : mode });
         if (mode === 'transit') {
           const local = new Date(startsAt + 8 * 3600000).toISOString();
           params.set('date', `${local.slice(5, 7)}-${local.slice(8, 10)}-${local.slice(0, 4)}`); params.set('time', local.slice(11, 19)); params.set('mode', 'transit'); params.set('numItineraries', '1'); params.set('maxWalkDistance', '1000');
         }
         const json = await oneRead(`/public/routingsvc/route?${params}`);
-        const itinerary = json.plan?.itineraries?.filter((r) => Number.isFinite(r.duration)).sort((a, b) => a.duration - b.duration)[0];
-        const seconds = mode === 'walk' ? Number(json.route_summary?.total_time) : Number(itinerary?.duration);
+        const itinerary = Array.isArray(json.plan?.itineraries) ? json.plan.itineraries.filter((r) => object(r) && Number.isFinite(r.duration)).sort((a, b) => a.duration - b.duration)[0] : null;
+        const seconds = mode === 'transit' ? numeric(itinerary?.duration) : numeric(json.route_summary?.total_time);
         if (!Number.isFinite(seconds) || seconds < 0 || seconds > 86400) throw providerError('route_not_found');
-        return { status: 'available', provider: 'OneMap / Singapore Land Authority', durationMinutes: Math.ceil(seconds / 60), mode, departureReference: new Date(startsAt).toISOString(), basis: mode === 'walk' ? 'walking_route' : 'scheduled_public_transport' };
+        const metres = mode === 'transit' ? NaN : numeric(json.route_summary?.total_distance);
+        return { status: 'available', provider: 'OneMap / Singapore Land Authority', durationMinutes: Math.ceil(seconds / 60), distanceKm: Number.isFinite(metres) && metres >= 0 && metres <= 1000000 ? Math.round(metres / 10) / 100 : null, mode, departureReference: new Date(startsAt).toISOString(), basis: mode === 'walk' ? 'walking_route' : mode === 'drive' ? 'driving_route' : 'scheduled_public_transport' };
       }, { ttl: 15 * 60000, staleFor: 15 * 60000 });
     },
     busArrivals(code) {
       if (typeof code !== 'string' || !/^\d{5}$/.test(code)) return Promise.resolve(unavailable('invalid_bus_stop'));
       return ltaRead(`/v3/BusArrival?BusStopCode=${code}`, `bus:${code}`, 20000, (json) => {
         if (!Array.isArray(json.Services)) throw providerError('invalid_provider_response');
-        return { busStopCode: code, services: json.Services.slice(0, 80).map((s) => ({ service: text(s.ServiceNo, 10), arrivals: [s.NextBus, s.NextBus2, s.NextBus3].filter((b) => b && Number.isFinite(Date.parse(b.EstimatedArrival))).map((b) => ({ estimatedArrival: b.EstimatedArrival, load: ['SEA', 'SDA', 'LSD'].includes(b.Load) ? b.Load : null, wheelchairAccessible: b.Feature === 'WAB' })) })) };
+        return { busStopCode: code, services: json.Services.slice(0, 80).filter((s) => object(s) && typeof s.ServiceNo === 'string' && /^[\w/-]{1,10}$/.test(s.ServiceNo)).map((s) => {
+          const buses = [s.NextBus, s.NextBus2, s.NextBus3];
+          const crowd = (b) => {
+            const load = Object.hasOwn(busLoads, b.Load) ? b.Load : null;
+            return { load, loadLabel: load ? busLoads[load] : 'Not reported', wheelchairAccessible: b.Feature === 'WAB' };
+          };
+          return { service: s.ServiceNo,
+            arrivals: buses.filter((b) => object(b) && typeof b.EstimatedArrival === 'string' && Number.isFinite(Date.parse(b.EstimatedArrival))).map((b) => ({ estimatedArrival: b.EstimatedArrival, ...crowd(b) })),
+            // Load can be present without a usable ETA. Never invent a percentage.
+            crowdLevels: buses.map((b, index) => ({ bus: b, position: index + 1 })).filter(({ bus }) => object(bus) && (Object.hasOwn(busLoads, bus.Load) || Number.isFinite(Date.parse(bus.EstimatedArrival)))).map(({ bus, position }) => ({ position, ...crowd(bus) })),
+          };
+        }) };
       });
+    },
+    async parking({ latitude, longitude, radiusKm = 1.5, limit = 5 } = {}) {
+      const point = { latitude, longitude };
+      if (!singaporeCoordinates(point) || !Number.isFinite(radiusKm) || radiusKm < 0.2 || radiusKm > 5 || !Number.isInteger(limit) || limit < 1 || limit > 10) return unavailable('invalid_parking_location');
+      if (!env.LTA_ACCOUNT_KEY) return unavailable('lta_not_configured');
+      // One shared city snapshot avoids fetching the same pages for every meetup.
+      // The queried point never appears in the upstream request or persisted data.
+      const snapshot = await ltaCache.read('parking:city', async () => {
+        const records = new Map(), seenPages = new Set(); let pagesFetched = 0, complete = false;
+        for (let page = 0; page < 6; page++) {
+          const json = await request(ltaBudget, `${LTA}/CarParkAvailabilityv2?${new URLSearchParams({ $skip: String(page * 500) })}`, { headers: { AccountKey: env.LTA_ACCOUNT_KEY, accept: 'application/json' } });
+          if (!object(json) || !Array.isArray(json.value) || json.value.length > 500) throw providerError('invalid_provider_response');
+          pagesFetched++;
+          const pageKey = JSON.stringify(json.value.map((row) => object(row) ? [text(row.Agency, 10), text(String(row.CarParkID), 80), text(row.LotType, 5)] : null));
+          // Some gateways ignore pagination. Stop repeated pages, retain an honest
+          // bounded-coverage label and never count the same lots more than once.
+          if (seenPages.has(pageKey)) break;
+          seenPages.add(pageKey);
+          for (const row of json.value) {
+            if (!object(row) || row.LotType !== 'C' || !['HDB', 'LTA', 'URA'].includes(row.Agency) || typeof row.Location !== 'string') continue;
+            const parkId = typeof row.CarParkID === 'string' ? row.CarParkID : Number.isSafeInteger(row.CarParkID) && row.CarParkID >= 0 ? String(row.CarParkID) : '';
+            if (!parkId || parkId.length > 80) continue;
+            const parts = row.Location.trim().split(/[\s,]+/), availableLots = numeric(row.AvailableLots);
+            const location = { latitude: numeric(parts[0]), longitude: numeric(parts[1]) };
+            if (parts.length !== 2 || !singaporeCoordinates(location) || !Number.isSafeInteger(availableLots) || availableLots < 0 || availableLots > 1000000) continue;
+            const id = `${row.Agency}:${parkId}`;
+            // Duplicate provider records are the same stock, not additional lots.
+            records.set(id, { id, name: text(row.Development, 200) || parkId, ...location, availableLots, lotType: 'C', agency: row.Agency });
+          }
+          if (json.value.length < 500) { complete = true; break; }
+        }
+        return { status: 'available', provider: 'LTA DataMall', carparks: [...records.values()], coverage: complete ? 'complete_snapshot' : 'bounded_snapshot', pagesFetched };
+      }, { ttl: 60000, staleFor: 120000 });
+      if (snapshot.status !== 'available') return snapshot;
+      const carparks = snapshot.carparks.map((park) => ({ ...park, distanceKm: Math.round(distanceKm(point, park) * 100) / 100 }))
+        .filter((park) => park.distanceKm <= radiusKm).sort((a, b) => a.distanceKm - b.distanceKm || a.id.localeCompare(b.id)).slice(0, limit);
+      return { ...snapshot, carparks, radiusKm };
     },
     trainAlerts() {
       return ltaRead('/TrainServiceAlerts', 'train-alerts', 60000, (json) => {
         const value = Array.isArray(json.value) ? json.value[0] : json.value;
         if (!value || typeof value !== 'object' || !['1', '2'].includes(String(value.Status))) throw providerError('invalid_provider_response');
-        return { serviceStatus: String(value.Status) === '1' ? 'normal' : 'disrupted', messages: (Array.isArray(value.Message) ? value.Message : []).slice(0, 20).map((m) => ({ content: text(m.Content, 1000), createdAt: text(m.CreatedDate, 50) })), affectedSegments: (Array.isArray(value.AffectedSegments) ? value.AffectedSegments : []).slice(0, 30).map((s) => ({ line: text(s.Line, 10), stations: text(s.Stations, 300), direction: text(s.Direction, 80) })) };
+        return { serviceStatus: String(value.Status) === '1' ? 'normal' : 'disrupted', messages: (Array.isArray(value.Message) ? value.Message : []).slice(0, 20).filter(object).map((m) => ({ content: text(m.Content, 1000), createdAt: text(m.CreatedDate, 50) })), affectedSegments: (Array.isArray(value.AffectedSegments) ? value.AffectedSegments : []).slice(0, 30).filter(object).map((s) => ({ line: text(s.Line, 10), stations: text(s.Stations, 300), direction: text(s.Direction, 80) })) };
       });
     },
     crowding(line) {
       if (!['CCL', 'CEL', 'CGL', 'DTL', 'EWL', 'NEL', 'NSL', 'TEL'].includes(line)) return Promise.resolve(unavailable('invalid_train_line'));
       return ltaRead(`/PCDRealTime?TrainLine=${line}`, `crowd:${line}`, 600000, (json) => {
         if (!Array.isArray(json.value)) throw providerError('invalid_provider_response');
-        return { line, stations: json.value.slice(0, 100).map((s) => ({ station: text(s.Station, 20), level: text(s.CrowdLevel, 20), observedAt: text(s.StartTime, 50), endsAt: text(s.EndTime, 50) })) };
+        return { line, stations: json.value.slice(0, 100).filter(object).map((s) => ({ station: text(s.Station, 20), level: text(s.CrowdLevel, 20), observedAt: text(s.StartTime, 50), endsAt: text(s.EndTime, 50) })) };
       });
     },
   };
