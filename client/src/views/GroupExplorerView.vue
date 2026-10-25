@@ -39,13 +39,13 @@ const modeIsActive = computed(() => Boolean(seeker.value && persistedMode.value 
 const pendingLimit = computed(() => seeker.value?.maxPendingDirectApplications ?? 1);
 const canApply = computed(() => !busy.value && !loading.value && displayedMode.value === 'direct' && seeker.value?.status === 'open' && persistedMode.value === 'direct' && !currentGroup.value && !activeProposals.value.length && !pendingLegacy.value.length && pendingDirect.value.length < pendingLimit.value);
 const canPrefer = computed(() => seeker.value?.status === 'open' && !currentGroup.value && !activeProposals.value.length);
-const modeLabels = { direct: 'Direct joining', algorithm: 'Automatic matching' };
+const modeLabels = { direct: 'Browse and choose', algorithm: 'Match me with a group' };
 const modeOptions = [
-  { mode: 'direct', title: 'Already know what you’re looking for?', description: 'Browse groups and choose who to join.', action: 'Browse groups' },
-  { mode: 'algorithm', title: 'Meet new concert friends.', description: 'Let us suggest a compatible group.', action: 'Find my group' },
+  { mode: 'direct', kicker: 'Pick yourself', title: 'Browse and choose', description: 'Look through the groups going to this show and ask to join the one you like.', action: 'Browse groups' },
+  { mode: 'algorithm', kicker: 'Let us help', title: 'Match me with a group', description: 'Tell us which groups you like and we’ll pair you with one that likes you back.', action: 'Find my match' },
 ];
-const originLabels = { direct: 'Approved direct application', algorithm: 'Confirmed automatic match', host: 'You host this group', friend: 'Friend invitation' };
-const joinStatus = { pending: 'Awaiting review in the group queue', accepted: 'Approved', rejected: 'Declined', declined: 'Declined', withdrawn: 'Withdrawn', expired: 'Request expired', superseded: 'Request closed', cancelled: 'Membership or request ended' };
+const originLabels = { direct: 'The host said yes to your request', algorithm: 'You were matched with this group', host: 'You’re the host', friend: 'A friend invited you' };
+const joinStatus = { pending: 'Waiting for the host', accepted: 'You’re in', rejected: 'Not this time', declined: 'Not this time', withdrawn: 'You cancelled this', expired: 'Timed out', superseded: 'Closed', cancelled: 'Ended' };
 let generation = 0, alive = true, filterTimer, loadedContext = '', loadedDataContext = '';
 const context = () => `${currentUser.value?.id ?? ''}:${concertId.value}`;
 const isCurrent = key => alive && key === context();
@@ -55,24 +55,24 @@ const canQueueFor = group => group.canJoinQueue ?? group.remainingCapacity > 0;
 
 function failureMessage(err) {
   const explanations = {
-    open_seeker_request_required: 'Set up or reopen your group request first.',
-    direct_joining_mode_required: 'Activate direct joining before applying to a group.',
-    pending_application_limit_reached: 'You already have a pending application for this concert. Withdraw it before choosing another group.',
-    withdraw_pending_applications_first: 'Withdraw your pending applications before switching joining methods.',
-    active_seat_claim_exists: 'Resolve your pending application, automatic proposal or membership before changing methods.',
-    active_matching_proposal_exists: 'Accept or decline your current automatic proposal before changing modes or applying elsewhere.',
-    active_proposal_exists: 'Accept or decline your current automatic proposal before changing modes or applying elsewhere.',
-    already_in_concert_group: 'You already belong to or host a group for this concert. Open your current group below.',
-    already_group_member: 'You are already a member of this group.',
-    previously_declined: 'This seeker–group pairing was declined earlier. Choose another group.',
-    save_discovery_preferences_first: 'Automatic matching ranks groups using your preferences, so save them above before switching it on. Direct joining works without them.',
-    join_request_already_exists: 'You already have an active application to this group.',
-    group_changed_withdraw_and_resubmit: 'The group changed after you applied. Withdraw the request, review the group and apply again.',
-    preferences_changed_withdraw_and_resubmit: 'Your preferences changed after you applied. Withdraw the request and apply again with your latest answers.',
-    group_unavailable: 'This group no longer has an eligible place. Review the latest results.',
-    request_waiting_in_queue: 'An earlier request must be resolved first. Refresh the queue before replying.',
+    open_seeker_request_required: 'Tell us a bit about your plans for this show first.',
+    direct_joining_mode_required: 'Switch to “Browse and choose” before asking to join a group.',
+    pending_application_limit_reached: 'You’ve already asked one group. Cancel that request if you’d rather try another.',
+    withdraw_pending_applications_first: 'Cancel your open request before switching how you join.',
+    active_seat_claim_exists: 'Finish up with your current request, match or group before switching how you join.',
+    active_matching_proposal_exists: 'Say yes or no to your match first.',
+    active_proposal_exists: 'Say yes or no to your match first.',
+    already_in_concert_group: 'You already have a group for this show. You can find it at the top of the page.',
+    already_group_member: 'You’re already in this group.',
+    previously_declined: 'This group passed earlier, so try a different one.',
+    save_discovery_preferences_first: 'We need your preferences to find you a match. Save them above first, or browse groups yourself instead.',
+    join_request_already_exists: 'You’ve already asked to join this group.',
+    group_changed_withdraw_and_resubmit: 'This group changed after you asked. Cancel your request, take another look and ask again.',
+    preferences_changed_withdraw_and_resubmit: 'Your preferences changed after you asked. Cancel and ask again so the host sees your latest answers.',
+    group_unavailable: 'This group just filled up. Have a look at the others.',
+    request_waiting_in_queue: 'Someone else is ahead in line. Refresh and try again in a moment.',
   };
-  return explanations[err.message] ?? (err.status === 401 ? 'Your session ended. Sign in again to manage your requests.' : err.status === 409 ? 'This action conflicts with an application, proposal or current membership. Review their latest statuses below before trying again.' : 'Could not save this change. Please try again.');
+  return explanations[err.message] ?? (err.status === 401 ? 'You’ve been signed out. Sign in again to carry on.' : err.status === 409 ? 'That clashes with a request, match or group you already have. Check below and try again.' : 'Something went wrong. Please try again.');
 }
 
 async function load() {
@@ -106,7 +106,7 @@ async function load() {
   } catch (err) {
     if (isCurrent(key) && current === generation) {
       if (comparisonSession.value !== listingKey) { groups.value = []; comparisonSession.value = listingKey; }
-      error.value = err.status === 401 ? 'Sign in to browse groups and manage your preferences.' : 'Could not load groups and your requests. Please try again.';
+      error.value = err.status === 401 ? 'Sign in to see the groups going to this show.' : 'We couldn’t load the groups. Please try again.';
     }
   } finally { if (isCurrent(key) && current === generation) loading.value = false; }
 }
@@ -125,7 +125,7 @@ onMounted(async () => {
   try {
     const response = await api.concerts(); if (!alive) return; concerts.value = response.concerts;
     if (!concertId.value && concerts.value.length) concertId.value = concerts.value[0].id; else await load();
-  } catch { if (alive) error.value = 'Could not load concerts. Please try again.'; }
+  } catch { if (alive) error.value = 'We couldn’t load concerts. Please try again.'; }
   finally { if (alive) concertsLoading.value = false; }
 });
 onUnmounted(() => { alive = false; generation++; clearTimeout(filterTimer); });
@@ -143,119 +143,267 @@ async function act(operation, success) {
   catch (err) { if (isCurrent(key)) { await load(); if (isCurrent(key)) error.value = failureMessage(err); } return false; }
   finally { busy.value = false; }
 }
-async function enroll(reopen = false) { await act(() => reopen ? api.reopenSeekerRequest(concertId.value) : api.createRequest(concertId.value, { ...form, joining_mode: displayedMode.value }), 'Your group request is ready. Choose and activate the joining mode you want to use.'); }
-async function activateMode() { const target = displayedMode.value; await act(() => api.setJoiningMode(concertId.value, target), target === 'direct' ? 'Direct joining is active. You may apply to one group at a time for this concert.' : 'Automatic matching is active. Your open request can enter the next matching round.'); }
+async function enroll(reopen = false) { await act(() => reopen ? api.reopenSeekerRequest(concertId.value) : api.createRequest(concertId.value, { ...form, joining_mode: displayedMode.value }), 'You’re all set. Now choose how you’d like to find your group.'); }
+async function activateMode() { const target = displayedMode.value; await act(() => api.setJoiningMode(concertId.value, target), target === 'direct' ? 'Great, browse the groups below and ask to join one.' : 'Great, mark the groups you like and join the match list.'); }
 async function join(id, note = applicationNote.value.trim()) {
   let application;
   return act(async () => {
     application = (await api.requestGroupJoin(id, { note })).request;
     applicationFor.value = ''; applicationNote.value = '';
   }, () => application?.seatReserved
-    ? 'Application sent. One place is held for you; the host reviews requests in arrival order. Check your deadline below.'
-    : `Application sent. You are waiting in the group queue${application?.queuePosition ? ` at position ${application.queuePosition}` : ''}. A place is not held yet; check your request deadline below.`);
+    ? 'Request sent. We’re saving you a spot while the host decides.'
+    : `Request sent. You’re ${application?.queuePosition ? `number ${application.queuePosition} ` : ''}in line, and we’ll save you a spot if one opens up.`);
 }
-async function preference(id, remove) { await act(() => remove ? api.removeGroupPreference(id) : api.preferGroup(id), remove ? 'Removed from your automatic-matching shortlist.' : 'Saved as a preferred group for automatic matching.'); }
-async function joinPool() { await act(() => api.findMyGroup(concertId.value, crypto.randomUUID()), 'You are waiting for an operator-run matching round. Review any proposal here when it arrives.'); }
-async function leavePool() { await act(() => api.leaveGroupMatching(concertId.value), 'You left automatic matching. Your saved preferences and matching history are kept.'); }
+async function preference(id, remove) { await act(() => remove ? api.removeGroupPreference(id) : api.preferGroup(id), remove ? 'Removed from the groups you like.' : 'Added to the groups you like.'); }
+async function joinPool() { await act(() => api.findMyGroup(concertId.value, crypto.randomUUID()), 'You’re on the match list. Your match will show up here once it’s ready.'); }
+async function leavePool() { await act(() => api.leaveGroupMatching(concertId.value), 'You’re off the match list. We’ve kept your liked groups in case you come back.'); }
 function dateLabel(value) { if (!value) return ''; const date = new Date(typeof value === 'number' ? value : value.includes('T') ? value : `${value.replace(' ', 'T')}Z`); return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('en-SG'); }
 </script>
 
 <template>
   <div class="container groups-page">
-    <header class="groups-page__header"><h1>Find a group</h1><p>Choose a group yourself or use automatic matching. Both use the same compatibility and available places. Group places do not include tickets.</p></header>
+    <header class="groups-hero">
+      <p class="groups-hero__eyebrow mono">Groups</p>
+      <h1>Find your people for the show</h1>
+      <p class="groups-hero__lede">Join a group of fans going to the same concert, so you can meet up, grab food and head in together. Joining a group doesn’t include a ticket.</p>
+    </header>
+
     <GroupPreferencesGate summary @saved="load">
     <template #before><GroupNavigation /></template>
-    <div class="groups-concert-picker"><label>Choose your concert<select v-model="concertId" :disabled="busy"><option value="">Select a concert</option><option v-for="concert in concerts" :key="concert.id" :value="concert.id">{{ concert.artist }}, {{ concert.event_date }}</option></select></label></div>
-    <p v-if="error" class="group-error" role="alert">{{ error }} <button type="button" class="btn btn--ghost" :disabled="busy || loading" @click="load">Refresh</button></p>
+
+    <div class="groups-concert-picker">
+      <label>Which concert are you going to?
+        <select v-model="concertId" :disabled="busy">
+          <option value="">Pick a concert</option>
+          <option v-for="concert in concerts" :key="concert.id" :value="concert.id">{{ concert.artist }}, {{ concert.event_date }}</option>
+        </select>
+      </label>
+    </div>
+
+    <p v-if="error" class="group-error" role="alert">{{ error }} <button type="button" class="btn btn--ghost" :disabled="busy || loading" @click="load">Try again</button></p>
     <p v-if="message" class="group-success" role="status">{{ message }}</p>
     <p v-if="concertsLoading" class="loading-state" role="status"><LoadingSpinner />Loading concerts…</p>
-    <p v-if="busy" class="loading-state" role="status"><LoadingSpinner />Updating your request…</p>
-    <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading groups and your requests…</p>
+    <p v-if="busy" class="loading-state" role="status"><LoadingSpinner />Saving…</p>
+    <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Finding groups…</p>
+
     <template v-if="concertId && currentUser">
-      <section v-if="currentGroup" class="card group-panel" aria-labelledby="current-group-heading">
-        <div class="current-group-identity"><GroupAvatar :src="currentGroup.imageUrl ?? currentGroup.group?.imageUrl" :name="currentGroup.name || currentGroup.group?.name || currentGroup.artist" :size="52" /><div><h2 id="current-group-heading">{{ currentGroup.name || currentGroup.group?.name || 'Your confirmed group' }}</h2><p>{{ currentGroup.artist }} · Hosted by {{ currentGroup.host?.displayName ?? currentGroup.group?.hostName ?? 'your concert companion' }}</p></div></div>
-        <p class="group-muted">{{ originLabels[currentGroup.assignmentOrigin] ?? 'Confirmed membership' }} · {{ currentGroup.remainingCapacity }} places remaining</p><p>You can belong to one attendance group for this concert.</p>
-        <div class="group-actions"><RouterLink :to="`/groups/${encodeURIComponent(currentGroup.partyId ?? currentGroup.id)}/members`" class="btn btn--primary">View your group</RouterLink><RouterLink :to="{path:'/meetups',query:{partyId:currentGroup.partyId ?? currentGroup.id}}" class="btn btn--ghost">Plan meetup</RouterLink></div>
+      <!-- Already sorted: this person has a group for the show. -->
+      <section v-if="currentGroup" class="card group-panel group-panel--highlight" aria-labelledby="current-group-heading">
+        <p class="group-kicker mono">You’re going with</p>
+        <div class="current-group-identity">
+          <GroupAvatar :src="currentGroup.imageUrl ?? currentGroup.group?.imageUrl" :name="currentGroup.name || currentGroup.group?.name || currentGroup.artist" :size="52" />
+          <div>
+            <h2 id="current-group-heading">{{ currentGroup.name || currentGroup.group?.name || 'Your group' }}</h2>
+            <p class="group-muted">{{ currentGroup.artist }} · Hosted by {{ currentGroup.host?.displayName ?? currentGroup.group?.hostName ?? 'your concert buddy' }}</p>
+          </div>
+        </div>
+        <p class="group-muted">{{ originLabels[currentGroup.assignmentOrigin] ?? 'You’re in' }} · {{ currentGroup.remainingCapacity }} {{ currentGroup.remainingCapacity === 1 ? 'spot' : 'spots' }} still open. You can be in one group per concert.</p>
+        <div class="group-actions">
+          <RouterLink :to="`/groups/${encodeURIComponent(currentGroup.partyId ?? currentGroup.id)}/members`" class="btn btn--primary">See your group</RouterLink>
+          <RouterLink :to="{path:'/meetups',query:{partyId:currentGroup.partyId ?? currentGroup.id}}" class="btn btn--ghost">Plan where to meet</RouterLink>
+        </div>
       </section>
+
+      <!-- First visit for this concert: a few quick questions. -->
       <section v-else-if="!seeker" class="card group-panel">
-        <div class="group-setup__heading"><div><h2>Ready to find your group?</h2><p>Save a concert request to apply directly or enter automatic matching.</p></div><button type="button" class="btn btn--primary" :disabled="busy" :aria-expanded="setupOpen" @click="setupOpen = !setupOpen">{{ setupOpen ? 'Close setup' : 'Set up group request' }}</button></div>
+        <div class="group-setup__heading">
+          <div>
+            <h2>First, tell us your plans</h2>
+            <p class="group-muted">A few quick answers help hosts know you’ll get along.</p>
+          </div>
+          <button type="button" class="btn btn--primary" :disabled="busy" :aria-expanded="setupOpen" @click="setupOpen = !setupOpen">{{ setupOpen ? 'Not now' : 'Get started' }}</button>
+        </div>
         <form v-if="setupOpen" class="group-panel" @submit.prevent="enroll()"><fieldset :disabled="busy" class="group-fieldset">
-          <div class="group-controls"><label>Preferred seating<select v-model="form.section_pref"><option v-for="(name, id) in SECTION_OPTIONS" :key="id" :value="id">{{ name }}</option></select></label><label>Maximum spending<select v-model.number="form.spend_band_max"><option v-for="n in 4" :key="n" :value="n">{{ LABELS.spendBand[n] }}</option></select></label><label>Arrival<select v-model="form.arrival_pref"><option v-for="(name, id) in ARRIVAL_OPTIONS" :key="id" :value="id">{{ name }}</option></select></label></div>
-          <details><summary>Activities (optional)</summary><fieldset><legend>Activities</legend><label v-for="(name, id) in LABELS.plans" :key="id" class="group-check"><input v-model="form.plans_wanted[id]" type="checkbox">{{ name }}</label></fieldset></details><button class="btn btn--primary">Save group request</button>
+          <div class="group-controls">
+            <label>Where do you want to be?<select v-model="form.section_pref"><option v-for="(name, id) in SECTION_OPTIONS" :key="id" :value="id">{{ name }}</option></select></label>
+            <label>How much do you want to spend?<select v-model.number="form.spend_band_max"><option v-for="n in 4" :key="n" :value="n">{{ LABELS.spendBand[n] }}</option></select></label>
+            <label>When do you want to get there?<select v-model="form.arrival_pref"><option v-for="(name, id) in ARRIVAL_OPTIONS" :key="id" :value="id">{{ name }}</option></select></label>
+          </div>
+          <details><summary>Anything you’d like to do together? (optional)</summary><fieldset><legend>Things to do</legend><label v-for="(name, id) in LABELS.plans" :key="id" class="group-check"><input v-model="form.plans_wanted[id]" type="checkbox">{{ name }}</label></fieldset></details>
+          <button class="btn btn--primary">Save my answers</button>
         </fieldset></form>
       </section>
-      <section v-else-if="seeker.status === 'withdrawn'" class="card group-panel"><h2>Your group request is closed</h2><p>Reopen it to use either joining mode.</p><button type="button" class="btn btn--primary" :disabled="busy" @click="enroll(true)">Reopen group request</button></section>
 
-      <section class="card group-panel" aria-labelledby="joining-mode-heading">
-        <h2 id="joining-mode-heading">How would you like to join?</h2><div class="joining-modes" role="group" aria-label="View a joining method"><article v-for="option in modeOptions" :key="option.mode" class="joining-mode" :class="{ 'joining-mode--selected': displayedMode === option.mode }"><h3>{{ option.title }}</h3><p>{{ option.description }}</p><button type="button" class="btn" :class="displayedMode === option.mode ? 'btn--primary' : 'btn--ghost'" :aria-pressed="displayedMode === option.mode" :disabled="busy" @click="displayedMode = option.mode; applicationFor = ''">{{ option.action }}</button></article></div>
-        <p class="group-muted">Viewing another method keeps your applications and offers. Your active method changes only when you explicitly activate it.</p><p v-if="seeker">Active method: <strong>{{ modeLabels[persistedMode] }}</strong></p>
-        <p v-if="displayedMode === 'direct'">Apply to one group at a time for this concert. Direct applications and automatic proposals share the group's arrival-order queue. A place is held when one is available; later requests wait. The host reviews the first request and approval confirms its held place.</p>
-        <template v-else><p>Save groups you prefer, then wait for a Gale–Shapley matching round. Both sides' preferences affect the result. Your proposal enters the same group queue as direct applications. When it is first in line with a held place, both you and the host must approve.</p><p class="group-muted">Matching rounds are run by an operator. Non-preferred eligible groups can still be offered.</p></template>
-        <p class="group-muted">Every request expires 48 hours after creation, including time spent waiting. Its deadline does not restart when a place is held.</p>
-        <button v-if="seeker?.status === 'open' && !currentGroup && !modeIsActive" type="button" class="btn btn--primary" :disabled="busy" @click="activateMode">{{ displayedMode === 'direct' ? 'Use direct joining' : 'Use automatic matching' }}</button>
-        <p v-if="pendingDirect.length" class="group-muted" role="status">Queue position {{ pendingDirect[0].queuePosition ?? '—' }}: {{ pendingDirect[0].seatReserved ? 'one place is held for you' : 'waiting; a place is not held yet' }}. Your request expires {{ dateLabel(pendingDirect[0].expiresAt) }}. You are not a confirmed member. Withdraw below before choosing another group or switching methods.</p>
-        <p v-if="!modeIsActive && (seeker?.status === 'open' || pendingDirect.length || activeProposals.length || pendingLegacy.length)" class="group-muted">Resolve pending applications or automatic offers before switching methods. Nothing is withdrawn automatically.</p>
+      <section v-else-if="seeker.status === 'withdrawn'" class="card group-panel">
+        <h2>You stepped away from this show</h2>
+        <p class="group-muted">Changed your mind? Pick up where you left off.</p>
+        <button type="button" class="btn btn--primary" :disabled="busy" @click="enroll(true)">I’m looking again</button>
       </section>
+
+      <!-- Two ways in. -->
+      <section class="group-panel group-panel--bare" aria-labelledby="joining-mode-heading">
+        <h2 id="joining-mode-heading">How do you want to find a group?</h2>
+        <div class="joining-modes" role="group" aria-label="Ways to find a group">
+          <article v-for="option in modeOptions" :key="option.mode" class="joining-mode" :class="{ 'joining-mode--selected': displayedMode === option.mode }">
+            <p class="group-kicker mono">{{ option.kicker }}</p>
+            <h3>{{ option.title }}</h3>
+            <p>{{ option.description }}</p>
+            <button type="button" class="btn" :class="displayedMode === option.mode ? 'btn--primary' : 'btn--ghost'" :aria-pressed="displayedMode === option.mode" :disabled="busy" @click="displayedMode = option.mode; applicationFor = ''">{{ option.action }}</button>
+          </article>
+        </div>
+        <p v-if="seeker" class="group-muted">You’re currently using: <strong>{{ modeLabels[persistedMode] }}</strong></p>
+        <button v-if="seeker?.status === 'open' && !currentGroup && !modeIsActive" type="button" class="btn btn--primary" :disabled="busy" @click="activateMode">{{ displayedMode === 'direct' ? 'Switch to browsing' : 'Switch to matching' }}</button>
+        <p v-if="!modeIsActive && (seeker?.status === 'open' || pendingDirect.length || activeProposals.length || pendingLegacy.length)" class="group-muted">Just looking? That’s fine. Nothing changes until you switch, and open requests stay as they are.</p>
+        <p v-if="pendingDirect.length" class="group-status" role="status">
+          {{ pendingDirect[0].seatReserved ? 'We’re saving you a spot.' : `You’re number ${pendingDirect[0].queuePosition ?? '?'} in line.` }}
+          The host has until {{ dateLabel(pendingDirect[0].expiresAt) }} to reply.
+        </p>
+        <details class="group-howto">
+          <summary>How does this work?</summary>
+          <ul v-if="displayedMode === 'direct'">
+            <li>You can ask one group at a time per concert.</li>
+            <li>Requests are answered in the order they arrive. If there’s room, we save you a spot while the host decides.</li>
+            <li>If the host doesn’t reply within 48 hours, your request times out and you can try another group.</li>
+          </ul>
+          <ul v-else>
+            <li>Mark the groups you like, then join the match list.</li>
+            <li>We pair people and groups so both sides get a fit they like. You might be matched with a group you didn’t mark.</li>
+            <li>When your match is ready, you and the host both say yes before it’s confirmed.</li>
+            <li>Matches that aren’t answered within 48 hours time out.</li>
+          </ul>
+        </details>
+      </section>
+
       <section v-if="displayedMode === 'algorithm' && seeker && !currentGroup" class="card group-panel automatic-matching" aria-labelledby="automatic-matching-heading">
-        <h2 id="automatic-matching-heading">Automatic matching status</h2><p v-if="activeProposals.length">You have an automatic proposal in the group queue below. Its card shows whether a place is held and whether it is ready for both approvals. You may decline while waiting.</p><p v-else-if="pendingLegacy.length">An earlier automatic request is awaiting host approval. Review or withdraw it under Your applications before changing methods.</p><p v-else-if="matching.optedIn || matching.state === 'queued'" role="status">You are in the matching pool, waiting for the next operator-run round. Save your preferred groups below; use Refresh status to check for an offer.</p><p v-else>You are not currently waiting for an automatic match.</p>
-        <div class="group-actions"><button v-if="!matching.optedIn && !activeProposals.length && !pendingLegacy.length && modeIsActive && seeker.status === 'open'" type="button" class="btn btn--primary" :disabled="busy" @click="joinPool">Join matching pool</button><button type="button" class="btn btn--ghost" :disabled="busy" @click="load">Refresh status</button><button v-if="matching.optedIn" type="button" class="btn btn--danger-ghost" :disabled="busy || activeProposals.length > 0 || pendingLegacy.length > 0" @click="leavePool">Leave matching pool</button><RouterLink :to="`/concerts/${encodeURIComponent(concertId)}#my-result-title`">Concert &amp; proposal history</RouterLink></div><p v-if="activeProposals.length" class="group-muted">Respond to your offer before leaving the pool or switching to direct joining.</p>
+        <h2 id="automatic-matching-heading">Your match</h2>
+        <p v-if="activeProposals.length">You’ve got a match! Have a look below and say yes or no.</p>
+        <p v-else-if="pendingLegacy.length">You have an earlier match waiting for the host. You can check on it or cancel it under Your requests.</p>
+        <p v-else-if="matching.optedIn || matching.state === 'queued'" role="status">You’re on the match list. Keep marking groups you like, and check back soon.</p>
+        <p v-else>You’re not on the match list yet.</p>
+        <div class="group-actions">
+          <button v-if="!matching.optedIn && !activeProposals.length && !pendingLegacy.length && modeIsActive && seeker.status === 'open'" type="button" class="btn btn--primary" :disabled="busy" @click="joinPool">Join the match list</button>
+          <button type="button" class="btn btn--ghost" :disabled="busy" @click="load">Check for updates</button>
+          <button v-if="matching.optedIn" type="button" class="btn btn--danger-ghost" :disabled="busy || activeProposals.length > 0 || pendingLegacy.length > 0" @click="leavePool">Leave the match list</button>
+          <RouterLink :to="`/concerts/${encodeURIComponent(concertId)}#my-result-title`">Past matches</RouterLink>
+        </div>
+        <p v-if="activeProposals.length" class="group-muted">Answer your match before leaving the list or switching to browsing.</p>
       </section>
-      <section v-if="activeProposals.length" aria-label="Your automatic matching offers"><MatchProposalCard v-for="proposal in activeProposals" :key="proposal.id" :proposal="proposal" @updated="load" /></section>
-      <section class="card group-panel"><h2>Search groups</h2><fieldset :disabled="busy" class="group-fieldset"><GroupFilters :filters="filters" preferences /></fieldset></section>
-      <div class="results-heading"><p>{{ groups.length }} {{ groups.length === 1 ? 'group' : 'groups' }} on this page. <span v-if="displayedMode === 'direct'">{{ pendingDirect.length }} of {{ pendingLimit }} pending applications.</span></p>
-        <div v-if="displayedMode === 'direct'" class="results-layout" role="group" aria-label="Display direct group results"><button type="button" class="btn" :class="directLayout === 'compare' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="directLayout === 'compare'" :disabled="busy" @click="directLayout = 'compare'; applicationFor = ''">Compare two</button><button type="button" class="btn" :class="directLayout === 'list' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="directLayout === 'list'" :disabled="busy" @click="directLayout = 'list'">List view</button></div>
+      <section v-if="activeProposals.length" aria-label="Your match"><MatchProposalCard v-for="proposal in activeProposals" :key="proposal.id" :proposal="proposal" @updated="load" /></section>
+
+      <!-- Browsing. -->
+      <section class="card group-panel">
+        <h2>Narrow it down</h2>
+        <fieldset :disabled="busy" class="group-fieldset"><GroupFilters :filters="filters" preferences /></fieldset>
+      </section>
+
+      <div class="results-heading">
+        <p>{{ total }} {{ total === 1 ? 'group' : 'groups' }} going<span v-if="displayedMode === 'direct' && pendingDirect.length"> · you’ve asked {{ pendingDirect.length }} of {{ pendingLimit }}</span></p>
+        <div v-if="displayedMode === 'direct'" class="results-layout" role="group" aria-label="How to show groups">
+          <button type="button" class="btn" :class="directLayout === 'compare' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="directLayout === 'compare'" :disabled="busy" @click="directLayout = 'compare'; applicationFor = ''">Side by side</button>
+          <button type="button" class="btn" :class="directLayout === 'list' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="directLayout === 'list'" :disabled="busy" @click="directLayout = 'list'">See all</button>
+        </div>
       </div>
+
       <GroupComparisonDeck v-if="displayedMode === 'direct'" v-show="directLayout === 'compare' && groups.length" :groups="groups" :session-key="comparisonSession" :disabled="busy || loading || directLayout !== 'compare'" :can-apply="canApply" :apply-group="group => join(group.id, '')" />
-      <div v-if="displayedMode !== 'direct' || directLayout === 'list'" class="group-grid"><GroupListingCard v-for="group in groups" :key="group.id" :group="group">
-        <template v-if="displayedMode === 'direct'"><button type="button" class="btn btn--ghost" :disabled="busy || !canApply || pendingFor(group.id) || declinedFor(group.id) || !canQueueFor(group) || group.status === 'cancelled'" @click="applicationFor = applicationFor === group.id ? '' : group.id; applicationNote = ''">{{ pendingFor(group.id) ? 'Application pending' : declinedFor(group.id) ? 'Previously declined' : !canQueueFor(group) ? 'Group full' : group.remainingCapacity < 1 ? 'Join waiting queue' : 'Request to join' }}</button>
-          <form v-if="applicationFor === group.id" class="application-form" @submit.prevent="join(group.id)"><label>Message to the host (optional)<textarea v-model="applicationNote" maxlength="500" rows="3" :disabled="busy" /></label><small class="group-muted">{{ applicationNote.length }}/500 characters. The host will see your public profile and preferences. Requests are reviewed in arrival order and expire 48 hours after submission; a later request may wait without a held place.</small><div class="group-actions"><button class="btn btn--primary" :disabled="busy || !canApply || !canQueueFor(group)">Send application</button><button type="button" class="btn btn--ghost" :disabled="busy" @click="applicationFor = ''">Cancel</button></div></form>
-        </template>
-        <template v-else><button type="button" class="btn" :class="group.preferred ? 'btn--danger-ghost' : 'btn--ghost'" :disabled="busy || (!group.preferred && (!canPrefer || group.automaticPlacementAvailable === false))" @click="preference(group.id, group.preferred)">{{ group.preferred ? 'Remove preference' : 'Prefer group' }}</button><p v-if="group.automaticPlacementAvailable === false" class="group-muted">This group is currently unavailable for automatic placement.</p></template>
-      </GroupListingCard></div>
-      <p v-if="!groups.length" class="group-muted">No eligible groups match these filters. Try another concert or adjust the filters. Your current applications, offers and membership remain listed here.</p>
+
+      <div v-if="displayedMode !== 'direct' || directLayout === 'list'" class="group-grid">
+        <GroupListingCard v-for="group in groups" :key="group.id" :group="group">
+          <template v-if="displayedMode === 'direct'">
+            <button type="button" class="btn btn--ghost" :disabled="busy || !canApply || pendingFor(group.id) || declinedFor(group.id) || !canQueueFor(group) || group.status === 'cancelled'" @click="applicationFor = applicationFor === group.id ? '' : group.id; applicationNote = ''">{{ pendingFor(group.id) ? 'Request sent' : declinedFor(group.id) ? 'Not this time' : !canQueueFor(group) ? 'Group is full' : group.remainingCapacity < 1 ? 'Join the waitlist' : 'Ask to join' }}</button>
+            <form v-if="applicationFor === group.id" class="application-form" @submit.prevent="join(group.id)">
+              <label>Say hi to the host (optional)<textarea v-model="applicationNote" maxlength="500" rows="3" :disabled="busy" placeholder="e.g. First time seeing them live, keen to grab dinner before!" /></label>
+              <small class="group-muted">{{ applicationNote.length }}/500 · The host will see your profile and your answers.</small>
+              <div class="group-actions">
+                <button class="btn btn--primary" :disabled="busy || !canApply || !canQueueFor(group)">Send request</button>
+                <button type="button" class="btn btn--ghost" :disabled="busy" @click="applicationFor = ''">Cancel</button>
+              </div>
+            </form>
+          </template>
+          <template v-else>
+            <button type="button" class="btn" :class="group.preferred ? 'btn--danger-ghost' : 'btn--ghost'" :disabled="busy || (!group.preferred && (!canPrefer || group.automaticPlacementAvailable === false))" @click="preference(group.id, group.preferred)">{{ group.preferred ? 'Unlike' : 'I like this group' }}</button>
+            <p v-if="group.automaticPlacementAvailable === false" class="group-muted">This group isn’t taking matches right now.</p>
+          </template>
+        </GroupListingCard>
+      </div>
+      <p v-if="!groups.length" class="group-empty">No groups match that yet. Try loosening the filters, or start your own group.</p>
+
       <!-- A page button exists only when that page does. Disabling them instead
            left two dead controls on every result set that fits on one page. -->
       <nav class="group-actions group-pagination" aria-label="Group results pages">
         <button v-if="hasPreviousPage" type="button" class="btn btn--ghost" :disabled="loading || busy" @click="offset = Math.max(0, offset - PAGE_SIZE); load()">Previous</button>
-        <span>{{ total }} results</span>
+        <span>{{ total }} {{ total === 1 ? 'group' : 'groups' }}</span>
         <button v-if="hasNextPage" type="button" class="btn btn--ghost" :disabled="loading || busy" @click="offset += PAGE_SIZE; load()">Next</button>
       </nav>
-      <section v-if="ownRequests.length" class="card group-panel" aria-labelledby="applications-heading"><h2 id="applications-heading">Your applications</h2>
-        <article v-for="application in ownRequests.filter(request => request.status === 'pending')" :key="application.id" class="application-row"><div><h3>{{ application.hostName }}'s group</h3><p>{{ application.artist }} · {{ joinStatus[application.status] }}</p><p class="group-muted">Applied {{ dateLabel(application.createdAt) }} · queue position {{ application.queuePosition ?? '—' }}</p><p><strong>{{ application.seatReserved ? 'One place is held for you' : 'Waiting; no place is held yet' }}</strong></p><p>Request expires {{ dateLabel(application.expiresAt) }}, including time spent waiting.</p><p class="group-muted">{{ application.canHostRespond ? 'Your request is next for the host to review.' : 'Earlier requests must be resolved first.' }} Withdrawal removes your request and passes any held place to the next eligible request.</p><p v-if="application.applicationNote">{{ application.applicationNote }}</p></div><div class="group-actions"><button type="button" class="btn btn--ghost" :disabled="busy" @click="load">Refresh status</button><button type="button" class="btn btn--danger-ghost" :disabled="busy" @click="act(() => api.withdrawGroupJoin(application.id), 'Application withdrawn. The queue has advanced and any held place was released to the next eligible request.')">Withdraw application</button></div></article>
-        <details v-if="ownRequests.some(request => request.status !== 'pending')"><summary>Application history</summary><article v-for="application in ownRequests.filter(request => request.status !== 'pending')" :key="application.id" class="application-row"><div><h3>{{ application.hostName }}'s group</h3><p>{{ application.artist }} · {{ application.resolutionReason === 'migrated_to_mutual_proposal' ? 'Moved to automatic offer' : application.resolutionReason === 'group_full' ? 'Group filled before your turn' : joinStatus[application.status] ?? 'Request updated' }}</p><p class="group-muted">Applied {{ dateLabel(application.createdAt) }}</p></div><RouterLink v-if="application.status === 'accepted' && currentGroup?.partyId === application.partyId" :to="`/groups/${encodeURIComponent(application.partyId)}/members`">View your group</RouterLink></article></details>
+
+      <section v-if="ownRequests.length" class="card group-panel" aria-labelledby="applications-heading">
+        <h2 id="applications-heading">Your requests</h2>
+        <article v-for="application in ownRequests.filter(request => request.status === 'pending')" :key="application.id" class="application-row">
+          <div>
+            <h3>{{ application.hostName }}’s group</h3>
+            <p>{{ application.artist }} · {{ joinStatus[application.status] }}</p>
+            <p><strong>{{ application.seatReserved ? 'We’re saving you a spot' : `You’re number ${application.queuePosition ?? '?'} in line` }}</strong></p>
+            <p class="group-muted">Sent {{ dateLabel(application.createdAt) }} · times out {{ dateLabel(application.expiresAt) }}</p>
+            <p class="group-muted">{{ application.canHostRespond ? 'You’re up next for the host.' : 'The host is replying to earlier requests first.' }}</p>
+            <p v-if="application.applicationNote" class="group-quote">“{{ application.applicationNote }}”</p>
+          </div>
+          <div class="group-actions">
+            <button type="button" class="btn btn--ghost" :disabled="busy" @click="load">Check for updates</button>
+            <button type="button" class="btn btn--danger-ghost" :disabled="busy" @click="act(() => api.withdrawGroupJoin(application.id), 'Request cancelled. Your spot has gone to the next person in line.')">Cancel request</button>
+          </div>
+        </article>
+        <details v-if="ownRequests.some(request => request.status !== 'pending')">
+          <summary>Past requests</summary>
+          <article v-for="application in ownRequests.filter(request => request.status !== 'pending')" :key="application.id" class="application-row">
+            <div>
+              <h3>{{ application.hostName }}’s group</h3>
+              <p>{{ application.artist }} · {{ application.resolutionReason === 'migrated_to_mutual_proposal' ? 'Turned into a match' : application.resolutionReason === 'group_full' ? 'Filled up before your turn' : joinStatus[application.status] ?? 'Updated' }}</p>
+              <p class="group-muted">Sent {{ dateLabel(application.createdAt) }}</p>
+            </div>
+            <RouterLink v-if="application.status === 'accepted' && currentGroup?.partyId === application.partyId" :to="`/groups/${encodeURIComponent(application.partyId)}/members`">See your group</RouterLink>
+          </article>
+        </details>
       </section>
-      <details v-if="saved.length && displayedMode === 'algorithm'" class="card group-panel"><summary>Saved matching preferences ({{ saved.length }})</summary><div v-for="preferenceGroup in saved" :key="preferenceGroup.partyId" class="application-row"><span>{{ preferenceGroup.hostName }} · {{ LABELS.section[preferenceGroup.section] ?? preferenceGroup.section }} · {{ preferenceGroup.status === 'open' ? 'Group open' : preferenceGroup.status === 'cancelled' ? 'Group cancelled' : 'Currently unavailable' }}</span><button type="button" class="btn btn--danger-ghost" :disabled="busy" @click="preference(preferenceGroup.partyId, true)">Remove preference</button></div></details>
+
+      <details v-if="saved.length && displayedMode === 'algorithm'" class="card group-panel">
+        <summary>Groups you like ({{ saved.length }})</summary>
+        <div v-for="preferenceGroup in saved" :key="preferenceGroup.partyId" class="application-row">
+          <span>{{ preferenceGroup.hostName }} · {{ LABELS.section[preferenceGroup.section] ?? preferenceGroup.section }} · {{ preferenceGroup.status === 'open' ? 'Open' : preferenceGroup.status === 'cancelled' ? 'No longer running' : 'Not taking people right now' }}</span>
+          <button type="button" class="btn btn--danger-ghost" :disabled="busy" @click="preference(preferenceGroup.partyId, true)">Unlike</button>
+        </div>
+      </details>
     </template>
-    <p v-else-if="!concertsLoading && !concerts.length">No concerts are available yet.</p>
+    <p v-else-if="!concertsLoading && !concerts.length" class="group-empty">No concerts yet. Check back soon!</p>
     </GroupPreferencesGate>
   </div>
 </template>
 
 <style scoped>
-.groups-page__header { display: grid; gap: var(--space-3); }
-.groups-page__header > p { max-width: 70ch; color: var(--text-300); line-height: 1.6; }
+.groups-hero { display: grid; gap: var(--space-3); padding-bottom: var(--space-2); }
+.groups-hero h1 { font-size: var(--step-5); line-height: 1.05; max-width: 20ch; }
+.groups-hero__eyebrow, .group-kicker { font-size: var(--step--2); letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent-400); }
+.groups-hero__lede { max-width: 60ch; color: var(--text-300); font-size: var(--step-0); line-height: 1.6; }
 .groups-concert-picker { max-width: 560px; width: 100%; }
+.groups-concert-picker label { font-size: var(--step-0); font-weight: 600; color: var(--text-100); }
 .current-group-identity { display: flex; align-items: center; gap: var(--space-3); }
-.current-group-identity > div { min-width: 0; }
-.group-setup__heading { display: flex; justify-content: space-between; align-items: start; gap: var(--space-4); flex-wrap: wrap; }
-.group-setup__heading p { max-width: 60ch; }
-.joining-modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
-.joining-mode { display: grid; align-content: start; justify-items: start; gap: var(--space-3); padding: var(--space-4); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-750); }
-.joining-mode--selected { border-color: var(--accent-400); }
-.joining-mode h3 { font-size: var(--step-0); margin: 0; }
+.current-group-identity > div { min-width: 0; display: grid; gap: var(--space-1); }
+.group-panel--highlight { border-color: var(--accent-400); background: linear-gradient(160deg, var(--accent-glow), transparent 60%), var(--ink-800); }
+.group-panel--bare { padding: 0; }
+.group-setup__heading { display: flex; justify-content: space-between; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.group-setup__heading > div { display: grid; gap: var(--space-1); max-width: 60ch; }
+.joining-modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.joining-mode { display: grid; align-content: start; justify-items: start; gap: var(--space-2); padding: var(--space-5); border: var(--border-soft); border-radius: var(--radius-lg, var(--radius-md)); background: var(--ink-800); transition: border-color var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out); }
+.joining-mode:hover { transform: translateY(-2px); }
+.joining-mode--selected { border-color: var(--accent-400); box-shadow: 0 0 0 1px var(--accent-400) inset; }
+.joining-mode h3 { font-family: var(--font-display); font-size: var(--step-2); margin: 0; }
 .joining-mode p { margin: 0; color: var(--text-300); }
+.joining-mode .btn { margin-top: var(--space-3); }
+.group-status { padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); background: var(--ink-750); }
+.group-howto ul { display: grid; gap: var(--space-2); padding-left: var(--space-5); color: var(--text-300); max-width: 70ch; }
 .group-fieldset { padding: 0; margin: 0; border: 0; min-width: 0; display: grid; gap: var(--space-4); }
 .application-form { display: grid; gap: var(--space-3); width: 100%; }
 .application-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); padding-block: var(--space-4); border-bottom: var(--border-hairline); }
 .application-row h3 { font-size: var(--step-0); }
-.application-row > div { flex: 1 1 16rem; min-width: 0; overflow-wrap: anywhere; }
+.application-row > div { flex: 1 1 16rem; min-width: 0; overflow-wrap: anywhere; display: grid; gap: var(--space-1); }
+.group-quote { font-style: italic; color: var(--text-300); }
+.group-empty { padding: var(--space-6); text-align: center; color: var(--text-300); border: 1px dashed var(--ink-500); border-radius: var(--radius-md); }
 .group-pagination { justify-content: space-between; padding-top: var(--space-3); }
 .group-pagination > span { color: var(--text-300); font-size: var(--step--1); }
 .automatic-matching { border-color: var(--accent-400); }
 .automatic-matching > p { max-width: 75ch; line-height: 1.6; }
 .results-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); }
-.results-heading p { color: var(--text-300); font-size: var(--step--1); }
+.results-heading p { color: var(--text-100); font-weight: 600; }
 .results-layout { display: inline-flex; flex-wrap: wrap; gap: var(--space-2); }
-@media (max-width: 600px) { .joining-modes { grid-template-columns: minmax(0, 1fr); } }
+@media (prefers-reduced-motion: reduce) { .joining-mode, .joining-mode:hover { transition: none; transform: none; } }
+@media (max-width: 600px) { .joining-modes { grid-template-columns: minmax(0, 1fr); } .groups-hero h1 { font-size: var(--step-4); } }
 @media (max-width: 480px) { .joining-modes .btn { width: 100%; } .group-pagination .btn { flex: 0 1 auto; } }
 </style>
