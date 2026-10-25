@@ -23,34 +23,34 @@ const hasMore = computed(() => props.group.notes || props.group.reasons?.length 
         <h3>{{ group.name || `${group.hostName}'s group` }}</h3>
         <p v-if="group.name" class="group-card__meta">Hosted by {{ group.hostName }}</p>
       </div>
-      <span class="tag group-card__capacity">{{ group.remainingCapacity }} {{ group.remainingCapacity === 1 ? 'group place' : 'group places' }} available</span>
+      <span class="tag group-card__capacity">{{ group.remainingCapacity }} {{ group.remainingCapacity === 1 ? 'spot' : 'spots' }} left</span>
     </header>
     <div class="group-card__concert">
       <p class="group-card__artist">{{ group.artist }}<span v-if="group.tourName">, {{ group.tourName }}</span></p>
       <p class="group-card__meta">{{ formatDate(group.eventDate) }} · {{ LABELS.section[group.section] }}</p>
     </div>
-    <p v-if="group.canJoinQueue && group.remainingCapacity === 0" class="group-card__meta">All available places are currently held. You can join the waiting queue.</p>
-    <p v-if="group.queueLength" class="group-card__meta">{{ group.queueLength }} {{ group.queueLength === 1 ? 'request' : 'requests' }} in the arrival-order queue.</p>
+    <p v-if="group.canJoinQueue && group.remainingCapacity === 0" class="group-card__meta">Every spot is saved for someone right now, but you can join the waitlist.</p>
+    <p v-if="group.queueLength" class="group-card__meta">{{ group.queueLength }} {{ group.queueLength === 1 ? 'person' : 'people' }} waiting to hear back.</p>
     <dl class="group-card__facts">
       <div>
-        <dt>Group size</dt>
+        <dt>Who’s in</dt>
         <dd>{{ group.memberCount ?? 1 }} {{ (group.memberCount ?? 1) === 1 ? 'member' : 'members' }}</dd>
       </div>
       <div>
-        <dt>Budget</dt>
+        <dt>Spending</dt>
         <dd>{{ LABELS.spendBand[group.spendBand] }}</dd>
       </div>
       <div class="group-card__arrival">
-        <dt>Arrival</dt>
+        <dt>Getting there</dt>
         <dd>{{ LABELS.arrival[group.arrivalPlan] }}</dd>
       </div>
     </dl>
     <div v-if="group.compatibility != null || group.reasons?.length" class="group-card__fit">
-      <p v-if="group.compatibility != null"><strong>{{ group.compatibility>=0.75?'Strong fit':group.compatibility>=0.5?'Potential fit':'Explore this group' }}</strong><span v-if="group.confidence==='limited'">, limited preference information</span></p>
+      <p v-if="group.compatibility != null"><strong>{{ group.compatibility>=0.75?'You’d get on well':group.compatibility>=0.5?'Could be a good fit':'Worth a look' }}</strong><span v-if="group.confidence==='limited'">, based on a few answers</span></p>
       <ul v-if="group.reasons?.length" class="group-card__reasons"><li v-for="r in group.reasons" :key="r.concept">{{ r.label }}</li></ul>
     </div>
-    <ul class="group-tags" aria-label="Group activities"><template v-for="(name, id) in LABELS.plans" :key="id"><li v-if="group.plans?.[id]">{{ name }}</li></template></ul>
-    <ul class="group-tags group-card__vibe" aria-label="Concert vibe"><template v-for="(name, id) in LABELS.vibe" :key="id"><li v-if="group.vibe?.[id]">{{ name }} {{ group.vibe[id] }}/4</li></template></ul>
+    <ul class="group-tags" aria-label="Things they want to do"><template v-for="(name, id) in LABELS.plans" :key="id"><li v-if="group.plans?.[id]">{{ name }}</li></template></ul>
+    <ul class="group-tags group-card__vibe" aria-label="Their vibe"><template v-for="(name, id) in LABELS.vibe" :key="id"><li v-if="group.vibe?.[id]">{{ name }} {{ group.vibe[id] }}/4</li></template></ul>
     <p v-if="group.notes" class="group-notes">{{ group.notes }}</p>
     <footer v-if="$slots.default" class="group-card__actions"><slot /></footer>
   </article>
