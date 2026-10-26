@@ -6,7 +6,7 @@ Verified **24 October 2026, Asia/Singapore**. All hosting prices below are **US 
 
 Encore uses native browser Push/Notifications APIs, a service worker, VAPID, the open-source `web-push` library and its existing Express server. Subscriptions and durable delivery jobs live in the existing SQLite database. There is no OneSignal subscription, Firebase SDK, Redis queue or separate paid notification database.
 
-A legitimate backend event writes an inbox notification and a delivery job in the same database transaction. The worker checks the recipient's current permission/preferences and resource access, then sends a compact encrypted payload to each enrolled device. The service worker retrieves an authorised, generic preview; private chat text, member names and precise meetup locations do not appear in lock-screen previews. Browsers and operating systems still decide when notifications can be delivered and displayed. See [Microsoft's Edge implementation guide](https://learn.microsoft.com/en-us/microsoft-edge/progressive-web-apps/how-to/push) and the [`web-push` project](https://github.com/web-push-libs/web-push).
+When the backend handles a valid event, it writes an inbox notification and a delivery job in the same database transaction. The worker checks the recipient's current permission/preferences and resource access, then sends a compact encrypted payload to each enrolled device. The service worker retrieves an authorised, generic preview; private chat text, member names and precise meetup locations do not appear in lock-screen previews. Browsers and operating systems still decide when notifications can be delivered and displayed. See [Microsoft's Edge implementation guide](https://learn.microsoft.com/en-us/microsoft-edge/progressive-web-apps/how-to/push) and the [`web-push` project](https://github.com/web-push-libs/web-push).
 
 | Component | Free or paid? | Potential cost | Recommendation |
 | --- | --- | --- | --- |
@@ -58,7 +58,7 @@ For development, run the existing server locally. For a small public app requiri
 
 ## Notification traffic estimates
 
-These assumptions are deliberately explicit and are **not measured Encore traffic or exact invoices**:
+These figures are estimates, **not measured Encore traffic or exact invoices**:
 
 - 5 logical events per user per day, 30 days/month.
 - 1.5 enrolled device subscriptions per user on average; one delivery per eligible device/event.
@@ -82,7 +82,7 @@ MB/GB here are decimal. These numbers exclude normal page/API/chat traffic, imag
 1. Use a persistent local volume. Point `ENCORE_DB` at an absolute file under the mounted directory, for example `/var/data/encore.db`. Set `ENCORE_TICKET_IMAGE_DIR` and `ENCORE_AVATAR_DIR` under persistent storage too. The directory must allow the database, `-wal` and `-shm` files to be created together.
 2. Restrict filesystem/service-account access. The database contains account/session information, private messages, locations and push subscriptions. Treat backups as private data; do not put them in Git, frontend assets or a public bucket.
 3. Do not copy only the live `.db` file while writes are occurring in WAL mode. Use SQLite's online backup facility through `better-sqlite3`'s `db.backup(destination)` to make a consistent snapshot. Copy the completed backup to separately protected storage; keep encryption keys separate. Alternatively, stop every writer cleanly before an offline copy. [Backup API](https://github.com/WiseLibs/better-sqlite3/blob/master/docs/api.md#backupdestination-options---promise), [SQLite WAL considerations](https://sqlite.org/wal.html).
-4. Check backup integrity (`PRAGMA quick_check` or `integrity_check`) and practise a restore into a separate temporary database. A backup file existing does not prove recovery works. Do not restore over the live database during testing.
+4. Check backup integrity (`PRAGMA quick_check` or `integrity_check`) and practise a restore into a separate temporary database. The presence of a backup file does not prove recovery works. Do not restore over the live database during testing.
 5. Keep several dated backups with a retention limit and an off-host copy. Choose a recovery interval suitable for the data; monitor failed backups and available disk space. Offline/self-managed backup storage can use existing resources; paid storage must be approved separately.
 6. Keep a single application instance for the current local-SQLite design. Do not put separate replicas on independent SQLite files or assume a persistent volume is a distributed database. Scaling the app needs a deliberate storage and coordination design.
 

@@ -32,9 +32,9 @@ The migration adds `meetup_availability.travel_mode` without deleting existing a
 
 ## Shared chat for connected groups
 
-Accepting a group-to-group invitation makes **one shared room** available to the current members of both groups. It appears under **Messages → Groups** and the accepted connection's **Open shared chat** button. Existing accepted connections also gain a room; no new invitation is needed. Membership is derived from the two groups automatically, while their original group channels and attendance memberships stay separate.
+Once a group-to-group invitation is accepted, current members of both groups can use a shared room. They can find it under **Messages → Groups** or through the accepted connection's **Open shared chat** button. Existing accepted connections also gain a room without a new invitation. Room membership follows the two groups; their original group channels and attendance memberships stay separate.
 
-The room supports live messages, replies, editing/deleting one's own messages, read indicators, older-message loading and a personal chat background. Its **Plan meetup** link opens the existing connection-scoped planner. Both hosts still approve the meetup. Chat options link to the existing notification preferences, and messages create the same inbox and durable browser-push jobs as other chats.
+The room has live messages, replies, editing/deleting one's own messages, read indicators, older-message loading and a personal chat background. **Plan meetup** opens the existing connection-scoped planner, where both hosts still approve the meetup. Chat options link to the existing notification preferences. Messages create the same inbox and durable browser-push jobs as other chats.
 
 Every read/write and queued popup rechecks the accepted connection and current group membership. Departed members and outsiders cannot read or send, cancelled groups/connections lose access, and a blocked pair freezes the room under the shared-board privacy policy. Read-state/background records do not grant membership. Starting locations stay private within the planner.
 
