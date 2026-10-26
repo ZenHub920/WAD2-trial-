@@ -103,3 +103,7 @@
   .groups-page .group-actions .btn { flex: 0 1 auto; }
   .groups-page .group-controls { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
 }
+
+/* Page banners keep their large title inside the tighter groups layout. */
+.groups-page .page-banner h1 { font-size: var(--step-5); line-height: 1.05; }
+.groups-page .page-banner p { margin-top: var(--space-3); }

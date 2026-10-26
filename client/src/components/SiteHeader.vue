@@ -82,7 +82,9 @@ onUnmounted(() => {
   top: 0;
   z-index: 100;
   min-height: var(--header-height);
-  background: var(--ink-900);
+  background: var(--glass-tint);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
   border-bottom: var(--border-hairline);
 }
 .header--scrolled { box-shadow: var(--shadow-sm); }

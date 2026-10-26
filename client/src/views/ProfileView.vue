@@ -183,10 +183,10 @@ async function save() {
 
 <template>
   <div class="profile container section">
-    <header class="profile__head">
+    <header class="profile__head page-banner">
       <h1>Profile</h1>
       <p>Manage your profile, concert preferences and notifications.</p>
-      <RouterLink to="/account/security" class="btn btn--ghost">Account security</RouterLink>
+      <RouterLink to="/account/security" class="btn btn--outline-light profile__security">Account security</RouterLink>
     </header>
 
     <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading your profile…</p>
@@ -327,7 +327,8 @@ async function save() {
 .profile { max-width: 860px; padding-bottom: var(--space-9); }
 .profile__head { margin-bottom: var(--space-6); }
 .profile__head h1 { margin-block: var(--space-2); }
-.profile__head p:last-child, .profile__hint { color: var(--text-400); font-size: var(--step--1); }
+.profile__security { margin-top: var(--space-5); }
+.profile__hint { color: var(--text-400); font-size: var(--step--1); }
 .profile__form { display: grid; gap: var(--space-5); }
 .profile__card { padding: var(--space-5); border: var(--border-soft); border-radius: var(--radius-lg); background: var(--ink-850); }
 .profile__card h2 { margin-bottom: var(--space-4); font-size: var(--step-1); }

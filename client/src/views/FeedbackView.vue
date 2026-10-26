@@ -55,10 +55,10 @@ async function submit(item) {
 </script>
 <template>
   <div class="container groups-page">
-    <h1>Post-concert feedback</h1>
-    <p>
-      Share feedback about your group after the concert.
-    </p>
+    <header class="page-banner">
+      <h1>Post-concert feedback</h1>
+      <p>Share feedback about your group after the concert.</p>
+    </header>
     <p v-if="error" role="alert" class="group-error">{{ error }}</p>
     <p v-if="notice" role="status" class="group-success">{{ notice }}</p>
     <p v-if="busy" class="loading-state" role="status"><LoadingSpinner />Submitting feedback…</p>

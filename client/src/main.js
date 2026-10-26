@@ -65,7 +65,7 @@ const router = createRouter({
       meta: { title: 'Ticket verification' },
     },
 
-    { path: '/kaki', name: 'kaki', component: KakiFinderView, meta: { title: 'Find a companion' } },
+    { path: '/kaki', name: 'kaki', component: KakiFinderView, meta: { title: 'Find a companion', requiresAuth: true } },
     { path: '/groups', name: 'groups', component: GroupExplorerView, meta: { title: 'Groups', requiresAuth: true } },
     { path: '/groups/connect', name: 'group-connections', component: GroupConnectionsView, meta: { title: 'My groups', requiresAuth: true } },
     { path: '/groups/connections/:id/channel', name: 'connection-channel', component: ConnectionChannelView, props: true, meta: { title: 'Connected groups chat', requiresAuth: true } },
@@ -87,7 +87,7 @@ const router = createRouter({
       path: '/kaki/history',
       name: 'kaki-history',
       component: ProfileHistoryView,
-      meta: { title: 'Companion history' },
+      meta: { title: 'Companion history', requiresAuth: true },
     },
 
     // One inbox; companion and ticket conversations retain their own threads.

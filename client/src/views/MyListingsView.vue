@@ -74,13 +74,14 @@ onMounted(loadListings);
 <template>
   <div class="my-listings-page">
     <div class="my-listings-page__shell container container--wide">
-      <header class="my-listings-page__header">
+      <header class="my-listings-page__header page-banner">
         <div>
           <h1>My listings</h1>
+          <p>Tickets you have put up for other fans to buy.</p>
         </div>
         <nav class="my-listings-page__tools" aria-label="Ticket tools">
-          <RouterLink to="/concerts" class="btn btn--ghost">Concerts</RouterLink>
-          <RouterLink to="/list-ticket" class="btn btn--primary">List a ticket</RouterLink>
+          <RouterLink to="/concerts" class="btn btn--outline-light">Concerts</RouterLink>
+          <RouterLink to="/list-ticket" class="btn btn--light">List a ticket</RouterLink>
         </nav>
       </header>
 
@@ -155,7 +156,6 @@ onMounted(loadListings);
 .my-listings-page {
   min-height: calc(100vh - var(--header-height));
   padding-block: var(--space-7) 7rem;
-  background: var(--ink-900);
 }
 .my-listings-page__header {
   display: flex;
@@ -164,7 +164,7 @@ onMounted(loadListings);
   gap: var(--space-5);
   margin-bottom: var(--space-6);
 }
-.my-listings-page__header h1 { margin-top: var(--space-2); }
+
 .my-listings-page__tools { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .listing-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-5); }
 .listing-card { min-width: 0; overflow: hidden; overflow-wrap: anywhere; border: var(--border-soft); border-radius: var(--radius-lg); background: var(--ink-850); }
