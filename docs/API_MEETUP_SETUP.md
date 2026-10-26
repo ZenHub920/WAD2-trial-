@@ -1,6 +1,6 @@
 # Meetup travel and weather: setup and flow
 
-The planner now helps a Kaki pair, one group, or two connected groups compare public meeting places. People still discuss, vote, propose and approve the final plan. An algorithm never confirms a meetup on their behalf.
+The planner now helps a Kaki pair, one group, or two connected groups compare public meeting places. Participants still discuss, vote, propose and approve the final plan themselves; the planner does not confirm a meetup for them.
 
 ## What users do
 
