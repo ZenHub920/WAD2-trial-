@@ -62,11 +62,12 @@ onMounted(load);
 
 <template>
   <div class="container admin">
-    <header class="admin__head">
+    <header class="admin__head page-banner">
       <div>
         <h1>Ticket verification</h1>
+        <p>Review tickets that fans have listed for sale.</p>
       </div>
-      <button class="btn btn--ghost" type="button" :disabled="loading" @click="load"><LoadingSpinner v-if="loading" /> Refresh</button>
+      <button class="btn btn--outline-light" type="button" :disabled="loading" @click="load"><LoadingSpinner v-if="loading" /> Refresh</button>
     </header>
 
     <div v-if="loading" class="loading-state" aria-busy="true"><LoadingSpinner /> Loading verification queue…</div>
@@ -152,10 +153,7 @@ onMounted(load);
   margin-bottom: var(--space-6);
 }
 
-.admin__head h1 {
-  margin-top: var(--space-2);
-  font-size: var(--step-3);
-}
+
 
 .admin__queue-title {
   margin-bottom: var(--space-4);

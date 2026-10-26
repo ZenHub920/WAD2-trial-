@@ -135,9 +135,12 @@ async function submitListing() {
     <div class="listing-page__shell container">
       <RouterLink to="/concerts" class="listing-page__back">← Back to concerts</RouterLink>
 
-      <header class="listing-page__header">
-        <h1>List a ticket</h1>
-        <RouterLink to="/my-listings" class="btn btn--ghost">My listings</RouterLink>
+      <header class="listing-page__header page-banner">
+        <div>
+          <h1>List a ticket</h1>
+          <p>Sell a ticket you can no longer use to another fan.</p>
+        </div>
+        <RouterLink to="/my-listings" class="btn btn--outline-light">My listings</RouterLink>
       </header>
 
       <form class="listing-form" @submit.prevent="submitListing">
@@ -263,7 +266,7 @@ async function submitListing() {
 .listing-page__shell { max-width: 820px; }
 .listing-page__back { color: var(--text-300); text-decoration: none; font-size: var(--step--1); }
 .listing-page__header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); margin-block: var(--space-4) var(--space-5); }
-.listing-page__header h1 { font-size: var(--step-3); }
+
 .listing-form { display: grid; gap: var(--space-5); }
 .listing-form__section { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); padding: var(--space-5); border: var(--border-soft); border-radius: var(--radius-lg); background: var(--ink-850); }
 .listing-form__section h2 { grid-column: 1 / -1; font-size: var(--step-1); }

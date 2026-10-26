@@ -6,6 +6,7 @@ import ConcertSpotlightCard from '../components/market/ConcertSpotlightCard.vue'
 import DateField from '../components/market/DateField.vue';
 import MarketIcon from '../components/market/MarketIcon.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
+import { vReveal } from '../composables/useReveal.js';
 
 const concerts = ref([]);
 const listings = ref([]);
@@ -105,14 +106,14 @@ function clearFilters() {
 <template>
   <div class="concert-market">
     <div class="container container--wide">
-      <header class="concert-market__head">
+      <header class="concert-market__head page-banner">
         <div>
           <h1>Concerts</h1>
           <p>Discover upcoming concerts, find a group and browse tickets from other fans.</p>
         </div>
         <nav class="concert-market__tools" aria-label="Ticket tools">
-          <RouterLink to="/my-listings" class="btn btn--ghost">My listings</RouterLink>
-          <RouterLink to="/list-ticket" class="btn btn--primary">List a ticket</RouterLink>
+          <RouterLink to="/my-listings" class="btn btn--outline-light">My listings</RouterLink>
+          <RouterLink to="/list-ticket" class="btn btn--light">List a ticket</RouterLink>
         </nav>
       </header>
 
@@ -157,10 +158,12 @@ function clearFilters() {
           <button v-if="hasFilters" type="button" class="btn btn--ghost" @click="clearFilters">Clear filters</button>
         </div>
         <div v-else class="concert-grid">
-          <ConcertSpotlightCard v-for="row in visibleConcerts" :key="row.concert.id"
-            :concert="row.concert" :open-seekers="row.openSeekers" :open-slots="row.openSlots"
-            :ticket-count="row.ticketCount" :from-cents="row.fromCents"
-            :tickets-loading="ticketsLoading" :activity-loading="activityLoading" />
+          <div v-for="(row, i) in visibleConcerts" :key="row.concert.id" v-reveal="i % 3">
+            <ConcertSpotlightCard
+              :concert="row.concert" :open-seekers="row.openSeekers" :open-slots="row.openSlots"
+              :ticket-count="row.ticketCount" :from-cents="row.fromCents"
+              :tickets-loading="ticketsLoading" :activity-loading="activityLoading" />
+          </div>
         </div>
         <button v-if="matchingConcerts.length > PAGE_SIZE" type="button" class="btn btn--ghost concert-more" @click="showAll = !showAll">
           {{ showAll ? 'Show fewer concerts' : `Show all ${matchingConcerts.length} concerts` }}
@@ -171,25 +174,31 @@ function clearFilters() {
 </template>
 
 <style scoped>
-.concert-market { min-height: calc(100vh - var(--header-height)); padding-block: var(--space-6) var(--space-9); background: var(--ink-900); }
+.concert-market { min-height: calc(100vh - var(--header-height)); padding-block: var(--space-6) var(--space-9); }
 .concert-market__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-5); margin-bottom: var(--space-5); }
 .concert-market__head > div { min-width: 0; }
-.concert-market__head h1 { font-size: var(--step-3); }
-.concert-market__head p { margin-top: var(--space-2); color: var(--text-300); max-width: 62ch; }
+/* The concerts banner shows its stage photo in full colour, darkened on the
+   left so the title stays readable. */
+.concert-market__head {
+  --banner-image: linear-gradient(90deg, rgba(36, 10, 66, 0.88), rgba(36, 10, 66, 0.45) 55%, rgba(36, 10, 66, 0.1)), url('../assets/concerts-crowd.jpg');
+  min-height: 240px;
+}
+.concert-market__head::before { opacity: 1; mix-blend-mode: normal; background-position: center 40%; }
 .concert-market__tools { display: flex; flex-wrap: wrap; gap: var(--space-2); flex-shrink: 0; }
-.concert-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, 260px) auto; align-items: end; gap: var(--space-3); padding: var(--space-4); margin-bottom: var(--space-6); border: var(--border-soft); border-radius: var(--radius-lg); background: var(--ink-850); }
+.concert-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, 260px) auto; align-items: end; gap: var(--space-3); padding: var(--space-4); margin-bottom: var(--space-6); border: var(--border-soft); border-radius: var(--radius-lg); background: var(--ink-800); box-shadow: var(--shadow-md); }
 .concert-filters__search, .concert-filters__date { display: grid; min-width: 0; gap: var(--space-2); color: var(--text-300); font-size: var(--step--1); }
 .concert-filters__input { display: flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: var(--space-2) var(--space-3); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-800); }
-.concert-filters__input:focus-within { border-color: var(--accent-500); }
+.concert-filters__input { transition: border-color var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out); }
+.concert-filters__input:focus-within { border-color: var(--accent-400); box-shadow: 0 0 0 4px var(--accent-glow); }
 .concert-filters__input input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text-100); font: inherit; }
 .concert-filters__date :deep(.datefield) { min-height: 44px; }
 .concert-filters__saved { grid-column: 1 / -1; display: flex; align-items: center; gap: var(--space-2); min-height: 36px; font-size: var(--step--1); color: var(--text-300); }
 .concert-results { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
-.concert-results h2 { font-size: var(--step-1); }
+.concert-results h2 { font-size: var(--step-3); }
 .concert-results p { margin-top: var(--space-1); color: var(--text-300); font-size: var(--step--1); }
 .concert-results { margin-bottom: var(--space-5); }
 .concert-error { margin-bottom: var(--space-4); color: var(--rose-400); }
-.concert-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
+.concert-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-5); }
 .concert-empty { display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-7) var(--space-4); text-align: center; border: var(--border-soft); border-radius: var(--radius-lg); }
 .concert-empty h3 { font-size: var(--step-1); }
 .concert-empty p { color: var(--text-300); }

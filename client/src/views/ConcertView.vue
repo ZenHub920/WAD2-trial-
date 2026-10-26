@@ -15,6 +15,9 @@ const props = defineProps({ id: { type: String, required: true } });
 const router = useRouter();
 
 const concert = ref(null);
+// Ticketmaster image URLs occasionally 404; the cover then falls back to a gradient.
+const coverBroken = ref(false);
+const coverImage = computed(() => (!coverBroken.value && concert.value?.concert?.hero_image_url) || null);
 const parties = ref([]);
 const requests = ref([]);
 const preview = ref(null);
@@ -291,14 +294,21 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
       <!-- ------------------------------------------------------------ Head -->
       <header class="head">
         <div class="head__text">
-          <p>{{ formatDate(concert.concert.event_date) }}</p>
-          <h1>{{ concert.concert.artist }}</h1>
-          <p v-if="concert.concert.tour_name" class="head__tour">
-            {{ concert.concert.tour_name }}
-          </p>
-          <p class="head__venue">
-            {{ concert.concert.venue }}, {{ concert.concert.city }}<template v-if="concert.concert.doors_time">, doors {{ concert.concert.doors_time }}</template>
-          </p>
+          <div class="cover">
+            <img v-if="coverImage" :src="coverImage" alt="" @error="coverBroken = true" />
+            <span v-else class="cover__initial" aria-hidden="true">{{ concert.concert.artist.charAt(0) }}</span>
+            <span class="cover__shade" aria-hidden="true" />
+            <div class="cover__text">
+              <p class="cover__date">{{ formatDate(concert.concert.event_date) }}</p>
+              <h1>{{ concert.concert.artist }}</h1>
+              <p v-if="concert.concert.tour_name" class="head__tour">
+                {{ concert.concert.tour_name }}
+              </p>
+              <p class="head__venue">
+                {{ concert.concert.venue }}, {{ concert.concert.city }}<template v-if="concert.concert.doors_time">, doors {{ concert.concert.doors_time }}</template>
+              </p>
+            </div>
+          </div>
           <p v-if="concert.concert.blurb" class="head__blurb">{{ concert.concert.blurb }}</p>
         </div>
 
@@ -546,18 +556,92 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
   }
 }
 
+/* The concert's own photo, with the details set over it. */
+.cover {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  align-items: end;
+  min-height: 360px;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: linear-gradient(120deg, #2f195f, #5b2a86 50%, #9c3d8f);
+  box-shadow: 0 30px 60px -34px #5b2a86;
+  color: #fff;
+  animation: cover-in var(--dur-slower) var(--ease-settle) both;
+}
+
+.cover img {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: cover-zoom 20s ease-in-out infinite alternate;
+}
+
+.cover__initial {
+  position: absolute;
+  top: var(--space-5);
+  right: var(--space-6);
+  z-index: -2;
+  font-family: var(--font-display);
+  font-size: 9rem;
+  font-weight: 800;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.18);
+}
+
+.cover__shade {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(to top, rgba(20, 8, 42, 0.92), rgba(20, 8, 42, 0.35) 55%, rgba(20, 8, 42, 0.05));
+}
+
+.cover__text {
+  padding: var(--space-6);
+}
+
+.cover__date {
+  display: inline-block;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.92);
+  color: #2f195f;
+  font-size: var(--step--2);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+@keyframes cover-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes cover-zoom {
+  from { transform: scale(1); }
+  to { transform: scale(1.08); }
+}
+
 .head__text h1 {
   margin-block: var(--space-3) var(--space-2);
   font-size: var(--step-5);
+  line-height: 1.05;
+  color: #fff;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.35);
 }
 
 .head__tour {
-  color: var(--accent-400);
+  color: #efc3f5;
   font-size: var(--step-0);
+  font-weight: 600;
 }
 
 .head__venue {
-  color: var(--text-400);
+  color: rgba(255, 255, 255, 0.8);
   font-size: var(--step--1);
   margin-top: var(--space-2);
 }
@@ -592,9 +676,19 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
   border-bottom: var(--border-hairline);
 }
 
+/* A label that wraps would push its number lower than its neighbours';
+   pinning each number to the bottom of its column keeps the row level. */
+.counts > div {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+
 .counts dt {
   font-size: var(--step--2);
   color: var(--text-400);
+  line-height: 1.3;
 }
 
 .counts dd {

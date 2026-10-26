@@ -368,7 +368,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
 </template>
 
 <style scoped>
-.groups-hero { display: grid; gap: var(--space-3); padding-bottom: var(--space-2); }
+.groups-hero { display: grid; gap: var(--space-3); margin-bottom: var(--space-2); }
 .groups-hero h1 { font-size: var(--step-5); line-height: 1.05; max-width: 20ch; }
 .groups-hero__eyebrow, .group-kicker { font-size: var(--step--2); letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent-400); }
 .groups-hero__lede { max-width: 60ch; color: var(--text-300); font-size: var(--step-0); line-height: 1.6; }

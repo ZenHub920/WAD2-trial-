@@ -33,6 +33,73 @@ html {
   }
 }
 
+/* Every page's content rises in, one block after another, when the page opens.
+   "backwards" fill leaves no transform behind once it has played, so sticky
+   bars and v-reveal elements behave normally afterwards. */
+.main--animated :is(.container, .container--wide) > :not(.reveal, .page-banner) {
+  animation: page-rise var(--dur-slower) var(--ease-settle) backwards;
+}
+
+.main--animated :is(.container, .container--wide) > :nth-child(2) { animation-delay: 60ms; }
+.main--animated :is(.container, .container--wide) > :nth-child(3) { animation-delay: 120ms; }
+.main--animated :is(.container, .container--wide) > :nth-child(4) { animation-delay: 180ms; }
+.main--animated :is(.container, .container--wide) > :nth-child(5) { animation-delay: 240ms; }
+.main--animated :is(.container, .container--wide) > :nth-child(n + 6) { animation-delay: 300ms; }
+
+@keyframes page-rise {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Banners zoom in slightly as the page opens. */
+.page-banner {
+  animation: banner-in var(--dur-slower) var(--ease-settle) backwards;
+}
+
+@keyframes banner-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Section titles get a short gradient underline, like the home page accents. */
+.main--animated :is(h2):not(.sr-only, .page-banner h2) {
+  position: relative;
+  padding-bottom: 0.35em;
+}
+
+.main--animated :is(h2):not(.sr-only, .page-banner h2)::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 2.2em;
+  height: 3px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent-400), var(--mint-400));
+}
+
+/* v-reveal (composables/useReveal.js): fade up on first scroll into view. */
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition:
+    opacity var(--dur-slower) var(--ease-settle),
+    transform var(--dur-slower) var(--ease-settle);
+  transition-delay: calc(var(--reveal-i, 0) * 80ms);
+}
+
+.reveal.is-revealed {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 body {
   min-height: 100dvh;
   background: var(--ink-900);
@@ -276,22 +343,28 @@ code, pre, .mono {
   color: var(--text-300);
 }
 
+/* Cards are frosted glass, so the page's drifting colour glows through them. */
 .card {
-  background: var(--ink-800);
+  background: color-mix(in srgb, var(--ink-800) 78%, transparent);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
   min-width: 0;
   border: var(--border-hairline);
   border-radius: var(--radius-lg);
   padding: var(--space-5);
+  box-shadow: var(--shadow-sm);
   transition:
     border-color var(--dur-base) var(--ease-out),
     background var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
     transform var(--dur-base) var(--ease-out);
 }
 
+/* Clickable cards lift and pick up a purple glow, matching the home page. */
 .card--interactive:hover {
-  background: var(--ink-750);
-  border-color: var(--ink-500);
-  transform: translateY(-2px);
+  border-color: var(--accent-400);
+  box-shadow: 0 22px 44px -24px var(--accent-400);
+  transform: translateY(-4px);
 }
 
 .btn {
@@ -322,15 +395,25 @@ code, pre, .mono {
   transform: translateY(1px);
 }
 
+/* Primary buttons carry a gradient that slides on hover, plus a soft glow. */
 .btn--primary {
-  background: var(--accent-500);
+  background: linear-gradient(120deg, var(--accent-500), var(--accent-400) 55%, var(--mint-400));
+  background-size: 180% 100%;
+  background-position: 0 0;
   color: #fff;
-  box-shadow: var(--shadow-accent);
+  box-shadow: 0 8px 22px -10px var(--accent-400);
+  transition:
+    background-position var(--dur-slow) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-base) var(--ease-spring),
+    box-shadow var(--dur-base) var(--ease-out);
 }
 
 .btn--primary:hover:not(:disabled) {
-  background: var(--accent-400);
+  background-position: 100% 0;
   color: #fff;
+  box-shadow: 0 12px 28px -10px var(--accent-400);
+  transform: translateY(-1px);
 }
 
 .btn--ghost {
@@ -340,9 +423,9 @@ code, pre, .mono {
 }
 
 .btn--ghost:hover:not(:disabled) {
-  background: var(--ink-750);
-  border-color: var(--ink-500);
-  color: var(--text-100);
+  background: var(--accent-glow);
+  border-color: var(--accent-400);
+  color: var(--accent-500);
 }
 
 /* Intent colours. Green says yes, red changes or removes something.
@@ -384,6 +467,108 @@ code, pre, .mono {
 :root[data-theme='dark'] .btn--danger-ghost,
 :root[data-theme='dark'] .btn--danger-ghost:hover:not(:disabled) {
   color: var(--rose-400);
+}
+
+/* Buttons for dark, photo or gradient backgrounds such as .page-banner. */
+.btn--light {
+  background: #fff;
+  color: #2f195f;
+  border: 1px solid #fff;
+}
+
+.btn--light:hover:not(:disabled) {
+  color: #2f195f;
+  transform: translateY(-1px);
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.45);
+}
+
+.btn--outline-light {
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+.btn--outline-light:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: #fff;
+  color: #fff;
+}
+
+/* ---------------------------------------------------------------------------
+   Page banner: the coloured header a page opens with. The concert crowd photo
+   sits faintly behind a purple wash, drifting slowly. A page can swap the
+   photo with --banner-image.
+   --------------------------------------------------------------------------- */
+
+.page-banner {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: var(--space-7) var(--space-6);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(120deg, #2f195f, #5b2a86 50%, #9c3d8f);
+  color: #fff;
+  box-shadow: 0 30px 60px -36px #5b2a86;
+}
+
+.page-banner::before {
+  content: '';
+  position: absolute;
+  inset: -6%;
+  z-index: -2;
+  background: var(--banner-image, url('./login-crowd.jpg')) center 35% / cover no-repeat;
+  opacity: 0.32;
+  mix-blend-mode: luminosity;
+  animation: banner-drift 26s ease-in-out infinite alternate;
+}
+
+.page-banner::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  width: 380px;
+  height: 380px;
+  top: -170px;
+  right: -60px;
+  border-radius: 50%;
+  background: #efc3f5;
+  filter: blur(80px);
+  opacity: 0.4;
+  animation: banner-orb 14s ease-in-out infinite alternate;
+}
+
+@keyframes banner-drift {
+  from { transform: scale(1); }
+  to { transform: scale(1.08) translate(-1%, -1%); }
+}
+
+@keyframes banner-orb {
+  from { transform: translate(0, 0); }
+  to { transform: translate(-80px, 60px); }
+}
+
+.page-banner h1 {
+  color: #fff;
+  font-size: var(--step-5);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  animation: banner-rise var(--dur-slower) var(--ease-settle) both;
+}
+
+.page-banner p {
+  max-width: 58ch;
+  margin-top: var(--space-3);
+  color: rgba(255, 255, 255, 0.82);
+  animation: banner-rise var(--dur-slower) var(--ease-settle) 120ms both;
+}
+
+@keyframes banner-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (max-width: 640px) {
+  .page-banner { padding: var(--space-6) var(--space-5); }
 }
 
 .btn:disabled {

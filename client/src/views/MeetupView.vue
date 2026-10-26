@@ -199,7 +199,10 @@ async function getTransport() {
 <template>
   <div class="container groups-page">
     <BackLink fallback="/groups/connect" fallback-label="Back to My groups" />
-    <h1>{{ board?.title ?? "Meetup planning" }}</h1>
+    <header class="page-banner">
+      <h1>{{ board?.title ?? "Meetup planning" }}</h1>
+      <p>Pick a time and a place to meet before the show.</p>
+    </header>
     <nav v-if="id" class="group-actions">
       <RouterLink to="/meetups">All meetup plans</RouterLink>
     </nav>
