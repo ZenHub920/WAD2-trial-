@@ -1,10 +1,10 @@
 # Backend integrations and operations
 
-This update starts from GitHub commit `46ce237`. Feature branches cover account safety, travel planning, and browser notifications; they are combined in `integration/backend-planning-notifications`.
+Changes since GitHub commit `46ce237` cover account safety, travel planning, and browser notifications. The feature branches are combined in `integration/backend-planning-notifications`.
 
 ## Shared questionnaire and current Kaki Finder flow
 
-The **same saved account questionnaire** is used by Kaki Finder and group discovery. Answers include what someone enjoys, what they want in companions, soft avoids, up to three hard dealbreakers, and optional quiz answers. Group profiles combine the answers of active members: preference frequencies reflect the whole group and any member's hard veto remains a veto.
+Kaki Finder and group discovery use the same saved account questionnaire. Answers include what someone enjoys, what they want in companions, soft avoids, up to three hard dealbreakers, and optional quiz answers. Group profiles combine the answers of active members: preference frequencies reflect the whole group and any member's hard veto remains a veto.
 
 Direct group browsing is available without completing the questionnaire. Answers improve its recommendations; automatic group matching requires answers. A concert-specific seeker answer record is also supported, with account answers as its fallback.
 
@@ -20,7 +20,7 @@ Kaki Finder currently works as follows:
 
 The separate **automatic seeker-to-group flow** uses Gale–Shapley/deferred acceptance over seekers and groups with capacity. It still requires **both host and seeker approval**. Direct search remains the paired-card choice flow: preferring a card narrows the deck; choosing to apply sends one pending application for host approval. Direct and automatic offers share the existing FIFO admission queue and seat accounting. Group-to-group invitations still need the receiving host's approval; they connect groups without silently merging memberships.
 
-Accepted group connections now also provide one shared chat for both groups' current members, listed under **Messages → Groups** and linked from accepted invitations. Its planner uses the connection scope, its messages use existing notification/push delivery, and access follows current group membership. Original host-managed single-group channels remain separate. See [MEETUP_TRAVEL_UPDATE.md](MEETUP_TRAVEL_UPDATE.md).
+Accepted group connections now have one shared chat for both groups' current members. Members can find it under **Messages → Groups** or open it from an accepted invitation. The chat uses the connection-scoped planner and existing notification/push delivery; access follows current group membership. Original host-managed single-group channels remain separate. See [MEETUP_TRAVEL_UPDATE.md](MEETUP_TRAVEL_UPDATE.md).
 
 ## What changed
 

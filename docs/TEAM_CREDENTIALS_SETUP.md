@@ -9,7 +9,7 @@ GitHub distributes the application code and the blank `server/.env.example`. Eac
 | Each teammate runs Vue + Express locally | Each teammate has their own credentials, or explicitly authorised shared **development** credentials | Independent coding and offline backend development |
 | Teammates use one shared development backend | Only the people managing that server need its provider credentials | Testing live integrations without distributing keys to every developer |
 
-With either arrangement, the frontend receives authorised application results. It does not receive the OneMap password/token, LTA Account Key or VAPID private key. Someone who runs a local backend with a credential can read that credential; an `.env` file cannot prevent that. Use a shared backend if teammates should have application access without credential access.
+The frontend receives authorised application results, but not the OneMap password/token, LTA Account Key or VAPID private key. Anyone running a local backend can read its credentials, even when they are kept in `.env`. Use a shared backend if teammates need application access without access to those credentials.
 
 ## Option A: a backend on each computer
 

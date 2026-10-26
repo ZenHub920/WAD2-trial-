@@ -29,11 +29,11 @@ const hasMore = computed(() => props.group.notes || props.group.reasons?.length 
       <p class="group-card__artist">{{ group.artist }}<span v-if="group.tourName">, {{ group.tourName }}</span></p>
       <p class="group-card__meta">{{ formatDate(group.eventDate) }} · {{ LABELS.section[group.section] }}</p>
     </div>
-    <p v-if="group.canJoinQueue && group.remainingCapacity === 0" class="group-card__meta">Every spot is saved for someone right now, but you can join the waitlist.</p>
-    <p v-if="group.queueLength" class="group-card__meta">{{ group.queueLength }} {{ group.queueLength === 1 ? 'person' : 'people' }} waiting to hear back.</p>
+    <p v-if="group.canJoinQueue && group.remainingCapacity === 0" class="group-card__meta">All available spots are held right now. You can join the waiting queue.</p>
+    <p v-if="group.queueLength" class="group-card__meta">{{ group.queueLength }} {{ group.queueLength === 1 ? 'request' : 'requests' }} in the arrival-order queue.</p>
     <dl class="group-card__facts">
       <div>
-        <dt>Who’s in</dt>
+        <dt>Group size</dt>
         <dd>{{ group.memberCount ?? 1 }} {{ (group.memberCount ?? 1) === 1 ? 'member' : 'members' }}</dd>
       </div>
       <div>
@@ -46,7 +46,7 @@ const hasMore = computed(() => props.group.notes || props.group.reasons?.length 
       </div>
     </dl>
     <div v-if="group.compatibility != null || group.reasons?.length" class="group-card__fit">
-      <p v-if="group.compatibility != null"><strong>{{ group.compatibility>=0.75?'You’d get on well':group.compatibility>=0.5?'Could be a good fit':'Worth a look' }}</strong><span v-if="group.confidence==='limited'">, based on a few answers</span></p>
+      <p v-if="group.compatibility != null"><strong>{{ group.compatibility>=0.75?'Strong fit':group.compatibility>=0.5?'Potential fit':'Explore this group' }}</strong><span v-if="group.confidence==='limited'">, based on limited preference information</span></p>
       <ul v-if="group.reasons?.length" class="group-card__reasons"><li v-for="r in group.reasons" :key="r.concept">{{ r.label }}</li></ul>
     </div>
     <ul class="group-tags" aria-label="Things they want to do"><template v-for="(name, id) in LABELS.plans" :key="id"><li v-if="group.plans?.[id]">{{ name }}</li></template></ul>
