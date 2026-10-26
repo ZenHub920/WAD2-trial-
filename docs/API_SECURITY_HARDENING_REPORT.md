@@ -86,8 +86,6 @@ Before production/wider credential sharing:
 - **Not live verified:** SMTP delivery (no local SMTP credentials supplied), OneMap email/password renewal (the supplied token sufficed), new24-hour/four-day live weather coverage (schema/fallback tests use mocks), production host/proxy behaviour and load capacity.
 - **Residual risks:** exposed chat credentials still require manual replacement; trusted developers with local backend credentials can read them; counters are shared only by processes using the same SQLite database; SSE remains in-process; a long outage can accumulate a legitimate queued backlog despite deduplication/rate limits/retention; capacity and persistent-disk use need monitoring. No global drop cap was added that would silently discard legitimate notifications.
 
-Final suite/build/audit totals and the per-file change inventory are recorded below after verification.
-
 <!-- FINAL_VERIFICATION -->
 ## Final verification results
 
@@ -102,7 +100,7 @@ The initial regression run identified first-party test helpers making originless
 
 ## Per-file change inventory
 
-All paths below are exact paths relative to the repository root. These are the 44 modified/new repository files in this task; generated dependencies/build outputs and ignored local artifacts are outside the source inventory.
+The inventory covers 44 modified or new repository files, with paths relative to the repository root. Generated dependencies, build outputs and ignored local artifacts are excluded.
 
 | Path | Status | Change and security/cost purpose | Compatibility implications |
 | --- | --- | --- | --- |

@@ -42,7 +42,7 @@ const canPrefer = computed(() => seeker.value?.status === 'open' && !currentGrou
 const modeLabels = { direct: 'Browse and choose', algorithm: 'Match me with a group' };
 const modeOptions = [
   { mode: 'direct', kicker: 'Pick yourself', title: 'Browse and choose', description: 'Look through the groups going to this show and ask to join the one you like.', action: 'Browse groups' },
-  { mode: 'algorithm', kicker: 'Let us help', title: 'Match me with a group', description: 'Tell us which groups you like and we’ll pair you with one that likes you back.', action: 'Find my match' },
+  { mode: 'algorithm', kicker: 'Let us help', title: 'Match me with a group', description: 'Mark groups you like to help us find a match. You may also be offered another eligible group.', action: 'Find my match' },
 ];
 const originLabels = { direct: 'The host said yes to your request', algorithm: 'You were matched with this group', host: 'You’re the host', friend: 'A friend invited you' };
 const joinStatus = { pending: 'Waiting for the host', accepted: 'You’re in', rejected: 'Not this time', declined: 'Not this time', withdrawn: 'You cancelled this', expired: 'Timed out', superseded: 'Closed', cancelled: 'Ended' };
@@ -60,8 +60,8 @@ function failureMessage(err) {
     pending_application_limit_reached: 'You’ve already asked one group. Cancel that request if you’d rather try another.',
     withdraw_pending_applications_first: 'Cancel your open request before switching how you join.',
     active_seat_claim_exists: 'Finish up with your current request, match or group before switching how you join.',
-    active_matching_proposal_exists: 'Say yes or no to your match first.',
-    active_proposal_exists: 'Say yes or no to your match first.',
+    active_matching_proposal_exists: 'Resolve your current match before switching methods or asking another group.',
+    active_proposal_exists: 'Resolve your current match before switching methods or asking another group.',
     already_in_concert_group: 'You already have a group for this show. You can find it at the top of the page.',
     already_group_member: 'You’re already in this group.',
     previously_declined: 'This group passed earlier, so try a different one.',
@@ -69,8 +69,8 @@ function failureMessage(err) {
     join_request_already_exists: 'You’ve already asked to join this group.',
     group_changed_withdraw_and_resubmit: 'This group changed after you asked. Cancel your request, take another look and ask again.',
     preferences_changed_withdraw_and_resubmit: 'Your preferences changed after you asked. Cancel and ask again so the host sees your latest answers.',
-    group_unavailable: 'This group just filled up. Have a look at the others.',
-    request_waiting_in_queue: 'Someone else is ahead in line. Refresh and try again in a moment.',
+    group_unavailable: 'This group no longer has an eligible spot. Check the latest groups below.',
+    request_waiting_in_queue: 'An earlier request needs an answer first. Refresh the queue before replying.',
   };
   return explanations[err.message] ?? (err.status === 401 ? 'You’ve been signed out. Sign in again to carry on.' : err.status === 409 ? 'That clashes with a request, match or group you already have. Check below and try again.' : 'Something went wrong. Please try again.');
 }
@@ -143,20 +143,20 @@ async function act(operation, success) {
   catch (err) { if (isCurrent(key)) { await load(); if (isCurrent(key)) error.value = failureMessage(err); } return false; }
   finally { busy.value = false; }
 }
-async function enroll(reopen = false) { await act(() => reopen ? api.reopenSeekerRequest(concertId.value) : api.createRequest(concertId.value, { ...form, joining_mode: displayedMode.value }), 'You’re all set. Now choose how you’d like to find your group.'); }
-async function activateMode() { const target = displayedMode.value; await act(() => api.setJoiningMode(concertId.value, target), target === 'direct' ? 'Great, browse the groups below and ask to join one.' : 'Great, mark the groups you like and join the match list.'); }
+async function enroll(reopen = false) { await act(() => reopen ? api.reopenSeekerRequest(concertId.value) : api.createRequest(concertId.value, { ...form, joining_mode: displayedMode.value }), 'Your answers are saved. Choose how you’d like to find a group.'); }
+async function activateMode() { const target = displayedMode.value; await act(() => api.setJoiningMode(concertId.value, target), target === 'direct' ? 'Browse the groups below and ask to join one at a time.' : 'Mark groups you like and join the match list.'); }
 async function join(id, note = applicationNote.value.trim()) {
   let application;
   return act(async () => {
     application = (await api.requestGroupJoin(id, { note })).request;
     applicationFor.value = ''; applicationNote.value = '';
   }, () => application?.seatReserved
-    ? 'Request sent. We’re saving you a spot while the host decides.'
-    : `Request sent. You’re ${application?.queuePosition ? `number ${application.queuePosition} ` : ''}in line, and we’ll save you a spot if one opens up.`);
+    ? 'Request sent. A spot is held while the host reviews it. Check the expiry time below.'
+    : `Request sent. You’re ${application?.queuePosition ? `number ${application.queuePosition} ` : ''}in line without a held spot. Check the expiry time below.`);
 }
 async function preference(id, remove) { await act(() => remove ? api.removeGroupPreference(id) : api.preferGroup(id), remove ? 'Removed from the groups you like.' : 'Added to the groups you like.'); }
-async function joinPool() { await act(() => api.findMyGroup(concertId.value, crypto.randomUUID()), 'You’re on the match list. Your match will show up here once it’s ready.'); }
-async function leavePool() { await act(() => api.leaveGroupMatching(concertId.value), 'You’re off the match list. We’ve kept your liked groups in case you come back.'); }
+async function joinPool() { await act(() => api.findMyGroup(concertId.value, crypto.randomUUID()), 'You’re waiting for the next operator-run matching round. Check here for a proposal.'); }
+async function leavePool() { await act(() => api.leaveGroupMatching(concertId.value), 'You’ve left matching. Your saved preferences and match history remain available.'); }
 function dateLabel(value) { if (!value) return ''; const date = new Date(typeof value === 'number' ? value : value.includes('T') ? value : `${value.replace(' ', 'T')}Z`); return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('en-SG'); }
 </script>
 
@@ -187,7 +187,6 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
     <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Finding groups…</p>
 
     <template v-if="concertId && currentUser">
-      <!-- Already sorted: this person has a group for the show. -->
       <section v-if="currentGroup" class="card group-panel group-panel--highlight" aria-labelledby="current-group-heading">
         <p class="group-kicker mono">You’re going with</p>
         <div class="current-group-identity">
@@ -204,12 +203,11 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
         </div>
       </section>
 
-      <!-- First visit for this concert: a few quick questions. -->
       <section v-else-if="!seeker" class="card group-panel">
         <div class="group-setup__heading">
           <div>
             <h2>First, tell us your plans</h2>
-            <p class="group-muted">A few quick answers help hosts know you’ll get along.</p>
+            <p class="group-muted">Hosts can see your answers when you ask to join.</p>
           </div>
           <button type="button" class="btn btn--primary" :disabled="busy" :aria-expanded="setupOpen" @click="setupOpen = !setupOpen">{{ setupOpen ? 'Not now' : 'Get started' }}</button>
         </div>
@@ -230,7 +228,6 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
         <button type="button" class="btn btn--primary" :disabled="busy" @click="enroll(true)">I’m looking again</button>
       </section>
 
-      <!-- Two ways in. -->
       <section class="group-panel group-panel--bare" aria-labelledby="joining-mode-heading">
         <h2 id="joining-mode-heading">How do you want to find a group?</h2>
         <div class="joining-modes" role="group" aria-label="Ways to find a group">
@@ -246,27 +243,27 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
         <p v-if="!modeIsActive && (seeker?.status === 'open' || pendingDirect.length || activeProposals.length || pendingLegacy.length)" class="group-muted">Just looking? That’s fine. Nothing changes until you switch, and open requests stay as they are.</p>
         <p v-if="pendingDirect.length" class="group-status" role="status">
           {{ pendingDirect[0].seatReserved ? 'We’re saving you a spot.' : `You’re number ${pendingDirect[0].queuePosition ?? '?'} in line.` }}
-          The host has until {{ dateLabel(pendingDirect[0].expiresAt) }} to reply.
+          Your request expires {{ dateLabel(pendingDirect[0].expiresAt) }}, even if you are still waiting.
         </p>
         <details class="group-howto">
           <summary>How does this work?</summary>
           <ul v-if="displayedMode === 'direct'">
             <li>You can ask one group at a time per concert.</li>
             <li>Requests are answered in the order they arrive. If there’s room, we save you a spot while the host decides.</li>
-            <li>If the host doesn’t reply within 48 hours, your request times out and you can try another group.</li>
+            <li>Your request expires 48 hours after you send it, including time spent waiting in line. Holding a spot does not extend the deadline.</li>
           </ul>
           <ul v-else>
-            <li>Mark the groups you like, then join the match list.</li>
-            <li>We pair people and groups so both sides get a fit they like. You might be matched with a group you didn’t mark.</li>
-            <li>When your match is ready, you and the host both say yes before it’s confirmed.</li>
-            <li>Matches that aren’t answered within 48 hours time out.</li>
+            <li>Mark the groups you like, then join the match list. Matching rounds are run by an operator.</li>
+            <li>Both your preferences and the groups’ preferences affect the match. You may be offered a group you didn’t mark.</li>
+            <li>A match joins the same queue as group requests. Once it reaches the front and has a held spot, both you and the host must approve it.</li>
+            <li>Match requests expire 48 hours after creation, including time spent waiting in line.</li>
           </ul>
         </details>
       </section>
 
       <section v-if="displayedMode === 'algorithm' && seeker && !currentGroup" class="card group-panel automatic-matching" aria-labelledby="automatic-matching-heading">
         <h2 id="automatic-matching-heading">Your match</h2>
-        <p v-if="activeProposals.length">You’ve got a match! Have a look below and say yes or no.</p>
+        <p v-if="activeProposals.length">Your match is in the group queue below. Check whether a spot is held and whether it is ready for both approvals.</p>
         <p v-else-if="pendingLegacy.length">You have an earlier match waiting for the host. You can check on it or cancel it under Your requests.</p>
         <p v-else-if="matching.optedIn || matching.state === 'queued'" role="status">You’re on the match list. Keep marking groups you like, and check back soon.</p>
         <p v-else>You’re not on the match list yet.</p>
@@ -280,7 +277,6 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
       </section>
       <section v-if="activeProposals.length" aria-label="Your match"><MatchProposalCard v-for="proposal in activeProposals" :key="proposal.id" :proposal="proposal" @updated="load" /></section>
 
-      <!-- Browsing. -->
       <section class="card group-panel">
         <h2>Narrow it down</h2>
         <fieldset :disabled="busy" class="group-fieldset"><GroupFilters :filters="filters" preferences /></fieldset>
@@ -302,7 +298,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
             <button type="button" class="btn btn--ghost" :disabled="busy || !canApply || pendingFor(group.id) || declinedFor(group.id) || !canQueueFor(group) || group.status === 'cancelled'" @click="applicationFor = applicationFor === group.id ? '' : group.id; applicationNote = ''">{{ pendingFor(group.id) ? 'Request sent' : declinedFor(group.id) ? 'Not this time' : !canQueueFor(group) ? 'Group is full' : group.remainingCapacity < 1 ? 'Join the waitlist' : 'Ask to join' }}</button>
             <form v-if="applicationFor === group.id" class="application-form" @submit.prevent="join(group.id)">
               <label>Say hi to the host (optional)<textarea v-model="applicationNote" maxlength="500" rows="3" :disabled="busy" placeholder="e.g. First time seeing them live, keen to grab dinner before!" /></label>
-              <small class="group-muted">{{ applicationNote.length }}/500 · The host will see your profile and your answers.</small>
+              <small class="group-muted">{{ applicationNote.length }}/500 · The host will see your public profile and preferences. Requests expire 48 hours after submission, even while waiting in line.</small>
               <div class="group-actions">
                 <button class="btn btn--primary" :disabled="busy || !canApply || !canQueueFor(group)">Send request</button>
                 <button type="button" class="btn btn--ghost" :disabled="busy" @click="applicationFor = ''">Cancel</button>
@@ -332,13 +328,13 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
             <h3>{{ application.hostName }}’s group</h3>
             <p>{{ application.artist }} · {{ joinStatus[application.status] }}</p>
             <p><strong>{{ application.seatReserved ? 'We’re saving you a spot' : `You’re number ${application.queuePosition ?? '?'} in line` }}</strong></p>
-            <p class="group-muted">Sent {{ dateLabel(application.createdAt) }} · times out {{ dateLabel(application.expiresAt) }}</p>
+            <p class="group-muted">Sent {{ dateLabel(application.createdAt) }} · expires {{ dateLabel(application.expiresAt) }}, including time spent waiting.</p>
             <p class="group-muted">{{ application.canHostRespond ? 'You’re up next for the host.' : 'The host is replying to earlier requests first.' }}</p>
             <p v-if="application.applicationNote" class="group-quote">“{{ application.applicationNote }}”</p>
           </div>
           <div class="group-actions">
             <button type="button" class="btn btn--ghost" :disabled="busy" @click="load">Check for updates</button>
-            <button type="button" class="btn btn--danger-ghost" :disabled="busy" @click="act(() => api.withdrawGroupJoin(application.id), 'Request cancelled. Your spot has gone to the next person in line.')">Cancel request</button>
+            <button type="button" class="btn btn--danger-ghost" :disabled="busy" @click="act(() => api.withdrawGroupJoin(application.id), 'Request cancelled. Any held spot is released to the next eligible request.')">Cancel request</button>
           </div>
         </article>
         <details v-if="ownRequests.some(request => request.status !== 'pending')">
