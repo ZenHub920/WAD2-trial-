@@ -154,7 +154,7 @@ Paths are relative to the repository root. Existing matching engines, Kaki and m
 | `server/src/db/admissionQueue.js` | Returns authoritative shared queue position, held/waiting state and head-response permissions. |
 | `server/src/db/connection.js` | Runs the upgrade for production and test databases. |
 | `server/src/db/capacity.js` | Makes seat claims the shared occupancy source; expires operational reservations. |
-| `server/src/db/repositories.js` | Hydrates/persists joining mode and loads accurate remaining group capacity. |
+| `server/src/db/seekerRepository.js`, `server/src/db/partyRepository.js` | Persist joining mode and load accurate remaining group capacity through shared row mappers. |
 | `server/src/db/recommendationRepository.js` | Shared individual scoring/eligibility, mode checks, application history/approval and current memberships. |
 | `server/src/db/groupDiscoveryRepository.js` | Aligns saved preferences, reopening and automatic eligibility with both mechanisms. |
 | `server/src/db/proposalRepository.js` | Transactional mutual approval, final membership and proposal decline/expiry/cancellation integration. |
@@ -188,7 +188,7 @@ Paths are relative to the repository root. Existing matching engines, Kaki and m
 | `server/test/proposalPresentation.test.js` | Public group identity and immutable saved reasons, including legacy fallback. |
 | `client/test/groupComparison.test.js` | Comparison position, replacement, exhaustion, skip and refresh regressions. |
 | `docs/HYBRID_GROUP_MATCHING.md` | This architecture, integration and demonstration guide. |
-| `docs/TEAMMATE_FEATURE_GUIDE.md` | Short pointer to the superseding hybrid behaviour. |
+| `docs/BACKEND_INTEGRATIONS_AND_OPERATIONS.md` | Current cross-feature overview, shared chat and integration points. |
 
 ## Verification and local commands
 

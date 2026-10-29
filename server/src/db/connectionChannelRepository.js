@@ -1,8 +1,7 @@
 /** Accepted connections have one shared room; attendance groups stay separate. */
 import { randomUUID } from 'node:crypto';
-import { readMessagePage } from './messagePage.js';
+import { readMessagePage, validateMessageBody, CHAT_BACKGROUNDS } from './messagePage.js';
 
-const BACKGROUNDS = ['default', 'dusk', 'neon', 'paper', 'forest', 'mono'];
 const fail = (message, status = 409) => Object.assign(new Error(message), { status });
 export const connectionChannelPath = (id) => `/groups/connections/${id}/channel`;
 
@@ -79,10 +78,9 @@ export function createConnectionChannelRepo(db, repos) {
         .map(({ id, displayName }) => ({ id, displayName })) };
   };
   const text = (input) => {
-    const value = typeof input === 'string' ? input.trim() : '';
-    if (!value) throw fail('message_required', 400);
-    if (value.length > 2000) throw fail('message_too_long', 400);
-    return value;
+    const { body, error } = validateMessageBody(input);
+    if (error) throw fail(error, 400);
+    return body;
   };
   const advanceRead = (connectionId, userId) => {
     const top = db.prepare('SELECT COALESCE(MAX(rowid),0) seq FROM connection_channel_messages WHERE connection_id=?').get(connectionId).seq;
@@ -162,7 +160,7 @@ export function createConnectionChannelRepo(db, repos) {
     }).immediate,
     setBackground: db.transaction((connectionId, userId, background) => {
       requireMember(connectionId, userId);
-      if (!BACKGROUNDS.includes(background)) throw fail('invalid_background', 400);
+      if (!CHAT_BACKGROUNDS.includes(background)) throw fail('invalid_background', 400);
       db.prepare('UPDATE connection_channel_members SET background=? WHERE connection_id=? AND user_id=?').run(background, connectionId, userId);
       return { background };
     }).immediate,

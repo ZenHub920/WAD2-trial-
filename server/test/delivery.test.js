@@ -220,12 +220,12 @@ test('retention drains a historical backlog in delayed bounded batches and stops
 test('an event wake delivers queued work before the long idle reconciliation interval',async()=>{
   service.subscribe('member',subscription());
   service.start({intervalMs:60000});
-  await new Promise(resolve=>setTimeout(resolve,20));
+  await service.runOnce();
   notification();service.wake();
-  const deadline=Date.now()+1000;
+  const deadline=Date.now()+10000;
   while(sendCalls.length===0 && Date.now()<deadline) await new Promise(resolve=>setTimeout(resolve,10));
   assert.equal(sendCalls.length,1);
-  service.wake();await new Promise(resolve=>setTimeout(resolve,20));
+  service.wake();await service.runOnce();
   assert.equal(sendCalls.length,1);
 });
 

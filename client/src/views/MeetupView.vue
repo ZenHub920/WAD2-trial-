@@ -1,11 +1,14 @@
 <script setup>
-import { computed, reactive, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api } from "../api.js";
 import { currentUser } from "../auth.js";
 import LoadingSpinner from "../components/LoadingSpinner.vue";
 import BackLink from "../components/BackLink.vue";
 import MeetupLocationSearch from "../components/MeetupLocationSearch.vue";
+import MeetupAvailabilityGrid from "../components/MeetupAvailabilityGrid.vue";
+import MeetupTransportPanel from '../components/MeetupTransportPanel.vue';
+import { connectionState, onChatEvent } from '../chatLive.js';
 import "../assets/groups.css";
 const props = defineProps({ id: String });
 const route = useRoute(),
@@ -35,31 +38,41 @@ const place = reactive({
 });
 const position = reactive({ latitude: 1.3, longitude: 103.85, label: "", travelMode: 'transit' });
 const travelOptions = reactive({ shelteredOnly: false });
-const transportOptions = reactive({ busStopCode: '', trainLine: '', busService: '' });
 const selectedSlotCount = computed(() => Object.values(slots.value).filter(slot => slot.selected).length);
-const busServices = computed(() => {
-  const services = transport.value?.buses?.services ?? [];
-  const wanted = transportOptions.busService.trim().toUpperCase();
-  return wanted ? services.filter(service => service.service.toUpperCase() === wanted) : services;
+const selectedTimes = computed({
+  get: () => Object.entries(slots.value).filter(([, slot]) => slot.selected).map(([start]) => Number(start)),
+  set: times => {
+    const chosen = new Set(times);
+    for (const [start, slot] of Object.entries(slots.value)) slot.selected = chosen.has(Number(start));
+  },
 });
-const busLoadLabel = load => ({ SEA: 'Seats available', SDA: 'Standing available', LSD: 'Limited standing space' })[load] ?? 'Crowding not reported';
-const stationCrowdLabel = level => ({ l: 'Low crowding', m: 'Moderate crowding', h: 'High crowding', low: 'Low crowding', moderate: 'Moderate crowding', high: 'High crowding' })[String(level ?? '').toLowerCase()] ?? 'Crowding not reported';
+const scope = computed(() => Object.fromEntries(['partyId', 'connectionId', 'kakiConversationId']
+  .filter(key => typeof route.query[key] === 'string').map(key => [key, route.query[key]])));
+const savedSlots = ref('[]'), refreshing = ref(false), syncNote = ref('');
+const selectionSnapshot = rows => JSON.stringify(Object.entries(rows).filter(([, slot]) => slot.selected)
+  .map(([start, slot]) => [Number(start), slot.travelMode, slot.latitude, slot.longitude, slot.label]));
+const availabilityDirty = computed(() => selectionSnapshot(slots.value) !== savedSlots.value);
+const liveLabel = computed(() => connectionState.value === 'live' ? 'Live with your group' : 'Keeping your group in sync');
+let alive = true, loadRequest = 0, refreshTimer, pollTimer, stopEvents, refreshQueued = false;
+const context = () => `${props.id ?? ''}:${currentUser.value?.id ?? ''}:${JSON.stringify(scope.value)}`;
 const statuses = { planning: "Collecting availability", proposed: "Awaiting required approvals", confirmed: "Meetup confirmed", cancelled: "Meetup cancelled" };
 const iso = (ms) => new Date(ms).toISOString();
 const time = (ms) =>
   new Date(ms).toLocaleString("en-SG", {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: 'Asia/Singapore',
   });
-async function load() {
+async function load({ preserveDrafts = false } = {}) {
+  const key = context(), request = ++loadRequest;
   if (props.id) {
     const data = (await api.meetup(props.id)).meetup;
-    board.value = data;
-    travelRecommendations.value = null;
-    transport.value = null;
-    weather.value = null;
-    rainfall.value = null;
-    slots.value = Object.fromEntries(
+    if (!alive || context() !== key || request !== loadRequest) return;
+    const keepDraft = preserveDrafts && availabilityDirty.value;
+    if (board.value?.version !== data.version) {
+      travelRecommendations.value = null; transport.value = null; weather.value = null; rainfall.value = null;
+    }
+    const nextSlots = Object.fromEntries(
       data.grid.map((s) => {
         const own = data.availability.find(
           (a) => a.starts_at <= s.startsAt && a.ends_at >= s.startsAt + 1800000,
@@ -76,49 +89,132 @@ async function load() {
         ];
       }),
     );
-  } else boards.value = (await api.meetups()).meetups;
+    savedSlots.value = selectionSnapshot(nextSlots);
+    if (keepDraft) for (const start of Object.keys(nextSlots)) if (slots.value[start]) nextSlots[start] = slots.value[start];
+    slots.value = nextSlots;
+    board.value = data;
+    if (data.status === 'cancelled') syncNote.value = 'This plan was cancelled. Your draft has been kept for reference.';
+    else if (keepDraft) syncNote.value = 'Group updates received. Your unsaved availability is kept.';
+    else syncNote.value = '';
+  } else {
+    const data = await api.meetups(scope.value);
+    if (alive && context() === key && request === loadRequest) boards.value = data.meetups;
+  }
 }
 watch(
-  () => props.id,
+  context,
   async () => {
+    loadRequest++;
     error.value = "";
     notice.value = "";
     board.value = null;
+    boards.value = []; slots.value = {}; savedSlots.value = '[]'; syncNote.value = '';
+    busy.value = false; refreshing.value = false; refreshQueued = false; clearTimeout(refreshTimer);
+    comment.value = ''; travelRecommendations.value = null;
+    Object.assign(form, { title: 'Meet before the concert', startsAt: '', endsAt: '' });
+    Object.assign(place, { label: '', latitude: 1.3, longitude: 103.85, sheltered: true });
+    Object.assign(position, { latitude: 1.3, longitude: 103.85, label: '', travelMode: 'transit' });
+    travelOptions.shelteredOnly = false;
     weather.value = null;
     rainfall.value = null;
     transport.value = null;
     loading.value = true;
+    const key = context();
+    if (!currentUser.value) { loading.value = false; return; }
     try {
       await load();
     } catch (e) {
-      error.value = e.status === 404 ? "This meetup is unavailable, or you are no longer a participant." : "Could not load your meetup plans. Please try again.";
+      if (context() === key) error.value = e.status === 404 ? "This meetup is unavailable, or you are no longer a participant." : "Could not load your meetup plans. Please try again.";
     } finally {
-      loading.value = false;
+      if (alive && context() === key) loading.value = false;
     }
   },
   { immediate: true },
 );
-async function act(fn) {
+async function refreshPlanner() {
+  if (!alive || !currentUser.value || document.visibilityState !== 'visible') return;
+  if (busy.value || refreshing.value) { refreshQueued = true; return; }
+  const key = context();
+  refreshing.value = true;
+  try { await load({ preserveDrafts: true }); }
+  catch (e) {
+    if (context() !== key) return;
+    if ([401, 403, 404].includes(e.status)) {
+      board.value = null; slots.value = {}; savedSlots.value = '[]';
+      error.value = 'This meetup is unavailable, or you are no longer a participant.';
+    } else syncNote.value = 'Live refresh paused. Your draft is safe; use Refresh planner to retry.';
+  } finally {
+    if (context() === key) {
+      refreshing.value = false;
+      if (refreshQueued && !busy.value) scheduleRefresh();
+    }
+  }
+}
+function scheduleRefresh() {
+  refreshQueued = true;
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(() => {
+    if (busy.value || refreshing.value) return;
+    refreshQueued = false;
+    void refreshPlanner();
+  }, 150);
+}
+function showStep(id) { document.getElementById(id)?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); }
+onMounted(() => {
+  stopEvents = onChatEvent((type, data) => {
+    if (type === 'ready' || ['group-members', 'connection-members'].includes(type)
+      || (type === 'meetup-updated' && (!props.id || data.meetupId === props.id))) scheduleRefresh();
+  });
+  window.addEventListener('focus', scheduleRefresh);
+  document.addEventListener('visibilitychange', scheduleRefresh);
+  // Reconcile missed events and separate server processes without provider calls.
+  pollTimer = setInterval(scheduleRefresh, 15000);
+});
+onUnmounted(() => {
+  alive = false; loadRequest++; stopEvents?.(); clearTimeout(refreshTimer); clearInterval(pollTimer);
+  window.removeEventListener('focus', scheduleRefresh);
+  document.removeEventListener('visibilitychange', scheduleRefresh);
+});
+async function act(fn, { savingAvailability = false } = {}) {
   if (busy.value) return;
+  const key = context();
   busy.value = true;
   error.value = "";
   notice.value = "";
   try {
     await fn();
-    await load();
+    if (!alive || context() !== key) return;
+    await load({ preserveDrafts: !savingAvailability });
+    if (context() !== key) return;
     notice.value = "Meetup updated.";
   } catch (e) {
+    if (!alive || context() !== key) return;
     error.value = ({
       invalid_meetup_window: "Choose a window between 30 minutes and 7 days, starting and ending on a half-hour.",
-      stale_meetup_version: "This plan has changed. Reload it before proposing or approving a plan.",
+      stale_meetup_version: "This plan has changed. Your draft is kept; review the refreshed plan and try again.",
       scope_membership_required: "Only members of this group or conversation can create its meetup.",
       meetup_cancelled: "This meetup has been cancelled and can no longer be changed.",
       invalid_place: "Enter a place name and valid latitude and longitude.",
       invalid_availability: "Check your selected times and location coordinates before saving.",
     })[e.message] ?? "Could not update this meetup. Please try again.";
+    if (e.message === 'stale_meetup_version') await refreshPlannerAfterConflict();
   } finally {
-    busy.value = false;
+    if (context() === key) {
+      busy.value = false;
+      if (refreshQueued) scheduleRefresh();
+    }
   }
+}
+async function discardAvailability() {
+  if (busy.value) return;
+  const key = context(); busy.value = true;
+  try { await load(); }
+  catch { if (context() === key) error.value = 'Could not reload your saved availability. Please try again.'; }
+  finally { if (context() === key) busy.value = false; }
+}
+async function refreshPlannerAfterConflict() {
+  try { await load({ preserveDrafts: true }); }
+  catch { /* Keep the original conflict and the draft available for retry. */ }
 }
 async function create() {
   await act(async () => {
@@ -128,8 +224,8 @@ async function create() {
     const r = await api.createMeetup({
       ...form,
       ...scope,
-      startsAt: new Date(form.startsAt).toISOString(),
-      endsAt: new Date(form.endsAt).toISOString(),
+      startsAt: new Date(`${form.startsAt}+08:00`).toISOString(),
+      endsAt: new Date(`${form.endsAt}+08:00`).toISOString(),
     });
     await router.push(`/meetups/${r.meetup.id}`);
   });
@@ -148,7 +244,9 @@ async function saveAvailability() {
             ? { latitude: s.latitude, longitude: s.longitude, label: s.label }
             : {}),
         })),
+      board.value.version,
     ),
+    { savingAvailability: true },
   );
 }
 function assignLocation() {
@@ -166,34 +264,41 @@ function assignTravelMode() {
 }
 async function getWeather() {
   if (busy.value) return;
+  const key = context(), version = board.value?.version, id = props.id;
   busy.value = true;
   error.value = "";
   try {
-    const { environment } = await api.meetupEnvironment(props.id);
+    const { environment } = await api.meetupEnvironment(id);
+    if (!alive || context() !== key || board.value?.version !== version) return;
     weather.value = environment.forecast;
     rainfall.value = environment.rainfall;
   } catch (e) {
-    error.value = "Could not load the weather forecast. Please try again.";
+    if (alive && context() === key && board.value?.version === version) error.value = "Could not load the weather forecast. Please try again.";
   } finally {
-    busy.value = false;
+    if (context() === key) { busy.value = false; if (refreshQueued) scheduleRefresh(); }
   }
 }
 async function getTravelSuggestions() {
   if (busy.value) return;
-  busy.value = true; error.value = '';
-  try { travelRecommendations.value = (await api.meetupTravelSuggestions(props.id, travelOptions)).recommendations; }
-  catch { error.value = 'Could not refresh travel options. Reload the plan if it has changed.'; }
-  finally { busy.value = false; }
-}
-async function getTransport() {
-  if (busy.value) return;
+  const key = context(), version = board.value?.version, id = props.id;
   busy.value = true; error.value = '';
   try {
-    const { busStopCode, trainLine } = transportOptions;
-    transport.value = (await api.meetupTransport(props.id, Object.fromEntries(Object.entries({ busStopCode, trainLine }).filter(([, value]) => value)))).transport;
+    const data = await api.meetupTravelSuggestions(id, { ...travelOptions });
+    if (alive && context() === key && board.value?.version === version) travelRecommendations.value = data.recommendations;
   }
-  catch { error.value = 'Could not check transport. Use a five-digit bus stop code, or choose a train line.'; }
-  finally { busy.value = false; }
+  catch { if (alive && context() === key && board.value?.version === version) error.value = 'Could not refresh travel options. Reload the plan if it has changed.'; }
+  finally { if (context() === key) { busy.value = false; if (refreshQueued) scheduleRefresh(); } }
+}
+async function getParking() {
+  if (busy.value) return;
+  const key = context(), version = board.value?.version, id = props.id;
+  busy.value = true; error.value = '';
+  try {
+    const data = await api.meetupTransport(id, { parkingOnly: 'true' });
+    if (alive && context() === key && board.value?.version === version) transport.value = data.transport;
+  }
+  catch { if (alive && context() === key && board.value?.version === version) error.value = 'Could not check nearby parking. Please try again.'; }
+  finally { if (context() === key) { busy.value = false; if (refreshQueued) scheduleRefresh(); } }
 }
 </script>
 <template>
@@ -201,10 +306,12 @@ async function getTransport() {
     <BackLink fallback="/groups/connect" fallback-label="Back to My groups" />
     <header class="page-banner">
       <h1>{{ board?.title ?? "Meetup planning" }}</h1>
-      <p>Pick a time and a place to meet before the show.</p>
+      <p>Find a time together, compare places and agree on the plan.</p>
     </header>
     <nav v-if="id" class="group-actions">
-      <RouterLink to="/meetups">All meetup plans</RouterLink>
+      <button type="button" class="btn btn--ghost" @click="router.push('/meetups')">All meetup plans</button>
+      <button type="button" class="btn btn--ghost" :disabled="refreshing || busy" @click="refreshPlanner">Refresh planner</button>
+      <span class="meetup-live" role="status"><span aria-hidden="true"></span>{{ liveLabel }}{{ refreshing ? ' · Updating…' : '' }}</span>
     </nav>
     <p v-if="error" class="group-error" role="alert">{{ error }}</p>
     <p v-if="notice" class="group-success" role="status">{{ notice }}</p>
@@ -228,13 +335,13 @@ async function getTransport() {
         <label
           >Title<input v-model="form.title" maxlength="120" required /></label
         ><label
-          >First possible meeting time<input
+          >First possible meeting time (Singapore time)<input
             v-model="form.startsAt"
             type="datetime-local"
             step="1800"
             required /></label
         ><label
-          >End of availability window<input
+          >End of availability window (Singapore time)<input
             v-model="form.endsAt"
             type="datetime-local"
             step="1800"
@@ -243,7 +350,7 @@ async function getTransport() {
           Create planning board
         </button>
       </form>
-      <div class="group-grid"><RouterLink v-for="m in boards" :key="m.id" :to="`/meetups/${m.id}`" class="card group-panel">{{ m.title }}<span class="group-muted">{{ statuses[m.status] ?? "Plan updated" }}</span></RouterLink></div>
+      <div class="group-grid"><article v-for="m in boards" :key="m.id" class="card group-panel"><h2>{{ m.title }}</h2><p class="group-muted">{{ statuses[m.status] ?? "Plan updated" }}</p><button type="button" class="btn btn--primary" @click="router.push(`/meetups/${m.id}`)">Open planner</button></article></div>
       <p v-if="!boards.length && !error">No meetup plans yet. Start a plan from your group or an active companion conversation.</p>
       </template>
     <template v-else-if="board"
@@ -262,22 +369,20 @@ async function getTransport() {
       >
         Cancel meetup
       </button>
-      <section class="card group-panel">
+      <nav class="meetup-steps" aria-label="Meeting planning steps">
+        <button type="button" @click="showStep('meetup-availability')"><span>1</span><strong>Find a time</strong><small>Paint your availability</small></button>
+        <button type="button" @click="showStep('meetup-places')"><span>2</span><strong>Choose a place</strong><small>Compare everyone's journey</small></button>
+        <button type="button" @click="showStep('meetup-review')"><span>3</span><strong>Agree on the plan</strong><small>Propose, discuss and approve</small></button>
+      </nav>
+      <p v-if="syncNote" class="group-muted" role="status">{{ syncNote }}</p>
+      <section id="meetup-availability" class="card group-panel meetup-availability">
         <h2>When are you available?</h2>
-        <p>
-          Select 30-minute time periods. Your starting locations stay private.
-        </p>
+        <p>Share when you’re free, then add your starting place below. Your starting locations stay private.</p>
+        <div class="meetup-availability__summary"><strong>{{ selectedSlotCount }} half-hour {{ selectedSlotCount === 1 ? 'block' : 'blocks' }} selected</strong><span :class="{ 'meetup-unsaved': availabilityDirty }">{{ availabilityDirty ? 'Unsaved changes' : 'Your saved availability' }}</span></div>
+        <MeetupAvailabilityGrid :grid="board.grid" :participant-count="board.participantCount" v-model:selected="selectedTimes" :disabled="busy || board.status === 'cancelled'" />
         <p class="group-muted">Each participant chooses their own travel method. We can compare car and public transport journeys together.</p>
-        <div class="group-controls">
-          <label v-for="s in board.grid" :key="s.startsAt" class="group-check"
-            ><input v-model="slots[s.startsAt].selected" type="checkbox" />{{
-              time(s.startsAt)
-            }}, {{ s.availableCount }}/{{
-              board.participantCount
-            }}
-            available</label
-          >
-        </div>
+        <fieldset class="meetup-travel-fields" :disabled="busy || board.status === 'cancelled'">
+        <legend>Where will you be travelling from?</legend>
         <div class="group-controls">
           <label>Travel method for selected times<select v-model="position.travelMode"><option value="transit">Public transport</option><option value="drive">Car</option></select></label>
           <button type="button" class="btn btn--ghost" :disabled="busy || !selectedSlotCount" @click="assignTravelMode">Apply travel method to selected times</button>
@@ -333,19 +438,24 @@ async function getTransport() {
               /></label></div
           ></template>
         </details>
+        </fieldset>
+        <div class="group-actions">
         <button
           class="btn btn--primary"
-          :disabled="busy"
+          :disabled="busy || board.status === 'cancelled'"
           @click="saveAvailability"
         >
           Save selected availability
         </button>
+        <button v-if="availabilityDirty" type="button" class="btn btn--ghost" :disabled="busy" @click="discardAvailability">Discard my changes</button>
+        </div>
       </section>
       <form
-        class="card group-panel"
+        id="meetup-places" class="card group-panel"
         @submit.prevent="act(() => api.proposeMeetupPlace(id, place))"
       >
         <h2>Suggest a meeting place</h2>
+        <fieldset class="meetup-travel-fields" :disabled="busy || board.status === 'cancelled'">
         <MeetupLocationSearch :meetup-id="id" @selected="location => Object.assign(place, { label: location.label, latitude: location.latitude, longitude: location.longitude })" />
         <label
           >Place name<input v-model="place.label" required maxlength="150"
@@ -373,8 +483,9 @@ async function getTransport() {
           ><input v-model="place.sheltered" type="checkbox" />Sheltered
           place</label
         ><button class="btn btn--primary" :disabled="busy">Add place</button>
+        </fieldset>
       </form>
-      <section class="card group-panel">
+      <section id="meetup-review" class="card group-panel">
         <h2>Recommended options</h2>
         <p class="group-muted">Options consider how many people are available, then compare journeys using each person's saved travel method.</p>
         <div class="group-controls">
@@ -453,7 +564,7 @@ async function getTransport() {
         <div class="meetup-parking">
           <h3>Driving to the meetup?</h3>
           <p class="group-muted">Check nearby car parks around the proposed meeting place. Available lots describe conditions now and may change before your meetup.</p>
-          <button type="button" class="btn btn--ghost" :disabled="busy" @click="getTransport">Check nearby parking</button>
+          <button type="button" class="btn btn--ghost" :disabled="busy" @click="getParking">Check nearby parking</button>
           <template v-if="transport?.parking">
             <p v-if="transport.parking.status !== 'available'">Parking information is unavailable right now. Please try again later.</p>
             <template v-else>
@@ -467,23 +578,7 @@ async function getTransport() {
           </template>
         </div>
       </section>
-      <section class="card group-panel">
-        <h2>Travel and the journey home</h2>
-        <p>Check current train advisories, station crowds and bus crowd levels before heading out or leaving the concert. Station crowd levels describe density at the station, rather than inside train carriages. These updates describe travel now; they do not predict conditions on the concert date.</p>
-        <div class="group-controls">
-          <label>Bus stop code (optional)<input v-model="transportOptions.busStopCode" maxlength="5" inputmode="numeric" placeholder="e.g. 83139" /></label>
-          <label>Bus service (optional)<input v-model="transportOptions.busService" maxlength="10" placeholder="e.g. 36" /></label>
-          <label>Station crowds (optional)<select v-model="transportOptions.trainLine"><option value="">Choose a line</option><option v-for="line in ['CCL','CEL','CGL','DTL','EWL','NEL','NSL','TEL']" :key="line">{{ line }}</option></select></label>
-        </div>
-        <button class="btn btn--ghost" :disabled="busy" @click="getTransport">Check LTA transport updates</button>
-        <template v-if="transport">
-          <p v-if="transport.trains.status !== 'available'">Train updates are unavailable. Try again later.</p>
-          <template v-else><p>{{ transport.trains.serviceStatus === 'normal' ? 'LTA reports normal train service.' : 'LTA reports a train service disruption.' }}<span v-if="transport.trains.stale"> Saved update; check again before travelling.</span></p><p v-for="(message, index) in transport.trains.messages" :key="index">{{ message.content }}</p></template>
-          <template v-if="transport.buses"><p v-if="transport.buses.status !== 'available'">Bus crowd information is unavailable for this stop.</p><template v-else><p v-if="!transport.buses.services.length">No bus services reported at this stop.</p><p v-else-if="!busServices.length">No crowd information reported for that bus service at this stop.</p><p v-if="transport.buses.stale" class="group-muted">Showing saved bus crowd levels; refresh before travelling.</p><article v-for="service in busServices" :key="service.service" class="meetup-transport-row"><strong>Bus {{ service.service }}</strong><ul v-if="service.crowdLevels?.length"><li v-for="(vehicle, index) in service.crowdLevels" :key="index">{{ vehicle.position === 1 ? 'Next bus' : `Following bus ${vehicle.position - 1}` }}: {{ busLoadLabel(vehicle.load) }}<span v-if="vehicle.wheelchairAccessible"> · Wheelchair accessible</span></li></ul><p v-else>Crowding not reported.</p></article></template></template>
-          <template v-if="transport.crowding"><p v-if="transport.crowding.status !== 'available'">Station crowd information is unavailable.</p><details v-else><summary>Station crowd levels {{ transport.crowding.stale ? '(saved)' : '' }}</summary><p v-if="!transport.crowding.stations.length">No crowd levels reported for this line.</p><p v-for="station in transport.crowding.stations" :key="station.station">{{ station.station }}: {{ stationCrowdLabel(station.level) }}<span v-if="Number.isFinite(Date.parse(station.observedAt))"> ({{ time(Date.parse(station.observedAt)) }})</span></p></details></template>
-        </template>
-        <small class="group-muted">Data: <a href="https://www.onemap.gov.sg/apidocs/" target="_blank" rel="noopener noreferrer">OneMap / Singapore Land Authority</a>, <a href="https://datamall.lta.gov.sg/" target="_blank" rel="noopener noreferrer">LTA DataMall</a>, and <a href="https://data.gov.sg/datasets/d_f131f6e343bf8168e4057a04c4326a0a/view" target="_blank" rel="noopener noreferrer">NEA via data.gov.sg</a>. Shelter status is suggested by participants.</small>
-      </section>
+      <MeetupTransportPanel :key="`${id}:${currentUser?.id}`" :meetup-id="id" :concert="board.concert" :plan-version="board.version" :has-meeting-place="Boolean(board.selected_place_id)" />
       <section class="card group-panel">
         <h2>Discuss and revise</h2>
         <p>
@@ -504,6 +599,7 @@ async function getTransport() {
           <label
             >Message<textarea
               v-model="comment"
+              :disabled="busy || board.status === 'cancelled'"
               maxlength="2000"
               required
             /></label
@@ -514,8 +610,18 @@ async function getTransport() {
   </div>
 </template>
 <style scoped>
-.meetup-transport-row { display: grid; gap: var(--space-2); padding-block: var(--space-3); border-top: var(--border-hairline); }
-.meetup-transport-row ul { display: grid; gap: var(--space-1); padding-left: var(--space-4); color: var(--text-300); }
+.meetup-live { display: inline-flex; align-items: center; gap: .5rem; color: var(--text-300); font-size: var(--step--1); }
+.meetup-live > span { width: .5rem; height: .5rem; border-radius: 50%; background: var(--mint-400); }
+.meetup-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); margin-block: var(--space-4); }
+.meetup-steps button { display: grid; grid-template-columns: auto 1fr; gap: .2rem .7rem; align-items: center; text-align: left; padding: var(--space-4); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-800); color: var(--text-100); cursor: pointer; }
+.meetup-steps button > span { grid-row: span 2; display: grid; place-items: center; width: 1.8rem; height: 1.8rem; border: 1px solid var(--mint-400); border-radius: 50%; color: var(--mint-400); }
+.meetup-steps small { color: var(--text-300); }
+.meetup-availability__summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; margin-block: var(--space-4); color: var(--text-300); }
+.meetup-unsaved { color: var(--accent-400); }
+.meetup-travel-fields { display: block; border: 0; margin: var(--space-4) 0; padding: 0; min-width: 0; width: 100%; }
+.meetup-travel-fields legend { font-weight: 600; padding-bottom: var(--space-3); }
+#meetup-availability, #meetup-places, #meetup-review { scroll-margin-top: 6rem; }
+@media (max-width: 620px) { .meetup-steps { grid-template-columns: 1fr; } .meetup-steps small { display: none; } .meetup-steps button > span { grid-row: auto; } }
 .meetup-parking { display: grid; justify-items: start; gap: var(--space-3); padding-top: var(--space-4); margin-top: var(--space-3); border-top: var(--border-hairline); }
 .meetup-parking h3 { font-size: var(--step-1); }
 .meetup-parking__list { display: grid; gap: var(--space-3); width: 100%; padding: 0; list-style: none; }

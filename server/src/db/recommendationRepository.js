@@ -9,7 +9,7 @@ import {
   withoutRetired,
 } from "../services/discoveryPreferences.js";
 import { checkFeasibility, scorePair } from "../matching/compatibility.js";
-import { groupImageUrl } from "../controllers/groupIdentityController.js";
+import { groupImageUrl } from "../presentation/groupIdentity.js";
 import { preferenceEligibility } from "../services/preferenceEligibility.js";
 export function createRecommendationRepo(db, repos) {
   const maxPendingDirectApplications = 1;
