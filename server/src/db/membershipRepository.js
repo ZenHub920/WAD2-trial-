@@ -5,7 +5,7 @@ import {
   withoutRetired,
 } from "../services/discoveryPreferences.js";
 import { reservedPlacesSql, availableCapacitySql, expireJoinRequests } from "./capacity.js";
-import { groupImageUrl } from "../controllers/groupIdentityController.js";
+import { groupImageUrl } from "../presentation/groupIdentity.js";
 export const communityError = (message, status = 409) =>
   Object.assign(new Error(message), { status });
 /**

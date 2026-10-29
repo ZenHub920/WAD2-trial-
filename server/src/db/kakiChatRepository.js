@@ -1,7 +1,7 @@
 /**
  * Kaki chat — data access.
  *
- * Distinct from the buyer–seller chat in repositories.js (`repos.conversations`,
+ * Distinct from marketplaceConversationRepository.js (`repos.conversations`,
  * backed by ticket_conversations/ticket_messages). This one backs the
  * conversations/messages tables and serves the Kaki Finder, where the right to
  * talk comes from a mutual like rather than from a listing.
@@ -33,19 +33,19 @@ function ordered(x, y) {
   return x < y ? [x, y] : [y, x];
 }
 
-/** SQL fragment: the two users mutually liked each other for this concert. */
-const MUTUAL = `(
+/** Only fixed SQL identifiers are passed here; user values remain bound parameters. */
+const mutualSql = (me = '@me', other = '@other', concert = '@concert') => `(
   EXISTS (SELECT 1 FROM kaki_decisions d
-          WHERE d.concert_id = @concert AND d.actor_user_id = @me
-            AND d.target_user_id = @other AND d.decision = 'like')
+          WHERE d.concert_id = ${concert} AND d.actor_user_id = ${me}
+            AND d.target_user_id = ${other} AND d.decision = 'like')
   AND
   EXISTS (SELECT 1 FROM kaki_decisions d
-          WHERE d.concert_id = @concert AND d.actor_user_id = @other
-            AND d.target_user_id = @me AND d.decision = 'like')
+          WHERE d.concert_id = ${concert} AND d.actor_user_id = ${other}
+            AND d.target_user_id = ${me} AND d.decision = 'like')
   AND EXISTS (SELECT 1 FROM concert_participants p
-              WHERE p.concert_id = @concert AND p.user_id = @me AND p.status = 'joined')
+              WHERE p.concert_id = ${concert} AND p.user_id = ${me} AND p.status = 'joined')
   AND EXISTS (SELECT 1 FROM concert_participants p
-              WHERE p.concert_id = @concert AND p.user_id = @other AND p.status = 'joined')
+              WHERE p.concert_id = ${concert} AND p.user_id = ${other} AND p.status = 'joined')
 )`;
 
 /** SQL fragment: neither has blocked the other, in either direction. */
@@ -57,8 +57,8 @@ const NOT_BLOCKED = `(
 
 export function createKakiChatRepo(db) {
   const preferenceEligible = createKakiPreferenceGate(db);
-  const mutualAndOpen = db.prepare(`SELECT 1 AS ok WHERE ${MUTUAL} AND ${NOT_BLOCKED}`);
-  const mutualOnly = db.prepare(`SELECT 1 AS ok WHERE ${MUTUAL}`);
+  const mutualAndOpen = db.prepare(`SELECT 1 AS ok WHERE ${mutualSql()} AND ${NOT_BLOCKED}`);
+  const mutualOnly = db.prepare(`SELECT 1 AS ok WHERE ${mutualSql()}`);
   const blockedEitherWay = db.prepare(`SELECT 1 AS ok WHERE NOT ${NOT_BLOCKED}`);
   const canChat = (me, other, concert) => Boolean(mutualAndOpen.get({ me, other, concert })?.ok)
     && preferenceEligible(me, other);
@@ -120,7 +120,7 @@ export function createKakiChatRepo(db) {
     LEFT JOIN messages last ON last.id = (
       SELECT m2.id FROM messages m2
       WHERE m2.conversation_id = c.id
-      -- Same reasoning as listMessages: rowid, not id.
+      -- Rowid preserves insertion order when timestamps are equal.
       ORDER BY m2.created_at DESC, m2.rowid DESC LIMIT 1
     )
     WHERE (c.user_a_id = @me OR c.user_b_id = @me)
@@ -150,16 +150,6 @@ export function createKakiChatRepo(db) {
     FROM messages m
     LEFT JOIN messages r ON r.id = m.reply_to_message_id
   `;
-  const listMessages = db.prepare(`
-    ${MESSAGE_ROWS}
-    WHERE m.conversation_id = ?
-    -- Tie-break on rowid, NOT on id. created_at is datetime('now'), which has
-    -- one-second granularity, so a burst of messages shares a timestamp — and
-    -- ids are random UUIDs, so ordering by them scrambles the thread. rowid is
-    -- monotonic in insertion order, which is exactly what a transcript needs.
-    ORDER BY m.created_at ASC, m.rowid ASC
-  `);
-
   const insertMessage = db.prepare(`
     INSERT INTO messages (id, conversation_id, sender_user_id, body, reply_to_message_id)
     VALUES (@id, @conversation, @sender, @body, @replyTo)
@@ -230,16 +220,6 @@ export function createKakiChatRepo(db) {
     'SELECT COALESCE(MAX(rowid), 0) AS seq FROM messages WHERE conversation_id = ?',
   );
 
-  /** Messages the viewer has not seen. Their own never count as unread. */
-  const unreadCount = db.prepare(`
-    SELECT COUNT(*) AS n FROM messages m
-    WHERE m.conversation_id = @conversation
-      AND m.sender_user_id <> @user
-      AND m.rowid > COALESCE(
-        (SELECT last_read_rowid FROM conversation_reads
-         WHERE conversation_id = @conversation AND user_id = @user), 0)
-  `);
-
   /**
    * How many PEOPLE are waiting on a reply — not how many messages they sent.
    * Ten messages from one person is one thing to deal with, and counting them
@@ -255,16 +235,7 @@ export function createKakiChatRepo(db) {
       AND m.rowid > COALESCE(
         (SELECT last_read_rowid FROM conversation_reads
          WHERE conversation_id = c.id AND user_id = @user), 0)
-      AND EXISTS (SELECT 1 FROM kaki_decisions d
-                  WHERE d.concert_id = c.concert_id AND d.actor_user_id = c.user_a_id
-                    AND d.target_user_id = c.user_b_id AND d.decision = 'like')
-      AND EXISTS (SELECT 1 FROM kaki_decisions d
-                  WHERE d.concert_id = c.concert_id AND d.actor_user_id = c.user_b_id
-                    AND d.target_user_id = c.user_a_id AND d.decision = 'like')
-      AND EXISTS (SELECT 1 FROM concert_participants p
-                  WHERE p.concert_id = c.concert_id AND p.user_id = c.user_a_id AND p.status = 'joined')
-      AND EXISTS (SELECT 1 FROM concert_participants p
-                  WHERE p.concert_id = c.concert_id AND p.user_id = c.user_b_id AND p.status = 'joined')
+      AND ${mutualSql('c.user_a_id', 'c.user_b_id', 'c.concert_id')}
       AND NOT EXISTS (
         SELECT 1 FROM blocks b
         WHERE (b.blocker_user_id = @user
@@ -313,7 +284,6 @@ export function createKakiChatRepo(db) {
 
     findById: (id) => findById.get(id),
     forUser: (me) => listForUser.all({ me }).filter((c) => preferenceEligible(c.user_a_id, c.user_b_id)),
-    messages: (conversationId) => listMessages.all(conversationId),
     messagePage(conversationId, options) {
       const { rows, page } = readMessagePage(db, 'kaki', conversationId, options);
       return { rows: rows.map((m) => messageById.get(m.id)), page };
@@ -356,9 +326,6 @@ export function createKakiChatRepo(db) {
       markRead.run({ conversation: conversationId, user: userId, rowid: seq });
       return seq;
     },
-
-    unread: (conversationId, userId) =>
-      unreadCount.get({ conversation: conversationId, user: userId }).n,
 
     unreadTotal: (userId) => unreadTotal.all({ user: userId })
       .filter((c) => preferenceEligible(c.user_a_id, c.user_b_id)).length,

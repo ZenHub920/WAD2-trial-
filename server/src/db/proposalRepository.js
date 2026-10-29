@@ -1,89 +1,51 @@
-
 import { randomUUID } from 'node:crypto';
 import { reservedPlacesSql,availableCapacitySql,queueablePlacesSql,expireJoinRequests } from './capacity.js';
 import { queueInfo } from './admissionQueue.js';
-import { groupImageUrl } from '../controllers/groupIdentityController.js';
+import { groupImageUrl } from '../presentation/groupIdentity.js';
 
 /**
- * ============================================================
- * encore — MATCH PROPOSAL REPOSITORY
- * Improvements #5, #6 and #12
- * ============================================================
- *
- * PURPOSE:
- *
- * Manage the operational lifecycle of Gale-Shapley assignments.
- *
- * IMPORTANT DISTINCTION:
- *
- * match_results:
- *   Immutable historical algorithm results.
- *
- * match_proposals:
- *   Current operational assignment status.
- *
- * The shared admission queue orders direct applications and automatic offers.
- * Confirmed claims and the earliest eligible pending claims reserve capacity.
- * Other pending offers wait without consuming another physical seat.
- * Removing an entry transfers its held place to the next request atomically.
- *
- * Database writes that change multiple related records are
- * wrapped in better-sqlite3 transactions.
+ * Operational offers are separate from immutable matching history. The shared FIFO
+ * queue reserves places for confirmed claims and the earliest eligible pending claims.
+ * Releasing a held place advances the queue within the same database transaction.
  */
-
 export function createProposalRepo(db, repos = null) {
-
-  const ACTIVE = "('proposed','confirmed')";
-
-  // ============================================================
-  // HELPER: CONVERT DATABASE ROW INTO API RESPONSE
-  // ============================================================
-
-  const details = (p) => {
-    // Explain the actual matching snapshot, even after account preferences change.
-    const saved = p.score_breakdown_json ? JSON.parse(p.score_breakdown_json) : null;
+  // Match reasons come from the saved score snapshot, not edited profiles.
+  const details = (p, saved = p.score_breakdown_json ? JSON.parse(p.score_breakdown_json) : null) => {
     return {
-    id: p.id,
-    roundId: p.round_id,
-    concertId: p.concert_id,
+      id: p.id,
+      roundId: p.round_id,
+      concertId: p.concert_id,
 
-    seekerRequestId: p.seeker_request_id,
-    partyId: p.party_id,
-    seekerUserId: p.seeker_user_id,
+      seekerRequestId: p.seeker_request_id,
+      partyId: p.party_id,
+      seekerUserId: p.seeker_user_id,
 
-    artist: p.artist,
-    eventDate: p.event_date,
-    section: p.section,
-    groupName: p.group_name ?? null,
-    imageUrl: groupImageUrl(p.group_image_path),
-    reasons: Array.isArray(saved?.discovery?.reasons) ? saved.discovery.reasons.slice(0, 3) : [],
-    confidence: saved?.discovery?.confidence ?? null,
+      artist: p.artist,
+      eventDate: p.event_date,
+      section: p.section,
+      groupName: p.group_name ?? null,
+      imageUrl: groupImageUrl(p.group_image_path),
+      reasons: Array.isArray(saved?.discovery?.reasons) ? saved.discovery.reasons.slice(0, 3) : [],
+      confidence: saved?.discovery?.confidence ?? null,
 
-    hostName: p.host_name,
-    hostUserId: p.host_user_id,
-    seekerName: p.seeker_name,
+      hostName: p.host_name,
+      hostUserId: p.host_user_id,
+      seekerName: p.seeker_name,
 
-    status: p.status,
-    resolutionReason: p.resolution_reason ?? null,
-    expiresAt: p.expires_at,
+      status: p.status,
+      resolutionReason: p.resolution_reason ?? null,
+      expiresAt: p.expires_at,
 
-    seekerScore: p.seeker_score,
-    partyScore: p.party_score,
-    seekerApproved: Boolean(p.seeker_approved_at),
-    hostApproved: Boolean(p.host_approved_at),
-    seekerApprovedAt: p.seeker_approved_at ?? null,
-    hostApprovedAt: p.host_approved_at ?? null,
-    approvalPolicy: p.approval_policy ?? 'mutual',
-    ...queueInfo(db, { proposalId: p.id }),
+      seekerScore: p.seeker_score,
+      partyScore: p.party_score,
+      seekerApproved: Boolean(p.seeker_approved_at),
+      hostApproved: Boolean(p.host_approved_at),
+      seekerApprovedAt: p.seeker_approved_at ?? null,
+      hostApprovedAt: p.host_approved_at ?? null,
+      approvalPolicy: p.approval_policy ?? 'mutual',
+      ...queueInfo(db, { proposalId: p.id }),
     };
   };
-
-  // ============================================================
-  // SHARED SQL: HYDRATE PROPOSALS WITH CONCERT AND USER DATA
-  // ============================================================
-  //
-  // This prevents frontend components from making separate
-  // requests to load the concert, host and seeker.
 
   const JOINED = `
     SELECT
@@ -101,43 +63,24 @@ export function createProposalRepo(db, repos = null) {
       mr.seeker_score,
       mr.party_score,
       mr.score_breakdown_json
-
     FROM match_proposals mp
-
     JOIN seeker_requests sr
       ON sr.id = mp.seeker_request_id
-
     JOIN parties p
       ON p.id = mp.party_id
-
     JOIN users h
       ON h.id = p.host_user_id
-
     JOIN users su
       ON su.id = sr.user_id
-
     JOIN concerts c
       ON c.id = p.concert_id
-
     JOIN match_results mr
       ON mr.id = mp.match_result_id
   `;
 
-  // ============================================================
-  // HELPER: COUNT RESERVED PARTY CAPACITY
-  // ============================================================
-
   const reserved = db.prepare(`SELECT ${reservedPlacesSql('@id')} AS n`);
 
-  // ============================================================
-  // HELPER: REOPEN SEEKER AND PARTY AFTER CAPACITY RELEASE
-  // ============================================================
-
   const refresh = (partyId, seekerId) => {
-
-    // STEP 1:
-    // Check whether this seeker still has an active proposal.
-
     const stillActive = db.prepare(`
       SELECT 1
       FROM active_seat_claims
@@ -145,22 +88,14 @@ export function createProposalRepo(db, repos = null) {
         (status='confirmed' OR(status='proposed' AND expires_at>unixepoch('subsec')*1000))
     `).get(seekerId);
 
-    // STEP 2:
-    // If no active proposal exists, reopen the seeker request.
-
     if (!stillActive) {
-
       db.prepare(`
         UPDATE seeker_requests
         SET status = 'open'
         WHERE id = ?
           AND status = 'matched'
       `).run(seekerId);
-
     }
-
-    // STEP 3:
-    // Load the associated party.
 
     const party = db.prepare(`
       SELECT ${availableCapacitySql('parties')} AS capacity, status
@@ -172,15 +107,9 @@ export function createProposalRepo(db, repos = null) {
       return;
     }
 
-    // STEP 4:
-    // Calculate how many seats remain reserved.
-
     const reservedCount = reserved.get({ id: partyId }).n;
 
     const fullyReserved = reservedCount >= party.capacity;
-
-    // STEP 5:
-    // Reopen the party if it has spare capacity.
 
     db.prepare(`
       UPDATE parties
@@ -192,21 +121,8 @@ export function createProposalRepo(db, repos = null) {
     );
   };
 
-  // ============================================================
-  // EXPIRE OLD PROPOSALS
-  // ============================================================
-  //
-  // Each proposal has a 48-hour response deadline.
-  //
-  // Once expired:
-  //   - It no longer reserves a seat.
-  //   - The seeker's request can reopen.
-  //   - The party can reopen if capacity exists.
-  //
-  // All operations are atomic.
-
+  /** Expire elapsed offers and direct requests before reallocating their held places. */
   const expire = db.transaction(() => {
-    // Proposal inboxes must also advance past elapsed direct applicants.
     expireJoinRequests(db);
 
     const expired = db.prepare(`
@@ -214,9 +130,7 @@ export function createProposalRepo(db, repos = null) {
         id,
         party_id,
         seeker_request_id
-
       FROM match_proposals
-
       WHERE status = 'proposed'
         AND expires_at <= ?
     `).all(Date.now());
@@ -228,7 +142,6 @@ export function createProposalRepo(db, repos = null) {
     `);
 
     for (const proposal of expired) {
-
       update.run(proposal.id);
 
       refresh(
@@ -240,34 +153,15 @@ export function createProposalRepo(db, repos = null) {
     return expired.length;
   }).immediate;
 
-  // ============================================================
-  // EXPORTED REPOSITORY METHODS
-  // ============================================================
-
   return {
-
-    /**
-     * CREATE OPERATIONAL PROPOSALS FROM A MATCHING ROUND
-     *
-     * Called inside matchingService.run().
-     *
-     * IMPORTANT:
-     * Must execute inside the outer matching transaction.
-     *
-     * If proposal creation fails, historical matching results
-     * must also roll back.
-     */
-
+    /** Keep offer creation inside the outer matching transaction so all writes roll back. */
     createFromRound: db.transaction((roundId) => {
-
       const matches = db.prepare(`
         SELECT
           id,
           seeker_request_id,
           party_id
-
         FROM match_results
-
         WHERE round_id = ?
           AND outcome = 'matched'
           AND party_id IS NOT NULL
@@ -300,7 +194,6 @@ export function createProposalRepo(db, repos = null) {
 
         const proposalId = `mp_${randomUUID()}`;
 
-        // Proposal expires 48 hours after creation.
         const expiresAt =
           Date.now() + 48 * 60 * 60 * 1000;
 
@@ -315,31 +208,17 @@ export function createProposalRepo(db, repos = null) {
       }
     }).immediate,
 
-    // Expose the transaction defined above.
     expire,
 
-    /**
-     * RETURN PREVIOUSLY DECLINED REQUEST-PARTY PAIRS
-     *
-     * A seeker who declined Party A must not automatically
-     * receive another proposal for Party A.
-     *
-     * This restriction applies to the exact pair, not
-     * every group or every concert associated with the host.
-     */
-
+    /** A decline excludes only this exact seeker/group pair from later rounds. */
     declinedPairsForConcert(concertId) {
-
       const rows = db.prepare(`
         SELECT
           md.seeker_request_id,
           md.party_id
-
         FROM match_declines md
-
         JOIN seeker_requests sr
           ON sr.id = md.seeker_request_id
-
         WHERE sr.concert_id = ?
       `).all(concertId);
 
@@ -350,22 +229,10 @@ export function createProposalRepo(db, repos = null) {
       );
     },
 
-    /**
-     * RETRIEVE CURRENT OR HISTORICAL PROPOSALS FOR A USER
-     *
-     * A seeker sees their own proposals.
-     * A host sees proposals involving their hosted group.
-     *
-     * Optional filters:
-     * concertId = specific concert
-     * statuses  = proposed, confirmed, declined, etc.
-     */
-
+    /** Seeker/host-scoped inbox, optionally filtered by concert and status. */
     forUser(userId, concertId = null, statuses = null) {
-
       let sql = `
         ${JOINED}
-
         WHERE (
           sr.user_id = ?
           OR p.host_user_id = ?
@@ -375,7 +242,6 @@ export function createProposalRepo(db, repos = null) {
       const args = [userId, userId];
 
       if (concertId !== null) {
-
         sql += `
           AND p.concert_id = ?
         `;
@@ -384,7 +250,6 @@ export function createProposalRepo(db, repos = null) {
       }
 
       if (statuses?.length) {
-
         sql += `
           AND mp.status IN (
             ${statuses.map(() => '?').join(',')}
@@ -409,27 +274,14 @@ export function createProposalRepo(db, repos = null) {
         }));
     },
 
-    /**
-     * HISTORICAL MATCH EXPLANATION
-     *
-     * Read the score breakdown saved at matching time.
-     *
-     * Do not recalculate using the user's latest profile.
-     *
-     * Both the seeker and the party host may access
-     * the explanation for their own assignment.
-     */
-
+    /** Authorize the owning seeker or host before returning the original score breakdown. */
     explain(userId, proposalId) {
-
       const proposal = db.prepare(`
         ${JOINED}
-
         WHERE (
           sr.user_id = ?
           OR p.host_user_id = ?
         )
-
         AND mp.id = ?
       `).get(
         userId,
@@ -441,27 +293,11 @@ export function createProposalRepo(db, repos = null) {
         return null;
       }
 
-      return {
-        ...details(proposal),
-
-        breakdown: proposal.score_breakdown_json
-          ? JSON.parse(proposal.score_breakdown_json)
-          : null
-      };
+      const breakdown = proposal.score_breakdown_json ? JSON.parse(proposal.score_breakdown_json) : null;
+      return { ...details(proposal, breakdown), breakdown };
     },
 
-    /**
-     * ACCEPT OR DECLINE A PROPOSAL
-     *
-     * The owning seeker and receiving host each approve their own side.
-     *
-     * The proposal must still be pending.
-     *
-     * Both approvals confirm membership without consuming another place.
-     *
-     * Declining releases it and records the declined pair.
-     */
-
+    /** Both approvals convert the existing held claim; a decline releases it. */
     respond: db.transaction((userId, proposalId, decision) => {
       if (!['accept', 'decline'].includes(decision)) return { error: 'invalid_decision', status: 400 };
       const proposal = db.prepare(`${JOINED} WHERE mp.id=?`).get(proposalId);
@@ -473,14 +309,12 @@ export function createProposalRepo(db, repos = null) {
         refresh(proposal.party_id,proposal.seeker_request_id);
         return { error: 'proposal_expired', status: 409 };
       }
-      // Sweep both sources before checking FIFO: an expired earlier direct
-      // request must promote this offer even when its host has a stale inbox.
+      // Sweep both sources before FIFO checks, including an expired earlier direct request.
       expire();
       repos?.recommendations?.expire();
       const role = proposal.seeker_user_id === userId ? 'seeker' : 'host';
       const queue = queueInfo(db, { proposalId });
-      // Hosts work through the shared direct/automatic queue in arrival order.
-      // Applicants retain the ability to leave the queue at any position.
+      // Hosts process the queue in order; seekers can withdraw from any position.
       if ((decision === 'accept' || role === 'host') && (!queue.canHostRespond || !queue.seatReserved))
         return { error: 'request_waiting_in_queue', status: 409 };
       if (decision === 'decline') {

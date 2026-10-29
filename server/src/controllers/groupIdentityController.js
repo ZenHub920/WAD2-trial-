@@ -7,8 +7,9 @@
  */
 
 import { groupName } from './concertController.js';
+import { groupImageUrl } from '../presentation/groupIdentity.js';
 
-export const groupImageUrl = (path) => (path ? `/api/avatars/${path}` : null);
+export { groupImageUrl };
 
 export function createGroupIdentityController(repos, images) {
   /** The party, or null after sending the error response. */

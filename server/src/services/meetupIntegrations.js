@@ -3,6 +3,7 @@ import { rankMeetupOptions, SLOT_MS } from './meetupPlanning.js';
 import { createSingaporeTravel } from './singaporeTravel.js';
 import { createMeetupWeather } from './meetupWeather.js';
 import { singaporeCoordinates } from './providerCache.js';
+import { createMeetupTransport } from './meetupTransport.js';
 
 export function createMeetupIntegrations({ db, repos, fetchImpl = globalThis.fetch, now = Date.now, env = process.env, travel = createSingaporeTravel({ db, fetchImpl, now, env }), weather = createMeetupWeather({ db, fetchImpl, now, env }) } = {}) {
   const assertCurrent = (user, id, version, participantIds) => {
@@ -11,6 +12,7 @@ export function createMeetupIntegrations({ db, repos, fetchImpl = globalThis.fet
     if (participantIds && JSON.stringify([...repos.meetups.participants(current)].sort()) !== JSON.stringify(participantIds))
       throw communityError('stale_meetup_membership');
   };
+  const nearbyTransport = createMeetupTransport({ repos, travel, now, assertCurrent });
   return {
     weather,
     async locations(user, id, query) {
@@ -72,14 +74,17 @@ export function createMeetupIntegrations({ db, repos, fetchImpl = globalThis.fet
       options.sort((a, b) => b.availableCount - a.availableCount || (routeRanking ? a.totalTravelMinutes - b.totalTravelMinutes || a.maximumTravelMinutes - b.maximumTravelMinutes : (a.totalDistanceKm ?? Infinity) - (b.totalDistanceKm ?? Infinity) || (a.maximumDistanceKm ?? Infinity) - (b.maximumDistanceKm ?? Infinity)) || b.votes - a.votes || a.startsAt - b.startsAt || a.placeId.localeCompare(b.placeId));
       return { status: 'available', version: input.version, rankingBasis: routeRanking ? 'route_times' : 'straight_line_distance', options, shortlistedPlaces: placeIds.length, routesRequested: jobIndex, message: routeRanking ? 'Ranked by attendance, combined journey time, then the longest journey, using each person’s saved car or public-transport method. Transit schedules use a fixed departure one hour before the meeting for comparison; driving estimates do not predict future traffic. Confirm the actual journey nearer the day.' : 'Ranked by attendance and straight-line distance. Complete fresh routes were unavailable for every shortlisted option; any route times shown are supplementary estimates. Add more places to compare alternatives.' };
     },
-    async transport(user, id, { busStopCode, trainLine } = {}) {
+    async transport(user, id, options = {}) {
+      if (options.phase !== undefined) return nearbyTransport(user, id, options);
+      const { busStopCode, trainLine } = options;
       const current = repos.meetups.access(user, id);
       const participantIds = [...repos.meetups.participants(current)].sort();
+      const parkingOnly = options.parkingOnly === true || options.parkingOnly === 'true';
       if (busStopCode !== undefined && (typeof busStopCode !== 'string' || !/^\d{5}$/.test(busStopCode))) throw communityError('invalid_bus_stop', 400);
       if (trainLine !== undefined && !['CCL', 'CEL', 'CGL', 'DTL', 'EWL', 'NEL', 'NSL', 'TEL'].includes(trainLine)) throw communityError('invalid_train_line', 400);
       const place = current.selected_place_id ? repos.meetups.detail(user, id).places.find((p) => p.id === current.selected_place_id) : null;
       const [trains, buses, crowding, parking] = await Promise.all([
-        travel.trainAlerts(),
+        parkingOnly ? null : travel.trainAlerts(),
         busStopCode ? travel.busArrivals(busStopCode) : null,
         trainLine ? travel.crowding(trainLine) : null,
         place && travel.parking ? travel.parking(place) : { status: 'unavailable', reason: 'choose_a_meeting_place_first' },

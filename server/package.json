@@ -11,6 +11,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "test": "node --test",
+    "test:community": "node scripts/scoped-feature-tests.mjs",
     "operator:grant": "node src/db/grantOperator.js",
     "sync:concerts": "node src/db/syncTicketmaster.js",
     "push:keys": "node src/config/generatePushKeys.js",

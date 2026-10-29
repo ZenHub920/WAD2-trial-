@@ -445,3 +445,9 @@ FodyWeavers.xsd
 
 
 .claude/
+
+# Generated test reports and browser traces
+client/test-results/
+client/playwright-report/
+client/.vitest/
+server/test-results/

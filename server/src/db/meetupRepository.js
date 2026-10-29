@@ -134,10 +134,28 @@ export function createMeetupRepo(db, repos) {
     }
     return participants(m);
   };
+  const concertFor = m => {
+    const concertId = m.party_id ? repos.parties.findById(m.party_id)?.concert_id
+      : m.connection_id ? db.prepare('SELECT p.concert_id FROM group_connections c JOIN parties p ON p.id=c.party_a_id WHERE c.id=?').get(m.connection_id)?.concert_id
+      : db.prepare('SELECT concert_id FROM conversations WHERE id=?').get(m.kaki_conversation_id)?.concert_id;
+    const concert = concertId ? repos.concerts.findById(concertId) : null;
+    return concert ? { id: concert.id, artist: concert.artist, venue: concert.venue, city: concert.city, event_date: concert.event_date } : null;
+  };
+  const planningData = (id, ids) => ({
+    availability: db.prepare('SELECT * FROM meetup_availability WHERE meetup_id=?')
+      .all(id).filter((a) => ids.includes(a.user_id)),
+    places: db.prepare(`SELECT p.*,(SELECT COUNT(*) FROM meetup_votes v WHERE v.meetup_id=p.meetup_id AND v.place_id=p.id
+      AND v.user_id IN(SELECT value FROM json_each(?))) AS votes FROM meetup_places p WHERE p.meetup_id=? ORDER BY p.rowid`)
+      .all(JSON.stringify(ids), id),
+  });
   return {
     access,
     participants,
-    list(user) {
+    list(user, scope = {}) {
+      const fields = { partyId: 'party_id', connectionId: 'connection_id', kakiConversationId: 'kaki_conversation_id' };
+      const selected = Object.keys(fields).filter(key => scope[key] !== undefined);
+      if (selected.length > 1 || selected.some(key => typeof scope[key] !== 'string' || !scope[key]))
+        throw communityError('one_meetup_scope_required', 400);
       return db
         .prepare(`WITH relevant_parties(id) AS(
           SELECT id FROM parties WHERE host_user_id=?
@@ -150,7 +168,7 @@ export function createMeetupRepo(db, repos) {
           m.kaki_conversation_id IN(SELECT id FROM conversations WHERE user_a_id=? OR user_b_id=?)
           ORDER BY m.rowid DESC`)
         .all(user,user,user,user,user,user)
-        .filter((m) => participants(m).includes(user))
+        .filter((m) => participants(m).includes(user) && selected.every(key => m[fields[key]] === scope[key]))
         .map((m) => ({
           id: m.id,
           title: m.title,
@@ -165,10 +183,7 @@ export function createMeetupRepo(db, repos) {
         ...m,
         participantCount: ids.length,
         participantIds: [...ids].sort(),
-        availability: db.prepare('SELECT * FROM meetup_availability WHERE meetup_id=?').all(id).filter((a) => ids.includes(a.user_id)),
-        places: db.prepare(`SELECT p.*,(SELECT COUNT(*) FROM meetup_votes v WHERE v.meetup_id=p.meetup_id AND v.place_id=p.id
-          AND v.user_id IN(SELECT value FROM json_each(?))) AS votes FROM meetup_places p WHERE p.meetup_id=? ORDER BY p.rowid`)
-          .all(JSON.stringify(ids), id),
+        ...planningData(id, ids),
       };
     },
     create: db.transaction((user, input = {}) => {
@@ -217,21 +232,10 @@ export function createMeetupRepo(db, repos) {
     detail(user, id) {
       const m = access(user, id),
         ids = participants(m);
-      const availability = db
-        .prepare(`SELECT a.* FROM meetup_availability a WHERE meetup_id=?`)
-        .all(id)
-        .filter((a) => ids.includes(a.user_id));
-      const places = db
-        .prepare("SELECT * FROM meetup_places WHERE meetup_id=? ORDER BY rowid")
-        .all(id)
-        .map((p) => ({
-          ...p,
-          votes: db.prepare(
-            "SELECT user_id FROM meetup_votes WHERE meetup_id=? AND place_id=?",
-          ).all(id, p.id).filter((v) => ids.includes(v.user_id)).length,
-        }));
+      const { availability, places } = planningData(id, ids);
       return {
         ...m,
+        concert: concertFor(m),
         participantCount: ids.length,
         requiredApprovers: approvers(m),
         approvals: db
@@ -272,9 +276,11 @@ export function createMeetupRepo(db, repos) {
           .all(id),
       };
     },
-    availability: db.transaction((user, id, input) => {
+    availability: db.transaction((user, id, input, expectedVersion) => {
       const m = access(user, id);
-      if (!Array.isArray(input) || input.length > 96)
+      if (expectedVersion !== undefined && m.version !== expectedVersion)
+        throw communityError('stale_meetup_version');
+      if (!Array.isArray(input) || input.length > (m.ends_at - m.starts_at) / SLOT_MS)
         throw communityError("invalid_availability", 400);
       const rows = input.map((r) => {
         if (!r || typeof r !== "object" || Array.isArray(r))

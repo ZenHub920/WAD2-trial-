@@ -314,6 +314,7 @@ async function host() {
               <p class="group-muted">{{ g.settings?.published ? (g.settings.connect_open ? 'Open to meeting other groups.' : 'Group connections are off. Change this in Manage group.') : 'Invite friends, then publish from Manage group.' }}</p>
               <div class="owned-card__actions">
                 <RouterLink :to="mode === 'connections' ? viewLink('connections', g) : `/groups/${encodeURIComponent(g.id)}/members`" class="btn btn--primary">{{ mode === 'connections' ? 'Connect this group' : 'Manage group' }}</RouterLink>
+                <button type="button" class="btn btn--ghost" @click="router.push({ path: '/meetups', query: { partyId: g.id } })">Plan meetup</button>
               </div>
             </article>
           </div>
@@ -331,6 +332,7 @@ async function host() {
               <p>{{ g.host?.displayName }}'s group · {{ g.remainingCapacity }} places remaining</p>
               <div class="owned-card__actions">
                 <RouterLink :to="`/groups/${encodeURIComponent(g.id)}/members`" class="btn btn--primary">View group</RouterLink>
+                <button type="button" class="btn btn--ghost" @click="router.push({ path: '/meetups', query: { partyId: g.partyId ?? g.id } })">Plan meetup</button>
               </div>
             </article>
           </div>
@@ -357,7 +359,7 @@ async function host() {
           <p>{{ sourceGroup.eventDate }} · {{ sectionName(sourceGroup.section) }} · {{ sourceGroup.memberCount }} {{ sourceGroup.memberCount === 1 ? 'member' : 'members' }}</p>
           <p v-if="!canConnect" class="group-muted">Publish this group and enable “Open to meeting other groups” in Manage group before sending invitations.</p>
           <p v-else class="group-muted">Open to meeting other groups at this concert.</p>
-          <div class="group-actions"><RouterLink :to="`/groups/${encodeURIComponent(sourceId)}/members`" class="btn btn--ghost">Manage group</RouterLink><RouterLink :to="{ path: '/meetups', query: { partyId: sourceId } }" class="btn btn--ghost">Plan group meetup</RouterLink></div>
+          <div class="group-actions"><RouterLink :to="`/groups/${encodeURIComponent(sourceId)}/members`" class="btn btn--ghost">Manage group</RouterLink><button type="button" class="btn btn--ghost" @click="router.push({ path: '/meetups', query: { partyId: sourceId } })">Plan meetup</button></div>
         </section>
         <template v-if="canConnect">
           <section class="card group-panel"><h2>Find another group</h2><GroupFilters :filters="filters" /></section>
@@ -386,7 +388,7 @@ async function host() {
         <div class="connected">
           <h3 class="invites__title">Connected</h3>
           <p v-if="!accepted.length" class="group-muted">No connected groups yet. Publish your group and invite another group to connect.</p>
-          <article v-for="c in accepted" :key="c.id" class="connection"><p class="invite__who">{{ describe(c) }}</p><p v-if="c.partyA.notes" class="group-notes"><strong>{{ c.partyA.hostName }}:</strong> {{ c.partyA.notes }}</p><p v-if="c.partyB.notes" class="group-notes"><strong>{{ c.partyB.hostName }}:</strong> {{ c.partyB.notes }}</p><div class="connection__foot"><span class="connection__since">Connected {{ whenConnected(c.respondedAt) }}</span><RouterLink class="btn btn--primary" :to="`/groups/connections/${encodeURIComponent(c.id)}/channel`">Open shared chat</RouterLink><RouterLink class="btn btn--ghost" :to="{ path: '/meetups', query: { connectionId: c.id } }">Plan meetup</RouterLink></div></article>
+          <article v-for="c in accepted" :key="c.id" class="connection"><p class="invite__who">{{ describe(c) }}</p><p v-if="c.partyA.notes" class="group-notes"><strong>{{ c.partyA.hostName }}:</strong> {{ c.partyA.notes }}</p><p v-if="c.partyB.notes" class="group-notes"><strong>{{ c.partyB.hostName }}:</strong> {{ c.partyB.notes }}</p><div class="connection__foot"><span class="connection__since">Connected {{ whenConnected(c.respondedAt) }}</span><RouterLink class="btn btn--primary" :to="`/groups/connections/${encodeURIComponent(c.id)}/channel`">Open shared chat</RouterLink><button type="button" class="btn btn--ghost" @click="router.push({ path: '/meetups', query: { connectionId: c.id } })">Plan meetup</button></div></article>
         </div>
       </section>
     </template>
@@ -406,8 +408,8 @@ async function host() {
 .owned-card__top { align-items: center; flex-wrap: nowrap; }
 .owned-card__title { display: grid; flex: 1 1 auto; gap: 2px; min-width: 0; }
 .owned-card__title p { font-size: var(--step--1); }
-/* One full-width action; meetups and connections live inside Manage group. */
-.owned-card__actions { align-self: end; display: grid; }
+/* Keep group management and planning actions clear on narrow cards. */
+.owned-card__actions { align-self: end; display: grid; gap: var(--space-2); }
 .owned-card__actions .btn { width: 100%; justify-content: center; text-align: center; }
 .group-picture-field { display: grid; gap: var(--space-2); font-size: var(--step--1); }
 .create-form { max-width: 54rem; width: 100%; box-sizing: border-box; }

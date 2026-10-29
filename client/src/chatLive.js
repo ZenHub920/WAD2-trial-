@@ -36,7 +36,7 @@ const unreadByKind = { companion: 0, group: 0, connection: 0 };
 
 /**
  * Subscribe to chat events. Returns an unsubscribe function.
- * Events include companion, group and connection messages, reads and membership updates.
+ * Events include chat messages/reads, membership updates and planner invalidations.
  */
 export function onChatEvent(handler) {
   handlers.add(handler);
@@ -84,7 +84,7 @@ function connect() {
     dispatch('ready', {});
   });
 
-  for (const type of ['message', 'message-updated', 'read', 'group-message', 'group-members', 'connection-message', 'connection-read', 'connection-members']) {
+  for (const type of ['message', 'message-updated', 'read', 'group-message', 'group-members', 'connection-message', 'connection-read', 'connection-members', 'meetup-updated']) {
     source.addEventListener(type, (event) => {
       let data;
       try { data = JSON.parse(event.data); } catch { return; }
