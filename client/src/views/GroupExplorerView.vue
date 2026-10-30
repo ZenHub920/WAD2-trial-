@@ -199,7 +199,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
         <p class="group-muted">{{ originLabels[currentGroup.assignmentOrigin] ?? 'You’re in' }} · {{ currentGroup.remainingCapacity }} {{ currentGroup.remainingCapacity === 1 ? 'spot' : 'spots' }} still open. You can be in one group per concert.</p>
         <div class="group-actions">
           <RouterLink :to="`/groups/${encodeURIComponent(currentGroup.partyId ?? currentGroup.id)}/members`" class="btn btn--primary">See your group</RouterLink>
-          <RouterLink :to="{path:'/meetups',query:{partyId:currentGroup.partyId ?? currentGroup.id}}" class="btn btn--ghost">Plan where to meet</RouterLink>
+          <button type="button" class="btn btn--ghost" @click="router.push({path:'/meetups',query:{partyId:currentGroup.partyId ?? currentGroup.id}})">Plan meetup</button>
         </div>
       </section>
 

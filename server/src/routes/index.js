@@ -236,6 +236,6 @@ export function createRoutes({
 
 
   registerGroupDiscoveryRoutes(router, { repos, requireUser });
-  registerCommunityRoutes(router, { repos, requireUser,requireOperator,db, weather: meetupIntegrations?.weather });
+  registerCommunityRoutes(router, { repos, requireUser,requireOperator,db, realtime, weather: meetupIntegrations?.weather });
   return router;
 }

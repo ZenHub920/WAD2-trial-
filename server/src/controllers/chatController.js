@@ -4,7 +4,7 @@
  * so conversation ids cannot be probed.
  */
 
-const MAX_BODY = 2000;
+import { validateMessageBody } from '../db/messagePage.js';
 
 export function createChatController(repos) {
   const participantOf = (conversation, userId) =>
@@ -60,9 +60,8 @@ export function createChatController(repos) {
       if (!participantOf(conversation, req.user.id)) {
         return res.status(404).json({ error: 'conversation_not_found' });
       }
-      const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
-      if (!body) return res.status(400).json({ error: 'message_required' });
-      if (body.length > MAX_BODY) return res.status(400).json({ error: 'message_too_long' });
+      const { body, error } = validateMessageBody(req.body?.body);
+      if (error) return res.status(400).json({ error });
 
       const message = repos.conversations.addMessage(conversation.id, req.user.id, body);
       res.status(201).json({ message: publicMessage(message) });

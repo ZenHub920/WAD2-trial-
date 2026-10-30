@@ -1,3 +1,13 @@
+/** Shared message mechanics; callers retain their own membership and ownership checks. */
+export const CHAT_BACKGROUNDS = Object.freeze(['default', 'dusk', 'neon', 'paper', 'forest', 'mono']);
+const MAX_MESSAGE_LENGTH = 2000;
+
+export function validateMessageBody(input) {
+  const body = typeof input === 'string' ? input.trim() : '';
+  const error = !body ? 'message_required' : body.length > MAX_MESSAGE_LENGTH ? 'message_too_long' : null;
+  return { body, error };
+}
+
 const SOURCES = {
   kaki: ['messages', 'conversation_id'],
   group: ['group_channel_messages', 'party_id'],

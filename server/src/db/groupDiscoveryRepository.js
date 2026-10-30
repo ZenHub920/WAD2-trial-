@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { checkFeasibility, scorePair } from '../matching/compatibility.js';
-import { groupImageUrl } from '../controllers/groupIdentityController.js';
+import { groupImageUrl } from '../presentation/groupIdentity.js';
 import { preferenceEligibility } from '../services/preferenceEligibility.js';
 
 const fail = (error, status = 409) => ({ error, status });
