@@ -451,9 +451,12 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
         <p class="group-muted">Online checkout is unavailable because no payment provider is configured.</p>
       </section>
       <section class="card group-panel companion-options">
-        <h2>Go with companions</h2>
+        <h2>Go with a group</h2>
         <p>Already have a ticket? Join an existing group or create your own. Group places do not include concert tickets.</p>
-        <nav class="group-actions" aria-label="Group workflows">
+        <p v-if="!currentUser">
+          <RouterLink :to="{ path: '/login', query: { redirect: $route.fullPath } }" class="btn btn--primary">Sign in to go with a group</RouterLink>
+        </p>
+        <nav v-else class="group-actions" aria-label="Group workflows">
           <RouterLink :to="{ path: '/groups', query: { concertId: id } }" class="btn btn--primary">Join a group</RouterLink>
           <RouterLink :to="{ path: '/groups/connect', query: { concertId: id, view: 'create' } }" class="btn btn--ghost">Create a group</RouterLink>
           <RouterLink :to="{ path: '/groups/connect', query: { concertId: id } }" class="btn btn--ghost">My groups</RouterLink>
@@ -465,7 +468,7 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
           <p>Join this concert's companion finder. Messaging opens after a mutual like; this is separate from group matching.</p>
         </div>
         <p v-if="!currentUser" class="kaki-join__state">
-          <RouterLink to="/login" class="btn btn--primary">Sign in to find companions</RouterLink>
+          <RouterLink :to="{ path: '/login', query: { redirect: $route.fullPath } }" class="btn btn--primary">Sign in to find companions</RouterLink>
         </p>
         <p v-else-if="participationLoading" class="kaki-join__state loading-state" role="status"><LoadingSpinner />Loading your participation…</p>
         <div v-else-if="participationNeedsSignIn" class="kaki-join__state">

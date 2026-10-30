@@ -7,7 +7,7 @@
  * prompt that implies something is missing.
  *
  * The file is read to a data URL in the browser and sent as JSON, matching how
- * ticket photos already travel in this app — no multipart handling to add on
+ * ticket photos already travel in this app - no multipart handling to add on
  * the server. Size is checked here for a fast, clear error; the server
  * re-validates the actual bytes regardless, because a client-side check is a
  * courtesy, not a control.

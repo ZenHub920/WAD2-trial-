@@ -157,11 +157,6 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
 
       <div class="container hero__inner">
         <div class="hero__copy">
-          <p class="hero__eyebrow">
-            <span class="eq" aria-hidden="true"><i /><i /><i /><i /></span>
-            Concert companions, sorted
-          </p>
-
           <h1 class="hero__title">
             <span class="sr-only">Meet before the music. Walk in together.</span>
             <span aria-hidden="true">
@@ -451,49 +446,7 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
   }
 }
 
-.hero__eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
-  border: var(--border-hairline);
-  border-radius: var(--radius-pill);
-  background: var(--glass-tint);
-  backdrop-filter: var(--glass-blur);
-  color: var(--accent-500);
-  font-size: var(--step--1);
-  font-weight: 700;
-  animation: rise var(--dur-slower) var(--ease-settle) both;
-}
-
-/* Little equaliser: four bars bouncing out of step. */
-.eq {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 14px;
-}
-
-.eq i {
-  width: 3px;
-  height: 100%;
-  border-radius: 2px;
-  background: var(--mint-400);
-  transform-origin: bottom;
-  animation: eq 0.9s ease-in-out infinite alternate;
-}
-
-.eq i:nth-child(2) { animation-delay: -0.3s; background: var(--accent-400); }
-.eq i:nth-child(3) { animation-delay: -0.6s; }
-.eq i:nth-child(4) { animation-delay: -0.15s; background: var(--accent-400); }
-
-@keyframes eq {
-  from { transform: scaleY(0.25); }
-  to { transform: scaleY(1); }
-}
-
 .hero__title {
-  margin-top: var(--space-5);
   font-size: var(--step-6);
   line-height: 1.05;
   letter-spacing: -0.02em;

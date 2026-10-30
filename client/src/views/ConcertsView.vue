@@ -95,6 +95,8 @@ const matchingConcerts = computed(() => {
       .some((value) => String(value ?? '').toLowerCase().includes(query));
   });
 });
+// Days with an upcoming concert, dotted in the date picker.
+const concertDates = computed(() => discovered.value.map(({ concert }) => concert.event_date.slice(0, 10)));
 const visibleConcerts = computed(() => showAll.value ? matchingConcerts.value : matchingConcerts.value.slice(0, PAGE_SIZE));
 function clearFilters() {
   search.value = '';
@@ -127,7 +129,7 @@ function clearFilters() {
         </label>
         <div class="concert-filters__date">
           <span id="concert-market-date">Event date</span>
-          <DateField v-model="date" labelled-by="concert-market-date" />
+          <DateField v-model="date" labelled-by="concert-market-date" :marked-dates="concertDates" />
         </div>
         <button v-if="hasFilters" type="button" class="btn btn--ghost" @click="clearFilters">Clear filters</button>
         <label class="concert-filters__saved">
