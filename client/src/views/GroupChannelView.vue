@@ -190,6 +190,7 @@ onUnmounted(() => stopListening?.());
           </div>
         </div>
         <div class="channel__tools">
+          <button type="button" class="btn btn--primary" @click="router.push({ path: '/meetups', query: { partyId: id } })">Plan meetup</button>
           <button type="button" class="btn btn--ghost" :aria-expanded="showMembers" @click="showMembers = !showMembers">
             Members
           </button>

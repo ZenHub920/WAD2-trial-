@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { api } from '../api.js';
 import { currentUser } from '../auth.js';
 import { fetchChatUpdates } from '../chatPages.js';
@@ -11,6 +12,7 @@ import LoadingSpinner from '../components/LoadingSpinner.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
 
 const props = defineProps({ id: { type: String, required: true } });
+const router = useRouter();
 const channel = ref(null), loading = ref(true), error = ref(''), unavailable = ref(false);
 const historyPage = ref(null), loadingHistory = ref(false);
 const draft = ref(''), sending = ref(false), editing = ref(null), replyingTo = ref(null);
@@ -234,7 +236,7 @@ onUnmounted(() => {
         <RouterLink :to="{ path: '/messages', query: { tab: 'groups' } }" class="channel-back" aria-label="Back to group messages">←</RouterLink>
         <GroupAvatar :name="channel.name" :size="44" />
         <div class="channel-identity"><p class="channel-label">Connected groups</p><h1>{{ channel.name }}</h1><p>{{ channel.concert.artist }} · {{ channel.members.length }} members</p></div>
-        <div class="channel-tools"><button type="button" class="btn btn--ghost" :aria-expanded="showMembers" @click="showMembers = !showMembers">Members</button><button type="button" class="btn btn--ghost" :aria-expanded="showSettings" @click="showSettings = !showSettings">Chat options</button><RouterLink class="btn btn--primary" :to="{ path: '/meetups', query: { connectionId: id } }">Plan meetup</RouterLink></div>
+        <div class="channel-tools"><button type="button" class="btn btn--ghost" :aria-expanded="showMembers" @click="showMembers = !showMembers">Members</button><button type="button" class="btn btn--ghost" :aria-expanded="showSettings" @click="showSettings = !showSettings">Chat options</button><button type="button" class="btn btn--primary" @click="router.push({ path: '/meetups', query: { connectionId: id } })">Plan meetup</button></div>
       </header>
       <p class="channel-hint">Current members of {{ channel.partyA.name }} and {{ channel.partyB.name }} share this room.</p>
       <section v-if="showMembers" class="card channel-panel" aria-label="Shared chat members"><h2>Shared chat members</h2><ul class="members"><li v-for="person in channel.members" :key="person.id"><UserAvatar :src="person.avatarUrl" :name="person.displayName" :size="32" /><div><strong>{{ person.displayName }}{{ person.isHost ? ' · Host' : '' }}</strong><small>{{ groupFor(person) }}</small></div></li></ul><p class="channel-hint">The member list updates when either group’s membership changes.</p></section>

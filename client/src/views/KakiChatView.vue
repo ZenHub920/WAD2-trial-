@@ -397,7 +397,7 @@ watch(() => props.id, async () => {
         </div>
       </div>
       <div v-else class="bar__who"><h1 class="bar__name">Companion conversation</h1></div>
-      <RouterLink v-if="conversation && !closed" class="bar__meetup" :to="{path:'/meetups',query:{kakiConversationId:id}}">Plan meetup</RouterLink>
+      <button v-if="conversation && !closed" type="button" class="btn btn--ghost bar__meetup" @click="router.push({path:'/meetups',query:{kakiConversationId:id}})">Plan meetup</button>
 
       <button
         class="bar__menu"

@@ -6,6 +6,17 @@ the Gale-Shapley stable matching algorithm.
 For the current Kaki workflow, backend improvements, public API inventory and credential setup, see
 [Backend integrations and operations](docs/BACKEND_INTEGRATIONS_AND_OPERATIONS.md).
 
+Current documentation:
+
+| Guide | Purpose |
+| --- | --- |
+| [Hybrid group matching](docs/HYBRID_GROUP_MATCHING.md) | Direct/automatic joining, queues and approval workflow |
+| [Matching algorithms](docs/ALGORITHM.md) | Solvers, scoring and guarantees |
+| [Team credentials](docs/TEAM_CREDENTIALS_SETUP.md) | Secure local/shared development setup |
+| [Web Push deployment](docs/WEB_PUSH_COST_AND_DEPLOYMENT.md) | Delivery, hosting, backups and device verification |
+| [Backend structure](docs/BACKEND_STRUCTURE.md) | Repository organisation and refactoring |
+| [Feature testing](docs/SCOPED_FEATURE_TESTING.md) | Test scope, results and commands |
+
 People miss shows when their friends do not share their taste in music. Ticket
 resale addresses ticket supply, while first-come-first-served forums pair people
 by response time. Those pairings can fall apart before the show.
@@ -106,6 +117,20 @@ Group channels require both active group membership and a host-granted channel
 place. Leaving the group revokes that grant; rejoining requires the host to add
 you again. Cancelling a group closes its channel without deleting message history.
 Sending a channel reply clears the sender's notification for that thread.
+
+Every group/Kaki chat now has a **Plan meetup** button. The separate planner page
+groups availability, place/travel comparison and final approval into three steps.
+Drag over Singapore-time half-hour cells to paint/erase availability, then save to
+share it. Heat colours/counts show saved group responses; check marks show your
+own selection. Saved planning changes update other open planners live, with a
+fifteen-second recovery refresh. Incoming updates preserve unsaved drafts.
+See the [meeting planner workflow](docs/BACKEND_INTEGRATIONS_AND_OPERATIONS.md#meeting-planner).
+
+Transport checks now have **Before the meetup** and **After the concert** views.
+They find nearby stations/bus stops around the proposed meeting place or venue,
+then show only relevant LTA advisories and crowd/load reports. Ambiguous venue
+lookups ask for confirmation, and current observations are distinguished from
+future forecasts. No new provider account or paid service is introduced.
 
 ### Account sessions
 
@@ -499,8 +524,8 @@ without personal results.
 - Seeker-optimal results are party-pessimal. Letting parties propose instead gives
   them their best stable outcome. The proposing side is a policy choice.
 - SQLite keeps the project runnable from a clone and is sufficient at this scale.
-  All SQL is in `repositories.js`, so moving to MySQL or Postgres requires changing
-  one file.
+  Database access lives in the focused modules under `server/src/db`;
+  `repositories.js` assembles them and preserves the shared interface.
 - Sessions establish account ownership. They do not verify identity or ticket
   authenticity.
 

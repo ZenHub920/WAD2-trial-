@@ -21,10 +21,7 @@
  * message for the person who did not act.
  */
 
-const MAX_BODY = 2000;
-
-/** Backgrounds the client offers. Server-side allowlist, not a free text field. */
-const BACKGROUNDS = ['default', 'dusk', 'neon', 'paper', 'forest', 'mono'];
+import { validateMessageBody, CHAT_BACKGROUNDS as BACKGROUNDS } from '../db/messagePage.js';
 
 const REPORT_CATEGORIES = ['harassment', 'misleading_profile', 'spam', 'other'];
 
@@ -64,6 +61,39 @@ export function createKakiChatController(repos, realtime = null) {
       return null;
     }
     return { conversation, other };
+  };
+
+  const acknowledgeRead = (ctx, userId) => {
+    const before = chat.lastReadRowid(ctx.conversation.id, userId);
+    const lastReadSeq = chat.markReadToLatest(ctx.conversation.id, userId);
+    const notificationsRead = repos.notifications.readConversation(userId, `/kaki/chat/${ctx.conversation.id}`);
+    if (lastReadSeq > before) push(ctx.conversation, 'read', {
+      conversationId: ctx.conversation.id, readerId: userId, lastReadSeq,
+    });
+    return { lastReadSeq, notificationsRead };
+  };
+  const ownMessage = (ctx, req, res) => {
+    const message = chat.messageById(req.params.messageId);
+    if (!message || message.conversation_id !== ctx.conversation.id) {
+      res.status(404).json({ error: 'message_not_found' });
+      return null;
+    }
+    if (message.sender_user_id !== req.user.id) {
+      res.status(403).json({ error: 'not_your_message' });
+      return null;
+    }
+    return message;
+  };
+  const publishMessageChange = (ctx, userId, messageId) => {
+    const theirLastRead = chat.lastReadRowid(ctx.conversation.id, ctx.other);
+    const message = chat.messageById(messageId);
+    const updated = shapeMessage(message, userId, theirLastRead);
+    push(ctx.conversation, 'message-updated', (viewerId) => ({
+      conversationId: ctx.conversation.id,
+      message: shapeMessage(message, viewerId,
+        chat.lastReadRowid(ctx.conversation.id, viewerId === userId ? ctx.other : userId)),
+    }));
+    return updated;
   };
 
   return {
@@ -116,16 +146,7 @@ export function createKakiChatController(repos, realtime = null) {
         if (error.status) return res.status(error.status).json({ error: error.message });
         throw error;
       }
-      const before = chat.lastReadRowid(ctx.conversation.id, req.user.id);
-      const after = chat.markReadToLatest(ctx.conversation.id, req.user.id);
-      const notificationsRead = repos.notifications.readConversation(req.user.id, `/kaki/chat/${ctx.conversation.id}`);
-      if (after > before) {
-        push(ctx.conversation, 'read', {
-          conversationId: ctx.conversation.id,
-          readerId: req.user.id,
-          lastReadSeq: after,
-        });
-      }
+      const { notificationsRead } = acknowledgeRead(ctx, req.user.id);
 
       const theirLastRead = chat.lastReadRowid(ctx.conversation.id, ctx.other);
       return res.json({
@@ -142,17 +163,8 @@ export function createKakiChatController(repos, realtime = null) {
       const ctx = open(req, res);
       if (!ctx) return undefined;
 
-      const before = chat.lastReadRowid(ctx.conversation.id, req.user.id);
-      const after = chat.markReadToLatest(ctx.conversation.id, req.user.id);
-      const notificationsRead = repos.notifications.readConversation(req.user.id, `/kaki/chat/${ctx.conversation.id}`);
-      if (after > before) {
-        push(ctx.conversation, 'read', {
-          conversationId: ctx.conversation.id,
-          readerId: req.user.id,
-          lastReadSeq: after,
-        });
-      }
-      return res.json({ lastReadSeq: after, unreadTotal: chat.unreadTotal(req.user.id), notificationsRead });
+      const { lastReadSeq, notificationsRead } = acknowledgeRead(ctx, req.user.id);
+      return res.json({ lastReadSeq, unreadTotal: chat.unreadTotal(req.user.id), notificationsRead });
     },
 
     /** Badge count for the navbar. Cheap enough to call on every page load. */
@@ -164,9 +176,8 @@ export function createKakiChatController(repos, realtime = null) {
       const ctx = open(req, res);
       if (!ctx) return undefined;
 
-      const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
-      if (!body) return res.status(400).json({ error: 'message_required' });
-      if (body.length > MAX_BODY) return res.status(400).json({ error: 'message_too_long' });
+      const { body, error } = validateMessageBody(req.body?.body);
+      if (error) return res.status(400).json({ error });
 
       // A reply must point at a message in THIS thread, or a quote could be
       // used to surface text from a conversation the caller cannot read.
@@ -203,31 +214,17 @@ export function createKakiChatController(repos, realtime = null) {
       const ctx = open(req, res);
       if (!ctx) return undefined;
 
-      const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
-      if (!body) return res.status(400).json({ error: 'message_required' });
-      if (body.length > MAX_BODY) return res.status(400).json({ error: 'message_too_long' });
+      const { body, error } = validateMessageBody(req.body?.body);
+      if (error) return res.status(400).json({ error });
 
-      const existing = chat.messageById(req.params.messageId);
-      if (!existing || existing.conversation_id !== ctx.conversation.id) {
-        return res.status(404).json({ error: 'message_not_found' });
-      }
-      if (existing.sender_user_id !== req.user.id) {
-        return res.status(403).json({ error: 'not_your_message' });
-      }
+      const existing = ownMessage(ctx, req, res);
+      if (!existing) return undefined;
       if (existing.deleted_at) {
         return res.status(409).json({ error: 'message_deleted' });
       }
 
       chat.editMessage(req.params.messageId, req.user.id, body);
-      const theirLastRead = chat.lastReadRowid(ctx.conversation.id, ctx.other);
-      const message = chat.messageById(req.params.messageId);
-      const updated = shapeMessage(message, req.user.id, theirLastRead);
-      push(ctx.conversation, 'message-updated', (viewerId) => ({
-        conversationId: ctx.conversation.id,
-        message: shapeMessage(message, viewerId,
-          chat.lastReadRowid(ctx.conversation.id, viewerId === req.user.id ? ctx.other : req.user.id)),
-      }));
-      return res.json({ message: updated });
+      return res.json({ message: publishMessageChange(ctx, req.user.id, req.params.messageId) });
     },
 
     /**
@@ -239,24 +236,10 @@ export function createKakiChatController(repos, realtime = null) {
       const ctx = open(req, res);
       if (!ctx) return undefined;
 
-      const existing = chat.messageById(req.params.messageId);
-      if (!existing || existing.conversation_id !== ctx.conversation.id) {
-        return res.status(404).json({ error: 'message_not_found' });
-      }
-      if (existing.sender_user_id !== req.user.id) {
-        return res.status(403).json({ error: 'not_your_message' });
-      }
+      if (!ownMessage(ctx, req, res)) return undefined;
 
       chat.deleteMessage(req.params.messageId, req.user.id);
-      const theirLastRead = chat.lastReadRowid(ctx.conversation.id, ctx.other);
-      const message = chat.messageById(req.params.messageId);
-      const updated = shapeMessage(message, req.user.id, theirLastRead);
-      push(ctx.conversation, 'message-updated', (viewerId) => ({
-        conversationId: ctx.conversation.id,
-        message: shapeMessage(message, viewerId,
-          chat.lastReadRowid(ctx.conversation.id, viewerId === req.user.id ? ctx.other : req.user.id)),
-      }));
-      return res.json({ message: updated });
+      return res.json({ message: publishMessageChange(ctx, req.user.id, req.params.messageId) });
     },
 
     /** Chat background. Personal to the caller; the other side is unaffected. */
