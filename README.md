@@ -20,11 +20,10 @@ Start the backend and frontend in separate terminals, with the backend first.
 
 ```bash
 # Terminal 1 — API on :3000
-cd server
-npm install
+pnpm --dir server install
 # Set TICKETMASTER_API_KEY in server/.env first (see Live concert discovery).
-npm run sync:concerts # import real concerts without resetting existing data
-npm start
+pnpm --dir server run sync:concerts # import real concerts without resetting existing data
+pnpm run dev # from the repository root
 
 # Terminal 2 — Vue app on :5173
 cd client
