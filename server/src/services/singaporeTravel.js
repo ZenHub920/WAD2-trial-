@@ -9,6 +9,35 @@ const text = (value, length = 200) => typeof value === 'string' ? value.slice(0,
 const object = (value) => value && typeof value === 'object' && !Array.isArray(value);
 const busLoads = { SEA: 'Seats available', SDA: 'Standing available', LSD: 'Limited standing' };
 const numeric = (value) => typeof value === 'number' || (typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value)) ? Number(value) : NaN;
+const railLines = { NS: 'NSL', EW: 'EWL', CG: 'CGL', NE: 'NEL', CC: 'CCL', CE: 'CEL', DT: 'DTL', TE: 'TEL', BP: 'BPL', SE: 'SLRT', SW: 'SLRT', STC: 'SLRT', PE: 'PLRT', PW: 'PLRT', PTC: 'PLRT' };
+const stationCodes = (value) => typeof value === 'string' && value.length <= 100
+  ? [...new Set(value.trim().toUpperCase().split(/[|/,\s-]+/).filter(code => /^(?:[A-Z]{1,3}\d{1,2}[A-Z]?|STC|PTC)$/.test(code)))] : [];
+const lineForCode = (code) => railLines[code.replace(/\d.*$/, '')];
+function nearbyRecords(rows, point, kind, radiusMeters) {
+  if (!Array.isArray(rows) || rows.length > 1000) throw providerError('invalid_provider_response');
+  const records = new Map(); let validRows = 0;
+  for (const row of rows) {
+    if (!object(row)) continue;
+    const location = { latitude: numeric(row.lat), longitude: numeric(row.lon) };
+    const name = text(row.name, 150).trim(), codes = kind === 'rail' ? stationCodes(row.id) : [];
+    const rawCode = typeof row.id === 'string' ? row.id : Number.isSafeInteger(row.id) && row.id > 0 ? String(row.id) : '';
+    const code = /^\d{1,5}$/.test(rawCode) && Number(rawCode) > 0 ? rawCode.padStart(5, '0') : '';
+    if (!singaporeCoordinates(location) || !name || (kind === 'rail' ? !codes.length : !code)) continue;
+    validRows++;
+    const distance = distanceKm(point, location);
+    if (!Number.isFinite(distance) || distance * 1000 > radiusMeters) continue;
+    const key = kind === 'rail' ? name.toUpperCase().replace(/\s+/g, ' ') : code;
+    const previous = records.get(key);
+    const allCodes = kind === 'rail' ? [...new Set([...(previous?.codes ?? []), ...codes])].sort() : [];
+    const closest = previous && previous.distance < distance ? previous : { name, ...location, distance };
+    records.set(key, kind === 'rail'
+      ? { ...closest, id: allCodes.join('|'), codes: allCodes, lines: [...new Set(allCodes.map(lineForCode).filter(Boolean))] }
+      : { ...closest, code });
+  }
+  if (rows.length && !validRows) throw providerError('invalid_provider_response');
+  return [...records.values()].sort((a, b) => a.distance - b.distance || a.name.localeCompare(b.name)).slice(0, 3)
+    .map(({ distance, ...record }) => ({ ...record, distanceKm: Math.round(distance * 100) / 100 }));
+}
 function expiryOf(value, fallback) {
   try {
     // An expiry hint only: signature/authentication remains the provider's responsibility.
@@ -53,7 +82,7 @@ export function createSingaporeTravel({ db, fetchImpl = globalThis.fetch, now = 
     })().finally(() => { authenticating = null; });
     return authenticating;
   }
-  async function oneRead(path) {
+  async function oneRead(path, { allowArray = false } = {}) {
     for (let attempt = 0; attempt < 2; attempt++) {
       let usedToken;
       try {
@@ -62,7 +91,7 @@ export function createSingaporeTravel({ db, fetchImpl = globalThis.fetch, now = 
         // after that bounded recovery fails, so a valid refresh remains possible.
         oneBudget.consume();
         const json = await providerJson(fetchImpl, `${ONEMAP}${path}`, { headers: { Authorization: usedToken } });
-        if (!object(json)) throw providerError('invalid_provider_response');
+        if (!object(json) && !(allowArray && Array.isArray(json))) throw providerError('invalid_provider_response');
         if (json.error) throw providerError(/token|auth|unauthori[sz]ed|expired/i.test(String(json.error)) ? 'provider_authentication_failed' : 'invalid_provider_response');
         return json;
       } catch (e) {
@@ -81,6 +110,25 @@ export function createSingaporeTravel({ db, fetchImpl = globalThis.fetch, now = 
   }
   return {
     configured,
+    async nearbyStops(point) {
+      const invalid = !singaporeCoordinates(point) ? 'invalid_transport_location' : !configured ? 'onemap_not_configured' : null;
+      if (invalid) return { ...unavailable(invalid), stations: [], busStops: [], rail: unavailable(invalid), bus: unavailable(invalid), partial: false };
+      const read = (kind, radiusMeters, endpoint) => oneCache.read(`nearby:${kind}:${point.latitude},${point.longitude}`, async () => {
+        const query = new URLSearchParams({ latitude: String(point.latitude), longitude: String(point.longitude), radius_in_meters: String(radiusMeters) });
+        const rows = await oneRead(`/public/nearbysvc/${endpoint}?${query}`, { allowArray: true });
+        return { status: 'available', stops: nearbyRecords(rows, point, kind, radiusMeters) };
+      }, { ttl: 86400000, staleFor: 7 * 86400000 });
+      const [rail, bus] = await Promise.all([
+        read('rail', 1500, 'getNearestMrtStops'), read('bus', 800, 'getNearestBusStops'),
+      ]);
+      const summary = ({ status, reason, stale, cached, fetchedAt }) => ({ status, ...(reason ? { reason } : {}), ...(fetchedAt ? { stale, cached, fetchedAt } : {}) });
+      const available = rail.status === 'available' || bus.status === 'available';
+      return { status: available ? 'available' : 'unavailable', provider: 'OneMap / Singapore Land Authority',
+        ...(available ? {} : { reason: rail.reason ?? bus.reason }),
+        stations: rail.stops ?? [], busStops: bus.stops ?? [], rail: summary(rail), bus: summary(bus),
+        partial: (rail.status === 'available') !== (bus.status === 'available'), stale: Boolean(rail.stale || bus.stale),
+      };
+    },
     async search(query) {
       if (typeof query !== 'string' || query.trim().length < 2 || query.length > 100) return unavailable('invalid_location_query');
       if (!configured) return unavailable('onemap_not_configured');
@@ -167,13 +215,23 @@ export function createSingaporeTravel({ db, fetchImpl = globalThis.fetch, now = 
     },
     trainAlerts() {
       return ltaRead('/TrainServiceAlerts', 'train-alerts', 60000, (json) => {
-        const value = Array.isArray(json.value) ? json.value[0] : json.value;
-        if (!value || typeof value !== 'object' || !['1', '2'].includes(String(value.Status))) throw providerError('invalid_provider_response');
-        return { serviceStatus: String(value.Status) === '1' ? 'normal' : 'disrupted', messages: (Array.isArray(value.Message) ? value.Message : []).slice(0, 20).filter(object).map((m) => ({ content: text(m.Content, 1000), createdAt: text(m.CreatedDate, 50) })), affectedSegments: (Array.isArray(value.AffectedSegments) ? value.AffectedSegments : []).slice(0, 30).filter(object).map((s) => ({ line: text(s.Line, 10), stations: text(s.Stations, 300), direction: text(s.Direction, 80) })) };
+        const values = Array.isArray(json.value) ? json.value.slice(0, 30) : [json.value];
+        if (!values.length || values.some(value => !object(value) || !['1', '2'].includes(String(value.Status)))) throw providerError('invalid_provider_response');
+        const messages = [], affectedSegments = [];
+        for (const value of values) {
+          const notices = (Array.isArray(value.Message) ? value.Message : []).slice(0, 20).filter(object)
+            .map(message => ({ content: text(message.Content, 1000), createdAt: text(message.CreatedDate, 50) }));
+          messages.push(...notices);
+          for (const segment of (Array.isArray(value.AffectedSegments) ? value.AffectedSegments : []).slice(0, 30).filter(object))
+            affectedSegments.push({ line: text(segment.Line, 10), stations: text(segment.Stations, 300), direction: text(segment.Direction, 80), messages: notices });
+        }
+        return { serviceStatus: values.some(value => String(value.Status) === '2') ? 'disrupted' : 'normal',
+          messages: [...new Map(messages.map(message => [`${message.createdAt}:${message.content}`, message])).values()].slice(0, 20),
+          affectedSegments: affectedSegments.slice(0, 30) };
       });
     },
     crowding(line) {
-      if (!['CCL', 'CEL', 'CGL', 'DTL', 'EWL', 'NEL', 'NSL', 'TEL'].includes(line)) return Promise.resolve(unavailable('invalid_train_line'));
+      if (![...new Set(Object.values(railLines))].includes(line)) return Promise.resolve(unavailable('invalid_train_line'));
       return ltaRead(`/PCDRealTime?TrainLine=${line}`, `crowd:${line}`, 600000, (json) => {
         if (!Array.isArray(json.value)) throw providerError('invalid_provider_response');
         return { line, stations: json.value.slice(0, 100).filter(object).map((s) => ({ station: text(s.Station, 20), level: text(s.CrowdLevel, 20), observedAt: text(s.StartTime, 50), endsAt: text(s.EndTime, 50) })) };

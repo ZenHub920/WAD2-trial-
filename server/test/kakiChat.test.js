@@ -297,10 +297,18 @@ test('empty and oversized messages are rejected', async (t) => {
     method: 'POST', cookie: a.cookie, body: { body },
   });
 
-  assert.equal((await send('')).status, 400);
-  assert.equal((await send('   ')).status, 400, 'whitespace-only is empty');
-  assert.equal((await send('x'.repeat(2001))).status, 400);
+  for (const input of ['', '   ', null, 42, [], {}]) {
+    const result = await send(input);
+    assert.equal(result.status, 400);
+    assert.equal(result.body.error, 'message_required');
+  }
+  const oversized = await send('x'.repeat(2001));
+  assert.equal(oversized.status, 400);
+  assert.equal(oversized.body.error, 'message_too_long');
   assert.equal((await send('x'.repeat(2000))).status, 201);
+  assert.equal((await send('🙂'.repeat(1000))).status, 201, 'the existing limit counts UTF-16 code units');
+  assert.equal((await send('🙂'.repeat(1001))).body.error, 'message_too_long');
+  assert.equal((await send('  trimmed  ')).body.message.body, 'trimmed');
 });
 
 test('edit and delete are sender-only', async (t) => {
@@ -315,6 +323,20 @@ test('edit and delete are sender-only', async (t) => {
     method: 'PATCH', cookie: b.cookie, body: { body: 'tampered' },
   });
   assert.equal(theirEdit.status, 403);
+  assert.equal(theirEdit.body.error, 'not_your_message');
+
+  const emptyEdit = await f.api(`/kaki/conversations/${id}/messages/${mine.id}`, {
+    method: 'PATCH', cookie: b.cookie, body: { body: ' ' },
+  });
+  assert.equal(emptyEdit.status, 400, 'body validation keeps its existing order before ownership checks');
+  assert.equal(emptyEdit.body.error, 'message_required');
+
+  const outsider = await f.user('edit-outsider');
+  const hiddenEdit = await f.api(`/kaki/conversations/${id}/messages/${mine.id}`, {
+    method: 'PATCH', cookie: outsider.cookie, body: { body: ' ' },
+  });
+  assert.equal(hiddenEdit.status, 404, 'conversation access remains ahead of body validation');
+  assert.equal(hiddenEdit.body.error, 'conversation_not_found');
 
   const theirDelete = await f.api(`/kaki/conversations/${id}/messages/${mine.id}`, {
     method: 'DELETE', cookie: b.cookie,

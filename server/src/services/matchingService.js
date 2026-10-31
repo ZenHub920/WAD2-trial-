@@ -137,65 +137,15 @@ export function createMatchingService({ db, repos }) {
       return output;
     },
 
-    /**
- * Run an official matching round atomically.
- *
- * The matching calculation, verification, round persistence,
- * and listing status updates are performed inside one
- * database transaction.
- *
- * If any operation fails, all database changes are rolled back.
-* previous implementation had a logical error where if the second transaction failed, the the match results are saved but statuses remain unchanged
-    */
-
-/**
- * PURPOSE:
- * Execute an official Gale-Shapley matching round.
- *
- * This method handles three important guarantees:
- *
- * 1. IDEMPOTENCY:
- *    Repeated requests with the same batchKey must not
- *    create duplicate matching rounds.
- *
- * 2. CAPACITY MANAGEMENT:
- *    Expired proposals leave the shared admission queue before
- *    the next matching round begins. Waiting requests inherit held places.
- *
- * 3. ATOMICITY:
- *    The round, historical results, proposals and status
- *    updates must either all commit or all roll back.
- *
- * @param {string} concertId
- * @param {object} options
- * @param {boolean} options.trace
- * @param {string} options.batchKey
- */
+    // One atomic round: a repeated batch key replays its saved result. History,
+    // proposals, reservations and request statuses either all commit or roll back.
 run(concertId, { trace = true, batchKey } = {}) {
 
-  // STEP 1:
-  // Every official matching operation must have a batch key.
-  // The frontend supplies this key through the controller.
   if (!batchKey) {
     throw new Error('batch_key_required');
   }
 
-  // STEP 2:
-  // Create ONE database transaction for the entire round.
-  //
-  // All changes are committed together.
-  // If an operation fails, SQLite rolls them all back.
   const commitRound = db.transaction(() => {
-
-    // --------------------------------------------------
-    // STEP 3: IDEMPOTENCY CHECK
-    // --------------------------------------------------
-    //
-    // Check whether this exact matching operation has
-    // already been completed.
-    //
-    // If it has, return the existing result rather than
-    // running Gale-Shapley again.
 
     const earlier = repos.rounds.findByBatch(
       concertId,
@@ -215,29 +165,10 @@ run(concertId, { trace = true, batchKey } = {}) {
       };
     }
 
-    // --------------------------------------------------
-    // STEP 4: EXPIRE OLD PROPOSALS
-    // --------------------------------------------------
-    //
-    // The earliest eligible proposals hold party places. Later requests wait.
-    // Expiry removes the entry and transfers its held place to the next request;
-    // a place becomes free only when no eligible queue entry remains.
-    //
-    // This must happen BEFORE loading matching inputs.
-
+    // Expiry transfers held places to the next queued request before inputs load;
+    // capacity becomes free only when no eligible entry remains.
     repos.proposals.expire();
-        // ============================================================
-    // LEGACY DATA SAFETY CHECK
-    // ============================================================
-    //
-    // Old match results may exist without corresponding
-    // active proposal records.
-    //
-    // These must be reviewed before switching to
-    // proposal-based capacity accounting.
-    //
-    // Never assume every historical assignment is confirmed.
-
+    // Historical assignments without proposals require explicit reconciliation.
     if (
       repos.rounds.hasUnreconciledLegacyAssignments(concertId)
     ) {
@@ -248,29 +179,17 @@ run(concertId, { trace = true, batchKey } = {}) {
 
     }
 
-    // --------------------------------------------------
-    // STEP 5: CALCULATE AND VERIFY MATCHING
-    // --------------------------------------------------
-    //
-    // preview() loads eligible seekers and parties,
-    // constructs preferences, runs Gale-Shapley and
-    // verifies the algorithm's matching result.
-    //
-    // loadInstance() uses unconfirmed places as this batch's capacity.
-    // Older pending requests retain priority in the operational queue.
-
+    // Preview ranks eligible pairs, runs and verifies Gale-Shapley. This batch
+    // uses unconfirmed places; earlier queue entries retain operational priority.
     const preview = this.preview(concertId, {
       trace,
       withBaselines: false
     });
 
-    // Nothing eligible to match.
-    // Do not create an empty matching round.
     if (preview.empty) {
       return preview;
     }
 
-    // Extract matching results and metadata.
     const {
       profile,
       result,
@@ -286,24 +205,6 @@ run(concertId, { trace = true, batchKey } = {}) {
       return { empty: true, seekers: profile.stats.seekers, parties: profile.stats.parties };
     }
 
-    // --------------------------------------------------
-    // STEP 6: SAVE HISTORICAL MATCHING RESULTS
-    // --------------------------------------------------
-    //
-    // Save the matching round and its algorithm results.
-    //
-    // match_rounds:
-    //   Stores information about this execution.
-    //
-    // match_results:
-    //   Stores historical Gale-Shapley assignments.
-    //
-    // match_trace:
-    //   Stores algorithm events for debugging/explanation.
-    //
-    // batchKey:
-    //   Links this round to its idempotency key.
-
     const roundId = repos.rounds.save({
       concertId,
       batchKey,
@@ -316,42 +217,12 @@ run(concertId, { trace = true, batchKey } = {}) {
       trace: result.trace
     });
 
-    // --------------------------------------------------
-    // STEP 7: CREATE MATCH PROPOSALS (NEW - #5 AND #6)
-    // --------------------------------------------------
-    //
-    // A Gale-Shapley assignment is not yet a confirmed
-    // real-world match.
-    //
-    // For every matched seeker, create a proposal in
-    // match_proposals with status 'proposed'.
-    //
-    // The proposal can later become:
-    //   - confirmed
-    //   - declined
-    //   - expired
-    //   - cancelled
-    //
-    // IMPORTANT:
-    // This happens inside the SAME database transaction
-    // as rounds.save(). A failure here rolls back the
-    // historical round as well.
-
+    // An assignment becomes a proposal, not confirmed membership. Creation stays
+    // in this transaction so a proposal failure also rolls back round history.
     repos.proposals.createFromRound(roundId);
 
-    // --------------------------------------------------
-    // STEP 8: UPDATE MATCHED SEEKER STATUSES
-    // --------------------------------------------------
-    //
-    // Mark seekers who received proposals as 'matched' in the request-status
-    // model, including offers waiting behind older queue entries.
-    //
-    // This prevents them from joining another round while
-    // their current proposal is active.
-    //
-    // If they later decline or their proposal expires,
-    // proposalRepository must reopen their request.
-
+    // Active proposals, including waiting offers, exclude seekers from another
+    // round. Decline/expiry reopens their requests in proposalRepository.
     for (const [seekerId] of result.assignments) {
       repos.seekers.setStatus(
         seekerId,
@@ -359,14 +230,8 @@ run(concertId, { trace = true, batchKey } = {}) {
       );
     }
 
-    // --------------------------------------------------
-    // STEP 9: UPDATE PARTY STATUSES
-    // --------------------------------------------------
-    //
-    // The database triggers update physical reservations across the whole queue.
-    // Filling every unconfirmed place in this batch also makes the party fully
-    // reserved, even when some of these new offers wait behind earlier entries.
-
+    // Triggers maintain physical queue reservations. Filling this batch's
+    // unconfirmed capacity marks a party matched, even when new offers wait.
     for (const [partyId, members] of result.partyMembers) {
 
       const availableCapacity =
@@ -379,13 +244,6 @@ run(concertId, { trace = true, batchKey } = {}) {
         );
       }
     }
-
-    // --------------------------------------------------
-    // STEP 10: RETURN THE NEW ROUND'S RESULT
-    // --------------------------------------------------
-    //
-    // replayed: false means this transaction created
-    // a new matching round.
 
     return {
       empty: false,

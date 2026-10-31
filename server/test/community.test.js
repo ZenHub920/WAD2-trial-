@@ -584,18 +584,18 @@ test("meetup inputs reject malformed windows and missing choices without changin
   assert.equal(repos.meetups.detail("h1", id).version, version);
 });
 
-test("seven-day meetup boards retain the documented 96-interval limit", () => {
+test("seven-day meetup boards accept every heatmap slot and reject entries beyond the board bound", () => {
   const startsAt = Date.parse(windowInput.startsAt);
   const endsAt = startsAt + 7 * 86400000;
   const { id } = repos.meetups.create("h1", {
     ...windowInput, endsAt: new Date(endsAt).toISOString(),
   });
-  const windows = Array.from({ length: 96 }, (_, index) => ({
+  const windows = Array.from({ length: 336 }, (_, index) => ({
     startsAt: new Date(startsAt + index * SLOT_MS).toISOString(),
     endsAt: new Date(startsAt + (index + 1) * SLOT_MS).toISOString(),
   }));
   repos.meetups.availability("h1", id, windows);
-  assert.equal(repos.meetups.detail("h1", id).availability.length, 96);
+  assert.equal(repos.meetups.detail("h1", id).availability.length, 336);
   assert.throws(() => repos.meetups.availability("h1", id, [...windows, windows[0]]), /invalid_availability/);
   assert.throws(() => repos.meetups.create("h1", {
     ...windowInput, endsAt: new Date(endsAt + SLOT_MS).toISOString(),

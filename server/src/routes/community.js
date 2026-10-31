@@ -3,12 +3,26 @@ import { publicQuiz } from "../services/preferenceQuiz.js";
 import { createMeetupWeather } from "../services/meetupWeather.js";
 export function registerCommunityRoutes(
   router,
-  { repos, requireUser, requireOperator, db, weather = createMeetupWeather() },
+  { repos, requireUser, requireOperator, db, realtime = null, weather = createMeetupWeather() },
 ) {
   const route = (method, path, key, fn) =>
     router[method](path, requireUser, (req, res, next) => {
       try {
         const result = fn(req);
+        if (realtime && method !== "get" && (path === "/meetups" || path.startsWith("/meetups/:id/"))) {
+          const id = path === "/meetups" ? result.id : req.params.id;
+          // Transactions have committed before the response finishes. Send only
+          // an invalidation; each recipient reloads through normal authorization.
+          res.once("finish", () => {
+            if (res.statusCode >= 400) return;
+            try {
+              const meetup = repos.meetups.access(req.user.id, id);
+              realtime.emitTo(repos.meetups.participants(meetup), "meetup-updated", {
+                meetupId: meetup.id, version: meetup.version,
+              });
+            } catch { console.warn("meetup_realtime_event_failed"); }
+          });
+        }
         res.json({ [key]: result });
       } catch (e) {
         if (e.status) return res.status(e.status).json({ error: e.message });
@@ -105,7 +119,7 @@ export function registerCommunityRoutes(
   route("put", "/me/notification-preferences", "result", (r) =>
     repos.notifications.setSettings(r.user.id, r.body),
   );
-  route("get", "/me/meetups", "meetups", (r) => repos.meetups.list(r.user.id));
+  route("get", "/me/meetups", "meetups", (r) => repos.meetups.list(r.user.id, r.query));
   route("post", "/meetups", "meetup", (r) =>
     repos.meetups.create(r.user.id, r.body),
   );
@@ -113,7 +127,7 @@ export function registerCommunityRoutes(
     repos.meetups.detail(r.user.id, r.params.id),
   );
   route("put", "/meetups/:id/availability", "result", (r) =>
-    repos.meetups.availability(r.user.id, r.params.id, r.body?.windows),
+    repos.meetups.availability(r.user.id, r.params.id, r.body?.windows, r.body?.version),
   );
   route("post", "/meetups/:id/places", "place", (r) =>
     repos.meetups.place(r.user.id, r.params.id, r.body),

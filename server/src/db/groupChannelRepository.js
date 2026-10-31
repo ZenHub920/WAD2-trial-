@@ -24,7 +24,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { readMessagePage } from './messagePage.js';
+import { readMessagePage, validateMessageBody } from './messagePage.js';
 
 export function migrateGroupChannels(db) {
   db.exec(`
@@ -154,15 +154,6 @@ export function createGroupChannelRepo(db, repos) {
     joinedAt: row.joined_at,
   });
 
-  const messageRows = db.prepare(`
-    SELECT m.id, m.rowid AS seq, m.sender_user_id, m.body, m.created_at, m.deleted_at,
-           u.display_name, u.avatar_path
-    FROM group_channel_messages m
-    JOIN users u ON u.id = m.sender_user_id
-    WHERE m.party_id = ?
-    ORDER BY m.rowid ASC
-  `);
-
   const shapeMessage = (row, viewerId) => ({
     id: row.id,
     seq: row.seq,
@@ -276,9 +267,8 @@ export function createGroupChannelRepo(db, repos) {
 
     send: db.transaction((partyId, userId, body) => {
       requireMember(partyId, userId);
-      const text = typeof body === 'string' ? body.trim() : '';
-      if (!text) throw fail('message_required', 400);
-      if (text.length > 2000) throw fail('message_too_long', 400);
+      const { body: text, error } = validateMessageBody(body);
+      if (error) throw fail(error, 400);
       const id = `gcm_${randomUUID()}`;
       db.prepare(`INSERT INTO group_channel_messages (id, party_id, sender_user_id, body)
                   VALUES (?, ?, ?, ?)`).run(id, partyId, userId, text);

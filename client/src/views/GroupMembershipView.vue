@@ -165,7 +165,7 @@ async function leave() {
       <template #before><GroupNavigation /></template>
       <nav v-if="group" class="group-actions" aria-label="Selected group links">
         <RouterLink class="btn btn--ghost" :to="`/concerts/${encodeURIComponent(group.concertId)}`">Concert details</RouterLink>
-        <RouterLink class="btn btn--ghost" :to="{path:'/meetups',query:{partyId:id}}">Plan meetup</RouterLink>
+        <button type="button" class="btn btn--ghost" @click="router.push({path:'/meetups',query:{partyId:id}})">Plan meetup</button>
         <RouterLink v-if="isHost" class="btn btn--ghost" :to="{path:'/groups/connect',query:{view:'connections',groupId:id,concertId:group.concertId}}">Connect with other groups</RouterLink>
         <RouterLink v-if="isHost" class="btn btn--ghost" :to="{path:'/groups/connect',query:{concertId:group.concertId},hash:'#join-requests'}">Review join applications</RouterLink>
       </nav>

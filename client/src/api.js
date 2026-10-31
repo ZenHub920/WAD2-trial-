@@ -48,10 +48,10 @@ async function request(path, options = {}) {
 export const api = {
   feedbackOpportunities: ()=>request('/me/feedback-opportunities'),
   myFeedback: ()=>request('/me/feedback'),
-  meetups: ()=>request('/me/meetups'),
+  meetups: (scope={})=>request(`/me/meetups?${new URLSearchParams(scope)}`),
   createMeetup: data=>request('/meetups',{method:'POST',body:JSON.stringify(data)}),
   meetup: id=>request(`/meetups/${encodeURIComponent(id)}`),
-  meetupAvailability: (id,windows)=>request(`/meetups/${encodeURIComponent(id)}/availability`,{method:'PUT',body:JSON.stringify({windows})}),
+  meetupAvailability: (id,windows,version)=>request(`/meetups/${encodeURIComponent(id)}/availability`,{method:'PUT',body:JSON.stringify({windows,...(version === undefined ? {} : {version})})}),
   proposeMeetupPlace: (id,data)=>request(`/meetups/${encodeURIComponent(id)}/places`,{method:'POST',body:JSON.stringify(data)}),
   voteMeetupPlace: (id,placeId)=>request(`/meetups/${encodeURIComponent(id)}/vote`,{method:'PUT',body:JSON.stringify({placeId})}),
   meetupComment: (id,body)=>request(`/meetups/${encodeURIComponent(id)}/comments`,{method:'POST',body:JSON.stringify({body})}),

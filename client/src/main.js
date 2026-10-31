@@ -52,8 +52,8 @@ const router = createRouter({
     { path: '/method', name: 'method', component: MethodView, meta: { title: 'How it works' } },
     { path: '/login', name: 'login', component: LoginView, meta: { title: 'Sign in' } },
     { path: '/account/security', name: 'account-security', component: AccountSecurityView, meta: { title: 'Account security' } },
-    { path: '/list-ticket', name: 'list-ticket', component: ListingView, meta: { title: 'List a ticket' } },
-    { path: '/my-listings', name: 'my-listings', component: MyListingsView, meta: { title: 'My listings' } },
+    { path: '/list-ticket', name: 'list-ticket', component: ListingView, meta: { title: 'List a ticket', requiresAuth: true } },
+    { path: '/my-listings', name: 'my-listings', component: MyListingsView, meta: { title: 'My listings', requiresAuth: true } },
     { path: '/tickets/:id', name: 'ticket-detail', component: TicketDetailView, props: true, meta: { title: 'Ticket details' } },
     // Checkout stays unavailable until a real payment provider is configured.
     { path: '/tickets/:id/checkout', name: 'checkout', component: CheckoutView, props: true, meta: { title: 'Checkout' } },
