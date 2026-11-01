@@ -137,7 +137,7 @@ async function saveListing() {
     <div v-if="loading" class="loading-state" aria-busy="true"><LoadingSpinner /> Loading listing…</div>
 
     <MarketNotice v-else-if="error?.status === 404" title="Listing not found">
-      It may have been removed. <RouterLink to="/concerts">Back to concerts</RouterLink>
+      It may have been removed. <RouterLink to="/tickets">Back to tickets</RouterLink>
     </MarketNotice>
 
     <MarketNotice v-else-if="error" tone="error" title="Could not load this listing">

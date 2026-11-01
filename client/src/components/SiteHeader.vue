@@ -41,6 +41,7 @@ onUnmounted(() => {
       <nav id="main-navigation" class="nav" :class="{ 'nav--open': menuOpen }" aria-label="Main navigation">
         <div class="nav__primary">
           <RouterLink to="/concerts">Concerts</RouterLink>
+          <RouterLink to="/tickets">Tickets</RouterLink>
           <RouterLink to="/kaki">Find a companion</RouterLink>
           <RouterLink to="/groups">Groups</RouterLink>
           <RouterLink v-if="currentUser" to="/messages" class="nav__messages">

@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { api } from '../api.js';
-import { useSavedListings } from '../market.js';
 import ConcertSpotlightCard from '../components/market/ConcertSpotlightCard.vue';
 import DateField from '../components/market/DateField.vue';
 import MarketIcon from '../components/market/MarketIcon.vue';
@@ -19,9 +18,7 @@ const ticketError = ref('');
 const activityError = ref('');
 const search = ref('');
 const date = ref('');
-const savedOnly = ref(false);
-const { isSaved } = useSavedListings();
-const hasFilters = computed(() => Boolean(search.value || date.value || savedOnly.value));
+const hasFilters = computed(() => Boolean(search.value || date.value));
 const showAll = ref(false);
 const PAGE_SIZE = 6;
 
@@ -90,7 +87,6 @@ const matchingConcerts = computed(() => {
   const query = search.value.trim().toLowerCase();
   return discovered.value.filter(({ concert }) => {
     if (date.value && concert.event_date.slice(0, 10) !== date.value) return false;
-    if (savedOnly.value && !listings.value.some((listing) => listing.concert.id === concert.id && isSaved(listing.id))) return false;
     return !query || [concert.artist, concert.tour_name, concert.venue]
       .some((value) => String(value ?? '').toLowerCase().includes(query));
   });
@@ -101,7 +97,6 @@ const visibleConcerts = computed(() => showAll.value ? matchingConcerts.value : 
 function clearFilters() {
   search.value = '';
   date.value = '';
-  savedOnly.value = false;
 }
 </script>
 
@@ -114,8 +109,7 @@ function clearFilters() {
           <p>Discover upcoming concerts, find a group and browse tickets from other fans.</p>
         </div>
         <nav class="concert-market__tools" aria-label="Ticket tools">
-          <RouterLink to="/my-listings" class="btn btn--outline-light">My listings</RouterLink>
-          <RouterLink to="/list-ticket" class="btn btn--light">List a ticket</RouterLink>
+          <RouterLink to="/tickets" class="btn btn--light">Browse tickets</RouterLink>
         </nav>
       </header>
 
@@ -132,10 +126,6 @@ function clearFilters() {
           <DateField v-model="date" labelled-by="concert-market-date" :marked-dates="concertDates" />
         </div>
         <button v-if="hasFilters" type="button" class="btn btn--ghost" @click="clearFilters">Clear filters</button>
-        <label class="concert-filters__saved">
-          <input v-model="savedOnly" type="checkbox" :disabled="ticketsLoading || Boolean(ticketError)" />
-          Concerts with saved listings
-        </label>
       </section>
 
       <p v-if="concertsLoading" class="loading-state" role="status" aria-busy="true">
@@ -156,7 +146,7 @@ function clearFilters() {
         </div>
         <div v-if="!matchingConcerts.length && !concertError" class="concert-empty">
           <h3>{{ hasFilters ? 'No concerts match your filters' : 'No upcoming concerts available' }}</h3>
-          <p>{{ hasFilters ? 'Try another filter or clear your saved-listing selection.' : 'Ticketmaster has not returned any upcoming concerts.' }}</p>
+          <p>{{ hasFilters ? 'Try another search or date.' :'Ticketmaster has not returned any upcoming concerts.' }}</p>
           <button v-if="hasFilters" type="button" class="btn btn--ghost" @click="clearFilters">Clear filters</button>
         </div>
         <div v-else class="concert-grid">
@@ -254,15 +244,6 @@ function clearFilters() {
 }
 .concert-filters__date :deep(.datefield) {
   min-height: 44px;
-}
-.concert-filters__saved {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 36px;
-  font-size: var(--step--1);
-  color: var(--text-300);
 }
 .concert-results {
   display: flex;

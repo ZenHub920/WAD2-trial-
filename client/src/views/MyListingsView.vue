@@ -79,7 +79,7 @@ onMounted(loadListings);
           <p>Tickets you have put up for other fans to buy.</p>
         </div>
         <nav class="my-listings-page__tools" aria-label="Ticket tools">
-          <RouterLink to="/concerts" class="btn btn--outline-light">Concerts</RouterLink>
+          <RouterLink to="/tickets" class="btn btn--outline-light">Tickets</RouterLink>
           <RouterLink to="/list-ticket" class="btn btn--light">List a ticket</RouterLink>
         </nav>
       </header>

@@ -30,8 +30,9 @@ async function api(context, path, method = 'GET', body) {
   const response = await context.request.fetch(`${origin}/api${path}`, {
     method, headers: { Origin: origin }, ...(body === undefined ? {} : { data: body }),
   });
-  expect(response.ok(), `${path}: ${await response.text()}`).toBeTruthy();
-  return response.json();
+  const text = await response.text();
+  expect(response.ok(), `${path}: ${text}`).toBeTruthy();
+  return text ? JSON.parse(text) : null; // DELETE answers with an empty body
 }
 // Creates a listing through the API (setup shortcut). The first test already
 // covers creating one through the form, so later tests can start from here.
@@ -195,5 +196,68 @@ test('seller edits the price, then removes the listing so buyers can no longer s
     await buyer.page.reload();
     await expect(buyer.page.getByRole('button', { name: 'Message seller' })).toHaveCount(0);
     await expect(buyer.page.getByText(/Listing not found|Listing removed/)).toBeVisible();
+  } finally { await seller.context.close(); await buyer.context.close(); }
+});
+
+// Workflow: a buyer opens the Tickets tab from the main navigation, narrows the
+// marketplace with search, and opens a listing from its card.
+test('buyer browses the Tickets tab, searches, and opens a listing', async ({ browser, request }) => {
+  const data = await fixture(request);
+  const seller = await person(browser, data, 'hostA');
+  const buyer = await person(browser, data, 'seeker');
+  const artist = `Test concert ${data.suffix}`;
+  try {
+    // Setup: the seller has a listing for this test's concert.
+    const listing = await createListing(seller.context, data, { priceCents: 8800, quantity: 1 });
+
+    // Action: use the nav bar, as a user would, rather than typing the URL.
+    await buyer.page.goto('/');
+    await buyer.page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Tickets', exact: true }).click();
+    await expect(buyer.page).toHaveURL(/\/tickets$/);
+    await expect(buyer.page.getByRole('heading', { name: 'Tickets', exact: true })).toBeVisible();
+
+    // Other tests' listings share this database, so search to find ours.
+    await buyer.page.getByLabel('Search').fill(artist);
+    const card = buyer.page.locator('article').filter({ hasText: artist });
+    await expect(card).toHaveCount(1);
+    await expect(card.getByText('$88.00')).toBeVisible();
+    await expect(card.getByText('1 ticket', { exact: true })).toBeVisible();
+
+    // Clicking the card opens the full listing page.
+    await card.getByRole('link', { name: artist }).click();
+    await expect(buyer.page).toHaveURL(new RegExp(`/tickets/${listing.id}$`));
+    await expect(buyer.page.getByRole('button', { name: 'Message seller' })).toBeVisible();
+  } finally { await seller.context.close(); await buyer.context.close(); }
+});
+
+// Workflow: the concert page shows a one-line ticket summary; "View tickets" opens
+// the marketplace already filtered to that concert. A removed listing drops out.
+test('concert page summary links to the Tickets page filtered to that concert', async ({ browser, request }) => {
+  const data = await fixture(request);
+  const seller = await person(browser, data, 'hostA');
+  const buyer = await person(browser, data, 'seeker');
+  const artist = `Test concert ${data.suffix}`;
+  try {
+    // Setup: two listings for this concert, $150 (2 tickets) and $120 (1 ticket).
+    const first = await createListing(seller.context, data);
+    await createListing(seller.context, data, { priceCents: 12000, quantity: 1, section: 'Cat 4' });
+
+    // Assert the summary on the concert page: totals and the lowest price.
+    await buyer.page.goto(`/concerts/${data.concertId}`);
+    const summary = buyer.page.locator('section').filter({ has: buyer.page.getByRole('heading', { name: 'Tickets for sale' }) });
+    await expect(summary.getByText('3 tickets across 2 listings, from $120.00.')).toBeVisible();
+
+    // Action: follow the link; the concert filter is pre-selected via the URL.
+    await summary.getByRole('link', { name: 'View tickets' }).click();
+    await expect(buyer.page).toHaveURL(new RegExp(`/tickets\\?concert=${data.concertId}$`));
+    await expect(buyer.page.getByLabel('Concert', { exact: true })).toHaveValue(data.concertId);
+    await expect(buyer.page.locator('article')).toHaveCount(2);
+    await expect(buyer.page.locator('article').filter({ hasNotText: artist })).toHaveCount(0);
+
+    // After the seller removes one listing, a reload shows only the other.
+    await api(seller.context, `/tickets/${first.id}`, 'DELETE');
+    await buyer.page.reload();
+    await expect(buyer.page.locator('article')).toHaveCount(1);
+    await expect(buyer.page.locator('article').getByText('Cat 4')).toBeVisible();
   } finally { await seller.context.close(); await buyer.context.close(); }
 });

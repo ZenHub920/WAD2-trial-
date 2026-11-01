@@ -26,12 +26,12 @@ function makeListing(overrides = {}) {
 // OrderSummary shows the order amount, delivery fee and total.
 describe('TestSuite: OrderSummary', () => {
   // With no delivery fee prop, the fee reads "Free" and the total equals the subtotal.
-  // The three <dd> values are read in order: amount, fee, total.
   it('Test1: shows a free delivery fee and a total equal to the order amount', () => {
     const wrapper = mount(OrderSummary, { props: { subtotalCents: 31000 } });
     expect(wrapper.text()).toContain('Free');
     expect(wrapper.findAll('dd').map(dd => dd.text())).toEqual(['SGD $310.00', 'Free', 'SGD $310.00']);
   });
+
   // Computed property check: total = subtotal + delivery fee.
   it('Test2: adds the delivery fee into the order total', () => {
     const wrapper = mount(OrderSummary, { props: { subtotalCents: 31000, deliveryFeeCents: 550 } });
@@ -39,6 +39,7 @@ describe('TestSuite: OrderSummary', () => {
     expect(wrapper.text()).toContain('SGD $315.50');
     expect(wrapper.text()).not.toContain('Free');
   });
+
   // Conditional rendering: the <h3> appears only when the heading prop is set.
   it('Test3: shows a heading only when one is given', () => {
     expect(mount(OrderSummary, { props: { subtotalCents: 0 } }).find('h3').exists()).toBe(false);
@@ -60,6 +61,7 @@ describe('TestSuite: MarketNotice', () => {
     expect(wrapper.get('h2').text()).toBe('Could not load this listing');
     expect(wrapper.text()).toContain('Please refresh.');
   });
+
   // The default (neutral) notice is just information, so it is not an alert.
   it('Test2: a neutral notice is not an alert and can omit the title', () => {
     const wrapper = mount(MarketNotice, { slots: { default: 'You have no orders.' } });

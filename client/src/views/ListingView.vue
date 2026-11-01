@@ -112,7 +112,7 @@ async function submitListing() {
 <template>
   <div class="listing-page">
     <div class="listing-page__shell container">
-      <RouterLink to="/concerts" class="listing-page__back">← Back to concerts</RouterLink>
+      <RouterLink to="/tickets" class="listing-page__back">← Back to tickets</RouterLink>
 
       <header class="listing-page__header page-banner">
         <div>
@@ -208,7 +208,7 @@ async function submitListing() {
 
         <p v-if="error" class="listing-form__error" role="alert">{{ error }}</p>
         <div class="listing-form__actions">
-          <RouterLink to="/concerts" class="btn btn--ghost">Cancel</RouterLink>
+          <RouterLink to="/tickets" class="btn btn--ghost">Cancel</RouterLink>
           <button class="btn btn--primary" :disabled="creating || loadingConcerts">
             <LoadingSpinner v-if="creating" />
             {{ creating ? 'Publishing…' : 'Publish listing' }}

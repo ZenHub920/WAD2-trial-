@@ -3,7 +3,6 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api, LABELS, SECTION_OPTIONS, ARRIVAL_OPTIONS, formatDate } from '../api.js';
 import { currentUser, sessionReady } from '../auth.js';
-import UserAvatar from '../components/market/UserAvatar.vue';
 import { formatMoney } from '../market.js';
 import '../assets/groups.css';
 import MatchProposalCard from '../components/MatchProposalCard.vue';
@@ -47,6 +46,7 @@ const ticketsLoading = ref(false);
 const ticketsError = ref('');
 let ticketRequest = 0;
 const ticketCount = computed(() => tickets.value.reduce((sum, listing) => sum + listing.quantity, 0));
+const ticketFromCents = computed(() => Math.min(...tickets.value.map(listing => listing.priceCents)));
 async function loadTickets() {
   const requestId = ++ticketRequest;
   ticketsLoading.value = true;
@@ -181,7 +181,7 @@ async function load() {
     const [detail, matching] = await Promise.all([
       api.concert(props.id),
       Promise.all([api.parties(props.id), api.requests(props.id)]).catch(() => {
-        matchingError.value = 'Could not load group-matching availability. Ticket listings are still available below.';
+        matchingError.value = 'Could not load group-matching availability. Ticket availability is still shown below.';
         return null;
       }),
     ]);
@@ -421,34 +421,20 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
         </template>
       </section>
 
-      <section class="ticket-section" aria-labelledby="concert-tickets-title">
-        <header class="group-actions ticket-section__head">
+      <!-- A short summary only; the full listings live on the Tickets page. -->
+      <section class="card ticket-summary" aria-labelledby="concert-tickets-title">
+        <div class="ticket-summary__text">
           <h2 id="concert-tickets-title">Tickets for sale</h2>
-          <span v-if="!ticketsLoading && !ticketsError">{{ ticketCount }} {{ ticketCount === 1 ? 'ticket' : 'tickets' }} across {{ tickets.length }} {{ tickets.length === 1 ? 'listing' : 'listings' }}</span>
-        </header>
-        <p v-if="ticketsLoading" class="loading-state" role="status"><LoadingSpinner />Loading ticket listings…</p>
-        <div v-else-if="ticketsError" role="alert" class="group-error">
-          <p>{{ ticketsError }}</p>
-          <button class="btn btn--ghost" @click="loadTickets">Try again</button>
+          <p v-if="ticketsLoading" class="loading-state" role="status"><LoadingSpinner />Checking fan-listed tickets…</p>
+          <p v-else-if="ticketsError" role="alert" class="group-error">{{ ticketsError }}</p>
+          <p v-else-if="!tickets.length">No tickets are listed for this concert yet.</p>
+          <p v-else>
+            {{ ticketCount }} {{ ticketCount === 1 ? 'ticket' : 'tickets' }} across {{ tickets.length }} {{ tickets.length === 1 ? 'listing' : 'listings' }}, from {{ formatMoney(ticketFromCents) }}.
+          </p>
         </div>
-        <p v-else-if="!tickets.length">No tickets are listed for this concert yet.</p>
-        <div v-else class="group-grid">
-          <article v-for="listing in tickets" :key="listing.id" class="card group-panel ticket-listing">
-            <header class="ticket-listing__seller">
-              <UserAvatar :user="listing.seller" :size="40" />
-              <div><h3>{{ listing.seller.displayName }}</h3><p>Seller</p></div>
-              <span v-if="listing.seller.verified" class="tag">Verified profile</span>
-            </header>
-            <p>{{ LABELS.section[listing.section] ?? listing.section }}</p>
-            <div class="group-actions">
-              <strong>{{ formatMoney(listing.priceCents) }} total for this listing</strong>
-              <span>{{ listing.quantity }} {{ listing.quantity === 1 ? 'ticket' : 'tickets' }} available</span>
-            </div>
-            <p><span class="tag" :class="{ 'tag--mint': listing.verified }">{{ listing.verified ? 'Verified ticket listing' : 'Ticket listing not verified' }}</span></p>
-            <RouterLink :to="`/tickets/${encodeURIComponent(listing.id)}`" class="btn btn--primary">View listing &amp; contact seller</RouterLink>
-          </article>
-        </div>
-        <p class="group-muted">Online checkout is unavailable because no payment provider is configured.</p>
+        <button v-if="ticketsError" class="btn btn--ghost" type="button" @click="loadTickets">Try again</button>
+        <RouterLink v-else-if="tickets.length" :to="{ name: 'tickets', query: { concert: id } }" class="btn btn--primary">View tickets</RouterLink>
+        <RouterLink v-else-if="!ticketsLoading" to="/list-ticket" class="btn btn--ghost">List a ticket</RouterLink>
       </section>
       <section class="card group-panel companion-options">
         <h2>Go with a group</h2>
@@ -876,41 +862,31 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
   color: var(--rose-400);
   margin-bottom: var(--space-2);
 }
-.head__text, .head__panel, .ticket-listing, .ticket-listing__seller > div {
+.head__text, .head__panel, .ticket-summary__text {
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.ticket-section {
-  display: grid;
-  gap: var(--space-4);
-  margin-bottom: var(--space-6);
-}
-.ticket-section__head {
-  justify-content: space-between;
-}
-.ticket-section h2, .companion-options h2 {
-  font-size: var(--step-2);
-}
-.ticket-listing {
-  align-content: start;
-}
-.ticket-listing h3 {
-  font-size: var(--step-1);
-}
-.ticket-listing__seller {
+.ticket-summary {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+  padding: var(--space-5);
 }
-.ticket-listing__seller p {
+.ticket-summary__text {
+  display: grid;
+  gap: var(--space-2);
+}
+.ticket-summary__text p {
   color: var(--text-300);
-  font-size: var(--step--1);
 }
-.ticket-listing > .btn {
-  margin-top: auto;
-  justify-self: start;
+.ticket-summary .btn {
   white-space: normal;
+}
+.ticket-summary h2, .companion-options h2 {
+  font-size: var(--step-2);
 }
 .companion-options {
   margin-bottom: var(--space-6);

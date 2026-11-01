@@ -17,6 +17,7 @@ import ConcertsView from './views/ConcertsView.vue';
 import ListingView from './views/ListingView.vue';
 import MyListingsView from './views/MyListingsView.vue';
 import TicketDetailView from './views/TicketDetailView.vue';
+import TicketMarketplaceView from './views/TicketMarketplaceView.vue';
 import CheckoutView from './views/CheckoutView.vue';
 import OrderConfirmationView from './views/OrderConfirmationView.vue';
 import ChatThreadView from './views/ChatThreadView.vue';
@@ -54,6 +55,7 @@ const router = createRouter({
     { path: '/account/security', name: 'account-security', component: AccountSecurityView, meta: { title: 'Account security' } },
     { path: '/list-ticket', name: 'list-ticket', component: ListingView, meta: { title: 'List a ticket', requiresAuth: true } },
     { path: '/my-listings', name: 'my-listings', component: MyListingsView, meta: { title: 'My listings', requiresAuth: true } },
+    { path: '/tickets', name: 'tickets', component: TicketMarketplaceView, meta: { title: 'Tickets' } },
     { path: '/tickets/:id', name: 'ticket-detail', component: TicketDetailView, props: true, meta: { title: 'Ticket details' } },
     // Checkout stays unavailable until a real payment provider is configured.
     { path: '/tickets/:id/checkout', name: 'checkout', component: CheckoutView, props: true, meta: { title: 'Checkout' } },

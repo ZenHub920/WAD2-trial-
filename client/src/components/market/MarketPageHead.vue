@@ -8,7 +8,7 @@ import MarketIcon from './MarketIcon.vue';
  */
 const props = defineProps({
   title: { type: String, required: true },
-  fallback: { type: [String, Object], default: () => ({ name: 'concerts' }) },
+  fallback: { type: [String, Object], default: () => ({ name: 'tickets' }) },
 });
 
 const router = useRouter();
