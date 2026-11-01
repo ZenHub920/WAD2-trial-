@@ -125,18 +125,24 @@ const steps = [
     n: '01',
     title: 'Pick your concert',
     body: 'Choose a show and tell us what you enjoy.',
+    to: '/concerts',
+    cta: 'Browse concerts',
     icon: 'M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z',
   },
   {
     n: '02',
     title: 'Choose your company',
     body: 'Find a companion or request a place in a group.',
+    to: '/kaki',
+    cta: 'Find a companion',
     icon: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm13 10v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
   },
   {
     n: '03',
     title: 'Make a plan together',
     body: 'Pick a time and place to meet before the show.',
+    to: '/messages',
+    cta: 'Open messages',
     icon: 'M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11Zm0-8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
   },
 ];
@@ -267,14 +273,14 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
 
         <ol class="steps">
           <li v-for="(step, i) in steps" :key="step.n" v-reveal="i">
-            <div class="step">
+            <RouterLink :to="step.to" class="step" :aria-label="`${step.title}: ${step.cta}`">
             <span class="step__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none"><path :d="step.icon" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
             </span>
             <span class="step__n">{{ step.n }}</span>
             <h3>{{ step.title }}</h3>
             <p>{{ step.body }}</p>
-            </div>
+            </RouterLink>
           </li>
         </ol>
       </div>
@@ -324,21 +330,6 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
               </p>
             </div>
           </RouterLink>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ----------------------------------------------------------------- CTA -->
-    <section class="section">
-      <div class="container">
-        <div v-reveal class="cta">
-          <span class="cta__orb" aria-hidden="true" />
-          <h2>Don’t go alone.</h2>
-          <p>Swipe through fans heading to the same show, or join a group that already has a plan.</p>
-          <div class="cta__actions">
-            <RouterLink to="/kaki" class="btn btn--light">Find a companion</RouterLink>
-            <RouterLink to="/groups" class="btn btn--outline-light">Browse groups</RouterLink>
           </div>
         </div>
       </div>
@@ -854,7 +845,10 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
 }
 
 .step {
+  display: block;
   height: 100%;
+  color: inherit;
+  text-decoration: none;
   transition:
     transform var(--dur-base) var(--ease-out),
     box-shadow var(--dur-base) var(--ease-out),
@@ -928,6 +922,11 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
 .step p {
   color: var(--text-300);
   font-size: var(--step--1);
+}
+
+.step:focus-visible {
+  outline: 2px solid var(--accent-400);
+  outline-offset: 3px;
 }
 
 /* ------------------------------------------------------------ Upcoming ---- */
@@ -1022,52 +1021,6 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
   border-radius: var(--radius-lg);
   color: var(--text-400);
   font-size: var(--step--1);
-}
-
-/* ----------------------------------------------------------------- CTA ---- */
-
-.cta {
-  position: relative;
-  overflow: hidden;
-  isolation: isolate;
-  padding: var(--space-8) var(--space-6);
-  border-radius: var(--radius-xl);
-  background: linear-gradient(120deg, var(--accent-600), #5b2a86 45%, #9c3d8f);
-  color: #fff;
-  text-align: center;
-}
-
-.cta__orb {
-  position: absolute;
-  z-index: -1;
-  width: 420px;
-  height: 420px;
-  top: -160px;
-  right: -80px;
-  border-radius: 50%;
-  background: #efc3f5;
-  filter: blur(80px);
-  opacity: 0.45;
-  animation: drift 14s ease-in-out infinite alternate;
-}
-
-.cta h2 {
-  font-size: var(--step-5);
-  color: #fff;
-}
-
-.cta p {
-  max-width: 44ch;
-  margin: var(--space-3) auto 0;
-  color: rgba(255, 255, 255, 0.82);
-}
-
-.cta__actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-3);
-  margin-top: var(--space-6);
 }
 
 @media (prefers-reduced-motion: reduce) {
