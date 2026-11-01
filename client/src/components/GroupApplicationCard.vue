@@ -48,12 +48,41 @@ const preferenceText = intent => props.application.preferences?.[intent]?.map(pr
 </template>
 
 <style scoped>
-.application-card { display: grid; gap: var(--space-3); padding-block: var(--space-4); border-bottom: var(--border-hairline); overflow-wrap: anywhere; }
-.application-card__heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); }
-.application-card h3 { margin: 0; font-size: var(--step-1); }
-.application-card p { margin: 0; }
-.application-card__profile { display: grid; gap: var(--space-2); padding-top: var(--space-3); }
-.application-card__compatibility { padding: var(--space-3); border-radius: var(--radius-sm); background: var(--ink-750); }
-.application-card__compatibility ul { margin-bottom: 0; }
-.application-card__note { white-space: pre-wrap; }
+.application-card {
+  display: grid;
+  gap: var(--space-3);
+  padding-block: var(--space-4);
+  border-bottom: var(--border-hairline);
+  overflow-wrap: anywhere;
+}
+.application-card__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.application-card h3 {
+  margin: 0;
+  font-size: var(--step-1);
+}
+.application-card p {
+  margin: 0;
+}
+.application-card__profile {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+}
+.application-card__compatibility {
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--ink-750);
+}
+.application-card__compatibility ul {
+  margin-bottom: 0;
+}
+.application-card__note {
+  white-space: pre-wrap;
+}
 </style>

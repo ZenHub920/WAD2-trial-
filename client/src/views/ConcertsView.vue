@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { api } from '../api.js';
-import { useSavedListings } from '../market.js';
 import ConcertSpotlightCard from '../components/market/ConcertSpotlightCard.vue';
 import DateField from '../components/market/DateField.vue';
 import MarketIcon from '../components/market/MarketIcon.vue';
@@ -19,9 +18,7 @@ const ticketError = ref('');
 const activityError = ref('');
 const search = ref('');
 const date = ref('');
-const savedOnly = ref(false);
-const { isSaved } = useSavedListings();
-const hasFilters = computed(() => Boolean(search.value || date.value || savedOnly.value));
+const hasFilters = computed(() => Boolean(search.value || date.value));
 const showAll = ref(false);
 const PAGE_SIZE = 6;
 
@@ -90,7 +87,6 @@ const matchingConcerts = computed(() => {
   const query = search.value.trim().toLowerCase();
   return discovered.value.filter(({ concert }) => {
     if (date.value && concert.event_date.slice(0, 10) !== date.value) return false;
-    if (savedOnly.value && !listings.value.some((listing) => listing.concert.id === concert.id && isSaved(listing.id))) return false;
     return !query || [concert.artist, concert.tour_name, concert.venue]
       .some((value) => String(value ?? '').toLowerCase().includes(query));
   });
@@ -101,7 +97,6 @@ const visibleConcerts = computed(() => showAll.value ? matchingConcerts.value : 
 function clearFilters() {
   search.value = '';
   date.value = '';
-  savedOnly.value = false;
 }
 </script>
 
@@ -114,8 +109,7 @@ function clearFilters() {
           <p>Discover upcoming concerts, find a group and browse tickets from other fans.</p>
         </div>
         <nav class="concert-market__tools" aria-label="Ticket tools">
-          <RouterLink to="/my-listings" class="btn btn--outline-light">My listings</RouterLink>
-          <RouterLink to="/list-ticket" class="btn btn--light">List a ticket</RouterLink>
+          <RouterLink to="/tickets" class="btn btn--light">Browse tickets</RouterLink>
         </nav>
       </header>
 
@@ -132,10 +126,6 @@ function clearFilters() {
           <DateField v-model="date" labelled-by="concert-market-date" :marked-dates="concertDates" />
         </div>
         <button v-if="hasFilters" type="button" class="btn btn--ghost" @click="clearFilters">Clear filters</button>
-        <label class="concert-filters__saved">
-          <input v-model="savedOnly" type="checkbox" :disabled="ticketsLoading || Boolean(ticketError)" />
-          Concerts with saved listings
-        </label>
       </section>
 
       <p v-if="concertsLoading" class="loading-state" role="status" aria-busy="true">
@@ -156,7 +146,7 @@ function clearFilters() {
         </div>
         <div v-if="!matchingConcerts.length && !concertError" class="concert-empty">
           <h3>{{ hasFilters ? 'No concerts match your filters' : 'No upcoming concerts available' }}</h3>
-          <p>{{ hasFilters ? 'Try another filter or clear your saved-listing selection.' : 'Ticketmaster has not returned any upcoming concerts.' }}</p>
+          <p>{{ hasFilters ? 'Try another search or date.' :'Ticketmaster has not returned any upcoming concerts.' }}</p>
           <button v-if="hasFilters" type="button" class="btn btn--ghost" @click="clearFilters">Clear filters</button>
         </div>
         <div v-else class="concert-grid">
@@ -176,35 +166,149 @@ function clearFilters() {
 </template>
 
 <style scoped>
-.concert-market { min-height: calc(100vh - var(--header-height)); padding-block: var(--space-6) var(--space-9); }
-.concert-market__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-5); margin-bottom: var(--space-5); }
-.concert-market__head > div { min-width: 0; }
+.concert-market {
+  min-height: calc(100vh - var(--header-height));
+  padding-block: var(--space-6) var(--space-9);
+}
+.concert-market__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  margin-bottom: var(--space-5);
+}
+.concert-market__head > div {
+  min-width: 0;
+}
 /* The concerts banner shows its stage photo in full colour, darkened on the
    left so the title stays readable. */
 .concert-market__head {
   --banner-image: linear-gradient(90deg, rgba(36, 10, 66, 0.88), rgba(36, 10, 66, 0.45) 55%, rgba(36, 10, 66, 0.1)), url('../assets/concerts-crowd.jpg');
   min-height: 240px;
 }
-.concert-market__head::before { opacity: 1; mix-blend-mode: normal; background-position: center 40%; }
-.concert-market__tools { display: flex; flex-wrap: wrap; gap: var(--space-2); flex-shrink: 0; }
-.concert-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, 260px) auto; align-items: end; gap: var(--space-3); padding: var(--space-4); margin-bottom: var(--space-6); border: var(--border-soft); border-radius: var(--radius-lg); background: var(--ink-800); box-shadow: var(--shadow-md); }
-.concert-filters__search, .concert-filters__date { display: grid; min-width: 0; gap: var(--space-2); color: var(--text-300); font-size: var(--step--1); }
-.concert-filters__input { display: flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: var(--space-2) var(--space-3); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-800); }
-.concert-filters__input { transition: border-color var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out); }
-.concert-filters__input:focus-within { border-color: var(--accent-400); box-shadow: 0 0 0 4px var(--accent-glow); }
-.concert-filters__input input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text-100); font: inherit; }
-.concert-filters__date :deep(.datefield) { min-height: 44px; }
-.concert-filters__saved { grid-column: 1 / -1; display: flex; align-items: center; gap: var(--space-2); min-height: 36px; font-size: var(--step--1); color: var(--text-300); }
-.concert-results { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
-.concert-results h2 { font-size: var(--step-3); }
-.concert-results p { margin-top: var(--space-1); color: var(--text-300); font-size: var(--step--1); }
-.concert-results { margin-bottom: var(--space-5); }
-.concert-error { margin-bottom: var(--space-4); color: var(--rose-400); }
-.concert-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-5); }
-.concert-empty { display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-7) var(--space-4); text-align: center; border: var(--border-soft); border-radius: var(--radius-lg); }
-.concert-empty h3 { font-size: var(--step-1); }
-.concert-empty p { color: var(--text-300); }
-.concert-more { display: flex; margin: var(--space-5) auto 0; }
-@media (max-width: 1000px) { .concert-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .concert-market__head { align-items: flex-start; flex-direction: column; } }
-@media (max-width: 600px) { .concert-grid, .concert-filters { grid-template-columns: minmax(0, 1fr); } .concert-market__tools { width: 100%; } .concert-market__tools .btn { flex: 1; } }
+.concert-market__head::before {
+  opacity: 1;
+  mix-blend-mode: normal;
+  background-position: center 40%;
+}
+.concert-market__tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+.concert-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 260px) auto;
+  align-items: end;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  margin-bottom: var(--space-6);
+  border: var(--border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--ink-800);
+  box-shadow: var(--shadow-md);
+}
+.concert-filters__search, .concert-filters__date {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+  color: var(--text-300);
+  font-size: var(--step--1);
+}
+.concert-filters__input {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--field-bg);
+}
+.concert-filters__input {
+  transition: border-color var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out);
+}
+.concert-filters__input:focus-within {
+  border-color: var(--accent-400);
+  box-shadow: 0 0 0 4px var(--accent-glow);
+}
+.concert-filters__input input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-100);
+  font: inherit;
+}
+.concert-filters__date :deep(.datefield) {
+  min-height: 44px;
+}
+.concert-results {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.concert-results h2 {
+  font-size: var(--step-3);
+}
+.concert-results p {
+  margin-top: var(--space-1);
+  color: var(--text-300);
+  font-size: var(--step--1);
+}
+.concert-results {
+  margin-bottom: var(--space-5);
+}
+.concert-error {
+  margin-bottom: var(--space-4);
+  color: var(--rose-400);
+}
+.concert-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-5);
+}
+.concert-empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  padding: var(--space-7) var(--space-4);
+  text-align: center;
+  border: var(--border-soft);
+  border-radius: var(--radius-lg);
+}
+.concert-empty h3 {
+  font-size: var(--step-1);
+}
+.concert-empty p {
+  color: var(--text-300);
+}
+.concert-more {
+  display: flex;
+  margin: var(--space-5) auto 0;
+}
+@media (max-width: 1000px) {
+  .concert-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .concert-market__head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+@media (max-width: 600px) {
+  .concert-grid, .concert-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .concert-market__tools {
+    width: 100%;
+  }
+  .concert-market__tools .btn {
+    flex: 1;
+  }
+}
 </style>

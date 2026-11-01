@@ -95,8 +95,15 @@ watch(() => props.open, async (open) => {
   animation: confirm-rise var(--dur-base) var(--ease-settle);
 }
 
-.confirm__title { font-size: var(--step-1); }
-.confirm__body { margin-top: var(--space-3); color: var(--text-300); font-size: var(--step--1); line-height: 1.55; }
+.confirm__title {
+  font-size: var(--step-1);
+}
+.confirm__body {
+  margin-top: var(--space-3);
+  color: var(--text-300);
+  font-size: var(--step--1);
+  line-height: 1.55;
+}
 
 .confirm__actions {
   display: flex;
@@ -105,12 +112,25 @@ watch(() => props.open, async (open) => {
   gap: var(--space-3);
   margin-top: var(--space-6);
 }
-.confirm__actions .btn { white-space: normal; }
+.confirm__actions .btn {
+  white-space: normal;
+}
 
-@keyframes confirm-in { from { opacity: 0; } }
-@keyframes confirm-rise { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
+@keyframes confirm-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes confirm-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .confirm, .confirm__panel { animation: none; }
+  .confirm, .confirm__panel {
+    animation: none;
+  }
 }
 </style>

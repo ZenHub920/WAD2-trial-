@@ -208,8 +208,12 @@ const rankHistogram = computed(() => {
 
 <style scoped>
 
-.head { margin-bottom: var(--space-6); }
-.head h1 { margin-block: var(--space-3) var(--space-4); }
+.head {
+  margin-bottom: var(--space-6);
+}
+.head h1 {
+  margin-block: var(--space-3) var(--space-4);
+}
 
 .section-title {
   font-size: var(--step-2);
@@ -256,17 +260,27 @@ const rankHistogram = computed(() => {
   color: var(--ink-900);
 }
 
-.stamp--ok .stamp__mark { background: var(--mint-400); }
-.stamp--bad .stamp__mark { background: var(--rose-400); }
-.stamp__body { min-width: 0; }
+.stamp--ok .stamp__mark {
+  background: var(--mint-400);
+}
+.stamp--bad .stamp__mark {
+  background: var(--rose-400);
+}
+.stamp__body {
+  min-width: 0;
+}
 
 .stamp__body h2 {
   font-size: var(--step-1);
   margin-bottom: var(--space-2);
 }
 
-.stamp--ok h2 { color: var(--mint-400); }
-.stamp--bad h2 { color: var(--rose-400); }
+.stamp--ok h2 {
+  color: var(--mint-400);
+}
+.stamp--bad h2 {
+  color: var(--rose-400);
+}
 
 .stamp__body p {
   color: var(--text-300);
@@ -287,8 +301,12 @@ const rankHistogram = computed(() => {
   line-height: 1.5;
 }
 
-.stamp__verdict .ok { color: var(--mint-400); }
-.stamp__verdict .bad { color: var(--rose-400); }
+.stamp__verdict .ok {
+  color: var(--mint-400);
+}
+.stamp__verdict .bad {
+  color: var(--rose-400);
+}
 
 /* ---- Metrics ------------------------------------------------------------ */
 
@@ -330,7 +348,9 @@ const rankHistogram = computed(() => {
 
 /* ---- Histogram ---------------------------------------------------------- */
 
-.histogram { margin-bottom: var(--space-8); }
+.histogram {
+  margin-bottom: var(--space-8);
+}
 
 .bars {
   display: flex;
@@ -367,7 +387,10 @@ const rankHistogram = computed(() => {
 }
 
 @keyframes grow {
-  from { transform: scaleY(0); transform-origin: bottom; }
+  from {
+    transform: scaleY(0);
+    transform-origin: bottom;
+  }
 }
 
 .bar__count {
@@ -388,7 +411,9 @@ const rankHistogram = computed(() => {
 
 /* ---- Groups ------------------------------------------------------------- */
 
-.groups { margin-bottom: var(--space-8); }
+.groups {
+  margin-bottom: var(--space-8);
+}
 
 .groups__grid {
   display: grid;
@@ -406,7 +431,9 @@ const rankHistogram = computed(() => {
   border-bottom: var(--border-hairline);
 }
 
-.group__head h3 { font-size: var(--step-0); }
+.group__head h3 {
+  font-size: var(--step-0);
+}
 
 .group__members {
   list-style: none;
@@ -426,7 +453,9 @@ const rankHistogram = computed(() => {
   font-size: var(--step--1);
 }
 
-.group__name { color: var(--text-200); }
+.group__name {
+  color: var(--text-200);
+}
 
 .group__rank {
   font-size: var(--step--2);
@@ -451,8 +480,15 @@ const rankHistogram = computed(() => {
   background: color-mix(in oklab, var(--rose-400) 7%, transparent);
 }
 
-.notice--error h1 { color: var(--rose-400); margin-bottom: var(--space-3); }
+.notice--error h1 {
+  color: var(--rose-400);
+  margin-bottom: var(--space-3);
+}
 
-.fade-enter-active { transition: opacity var(--dur-base) var(--ease-out); }
-.fade-enter-from { opacity: 0; }
+.fade-enter-active {
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+.fade-enter-from {
+  opacity: 0;
+}
 </style>

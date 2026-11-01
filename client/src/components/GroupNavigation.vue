@@ -21,9 +21,45 @@ const links = computed(() => [
 </template>
 
 <style scoped>
-.group-navigation { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: 5px; width: fit-content; max-width: 100%; background: var(--ink-700); border: var(--border-soft); border-radius: var(--radius-md); }
-.group-navigation__link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: var(--space-2) var(--space-4); border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--text-300); font-size: var(--step--1); font-weight: 600; text-decoration: none; }
-.group-navigation__link:hover { color: var(--text-100); }
-.group-navigation__link--active { background: var(--ink-800); color: var(--accent-400); border-color: var(--accent-400); }
-@media (max-width: 480px) { .group-navigation { width: 100%; } .group-navigation__link { flex: 1 1 auto; padding-inline: var(--space-2); } }
+.group-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 5px;
+  width: fit-content;
+  max-width: 100%;
+  background: var(--ink-700);
+  border: var(--border-soft);
+  border-radius: var(--radius-md);
+}
+.group-navigation__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-300);
+  font-size: var(--step--1);
+  font-weight: 600;
+  text-decoration: none;
+}
+.group-navigation__link:hover {
+  color: var(--text-100);
+}
+.group-navigation__link--active {
+  background: var(--ink-800);
+  color: var(--accent-400);
+  border-color: var(--accent-400);
+}
+@media (max-width: 480px) {
+  .group-navigation {
+    width: 100%;
+  }
+  .group-navigation__link {
+    flex: 1 1 auto;
+    padding-inline: var(--space-2);
+  }
+}
 </style>

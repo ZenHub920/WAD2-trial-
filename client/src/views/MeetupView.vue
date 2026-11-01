@@ -610,21 +610,115 @@ async function getParking() {
   </div>
 </template>
 <style scoped>
-.meetup-live { display: inline-flex; align-items: center; gap: .5rem; color: var(--text-300); font-size: var(--step--1); }
-.meetup-live > span { width: .5rem; height: .5rem; border-radius: 50%; background: var(--mint-400); }
-.meetup-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); margin-block: var(--space-4); }
-.meetup-steps button { display: grid; grid-template-columns: auto 1fr; gap: .2rem .7rem; align-items: center; text-align: left; padding: var(--space-4); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-800); color: var(--text-100); cursor: pointer; }
-.meetup-steps button > span { grid-row: span 2; display: grid; place-items: center; width: 1.8rem; height: 1.8rem; border: 1px solid var(--mint-400); border-radius: 50%; color: var(--mint-400); }
-.meetup-steps small { color: var(--text-300); }
-.meetup-availability__summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; margin-block: var(--space-4); color: var(--text-300); }
-.meetup-unsaved { color: var(--accent-400); }
-.meetup-travel-fields { display: block; border: 0; margin: var(--space-4) 0; padding: 0; min-width: 0; width: 100%; }
-.meetup-travel-fields legend { font-weight: 600; padding-bottom: var(--space-3); }
-#meetup-availability, #meetup-places, #meetup-review { scroll-margin-top: 6rem; }
-@media (max-width: 620px) { .meetup-steps { grid-template-columns: 1fr; } .meetup-steps small { display: none; } .meetup-steps button > span { grid-row: auto; } }
-.meetup-parking { display: grid; justify-items: start; gap: var(--space-3); padding-top: var(--space-4); margin-top: var(--space-3); border-top: var(--border-hairline); }
-.meetup-parking h3 { font-size: var(--step-1); }
-.meetup-parking__list { display: grid; gap: var(--space-3); width: 100%; padding: 0; list-style: none; }
-.meetup-parking__list li { display: grid; gap: var(--space-1); padding: var(--space-3); background: var(--ink-750); border-radius: var(--radius-sm); }
-.meetup-parking__list span { color: var(--text-300); font-size: var(--step--1); }
+.meetup-live {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  color: var(--text-300);
+  font-size: var(--step--1);
+}
+.meetup-live > span {
+  width: .5rem;
+  height: .5rem;
+  border-radius: 50%;
+  background: var(--mint-400);
+}
+.meetup-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-block: var(--space-4);
+}
+.meetup-steps button {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: .2rem .7rem;
+  align-items: center;
+  text-align: left;
+  padding: var(--space-4);
+  border: var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--ink-800);
+  color: var(--text-100);
+  cursor: pointer;
+}
+.meetup-steps button > span {
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border: 1px solid var(--mint-400);
+  border-radius: 50%;
+  color: var(--mint-400);
+}
+.meetup-steps small {
+  color: var(--text-300);
+}
+.meetup-availability__summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: .5rem;
+  margin-block: var(--space-4);
+  color: var(--text-300);
+}
+.meetup-unsaved {
+  color: var(--accent-400);
+}
+.meetup-travel-fields {
+  display: block;
+  border: 0;
+  margin: var(--space-4) 0;
+  padding: 0;
+  min-width: 0;
+  width: 100%;
+}
+.meetup-travel-fields legend {
+  font-weight: 600;
+  padding-bottom: var(--space-3);
+}
+#meetup-availability, #meetup-places, #meetup-review {
+  scroll-margin-top: 6rem;
+}
+@media (max-width: 620px) {
+  .meetup-steps {
+    grid-template-columns: 1fr;
+  }
+  .meetup-steps small {
+    display: none;
+  }
+  .meetup-steps button > span {
+    grid-row: auto;
+  }
+}
+.meetup-parking {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  margin-top: var(--space-3);
+  border-top: var(--border-hairline);
+}
+.meetup-parking h3 {
+  font-size: var(--step-1);
+}
+.meetup-parking__list {
+  display: grid;
+  gap: var(--space-3);
+  width: 100%;
+  padding: 0;
+  list-style: none;
+}
+.meetup-parking__list li {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--ink-750);
+  border-radius: var(--radius-sm);
+}
+.meetup-parking__list span {
+  color: var(--text-300);
+  font-size: var(--step--1);
+}
 </style>

@@ -121,49 +121,166 @@ defineExpose({ answers });
 </template>
 
 <style scoped>
-.quiz { display: grid; gap: var(--space-4); padding: var(--space-4); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-850); }
-.quiz__head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-3); }
-.quiz__head h3 { margin: 0; font-size: var(--step-1); }
-.quiz__sub { margin: 4px 0 0; color: var(--text-300); font-size: var(--step--1); }
-.quiz__count { margin: 0; flex: none; color: var(--text-300); font-size: var(--step--1); font-variant-numeric: tabular-nums; }
-.quiz__error { color: var(--text-200); font-size: var(--step--1); }
+.quiz {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--ink-850);
+}
+.quiz__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.quiz__head h3 {
+  margin: 0;
+  font-size: var(--step-1);
+}
+.quiz__sub {
+  margin: 4px 0 0;
+  color: var(--text-300);
+  font-size: var(--step--1);
+}
+.quiz__count {
+  margin: 0;
+  flex: none;
+  color: var(--text-300);
+  font-size: var(--step--1);
+  font-variant-numeric: tabular-nums;
+}
+.quiz__error {
+  color: var(--text-200);
+  font-size: var(--step--1);
+}
 
 /* Progress as pips rather than a bar: it shows which cards are answered, not
    only how far along the deck is, so skipped ones stay visible. */
-.quiz__pips { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.quiz__pips {
+  display: flex;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
 /* --ink-600 rather than --ink-700: the unanswered track has to stay visible
    against the card it sits on, or the deck looks three cards long. */
-.quiz__pip { width: 100%; height: 4px; border-radius: var(--radius-pill); background: var(--ink-600); transition: background-color var(--dur-fast); }
-.quiz__pip--done { background: var(--mint-500); }
-.quiz__pip--here { background: var(--accent-400); }
+.quiz__pip {
+  width: 100%;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--ink-600);
+  transition: background-color var(--dur-fast);
+}
+.quiz__pip--done {
+  background: var(--mint-500);
+}
+.quiz__pip--here {
+  background: var(--accent-400);
+}
 
-.quiz__card { display: grid; gap: var(--space-3); }
-.quiz__prompt { margin: 0; font-size: var(--step-2); line-height: 1.35; font-weight: 600; color: var(--text-100); }
-.quiz__hint { margin: 0; color: var(--text-300); font-size: var(--step--1); }
-.quiz__options { display: grid; gap: var(--space-2); }
-.quiz__option { text-align: left; min-height: 52px; padding: var(--space-3) var(--space-4); border: var(--border-soft); border-radius: var(--radius-sm); background: var(--ink-800); color: var(--text-200); font: inherit; cursor: pointer; transition: background-color var(--dur-fast), border-color var(--dur-fast), transform var(--dur-fast); }
-.quiz__option:hover:not(:disabled) { border-color: var(--mint-400); transform: translateX(2px); }
-.quiz__option[aria-pressed='true'] { border-color: var(--mint-500); background: var(--mint-500); color: #fff; font-weight: 600; }
-:root[data-theme='dark'] .quiz__option[aria-pressed='true'] { color: #08070c; }
-.quiz__option:disabled { cursor: not-allowed; opacity: .55; }
+.quiz__card {
+  display: grid;
+  gap: var(--space-3);
+}
+.quiz__prompt {
+  margin: 0;
+  font-size: var(--step-2);
+  line-height: 1.35;
+  font-weight: 600;
+  color: var(--text-100);
+}
+.quiz__hint {
+  margin: 0;
+  color: var(--text-300);
+  font-size: var(--step--1);
+}
+.quiz__options {
+  display: grid;
+  gap: var(--space-2);
+}
+.quiz__option {
+  text-align: left;
+  min-height: 52px;
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--ink-800);
+  color: var(--text-200);
+  font: inherit;
+  cursor: pointer;
+  transition: background-color var(--dur-fast), border-color var(--dur-fast), transform var(--dur-fast);
+}
+.quiz__option:hover:not(:disabled) {
+  border-color: var(--mint-400);
+  transform: translateX(2px);
+}
+.quiz__option[aria-pressed='true'] {
+  border-color: var(--mint-500);
+  background: var(--mint-500);
+  color: #fff;
+  font-weight: 600;
+}
+:root[data-theme='dark'] .quiz__option[aria-pressed='true'] {
+  color: #08070c;
+}
+.quiz__option:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
 
-.quiz__foot { display: flex; align-items: center; gap: var(--space-2); border-top: var(--border-hairline); padding-top: var(--space-3); }
-.quiz__foot .btn { flex: none; min-height: 44px; }
-.quiz__done { margin: 0 0 0 auto; color: var(--text-300); font-size: var(--step--1); }
+.quiz__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-top: var(--border-hairline);
+  padding-top: var(--space-3);
+}
+.quiz__foot .btn {
+  flex: none;
+  min-height: 44px;
+}
+.quiz__done {
+  margin: 0 0 0 auto;
+  color: var(--text-300);
+  font-size: var(--step--1);
+}
 
 /* Cards slide in from the right and leave to the left, so the deck reads as a
    sequence going forward rather than as a panel being swapped. */
-.quiz-card-enter-active, .quiz-card-leave-active { transition: opacity var(--dur-fast), transform var(--dur-fast); }
-.quiz-card-enter-from { opacity: 0; transform: translateX(18px); }
-.quiz-card-leave-to { opacity: 0; transform: translateX(-18px); }
+.quiz-card-enter-active, .quiz-card-leave-active {
+  transition: opacity var(--dur-fast), transform var(--dur-fast);
+}
+.quiz-card-enter-from {
+  opacity: 0;
+  transform: translateX(18px);
+}
+.quiz-card-leave-to {
+  opacity: 0;
+  transform: translateX(-18px);
+}
 @media (prefers-reduced-motion: reduce) {
-  .quiz-card-enter-active, .quiz-card-leave-active { transition: none; }
-  .quiz-card-enter-from, .quiz-card-leave-to { transform: none; }
-  .quiz__option:hover:not(:disabled) { transform: none; }
+  .quiz-card-enter-active, .quiz-card-leave-active {
+    transition: none;
+  }
+  .quiz-card-enter-from, .quiz-card-leave-to {
+    transform: none;
+  }
+  .quiz__option:hover:not(:disabled) {
+    transform: none;
+  }
 }
 @media (max-width: 600px) {
-  .quiz__head { flex-direction: column; }
-  .quiz__foot { flex-wrap: wrap; }
-  .quiz__done { margin-left: 0; }
+  .quiz__head {
+    flex-direction: column;
+  }
+  .quiz__foot {
+    flex-wrap: wrap;
+  }
+  .quiz__done {
+    margin-left: 0;
+  }
 }
 </style>

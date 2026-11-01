@@ -21,7 +21,7 @@ const { listing, loading, error } = useTicket(() => props.id);
 
     <MarketNotice title="Online payments are not available" class="flow__notice">
       <p>No payment provider is connected. You cannot pay or place an order here, and no charge has been made.</p>
-      <RouterLink to="/concerts">Back to concerts</RouterLink>
+      <RouterLink to="/tickets">Back to tickets</RouterLink>
     </MarketNotice>
   </div>
 </template>

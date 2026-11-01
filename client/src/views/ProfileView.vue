@@ -324,41 +324,169 @@ async function save() {
 </template>
 
 <style scoped>
-.profile { max-width: 860px; padding-bottom: var(--space-9); }
-.profile__head { margin-bottom: var(--space-6); }
-.profile__head h1 { margin-block: var(--space-2); }
-.profile__security { margin-top: var(--space-5); }
-.profile__hint { color: var(--text-400); font-size: var(--step--1); }
-.profile__form { display: grid; gap: var(--space-5); }
-.profile__card { padding: var(--space-5); border: var(--border-soft); border-radius: var(--radius-lg); background: var(--ink-850); }
-.profile__card h2 { margin-bottom: var(--space-4); font-size: var(--step-1); }
-.profile__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
-.profile__field { display: grid; min-width: 0; gap: var(--space-2); color: var(--text-300); font-size: var(--step--1); }
-.profile__field input { width: 100%; min-width: 0; padding: var(--space-3); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-700); color: var(--text-100); }
-.profile__field input[readonly] { opacity: .7; }
-.profile__choices { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-5); margin-top: var(--space-5); padding: 0; border: 0; }
-.profile__choices legend { margin-bottom: var(--space-3); color: var(--text-300); font-size: var(--step--1); }
-.profile__choices label { display: inline-flex; align-items: center; gap: var(--space-2); }
-.profile__vibes { display: grid; gap: var(--space-4); margin-top: var(--space-5); }
-.profile__vibe { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) 2ch; align-items: center; gap: var(--space-3); }
-.profile__vibe input { width: 100%; min-width: 0; accent-color: var(--accent-500); }
-.profile__vibe output { font-variant-numeric: tabular-nums; }
-.profile__error { color: var(--rose-400); }
-.profile__success { color: var(--mint-400); }
-.profile__notice { display: grid; justify-items: start; gap: var(--space-3); }
-.profile__actions { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; gap: var(--space-4); padding: var(--space-4) var(--space-5); border: var(--border-soft); border-radius: var(--radius-lg); background: var(--ink-850); box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.08); }
-.profile__actions p { margin: 0; font-size: var(--step--1); }
-.profile__save { margin-left: auto; min-width: 160px; }
-.profile__logout { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3) var(--space-5); margin-top: var(--space-6); }
-.profile__logout h2 { margin-bottom: var(--space-1); }
-.profile__logout .profile__error { flex-basis: 100%; }
+.profile {
+  max-width: 860px;
+  padding-bottom: var(--space-9);
+}
+.profile__head {
+  margin-bottom: var(--space-6);
+}
+.profile__head h1 {
+  margin-block: var(--space-2);
+}
+.profile__security {
+  margin-top: var(--space-5);
+}
+.profile__hint {
+  color: var(--text-400);
+  font-size: var(--step--1);
+}
+.profile__form {
+  display: grid;
+  gap: var(--space-5);
+}
+.profile__card {
+  padding: var(--space-5);
+  border: var(--border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--ink-850);
+}
+.profile__card h2 {
+  margin-bottom: var(--space-4);
+  font-size: var(--step-1);
+}
+.profile__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.profile__field {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+  color: var(--text-300);
+  font-size: var(--step--1);
+}
+.profile__field input {
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-3);
+  border: var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--field-bg);
+  color: var(--text-100);
+}
+.profile__field input[readonly] {
+  opacity: .7;
+}
+.profile__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
+  margin-top: var(--space-5);
+  padding: 0;
+  border: 0;
+}
+.profile__choices legend {
+  margin-bottom: var(--space-3);
+  color: var(--text-300);
+  font-size: var(--step--1);
+}
+.profile__choices label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.profile__vibes {
+  display: grid;
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+}
+.profile__vibe {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) 2ch;
+  align-items: center;
+  gap: var(--space-3);
+}
+.profile__vibe input {
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--accent-500);
+}
+.profile__vibe output {
+  font-variant-numeric: tabular-nums;
+}
+.profile__error {
+  color: var(--rose-400);
+}
+.profile__success {
+  color: var(--mint-400);
+}
+.profile__notice {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+}
+.profile__actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: var(--border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--ink-850);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.08);
+}
+.profile__actions p {
+  margin: 0;
+  font-size: var(--step--1);
+}
+.profile__save {
+  margin-left: auto;
+  min-width: 160px;
+}
+.profile__logout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+  margin-top: var(--space-6);
+}
+.profile__logout h2 {
+  margin-bottom: var(--space-1);
+}
+.profile__logout .profile__error {
+  flex-basis: 100%;
+}
 @media (max-width: 600px) {
-  .profile__fields { grid-template-columns: 1fr; }
-  .profile__card { padding: var(--space-4); }
-  .profile__vibe { grid-template-columns: minmax(0, 1fr) 2ch; }
-  .profile__vibe input { grid-row: 2; grid-column: 1 / -1; }
-  .profile__vibe output { grid-column: 2; grid-row: 1; text-align: right; }
-  .profile__actions { padding: var(--space-3) var(--space-4); }
-  .profile__save { min-width: 0; flex: 1; }
+  .profile__fields {
+    grid-template-columns: 1fr;
+  }
+  .profile__card {
+    padding: var(--space-4);
+  }
+  .profile__vibe {
+    grid-template-columns: minmax(0, 1fr) 2ch;
+  }
+  .profile__vibe input {
+    grid-row: 2;
+    grid-column: 1 / -1;
+  }
+  .profile__vibe output {
+    grid-column: 2;
+    grid-row: 1;
+    text-align: right;
+  }
+  .profile__actions {
+    padding: var(--space-3) var(--space-4);
+  }
+  .profile__save {
+    min-width: 0;
+    flex: 1;
+  }
 }
 </style>

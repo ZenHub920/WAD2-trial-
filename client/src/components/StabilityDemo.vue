@@ -209,8 +209,12 @@ const lineFor = (seekerId) => {
   box-shadow: 0 0 0 4px color-mix(in oklab, currentColor 20%, transparent);
 }
 
-.is-good { color: var(--mint-400); }
-.is-bad  { color: var(--rose-400); }
+.is-good {
+  color: var(--mint-400);
+}
+.is-bad  {
+  color: var(--rose-400);
+}
 
 /* ---- Board -------------------------------------------------------------- */
 
@@ -340,11 +344,15 @@ const lineFor = (seekerId) => {
 }
 
 @keyframes crawl {
-  to { stroke-dashoffset: -20; }
+  to {
+    stroke-dashoffset: -20;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .link--defect { animation: none; }
+  .link--defect {
+    animation: none;
+  }
 }
 
 /* ---- Explanation -------------------------------------------------------- */

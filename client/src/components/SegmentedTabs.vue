@@ -100,8 +100,12 @@ const bubble = computed(() => ({
   transition: color var(--dur-base) var(--ease-out);
 }
 
-.segs__tab--on { color: #fff; }
-.segs__tab:not(.segs__tab--on):hover { color: var(--text-100); }
+.segs__tab--on {
+  color: #fff;
+}
+.segs__tab:not(.segs__tab--on):hover {
+  color: var(--text-100);
+}
 
 .segs__icon {
   width: 19px;
@@ -114,7 +118,11 @@ const bubble = computed(() => ({
   stroke-linejoin: round;
 }
 
-.segs__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.segs__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .segs__count {
   display: grid;
@@ -128,15 +136,27 @@ const bubble = computed(() => ({
   font-size: var(--step--2);
 }
 
-.segs__tab--on .segs__count { background: rgba(255, 255, 255, 0.26); }
+.segs__tab--on .segs__count {
+  background: rgba(255, 255, 255, 0.26);
+}
 
 /* On a narrow screen the icons carry it alone. */
 @media (max-width: 560px) {
-  .segs__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .segs__tab { padding-inline: var(--space-2); }
+  .segs__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .segs__tab {
+    padding-inline: var(--space-2);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .segs__bubble { transition: none; }
+  .segs__bubble {
+    transition: none;
+  }
 }
 </style>

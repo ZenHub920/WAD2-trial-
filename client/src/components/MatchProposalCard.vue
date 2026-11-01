@@ -169,46 +169,208 @@ async function explain() {
   padding: var(--space-5);
   margin-block: var(--space-4);
 }
-.proposal :where(p, h3, ol, ul) { margin: 0; }
-.proposal--confirmed { border-color: color-mix(in oklab, var(--mint-400) 45%, var(--ink-600)); }
-.proposal__head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-3); }
-.proposal__identity { display: grid; gap: var(--space-1); flex: 1 1 12rem; min-width: 0; }
-.proposal__eyebrow { color: var(--accent-400); font-size: var(--step--2); font-weight: 700; }
-.proposal h3 { font-size: var(--step-1); line-height: 1.3; }
-.proposal__meta, .proposal__note { color: var(--text-300); font-size: var(--step--1); }
-.proposal__status { white-space: normal; }
-.proposal__concert { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); padding-bottom: var(--space-4); border-bottom: var(--border-hairline); font-size: var(--step--1); }
-.proposal__concert span { color: var(--text-300); }
-.proposal__fit { display: grid; gap: var(--space-2); }
-.proposal__fit ul { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: 0; list-style: none; }
-.proposal__fit li { padding: var(--space-1) var(--space-2); background: var(--accent-glow); border-radius: var(--radius-sm); color: var(--text-200); font-size: var(--step--1); }
-.proposal__reservation { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); padding: var(--space-4); border-radius: var(--radius-md); background: var(--ink-750); }
-.proposal__reservation > div { display: grid; align-content: start; gap: var(--space-1); min-width: 0; }
-.proposal__reservation strong { font-size: var(--step--1); color: var(--text-100); }
-.proposal__label { color: var(--text-300); font-size: var(--step--2); }
-.proposal__approvals { display: grid; gap: var(--space-3); }
-.proposal__approvals ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); padding: 0; list-style: none; }
-.proposal__approvals li { display: flex; align-items: flex-start; gap: var(--space-2); min-width: 0; }
-.proposal__check { display: grid; place-items: center; flex: none; width: 1.6rem; height: 1.6rem; border: var(--border-hairline); border-radius: 50%; font-size: var(--step--2); color: var(--text-300); }
-.is-approved .proposal__check { background: var(--accent-glow); border-color: var(--accent-400); color: var(--accent-400); }
-.proposal__approvals strong { display: block; font-size: var(--step--1); color: var(--text-200); }
-.proposal__approvals small { display: block; font-size: var(--step--2); color: var(--text-300); }
-.actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
-.proposal .btn { white-space: normal; }
-.proposal__explanation { border-top: var(--border-hairline); padding-top: var(--space-3); }
-.proposal__why { display: flex; align-items: center; gap: var(--space-2); width: 100%; padding: var(--space-1) 0; border: 0; background: transparent; color: var(--accent-400); text-align: left; cursor: pointer; font: inherit; font-size: var(--step--1); font-weight: 700; }
-.proposal__why > span { margin-left: auto; }
-.proposal__why:focus-visible { outline: 2px solid var(--accent-400); outline-offset: 4px; border-radius: var(--radius-sm); }
-.proposal__why:disabled { opacity: .6; cursor: wait; }
-.proposal__reasons { display: grid; gap: var(--space-3); margin-top: var(--space-3); font-size: var(--step--1); }
-.proposal__reasons ul { display: grid; gap: var(--space-2); padding-left: var(--space-4); color: var(--text-200); }
-.proposal__reasons p { color: var(--text-300); }
-.proposal__footnote { font-size: var(--step--2); color: var(--text-300); }
-.proposal__error { color: var(--rose-400); font-size: var(--step--1); }
+.proposal :where(p, h3, ol, ul) {
+  margin: 0;
+}
+.proposal--confirmed {
+  border-color: color-mix(in oklab, var(--mint-400) 45%, var(--ink-600));
+}
+.proposal__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.proposal__identity {
+  display: grid;
+  gap: var(--space-1);
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+.proposal__eyebrow {
+  color: var(--accent-400);
+  font-size: var(--step--2);
+  font-weight: 700;
+}
+.proposal h3 {
+  font-size: var(--step-1);
+  line-height: 1.3;
+}
+.proposal__meta, .proposal__note {
+  color: var(--text-300);
+  font-size: var(--step--1);
+}
+.proposal__status {
+  white-space: normal;
+}
+.proposal__concert {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  padding-bottom: var(--space-4);
+  border-bottom: var(--border-hairline);
+  font-size: var(--step--1);
+}
+.proposal__concert span {
+  color: var(--text-300);
+}
+.proposal__fit {
+  display: grid;
+  gap: var(--space-2);
+}
+.proposal__fit ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 0;
+  list-style: none;
+}
+.proposal__fit li {
+  padding: var(--space-1) var(--space-2);
+  background: var(--accent-glow);
+  border-radius: var(--radius-sm);
+  color: var(--text-200);
+  font-size: var(--step--1);
+}
+.proposal__reservation {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--ink-750);
+}
+.proposal__reservation > div {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.proposal__reservation strong {
+  font-size: var(--step--1);
+  color: var(--text-100);
+}
+.proposal__label {
+  color: var(--text-300);
+  font-size: var(--step--2);
+}
+.proposal__approvals {
+  display: grid;
+  gap: var(--space-3);
+}
+.proposal__approvals ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+.proposal__approvals li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.proposal__check {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: var(--border-hairline);
+  border-radius: 50%;
+  font-size: var(--step--2);
+  color: var(--text-300);
+}
+.is-approved .proposal__check {
+  background: var(--accent-glow);
+  border-color: var(--accent-400);
+  color: var(--accent-400);
+}
+.proposal__approvals strong {
+  display: block;
+  font-size: var(--step--1);
+  color: var(--text-200);
+}
+.proposal__approvals small {
+  display: block;
+  font-size: var(--step--2);
+  color: var(--text-300);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.proposal .btn {
+  white-space: normal;
+}
+.proposal__explanation {
+  border-top: var(--border-hairline);
+  padding-top: var(--space-3);
+}
+.proposal__why {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-1) 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-400);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--step--1);
+  font-weight: 700;
+}
+.proposal__why > span {
+  margin-left: auto;
+}
+.proposal__why:focus-visible {
+  outline: 2px solid var(--accent-400);
+  outline-offset: 4px;
+  border-radius: var(--radius-sm);
+}
+.proposal__why:disabled {
+  opacity: .6;
+  cursor: wait;
+}
+.proposal__reasons {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  font-size: var(--step--1);
+}
+.proposal__reasons ul {
+  display: grid;
+  gap: var(--space-2);
+  padding-left: var(--space-4);
+  color: var(--text-200);
+}
+.proposal__reasons p {
+  color: var(--text-300);
+}
+.proposal__footnote {
+  font-size: var(--step--2);
+  color: var(--text-300);
+}
+.proposal__error {
+  color: var(--rose-400);
+  font-size: var(--step--1);
+}
 @media (max-width: 420px) {
-  .proposal { padding: var(--space-4); }
-  .proposal__reservation { grid-template-columns: 1fr; }
-  .proposal__status { margin-left: 0; }
-  .actions .btn { width: 100%; }
+  .proposal {
+    padding: var(--space-4);
+  }
+  .proposal__reservation {
+    grid-template-columns: 1fr;
+  }
+  .proposal__status {
+    margin-left: 0;
+  }
+  .actions .btn {
+    width: 100%;
+  }
 }
 </style>

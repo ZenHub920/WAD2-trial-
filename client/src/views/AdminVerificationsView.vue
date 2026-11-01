@@ -2,7 +2,6 @@
 import { ref, onMounted } from 'vue';
 import { api, formatDate } from '../api.js';
 import { formatMoney, formatRelative, listingTitle, sectionLabel } from '../market.js';
-import IssuedTicketLists from '../components/market/IssuedTicketLists.vue';
 import MarketNotice from '../components/market/MarketNotice.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 
@@ -81,10 +80,7 @@ onMounted(load);
       <p>Use Refresh to try again.</p>
     </MarketNotice>
 
-    <template v-if="!error && hasLoaded">
-      <IssuedTicketLists />
-      <h2 class="admin__queue-title">Proof review queue</h2>
-    </template>
+    <h2 v-if="!error && hasLoaded" class="admin__queue-title">Proof review queue</h2>
 
     <MarketNotice v-if="!loading && !error && !listings.length" title="Nothing to review">
       New proofs of purchase will appear here.
@@ -249,7 +245,7 @@ onMounted(load);
   padding: var(--space-3);
   border: var(--border-soft);
   border-radius: var(--radius-md);
-  background: var(--ink-700);
+  background: var(--field-bg);
   resize: vertical;
 }
 

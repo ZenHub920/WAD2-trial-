@@ -34,7 +34,7 @@ watch(
 
 <template>
   <div class="container flow">
-    <MarketPageHead title="Historical order" fallback="/concerts" />
+    <MarketPageHead title="Historical order" fallback="/tickets" />
 
     <div v-if="loading" class="loading-state" aria-busy="true"><LoadingSpinner /> Loading order…</div>
 
@@ -43,7 +43,7 @@ watch(
     </MarketNotice>
 
     <MarketNotice v-else-if="error?.status === 404" title="Order not found">
-      <RouterLink to="/concerts">Back to concerts</RouterLink>
+      <RouterLink to="/tickets">Back to tickets</RouterLink>
     </MarketNotice>
 
     <MarketNotice v-else-if="error" tone="error" title="Could not load this order">
@@ -62,10 +62,6 @@ watch(
         <div><dt>Order number</dt><dd class="mono">{{ order.id }}</dd></div>
         <div><dt>Checkout</dt><dd>Simulated — no charge</dd></div>
         <div><dt>Date</dt><dd>{{ formatDateTime(order.createdAt) }}</dd></div>
-        <div v-if="order.ticketNumbers?.length">
-          <dt>Ticket {{ order.ticketNumbers.length === 1 ? 'number' : 'numbers' }}</dt>
-          <dd class="mono">{{ order.ticketNumbers.join(', ') }}</dd>
-        </div>
       </dl>
 
       <OrderItem v-if="order.listing" :listing="order.listing" class="flow__item" />
@@ -77,7 +73,7 @@ watch(
       />
 
       <div class="actions">
-        <RouterLink to="/concerts" class="btn btn--primary">Back to concerts</RouterLink>
+        <RouterLink to="/tickets" class="btn btn--primary">Back to tickets</RouterLink>
         <RouterLink
           v-if="order.listing"
           :to="{ name: 'ticket-detail', params: { id: order.listing.id } }"

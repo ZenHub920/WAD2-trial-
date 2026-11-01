@@ -191,8 +191,12 @@ async function submit() {
 }
 
 @keyframes drift-zoom {
-  from { transform: scale(1); }
-  to { transform: scale(1.1) translate(-1.5%, -1%); }
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.1) translate(-1.5%, -1%);
+  }
 }
 
 .auth__tint {
@@ -218,7 +222,9 @@ async function submit() {
   animation: sweep 9s ease-in-out infinite alternate;
 }
 
-.auth__beam--one { left: 10%; }
+.auth__beam--one {
+  left: 10%;
+}
 
 .auth__beam--two {
   right: 5%;
@@ -228,8 +234,12 @@ async function submit() {
 }
 
 @keyframes sweep {
-  from { transform: rotate(-18deg); }
-  to { transform: rotate(18deg); }
+  from {
+    transform: rotate(-18deg);
+  }
+  to {
+    transform: rotate(18deg);
+  }
 }
 
 .auth__inner {
@@ -272,13 +282,25 @@ async function submit() {
   animation: eq 0.9s ease-in-out infinite alternate;
 }
 
-.eq i:nth-child(2) { animation-delay: -0.3s; background: #a685e8; }
-.eq i:nth-child(3) { animation-delay: -0.6s; }
-.eq i:nth-child(4) { animation-delay: -0.15s; background: #a685e8; }
+.eq i:nth-child(2) {
+  animation-delay: -0.3s;
+  background: #a685e8;
+}
+.eq i:nth-child(3) {
+  animation-delay: -0.6s;
+}
+.eq i:nth-child(4) {
+  animation-delay: -0.15s;
+  background: #a685e8;
+}
 
 @keyframes eq {
-  from { transform: scaleY(0.25); }
-  to { transform: scaleY(1); }
+  from {
+    transform: scaleY(0.25);
+  }
+  to {
+    transform: scaleY(1);
+  }
 }
 
 .auth__intro h1 {
@@ -315,9 +337,15 @@ async function submit() {
   animation: rise var(--dur-slower) var(--ease-settle) both;
 }
 
-.auth__perks li:nth-child(1) { animation-delay: 300ms; }
-.auth__perks li:nth-child(2) { animation-delay: 400ms; }
-.auth__perks li:nth-child(3) { animation-delay: 500ms; }
+.auth__perks li:nth-child(1) {
+  animation-delay: 300ms;
+}
+.auth__perks li:nth-child(2) {
+  animation-delay: 400ms;
+}
+.auth__perks li:nth-child(3) {
+  animation-delay: 500ms;
+}
 
 .auth__perks li::before {
   content: '✦';
@@ -345,13 +373,25 @@ async function submit() {
 }
 
 @keyframes card-in {
-  from { opacity: 0; transform: translateY(30px) scale(0.97); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @keyframes rise {
-  from { opacity: 0; transform: translateY(14px); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* The highlight slides between the two tabs instead of jumping. */
@@ -513,8 +553,14 @@ async function submit() {
   transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
 }
 
-.swap-enter-from { opacity: 0; transform: translateY(12px); }
-.swap-leave-to { opacity: 0; transform: translateY(-12px); }
+.swap-enter-from {
+  opacity: 0;
+  transform: translateY(12px);
+}
+.swap-leave-to {
+  opacity: 0;
+  transform: translateY(-12px);
+}
 
 .auth__submit {
   display: inline-flex;
@@ -570,18 +616,36 @@ async function submit() {
   font-weight: 700;
 }
 
-.form-message { font-size: var(--step--1); overflow-wrap: anywhere; }
-.form-message--error { color: #ff9aa9; }
-.form-message--success { color: #efc3f5; }
+.form-message {
+  font-size: var(--step--1);
+  overflow-wrap: anywhere;
+}
+.form-message--error {
+  color: #ff9aa9;
+}
+.form-message--success {
+  color: #efc3f5;
+}
 
 @media (max-width: 860px) {
-  .auth__inner { grid-template-columns: 1fr; gap: var(--space-6); padding-block: var(--space-7); }
-  .auth__intro h1 { font-size: var(--step-5); max-width: none; }
-  .auth__perks { display: none; }
+  .auth__inner {
+    grid-template-columns: 1fr;
+    gap: var(--space-6);
+    padding-block: var(--space-7);
+  }
+  .auth__intro h1 {
+    font-size: var(--step-5);
+    max-width: none;
+  }
+  .auth__perks {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .auth__photo,
-  .auth__beam { animation: none; }
+  .auth__beam {
+    animation: none;
+  }
 }
 </style>

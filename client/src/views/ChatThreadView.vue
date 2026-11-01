@@ -245,7 +245,9 @@ function timeOf(value) {
 }
 
 @media (max-width: 480px) {
-  .about { grid-template-columns: minmax(0, 1fr); }
+  .about {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ---- Messages --------------------------------------------------------- */
@@ -306,7 +308,7 @@ function timeOf(value) {
   padding: var(--space-2);
   border: var(--border-hairline);
   border-radius: var(--radius-lg);
-  background: var(--ink-800);
+  background: var(--field-bg);
 }
 
 .composer:focus-within {

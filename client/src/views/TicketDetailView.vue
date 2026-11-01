@@ -122,11 +122,8 @@ async function saveListing() {
     listing.value = updated;
     editing.value = false;
     announce('Listing updated.');
-  } catch (err) {
-    const code = err.body?.error ?? err.message;
-    editError.value = code === 'quantity_locked_by_ticket_numbers'
-      ? 'The number of tickets is fixed once ticket numbers are attached.'
-      : 'Could not save this listing. Check the details and try again.';
+  } catch {
+    editError.value = 'Could not save this listing. Check the details and try again.';
   } finally {
     saving.value = false;
   }
@@ -140,7 +137,7 @@ async function saveListing() {
     <div v-if="loading" class="loading-state" aria-busy="true"><LoadingSpinner /> Loading listing…</div>
 
     <MarketNotice v-else-if="error?.status === 404" title="Listing not found">
-      It may have been removed. <RouterLink to="/concerts">Back to concerts</RouterLink>
+      It may have been removed. <RouterLink to="/tickets">Back to tickets</RouterLink>
     </MarketNotice>
 
     <MarketNotice v-else-if="error" tone="error" title="Could not load this listing">
@@ -233,7 +230,7 @@ async function saveListing() {
   padding: var(--space-3);
   border: var(--border-soft);
   border-radius: var(--radius-md);
-  background: var(--ink-700);
+  background: var(--field-bg);
 }
 
 .edit__preview {

@@ -104,7 +104,13 @@ function onFile(event) {
   gap: var(--space-5);
 }
 
-.picker__actions { display: grid; min-width: 0; gap: var(--space-2); justify-items: start; overflow-wrap: anywhere; }
+.picker__actions {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+  justify-items: start;
+  overflow-wrap: anywhere;
+}
 
 .picker__remove {
   border: 0;
@@ -118,12 +124,27 @@ function onFile(event) {
   text-underline-offset: 3px;
 }
 
-.picker__remove:disabled { opacity: 0.5; cursor: not-allowed; }
+.picker__remove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
-.picker__hint { margin: 0; font-size: var(--step--2); color: var(--text-400); max-width: 34ch; }
-.picker__error { margin: 0; font-size: var(--step--2); color: var(--rose-400); }
+.picker__hint {
+  margin: 0;
+  font-size: var(--step--2);
+  color: var(--text-400);
+  max-width: 34ch;
+}
+.picker__error {
+  margin: 0;
+  font-size: var(--step--2);
+  color: var(--rose-400);
+}
 
 @media (max-width: 520px) {
-  .picker { flex-direction: column; align-items: flex-start; }
+  .picker {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 </style>

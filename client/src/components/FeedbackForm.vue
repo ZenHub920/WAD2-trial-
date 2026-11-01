@@ -59,11 +59,41 @@ async function submit() {
 </template>
 
 <style scoped>
-.feedback-form { display: grid; gap: var(--space-3); min-width: 0; padding-block: var(--space-4); border-top: var(--border-hairline); }
-.feedback-form h3 { font-size: var(--step-1); }
-.feedback-form label { display: grid; gap: var(--space-2); min-width: 0; }
-.feedback-form .feedback-form__check { display: flex; align-items: center; gap: var(--space-2); }
-.feedback-form textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: var(--space-3); border: var(--border-soft); border-radius: var(--radius-sm); background: var(--ink-700); color: var(--text-100); }
-.feedback-form > .btn { justify-self: start; white-space: normal; }
-.feedback-form textarea { resize: vertical; }
+.feedback-form {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding-block: var(--space-4);
+  border-top: var(--border-hairline);
+}
+.feedback-form h3 {
+  font-size: var(--step-1);
+}
+.feedback-form label {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.feedback-form .feedback-form__check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.feedback-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-3);
+  border: var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--field-bg);
+  color: var(--text-100);
+}
+.feedback-form > .btn {
+  justify-self: start;
+  white-space: normal;
+}
+.feedback-form textarea {
+  resize: vertical;
+}
 </style>
