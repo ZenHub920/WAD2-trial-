@@ -1,11 +1,3 @@
-/**
- * Integration tests for unavailable checkout, historical orders, chatting and
- * verifying ticket listings, on top of the inventory covered by tickets.test.js.
- *
- * An unconfigured payment provider must never create an order or sell a ticket.
- * Historical orders stay private, and verification is earned.
- */
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
