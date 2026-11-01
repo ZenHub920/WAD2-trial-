@@ -220,7 +220,7 @@ async function undo() {
 .hist__search input {
   width: 100%;
   padding: var(--space-3) var(--space-4);
-  background: var(--ink-800);
+  background: var(--field-bg);
   border: var(--border-hairline);
   border-radius: var(--radius-md);
   font-family: var(--font-body);

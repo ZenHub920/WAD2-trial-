@@ -142,6 +142,12 @@ button:disabled {
   max-width: 100%;
 }
 
+/* Fields are white everywhere; components that wrap an input (search boxes,
+   chat composers, the date field) paint the wrapper and keep the input clear. */
+:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea) {
+  background-color: var(--field-bg);
+}
+
 /* Shared native controls keep keyboard and screen-reader behaviour. */
 :root { color-scheme: light; }
 :root[data-theme='dark'] { color-scheme: dark; }
@@ -195,7 +201,7 @@ select {
   padding: var(--space-3) 2.75rem var(--space-3) var(--space-3);
   border: var(--border-soft);
   border-radius: var(--radius-md);
-  background-color: var(--ink-800);
+  background-color: var(--field-bg);
   color: var(--text-100);
   font-size: var(--step--1);
   line-height: 1.4;
@@ -214,7 +220,7 @@ select[multiple], select[size] { padding: var(--space-3); }
 select:hover:not(:disabled) { border-color: var(--accent-400); }
 select:focus-visible { border-color: var(--accent-400); }
 select:disabled { opacity: 0.55; cursor: not-allowed; }
-select option { background: var(--ink-800); color: var(--text-100); }
+select option { background: var(--field-bg); color: var(--text-100); }
 select option:disabled { color: var(--text-400); }
 
 @media (forced-colors: active) {

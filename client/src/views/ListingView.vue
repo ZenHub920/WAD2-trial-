@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, watch } from 'vue';
+import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { api, formatDate } from '../api.js';
 import { SECTION_SUGGESTIONS } from '../market.js';
@@ -45,23 +45,7 @@ const listing = ref({
   section: '',
 });
 
-// One ticket-number box per ticket, keeping whatever was already typed.
-const ticketNumbers = ref(['']);
-const badNumber = ref('');
-watch(() => listing.value.quantity, (count) => {
-  const n = Math.min(Math.max(Number(count) || 1, 1), 10);
-  ticketNumbers.value = Array.from({ length: n }, (_, i) => ticketNumbers.value[i] ?? '');
-});
-
-const normalise = (n) => n.trim().toUpperCase().replace(/[\s-]+/g, '-');
-
 const ERROR_COPY = {
-  ticket_number_not_issued: (n) => `${n} isn’t on this concert’s issued ticket list in the app. Check it against your ticket.`,
-  ticket_category_mismatch: (n) => `${n} was issued for a different section. Check the section matches your ticket.`,
-  ticket_number_already_listed: (n) => `${n} is already listed for sale.`,
-  duplicate_ticket_number: (n) => `${n} is entered more than once.`,
-  invalid_ticket_number: () => 'Ticket numbers use letters, digits, spaces and dashes (3–40 characters).',
-  one_ticket_number_per_ticket: () => 'Enter a ticket number for every ticket, or leave them all blank.',
   invalid_concert: () => 'Choose a concert or enter its artist and venue.',
   invalid_concert_date: () => 'Enter a valid concert date.',
   invalid_price: () => 'Enter a valid total listing price.',
@@ -95,8 +79,6 @@ function previewImage(event) {
 async function submitListing() {
   creating.value = true;
   error.value = '';
-  badNumber.value = '';
-  const numbers = ticketNumbers.value.map((n) => n.trim());
   try {
     const { listing: created } = await api.createTicket({
       ...(addingConcert.value
@@ -113,17 +95,14 @@ async function submitListing() {
       section: listing.value.section,
       description: listing.value.description,
       ...(imagePreview.value ? { imageData: imagePreview.value } : {}),
-      // Numbers are optional, but all-or-none: one per ticket when given.
-      ...(numbers.some(Boolean) ? { ticketNumbers: numbers } : {}),
       ...(proof.value ? { proofData: proof.value } : {}),
     });
     await router.push({ name: 'ticket-detail', params: { id: created.id } });
   } catch (err) {
     const code = err.body?.error ?? err.message;
-    badNumber.value = err.body?.ticketNumber ?? '';
     error.value = err.status === 401
       ? 'Please sign in before listing a ticket.'
-      : (ERROR_COPY[code]?.(badNumber.value) ?? 'Could not publish your listing. Check the details and try again.');
+      : (ERROR_COPY[code]?.() ?? 'Could not publish your listing. Check the details and try again.');
   } finally {
     creating.value = false;
   }
@@ -222,24 +201,7 @@ async function submitListing() {
 
         <section class="listing-form__section">
           <h2>Verify your tickets <small class="listing-form__optional">optional</small></h2>
-          <p class="listing-form__field listing-form__field--wide listing-form__hint">
-            Enter each ticket number to check it against the app’s issued ticket list.
-            A match verifies the ticket number, not the seller or a completed ticket transfer.
-            Ticket numbers are not shown on public listings. Online checkout is currently unavailable.
-          </p>
-          <label v-for="(_, index) in ticketNumbers" :key="index" class="listing-form__field">
-            Ticket {{ index + 1 }} number
-            <input
-              v-model="ticketNumbers[index]"
-              :class="{ 'listing-form__input--bad': badNumber && normalise(ticketNumbers[index]) === badNumber }"
-              placeholder="Ticket number as printed on your ticket"
-              autocomplete="off"
-              spellcheck="false"
-              maxlength="40"
-            />
-          </label>
           <div class="listing-form__field listing-form__field--wide">
-            <p class="listing-form__hint">You can also upload proof of purchase for review.</p>
             <ProofUpload v-model="proof" />
           </div>
         </section>
@@ -272,7 +234,7 @@ async function submitListing() {
 .listing-form__section h2 { grid-column: 1 / -1; font-size: var(--step-1); }
 .listing-form__field { display: grid; min-width: 0; gap: var(--space-2); color: var(--text-300); font-size: var(--step--1); }
 .listing-form__field--wide { grid-column: 1 / -1; }
-.listing-form input, .listing-form textarea { width: 100%; min-width: 0; padding: var(--space-3); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-700); }
+.listing-form input, .listing-form textarea { width: 100%; min-width: 0; padding: var(--space-3); border: var(--border-soft); border-radius: var(--radius-md); background: var(--field-bg); }
 .listing-form textarea { resize: vertical; }
 .image-picker { position: relative; display: grid; place-items: center; min-height: 170px; overflow: hidden; border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-700); color: var(--accent-400); font-size: 2rem; }
 .image-picker img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
@@ -281,7 +243,6 @@ async function submitListing() {
 .listing-form__hint { color: var(--text-400); font-size: var(--step--2); }
 .listing-form__link { justify-self: start; padding: 0; color: var(--accent-400); font-size: var(--step--2); text-decoration: underline; text-align: left; }
 .listing-form__optional { margin-left: var(--space-2); color: var(--text-400); font-family: var(--font-body); font-size: var(--step--2); font-weight: 400; }
-.listing-form__input--bad { border-color: var(--rose-400) !important; }
 .listing-form__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-3); }
 @media (max-width: 600px) {
   .listing-form__section { grid-template-columns: 1fr; }

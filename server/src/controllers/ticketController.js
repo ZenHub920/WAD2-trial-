@@ -7,27 +7,11 @@ function cleanListing(listing) {
   return { ...fields, seller: publicUser(seller) };
 }
 
-/** The seller's (or an operator's) view: the public listing plus review state and ticket numbers. */
-export function ownerListing(listing, repos) {
+/** The seller's (or an operator's) view: the public listing plus its review state. */
+export function ownerListing(listing) {
   if (!listing) return null;
-  return {
-    ...cleanListing(listing),
-    verification: listing.verification,
-    ticketNumbers: repos.tickets.ticketNumbers(listing.id),
-  };
+  return { ...cleanListing(listing), verification: listing.verification };
 }
-
-/** Ticket-number problems a seller can fix, each reported with the number that caused it. */
-const TICKET_NUMBER_ERRORS = {
-  duplicate_ticket_number: 400,
-  ticket_number_not_issued: 400,
-  ticket_category_mismatch: 400,
-  ticket_number_already_listed: 409,
-  ticket_number_not_owned: 409,
-};
-
-// Letters, digits, spaces and dashes, as printed on tickets; spaces and dashes match each other.
-export const TICKET_NUMBER = /^[A-Za-z0-9][A-Za-z0-9 -]{2,39}$/;
 
 // Proof arrives as a data URL; ~3M chars is about 2MB of file, well under the JSON body limit.
 const MAX_PROOF_CHARS = 3_000_000;
@@ -45,8 +29,6 @@ function validateProof(value, { required = false } = {}) {
 function validate(body, creating) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return 'invalid_listing';
   if (creating && body.concertId !== undefined) {
-    // Listing against an existing concert, which is what lets ticket numbers be
-    // checked against that concert's issued list.
     if (typeof body.concertId !== 'string' || !body.concertId) return 'invalid_concert';
     if (body.concert !== undefined) return 'concert_or_concert_id_not_both';
   } else if (creating) {
@@ -67,13 +49,6 @@ function validate(body, creating) {
   if ((creating || body.section !== undefined)
     && (typeof body.section !== 'string' || !body.section.trim() || body.section.length > 120)) return 'invalid_section';
   if (body.description !== undefined && (typeof body.description !== 'string' || body.description.length > 2000)) return 'invalid_description';
-  if (creating && body.ticketNumbers !== undefined) {
-    const numbers = body.ticketNumbers;
-    if (!Array.isArray(numbers) || numbers.length !== body.quantity) return 'one_ticket_number_per_ticket';
-    if (!numbers.every((n) => typeof n === 'string' && TICKET_NUMBER.test(n.trim()))) {
-      return 'invalid_ticket_number';
-    }
-  }
   if (creating) {
     const proofError = validateProof(body.proofData);
     if (proofError) return proofError;
@@ -97,7 +72,7 @@ export function createTicketController(repos, images) {
       res.json({ listing: cleanListing(listing) });
     },
     mine(req, res) {
-      res.json({ listings: repos.tickets.forSeller(req.user.id).map((l) => ownerListing(l, repos)) });
+      res.json({ listings: repos.tickets.forSeller(req.user.id).map(ownerListing) });
     },
     create(req, res) {
       const error = validate(req.body, true);
@@ -119,15 +94,12 @@ export function createTicketController(repos, images) {
           priceCents: req.body.priceCents, quantity: req.body.quantity,
           section: req.body.section.trim(), description: req.body.description?.trim() ?? '',
           image_path: imagePath,
-          ticket_numbers: req.body.ticketNumbers ?? [],
           proof_data: req.body.proofData ?? null,
         });
-        res.status(201).json({ listing: ownerListing(listing, repos) });
+        res.status(201).json({ listing: ownerListing(listing) });
       } catch (err) {
         images.remove(imagePath);
-        const status = TICKET_NUMBER_ERRORS[err.code];
-        if (!status) throw err;
-        res.status(status).json({ error: err.code, ticketNumber: err.detail });
+        throw err;
       }
     },
     update(req, res) {
@@ -137,11 +109,6 @@ export function createTicketController(repos, images) {
       }
       const error = validate(req.body, false);
       if (error) return res.status(400).json({ error });
-      // Ticket numbers are one per ticket, so the count is fixed once numbers are attached.
-      if (req.body.quantity !== undefined && req.body.quantity !== current.quantity
-        && repos.tickets.ticketNumbers(current.id).length) {
-        return res.status(400).json({ error: 'quantity_locked_by_ticket_numbers' });
-      }
       let imagePath = current.image_path;
       let listing;
       try {
@@ -160,12 +127,10 @@ export function createTicketController(repos, images) {
         }
       } catch (err) {
         if (imagePath !== current.image_path) images.remove(imagePath);
-        const status = TICKET_NUMBER_ERRORS[err.code];
-        if (status) return res.status(status).json({ error: err.code, ticketNumber: err.detail });
         throw err;
       }
       if (imagePath !== current.image_path) images.remove(current.image_path);
-      res.json({ listing: ownerListing(listing, repos) });
+      res.json({ listing: ownerListing(listing) });
     },
     /** Seller uploads proof of purchase for one of their active listings. */
     submitProof(req, res) {
@@ -175,7 +140,7 @@ export function createTicketController(repos, images) {
         // Not theirs, not active, or already approved — none of which a seller can change.
         return res.status(409).json({ error: 'cannot_submit_proof' });
       }
-      res.json({ listing: ownerListing(repos.tickets.findById(req.params.id), repos) });
+      res.json({ listing: ownerListing(repos.tickets.findById(req.params.id)) });
     },
     delete(req, res) {
       const current = repos.tickets.findById(req.params.id);

@@ -132,12 +132,6 @@ export const api = {
     request(`/operator/verifications/${encodeURIComponent(id)}`, {
       method: 'POST', body: JSON.stringify({ decision, note }),
     }),
-  issuedTicketSummary: () => request('/operator/issued-tickets'),
-  /** CSV text, one `ticket_number[,category]` per line. */
-  importIssuedTickets: (concertId, csv) =>
-    request(`/operator/concerts/${encodeURIComponent(concertId)}/issued-tickets`, {
-      method: 'POST', body: JSON.stringify({ csv }),
-    }),
 
   kakiPool: () => request('/kaki/pool'),
   /** The deck, filtered then ranked. Unranked until the questionnaire is answered. */

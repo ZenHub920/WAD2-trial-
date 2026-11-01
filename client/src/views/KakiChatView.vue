@@ -899,7 +899,7 @@ watch(() => props.id, async () => {
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-xl);
   border: var(--border-soft);
-  background: var(--ink-800);
+  background: var(--field-bg);
   color: var(--text-100);
   font: inherit;
 }
@@ -1014,7 +1014,7 @@ watch(() => props.id, async () => {
   padding: var(--space-3);
   border-radius: var(--radius-md);
   border: var(--border-soft);
-  background: var(--ink-700);
+  background: var(--field-bg);
   color: var(--text-100);
   font: inherit;
 }

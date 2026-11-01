@@ -3,7 +3,7 @@
  * verifying ticket listings, on top of the inventory covered by tickets.test.js.
  *
  * An unconfigured payment provider must never create an order or sell a ticket.
- * Historical orders and ticket numbers stay private, and verification is earned.
+ * Historical orders stay private, and verification is earned.
  */
 
 import { test } from 'node:test';
@@ -223,52 +223,11 @@ test('proof review: pending until an operator decides; rejection needs a note; a
   assert.equal((await resubmit('seller', PROOF)).status, 409);
 });
 
-test('ticket numbers: issued-list matches verify outright; numbers stay private and unique', async (t) => {
-  const { api, sell, previousOrder } = await fixture(t);
-  const importList = (as, csv) => api('/operator/concerts/c_market/issued-tickets', { method: 'POST', as, body: { csv } });
-
-  assert.equal((await importList('seller', 'TA-0001')).status, 403);
-  const bad = await importList('operator', 'ticket_number,category\nTA-0001,Cat 1\n!!,Cat 1');
-  assert.deepEqual([bad.status, bad.body.lines], [400, [3]]);
-  const ok = await importList('operator', 'ticket_number,category\nTA-0001,Cat 1\nta 0002,Cat 1\nTA-0003,Cat 1\nTA-0100,');
-  assert.deepEqual(ok.body, { added: 4, skipped: 0 });
-  assert.deepEqual((await importList('operator', 'TA-0001,Cat 1')).body, { added: 0, skipped: 1 });
-  const summary = await api('/operator/issued-tickets', { as: 'operator' });
-  assert.equal(summary.body.concerts.find((c) => c.id === 'c_market').issued, 4);
-
-  const listed = await sell('seller', { ticketNumbers: ['ta - 0001'] });
-  assert.equal(listed.status, 201);
-  assert.equal(listed.body.listing.verified, true);
-  assert.equal(listed.body.listing.verification.method, 'ticket_number');
-  assert.deepEqual(listed.body.listing.ticketNumbers, ['TA-0001'], 'spaces and dashes are equivalent');
-  const id = listed.body.listing.id;
-  assert.equal((await api(`/tickets/${id}`)).body.listing.ticketNumbers, undefined, 'numbers are never public');
-  assert.ok(!JSON.stringify((await api('/tickets')).body).includes('TA-0001'));
-
-  const twice = await sell('buyer', { ticketNumbers: ['TA 0001'] });
-  assert.deepEqual([twice.status, twice.body], [409, { error: 'ticket_number_already_listed', ticketNumber: 'TA-0001' }]);
-  assert.deepEqual((await sell('seller', { ticketNumbers: ['TA-9999'] })).body,
-    { error: 'ticket_number_not_issued', ticketNumber: 'TA-9999' });
-  assert.equal((await sell('seller', { section: 'VIP', ticketNumbers: ['TA-0003'] })).body.error, 'ticket_category_mismatch');
-  assert.equal((await sell('seller', { section: 'VIP', ticketNumbers: ['TA-0100'] })).status, 201,
-    'a number issued without a category fits any section');
-  assert.equal((await sell('seller', { quantity: 2, ticketNumbers: ['TA-0003', 'ta-0003'] })).body.error, 'duplicate_ticket_number');
-  assert.equal((await sell('seller', { quantity: 2, ticketNumbers: ['TA-0003'] })).body.error, 'one_ticket_number_per_ticket');
-  assert.equal((await api(`/tickets/${id}`, { method: 'PATCH', as: 'seller', body: { quantity: 2 } })).body.error,
-    'quantity_locked_by_ticket_numbers');
-
-  const orderId = previousOrder(id, 'buyer2');
-  const bought = await api(`/orders/${orderId}`, { as: 'buyer2' });
-  assert.deepEqual(bought.body.order.ticketNumbers, ['TA-0001'], 'historical buyers retain access to their numbers');
-  const resale = await sell('buyer2', { ticketNumbers: ['TA-0001'] });
-  assert.equal(resale.body.listing.verified, true, 'once sold, the new owner can resell it');
-});
-
-test('without an issued list, numbers are kept for uniqueness but do not verify', async (t) => {
+test('new listings start unverified and must name a known concert', async (t) => {
   const { api } = await fixture(t);
   const created = await api('/tickets', { method: 'POST', as: 'seller', body: {
     concert: { artist: 'New Act', venue: 'Hall', event_date: '2027-01-02' },
-    priceCents: 5000, quantity: 1, section: 'GA', ticketNumbers: ['NA-0001'],
+    priceCents: 5000, quantity: 1, section: 'GA',
   } });
   assert.equal(created.status, 201);
   assert.equal(created.body.listing.verified, false);
@@ -276,21 +235,6 @@ test('without an issued list, numbers are kept for uniqueness but do not verify'
   assert.equal((await api('/tickets', { method: 'POST', as: 'seller', body: {
     concertId: 'nope', priceCents: 1, quantity: 1, section: 'GA',
   } })).body.error, 'concert_not_found');
-});
-
-test('verified ticket categories cannot be changed to a different issued category', async (t) => {
-  const { api, sell } = await fixture(t);
-  await api('/operator/concerts/c_market/issued-tickets', {
-    method: 'POST', as: 'operator', body: { csv: 'TA-0001,Cat 1' },
-  });
-  const created = await sell('seller', { ticketNumbers: ['TA-0001'] });
-  const id = created.body.listing.id;
-  const edit = await api(`/tickets/${id}`, { method: 'PATCH', as: 'seller', body: { section: 'VIP' } });
-  assert.equal(edit.status, 400);
-  assert.equal(edit.body.error, 'ticket_category_mismatch');
-  const current = (await api(`/tickets/${id}`)).body.listing;
-  assert.equal(current.section, 'Cat 1');
-  assert.equal(current.verified, true);
 });
 
 test('proof approval is invalidated when the seller changes the reviewed quantity or section', async (t) => {
@@ -313,18 +257,6 @@ test('proof approval is invalidated when the seller changes the reviewed quantit
   }
 });
 
-test('only the recorded buyer can relist a previously sold ticket number', async (t) => {
-  const { api, sell, previousOrder } = await fixture(t);
-  const id = (await sell('seller', { ticketNumbers: ['TA-0001'] })).body.listing.id;
-  previousOrder(id, 'buyer');
-  for (const as of ['seller', 'buyer2']) {
-    const denied = await sell(as, { ticketNumbers: ['TA-0001'] });
-    assert.equal(denied.status, 409);
-    assert.equal(denied.body.error, 'ticket_number_not_owned');
-  }
-  assert.equal((await sell('buyer', { ticketNumbers: ['TA-0001'] })).status, 201);
-});
-
 test('operators cannot approve proof after the listing is sold or deleted', async (t) => {
   const { api, sell, previousOrder } = await fixture(t);
   for (const status of ['sold', 'deleted']) {
@@ -340,13 +272,4 @@ test('operators cannot approve proof after the listing is sold or deleted', asyn
     assert.equal(review.status, 409);
     assert.equal(review.body.error, 'not_pending');
   }
-});
-
-test('issued CSV does not mistake a real ticket-prefixed number for its header', async (t) => {
-  const { api, sell } = await fixture(t);
-  const imported = await api('/operator/concerts/c_market/issued-tickets', {
-    method: 'POST', as: 'operator', body: { csv: 'TICKET-0001,Cat 1' },
-  });
-  assert.deepEqual(imported.body, { added: 1, skipped: 0 });
-  assert.equal((await sell('seller', { ticketNumbers: ['TICKET-0001'] })).body.listing.verified, true);
 });

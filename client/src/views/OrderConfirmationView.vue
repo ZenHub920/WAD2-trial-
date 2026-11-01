@@ -62,10 +62,6 @@ watch(
         <div><dt>Order number</dt><dd class="mono">{{ order.id }}</dd></div>
         <div><dt>Checkout</dt><dd>Simulated — no charge</dd></div>
         <div><dt>Date</dt><dd>{{ formatDateTime(order.createdAt) }}</dd></div>
-        <div v-if="order.ticketNumbers?.length">
-          <dt>Ticket {{ order.ticketNumbers.length === 1 ? 'number' : 'numbers' }}</dt>
-          <dd class="mono">{{ order.ticketNumbers.join(', ') }}</dd>
-        </div>
       </dl>
 
       <OrderItem v-if="order.listing" :listing="order.listing" class="flow__item" />

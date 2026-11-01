@@ -25,6 +25,7 @@
   --ink-800: #f9f7fb;   /* card */
   --ink-750: #f0ecf5;   /* card hover */
   --ink-700: #e8e3ed;   /* input, well */
+  --field-bg: #ffffff;  /* every text field, select and date field */
   --ink-600: #d8d1e1;   /* border strong */
   --ink-500: #c7bed3;   /* border */
 
@@ -168,6 +169,7 @@
   --ink-800: #12111a;
   --ink-750: #191822;
   --ink-700: #21202c;
+  --field-bg: #21202c;
   --ink-600: #2e2d3b;
   --ink-500: #3d3c4d;
 

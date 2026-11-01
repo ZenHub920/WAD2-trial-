@@ -45,8 +45,7 @@ const VERIFICATION_COPY = {
   rejected: 'Ticket verification rejected',
 };
 
-function verificationLabel({ status, method }) {
-  if (status === 'approved' && method === 'ticket_number') return 'Ticket number verified';
+function verificationLabel({ status }) {
   return VERIFICATION_COPY[status];
 }
 
@@ -115,10 +114,6 @@ onMounted(loadListings);
               <p v-if="listing.verification.status === 'rejected' && listing.verification.note" class="verify__note">
                 Reviewer: “{{ listing.verification.note }}”
               </p>
-              <p v-if="listing.ticketNumbers?.length" class="verify__numbers">
-                Ticket {{ listing.ticketNumbers.length === 1 ? 'number' : 'numbers' }}:
-                <span class="mono">{{ listing.ticketNumbers.join(', ') }}</span>
-              </p>
               <template v-if="canSubmitProof(listing)">
                 <ProofUpload v-model="proofs[listing.id]" />
                 <button
@@ -183,7 +178,6 @@ onMounted(loadListings);
 .verify[data-state='approved'] .verify__status { color: var(--mint-400); }
 .verify[data-state='rejected'] .verify__status { color: var(--rose-400); }
 .verify__note { font-size: var(--step--1); color: var(--text-200); }
-.verify__numbers { font-size: var(--step--2); color: var(--text-300); }
 .verify__send { display: inline-flex; align-items: center; gap: var(--space-2); justify-self: start; padding: var(--space-2) var(--space-4); border-radius: var(--radius-md); background: var(--accent-500); color: #fff; font-size: var(--step--1); }
 .verify__send:disabled { opacity: .6; }
 .remove-button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); width: 100%; margin-top: var(--space-5); padding: var(--space-3); border: 1px solid var(--rose-400); border-radius: var(--radius-md); color: var(--rose-400); }

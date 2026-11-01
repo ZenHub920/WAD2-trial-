@@ -109,8 +109,6 @@ export function createRoutes({
 
   router.get('/operator/verifications', requireOperator, admin.queue);
   router.post('/operator/verifications/:id', requireOperator, admin.review);
-  router.get('/operator/issued-tickets', requireOperator, admin.issuedSummary);
-  router.post('/operator/concerts/:id/issued-tickets', requireOperator, admin.importIssued);
 
   router.get('/me/profile', requireUser, profile.get);
   router.patch('/me/profile', requireUser, profile.update);

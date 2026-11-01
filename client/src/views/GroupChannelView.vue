@@ -320,6 +320,6 @@ onUnmounted(() => stopListening?.());
 .msg__delete { background: none; color: inherit; text-decoration: underline; font-size: var(--step--2); }
 
 .composer { display: flex; gap: var(--space-3); }
-.composer__input { flex: 1; min-width: 0; padding: var(--space-3) var(--space-4); border: var(--border-soft); border-radius: var(--radius-pill); background: var(--ink-800); color: var(--text-100); }
+.composer__input { flex: 1; min-width: 0; padding: var(--space-3) var(--space-4); border: var(--border-soft); border-radius: var(--radius-pill); background: var(--field-bg); color: var(--text-100); }
 .composer__input:focus { outline: none; border-color: var(--accent-500); box-shadow: 0 0 0 3px var(--accent-glow); }
 </style>

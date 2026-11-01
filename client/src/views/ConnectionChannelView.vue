@@ -303,7 +303,7 @@ onUnmounted(() => {
 .message-actions button { background: none; border: 0; color: inherit; padding: var(--space-1) 0; text-decoration: underline; font: inherit; font-size: var(--step--2); cursor: pointer; }
 .composer { display: grid; gap: var(--space-2); }
 .composer-row { display: flex; gap: var(--space-2); }
-.composer-row input { flex: 1; min-width: 0; padding: var(--space-3) var(--space-4); border: var(--border-soft); border-radius: var(--radius-pill); background: var(--ink-800); color: var(--text-100); }
+.composer-row input { flex: 1; min-width: 0; padding: var(--space-3) var(--space-4); border: var(--border-soft); border-radius: var(--radius-pill); background: var(--field-bg); color: var(--text-100); }
 .composer-context { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3); border-left: 3px solid var(--accent-400); background: var(--ink-800); font-size: var(--step--1); }
 .composer-context > span { min-width: 0; }
 .composer-context small { display: block; max-height: 3rem; overflow: hidden; overflow-wrap: anywhere; color: var(--text-300); }

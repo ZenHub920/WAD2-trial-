@@ -3,7 +3,7 @@
 import { createUserRepo, createSessionRepo } from './userRepository.js';
 import { createConcertRepo, createParticipationRepo } from './concertRepository.js';
 import { createPartyRepo } from './partyRepository.js';
-import { createTicketRepo, createOrderRepo, createIssuedTicketRepo } from './ticketRepository.js';
+import { createTicketRepo, createOrderRepo } from './ticketRepository.js';
 import { createSeekerRepo } from './seekerRepository.js';
 import { createRoundRepo } from './roundRepository.js';
 import { createKakiRepo } from './kakiRepository.js';
@@ -31,10 +31,8 @@ export {
   createSessionRepo,
   createKakiRepo,
   createOrderRepo,
-  createIssuedTicketRepo,
   createConversationRepo,
 };
-export { normalizeTicketNumber } from './ticketRepository.js';
 
 export function createRepositories(db) {
   const repos = {
@@ -44,7 +42,6 @@ export function createRepositories(db) {
     parties: createPartyRepo(db),
     tickets: createTicketRepo(db),
     orders: createOrderRepo(db),
-    issuedTickets: createIssuedTicketRepo(db),
     conversations: createConversationRepo(db),
     seekers: createSeekerRepo(db),
     rounds: createRoundRepo(db),

@@ -29,7 +29,5 @@ function publicOrder(order, repos) {
     paymentMethod: order.payment_method,
     createdAt: order.created_at,
     listing: cleanListing(repos.tickets.findById(order.ticket_id)),
-    // The buyer owns these now, and this shape is only ever sent to the buyer.
-    ticketNumbers: repos.tickets.ticketNumbers(order.ticket_id),
   };
 }

@@ -405,7 +405,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
   padding: var(--space-2) var(--space-3);
   border: var(--border-soft);
   border-radius: var(--radius-md);
-  background: var(--ink-800);
+  background: var(--field-bg);
   color: var(--text-400);
   font-size: var(--step--1);
   transition:

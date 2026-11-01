@@ -189,7 +189,7 @@ function clearFilters() {
 .concert-market__tools { display: flex; flex-wrap: wrap; gap: var(--space-2); flex-shrink: 0; }
 .concert-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, 260px) auto; align-items: end; gap: var(--space-3); padding: var(--space-4); margin-bottom: var(--space-6); border: var(--border-soft); border-radius: var(--radius-lg); background: var(--ink-800); box-shadow: var(--shadow-md); }
 .concert-filters__search, .concert-filters__date { display: grid; min-width: 0; gap: var(--space-2); color: var(--text-300); font-size: var(--step--1); }
-.concert-filters__input { display: flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: var(--space-2) var(--space-3); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-800); }
+.concert-filters__input { display: flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: var(--space-2) var(--space-3); border: var(--border-soft); border-radius: var(--radius-md); background: var(--field-bg); }
 .concert-filters__input { transition: border-color var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out); }
 .concert-filters__input:focus-within { border-color: var(--accent-400); box-shadow: 0 0 0 4px var(--accent-glow); }
 .concert-filters__input input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text-100); font: inherit; }

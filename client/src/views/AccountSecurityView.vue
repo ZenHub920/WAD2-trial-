@@ -161,7 +161,7 @@ function revokeSessions() {
 .security-card { display: grid; gap: var(--space-4); padding: var(--space-5); margin-bottom: var(--space-5); }
 .security-card h2 { font-size: var(--step-1); }
 .security-card label { display: grid; gap: var(--space-2); }
-.security-card input { width: 100%; padding: var(--space-3); background: var(--ink-800); color: var(--text-100); border: 1px solid var(--ink-600); border-radius: var(--radius-md); }
+.security-card input { width: 100%; padding: var(--space-3); background: var(--field-bg); color: var(--text-100); border: 1px solid var(--ink-600); border-radius: var(--radius-md); }
 .security-card .btn { justify-self: start; }
 .muted, .back-link { color: var(--text-300); }
 </style>

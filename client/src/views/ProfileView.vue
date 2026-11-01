@@ -334,7 +334,7 @@ async function save() {
 .profile__card h2 { margin-bottom: var(--space-4); font-size: var(--step-1); }
 .profile__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
 .profile__field { display: grid; min-width: 0; gap: var(--space-2); color: var(--text-300); font-size: var(--step--1); }
-.profile__field input { width: 100%; min-width: 0; padding: var(--space-3); border: var(--border-soft); border-radius: var(--radius-md); background: var(--ink-700); color: var(--text-100); }
+.profile__field input { width: 100%; min-width: 0; padding: var(--space-3); border: var(--border-soft); border-radius: var(--radius-md); background: var(--field-bg); color: var(--text-100); }
 .profile__field input[readonly] { opacity: .7; }
 .profile__choices { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-5); margin-top: var(--space-5); padding: 0; border: 0; }
 .profile__choices legend { margin-bottom: var(--space-3); color: var(--text-300); font-size: var(--step--1); }
