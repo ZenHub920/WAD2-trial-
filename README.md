@@ -1,7 +1,6 @@
 # Encore
 
-Encore helps concertgoers find people to attend shows with. Group matching uses
-the Gale-Shapley stable matching algorithm.
+Encore helps concertgoers find people to attend shows with. Group matching uses the Gale-Shapley stable matching algorithm.
 
 For the current Kaki workflow, backend improvements, public API inventory and credential setup, see
 [Backend integrations and operations](docs/BACKEND_INTEGRATIONS_AND_OPERATIONS.md).
