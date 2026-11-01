@@ -80,7 +80,9 @@ header .lede {
 }
 
 @media (min-width: 860px) {
-  .ways { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ways {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .way {
@@ -117,7 +119,9 @@ header .lede {
   transition: transform var(--dur-slow) var(--ease-settle);
 }
 
-.way:hover::after { transform: scaleX(1); }
+.way:hover::after {
+  transform: scaleX(1);
+}
 
 .way__icon {
   display: grid;
@@ -131,8 +135,13 @@ header .lede {
   transition: transform var(--dur-base) var(--ease-spring);
 }
 
-.way__icon svg { width: 26px; height: 26px; }
-.way:hover .way__icon { transform: rotate(-8deg) scale(1.08); }
+.way__icon svg {
+  width: 26px;
+  height: 26px;
+}
+.way:hover .way__icon {
+  transform: rotate(-8deg) scale(1.08);
+}
 
 .way__n {
   position: absolute;
@@ -147,7 +156,9 @@ header .lede {
   transition: -webkit-text-stroke-color var(--dur-base) var(--ease-out);
 }
 
-.way:hover .way__n { -webkit-text-stroke-color: var(--accent-300); }
+.way:hover .way__n {
+  -webkit-text-stroke-color: var(--accent-300);
+}
 
 .way h2 {
   margin-top: var(--space-5);
@@ -161,7 +172,9 @@ header .lede {
   font-size: var(--step--1);
 }
 
-.way .btn { align-self: start; }
+.way .btn {
+  align-self: start;
+}
 
 .way__arrow {
   width: 1.1em;
@@ -169,7 +182,9 @@ header .lede {
   transition: transform var(--dur-base) var(--ease-spring);
 }
 
-.way:hover .way__arrow { transform: translateX(4px); }
+.way:hover .way__arrow {
+  transform: translateX(4px);
+}
 
 .about {
   margin-top: var(--space-6);
@@ -188,6 +203,8 @@ summary {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .way:hover { transform: none; }
+  .way:hover {
+    transform: none;
+  }
 }
 </style>

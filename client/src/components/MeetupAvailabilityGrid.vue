@@ -158,32 +158,157 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.availability-grid { --heat-0: var(--ink-800); --heat-1: #28433f; --heat-2: #326359; --heat-3: #36866e; --heat-4: #399b7e; display: grid; gap: .8rem; }
-.availability-grid__intro p { margin: 0 0 .7rem; max-width: 70ch; line-height: 1.55; color: var(--text-200); }
-.availability-grid__intro p span { white-space: nowrap; color: var(--text-300); }
-.availability-grid__legend { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; color: var(--text-300); font-size: .8rem; }
-.availability-grid__legend i { width: 1.1rem; height: 1.1rem; border: 1px solid var(--ink-500); border-radius: .2rem; }
-.availability-grid [data-heat="0"] { background: var(--heat-0); }
-.availability-grid [data-heat="1"] { background: var(--heat-1); }
-.availability-grid [data-heat="2"] { background: var(--heat-2); }
-.availability-grid [data-heat="3"] { background: var(--heat-3); }
-.availability-grid [data-heat="4"] { background: var(--heat-4); }
-.availability-grid__your-key { margin-left: .55rem; color: var(--text-100); }
-.availability-grid__scroll { max-height: 29rem; overflow: auto; border: 1px solid var(--ink-500); border-radius: var(--radius-md); overscroll-behavior: contain; }
-table { width: 100%; border-spacing: 4px; min-width: 18rem; table-layout: fixed; }
-th { height: 2.4rem; min-width: 5.4rem; padding: .4rem; font-size: .8rem; font-weight: 600; color: var(--text-200); white-space: nowrap; }
-thead th { position: sticky; top: 0; z-index: 2; background: var(--ink-900); }
-th:first-child { width: 4rem; position: sticky; left: 0; z-index: 1; background: var(--ink-900); }
-thead th:first-child { z-index: 3; }
-td { padding: 0; min-width: 5.4rem; text-align: center; }
-.availability-grid__cell { width: 100%; min-width: 5.4rem; min-height: 2.75rem; border: 2px solid transparent; border-radius: .35rem; color: #fff; cursor: crosshair; font: inherit; font-size: .8rem; font-weight: 600; user-select: none; touch-action: none; display: flex; justify-content: center; align-items: center; gap: .3rem; }
-.availability-grid__cell[data-heat="0"] { color: var(--text-200); }
-.availability-grid__cell--selected { border-color: var(--text-100); box-shadow: inset 0 0 0 1px var(--ink-900); }
-.availability-grid__cell:hover:not(:disabled) { filter: brightness(1.15); }
-.availability-grid__cell:focus-visible { outline: 3px solid var(--accent-400); outline-offset: 1px; }
-.availability-grid__cell:disabled { cursor: default; opacity: .65; }
-.availability-grid__check { width: .8rem; }
-.availability-grid__outside { display: block; padding: .5rem; color: var(--text-400); }
-.availability-grid__hint { margin: 0; color: var(--text-300); font-size: .8rem; line-height: 1.5; }
-@media (max-width: 600px) { table { min-width: 20rem; } th:first-child { width: 3.4rem; } }
+.availability-grid {
+  --heat-0: var(--ink-800);
+  --heat-1: #28433f;
+  --heat-2: #326359;
+  --heat-3: #36866e;
+  --heat-4: #399b7e;
+  display: grid;
+  gap: .8rem;
+}
+.availability-grid__intro p {
+  margin: 0 0 .7rem;
+  max-width: 70ch;
+  line-height: 1.55;
+  color: var(--text-200);
+}
+.availability-grid__intro p span {
+  white-space: nowrap;
+  color: var(--text-300);
+}
+.availability-grid__legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .35rem;
+  color: var(--text-300);
+  font-size: .8rem;
+}
+.availability-grid__legend i {
+  width: 1.1rem;
+  height: 1.1rem;
+  border: 1px solid var(--ink-500);
+  border-radius: .2rem;
+}
+.availability-grid [data-heat="0"] {
+  background: var(--heat-0);
+}
+.availability-grid [data-heat="1"] {
+  background: var(--heat-1);
+}
+.availability-grid [data-heat="2"] {
+  background: var(--heat-2);
+}
+.availability-grid [data-heat="3"] {
+  background: var(--heat-3);
+}
+.availability-grid [data-heat="4"] {
+  background: var(--heat-4);
+}
+.availability-grid__your-key {
+  margin-left: .55rem;
+  color: var(--text-100);
+}
+.availability-grid__scroll {
+  max-height: 29rem;
+  overflow: auto;
+  border: 1px solid var(--ink-500);
+  border-radius: var(--radius-md);
+  overscroll-behavior: contain;
+}
+table {
+  width: 100%;
+  border-spacing: 4px;
+  min-width: 18rem;
+  table-layout: fixed;
+}
+th {
+  height: 2.4rem;
+  min-width: 5.4rem;
+  padding: .4rem;
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--text-200);
+  white-space: nowrap;
+}
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--ink-900);
+}
+th:first-child {
+  width: 4rem;
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--ink-900);
+}
+thead th:first-child {
+  z-index: 3;
+}
+td {
+  padding: 0;
+  min-width: 5.4rem;
+  text-align: center;
+}
+.availability-grid__cell {
+  width: 100%;
+  min-width: 5.4rem;
+  min-height: 2.75rem;
+  border: 2px solid transparent;
+  border-radius: .35rem;
+  color: #fff;
+  cursor: crosshair;
+  font: inherit;
+  font-size: .8rem;
+  font-weight: 600;
+  user-select: none;
+  touch-action: none;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: .3rem;
+}
+.availability-grid__cell[data-heat="0"] {
+  color: var(--text-200);
+}
+.availability-grid__cell--selected {
+  border-color: var(--text-100);
+  box-shadow: inset 0 0 0 1px var(--ink-900);
+}
+.availability-grid__cell:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+.availability-grid__cell:focus-visible {
+  outline: 3px solid var(--accent-400);
+  outline-offset: 1px;
+}
+.availability-grid__cell:disabled {
+  cursor: default;
+  opacity: .65;
+}
+.availability-grid__check {
+  width: .8rem;
+}
+.availability-grid__outside {
+  display: block;
+  padding: .5rem;
+  color: var(--text-400);
+}
+.availability-grid__hint {
+  margin: 0;
+  color: var(--text-300);
+  font-size: .8rem;
+  line-height: 1.5;
+}
+@media (max-width: 600px) {
+  table {
+    min-width: 20rem;
+  }
+  th:first-child {
+    width: 3.4rem;
+  }
+}
 </style>

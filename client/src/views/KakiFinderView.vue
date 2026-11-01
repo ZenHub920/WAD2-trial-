@@ -442,7 +442,11 @@ function backToDeck() {
   gap: var(--space-1);
 }
 
-.kaki__hint { margin: 0 0 var(--space-3); color: var(--text-300); font-size: var(--step--1); }
+.kaki__hint {
+  margin: 0 0 var(--space-3);
+  color: var(--text-300);
+  font-size: var(--step--1);
+}
 
 .kaki__panel {
   display: flex;
@@ -471,8 +475,18 @@ function backToDeck() {
   margin: 0;
 }
 
-.rank-note { margin-bottom: var(--space-4); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--ink-850); color: var(--text-300); font-size: var(--step--1); }
-.rank-note--on { border-left: 3px solid var(--accent-500); color: var(--text-200); }
+.rank-note {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--ink-850);
+  color: var(--text-300);
+  font-size: var(--step--1);
+}
+.rank-note--on {
+  border-left: 3px solid var(--accent-500);
+  color: var(--text-200);
+}
 
 .kaki__state {
   padding: var(--space-6) 0;

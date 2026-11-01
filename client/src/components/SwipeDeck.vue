@@ -771,7 +771,9 @@ defineExpose({ undo, remaining });
   .deck__stage {
     min-height: 31rem;
   }
-  .deck__card--top { min-height: 31rem; }
+  .deck__card--top {
+    min-height: 31rem;
+  }
 
   .deck__card {
     padding: var(--space-4);

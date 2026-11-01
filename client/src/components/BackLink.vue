@@ -53,7 +53,29 @@ function go() {
 </template>
 
 <style scoped>
-.back-link { display: inline-flex; align-items: center; gap: var(--space-2); width: fit-content; margin-bottom: var(--space-4); padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2); border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-300); font: inherit; font-size: var(--step--1); font-weight: 600; cursor: pointer; transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out); }
-.back-link:hover { color: var(--accent-400); background: var(--ink-700); }
-.back-link:focus-visible { outline: 2px solid var(--accent-400); outline-offset: 2px; }
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: fit-content;
+  margin-bottom: var(--space-4);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-300);
+  font: inherit;
+  font-size: var(--step--1);
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+.back-link:hover {
+  color: var(--accent-400);
+  background: var(--ink-700);
+}
+.back-link:focus-visible {
+  outline: 2px solid var(--accent-400);
+  outline-offset: 2px;
+}
 </style>

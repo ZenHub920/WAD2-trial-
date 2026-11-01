@@ -245,7 +245,9 @@ function timeOf(value) {
 }
 
 @media (max-width: 480px) {
-  .about { grid-template-columns: minmax(0, 1fr); }
+  .about {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ---- Messages --------------------------------------------------------- */

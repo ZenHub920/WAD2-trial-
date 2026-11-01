@@ -361,7 +361,9 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
 }
 
 @keyframes shimmer {
-  to { background-position: 100% 0; }
+  to {
+    background-position: 100% 0;
+  }
 }
 
 /* ---------------------------------------------------------------- Hero ---- */
@@ -419,9 +421,15 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
 }
 
 @keyframes drift {
-  0% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(60px, 40px) scale(1.12); }
-  100% { transform: translate(-40px, 70px) scale(0.95); }
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(60px, 40px) scale(1.12);
+  }
+  100% {
+    transform: translate(-40px, 70px) scale(0.95);
+  }
 }
 
 /* A faint dot grid gives the colour something to sit on. */
@@ -460,8 +468,16 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
 }
 
 @keyframes rise {
-  from { opacity: 0; transform: translateY(0.5em); filter: blur(6px); }
-  to { opacity: 1; transform: none; filter: none; }
+  from {
+    opacity: 0;
+    transform: translateY(0.5em);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
 }
 
 .hero__accent {
@@ -618,7 +634,9 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
 }
 
 @keyframes pulse {
-  to { opacity: 0.5; }
+  to {
+    opacity: 0.5;
+  }
 }
 
 .poster__shade {
@@ -742,8 +760,12 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
 }
 
 @keyframes fill {
-  from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
 }
 
 /* ---------------------------------------------------------------- Poster -- */
@@ -807,8 +829,12 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
 }
 
 @keyframes ping {
-  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--mint-400) 60%, transparent); }
-  100% { box-shadow: 0 0 0 8px transparent; }
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--mint-400) 60%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 8px transparent;
+  }
 }
 
 .people--quiet {

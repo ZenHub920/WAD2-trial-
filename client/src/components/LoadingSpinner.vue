@@ -16,8 +16,14 @@
   border-radius: 50%;
   animation: loading-spin 750ms linear infinite;
 }
-@keyframes loading-spin { to { transform: rotate(360deg); } }
+@keyframes loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .loading-spinner { animation: none; }
+  .loading-spinner {
+    animation: none;
+  }
 }
 </style>

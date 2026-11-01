@@ -515,30 +515,115 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
 </template>
 
 <style scoped>
-.my-result { display: grid; gap: var(--space-3); margin-bottom: var(--space-6); padding: var(--space-5); }
-.my-result h2 { font-size: var(--step-1); }
-.my-result > p, .my-result__head p { margin: 0; }
-.my-result__head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--space-4); padding-bottom: var(--space-4); border-bottom: var(--border-hairline); }
-.my-result__head > div { display: grid; gap: var(--space-2); min-width: 0; flex: 1 1 20rem; }
-.my-result__head .btn { white-space: normal; }
-.my-result__eyebrow { color: var(--accent-400); font-size: var(--step--2); font-weight: 700; }
-.my-result__intro, .my-result__summary { color: var(--text-300); font-size: var(--step--1); }
-.my-result__empty { display: grid; justify-items: start; gap: var(--space-3); padding-block: var(--space-4); }
-.my-result__empty h3 { font-size: var(--step-0); }
-.my-result__empty p { color: var(--text-300); max-width: var(--measure); font-size: var(--step--1); }
-.my-result__empty .btn { white-space: normal; }
-.my-result__past { padding-top: var(--space-3); border-top: var(--border-hairline); }
-.my-result__past summary { color: var(--text-300); cursor: pointer; font-size: var(--step--1); }
-.kaki-join { display: grid; gap: var(--space-4); margin-bottom: var(--space-6); padding: var(--space-5); }
-.kaki-join__intro h2 { font-size: var(--step-1); }
-.kaki-join__intro p { margin-top: var(--space-2); color: var(--text-300); }
-.kaki-join__form { display: grid; gap: var(--space-4); }
-.kaki-join__joined { color: var(--mint-400); }
-.kaki-join__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
-.kaki-join__fields label { display: grid; gap: var(--space-2); color: var(--text-300); font-size: var(--step--1); }
-.kaki-join__actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
-.kaki-join__error { color: var(--rose-400); }
-@media (max-width: 600px) { .kaki-join__fields { grid-template-columns: 1fr; } }
+.my-result {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+  padding: var(--space-5);
+}
+.my-result h2 {
+  font-size: var(--step-1);
+}
+.my-result > p, .my-result__head p {
+  margin: 0;
+}
+.my-result__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-bottom: var(--space-4);
+  border-bottom: var(--border-hairline);
+}
+.my-result__head > div {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1 1 20rem;
+}
+.my-result__head .btn {
+  white-space: normal;
+}
+.my-result__eyebrow {
+  color: var(--accent-400);
+  font-size: var(--step--2);
+  font-weight: 700;
+}
+.my-result__intro, .my-result__summary {
+  color: var(--text-300);
+  font-size: var(--step--1);
+}
+.my-result__empty {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  padding-block: var(--space-4);
+}
+.my-result__empty h3 {
+  font-size: var(--step-0);
+}
+.my-result__empty p {
+  color: var(--text-300);
+  max-width: var(--measure);
+  font-size: var(--step--1);
+}
+.my-result__empty .btn {
+  white-space: normal;
+}
+.my-result__past {
+  padding-top: var(--space-3);
+  border-top: var(--border-hairline);
+}
+.my-result__past summary {
+  color: var(--text-300);
+  cursor: pointer;
+  font-size: var(--step--1);
+}
+.kaki-join {
+  display: grid;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+  padding: var(--space-5);
+}
+.kaki-join__intro h2 {
+  font-size: var(--step-1);
+}
+.kaki-join__intro p {
+  margin-top: var(--space-2);
+  color: var(--text-300);
+}
+.kaki-join__form {
+  display: grid;
+  gap: var(--space-4);
+}
+.kaki-join__joined {
+  color: var(--mint-400);
+}
+.kaki-join__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.kaki-join__fields label {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--text-300);
+  font-size: var(--step--1);
+}
+.kaki-join__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.kaki-join__error {
+  color: var(--rose-400);
+}
+@media (max-width: 600px) {
+  .kaki-join__fields {
+    grid-template-columns: 1fr;
+  }
+}
 
 
 /* ---- Head --------------------------------------------------------------- */
@@ -620,13 +705,23 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
 }
 
 @keyframes cover-in {
-  from { opacity: 0; transform: translateY(16px) scale(0.98); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @keyframes cover-zoom {
-  from { transform: scale(1); }
-  to { transform: scale(1.08); }
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.08);
+  }
 }
 
 .head__text h1 {
@@ -750,9 +845,16 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
   text-decoration: none;
 }
 
-.head__previous:hover { color: var(--text-200); }
-.head__previous .ok { color: var(--mint-400); }
-.head__previous .bad { color: var(--rose-400); font-weight: 600; }
+.head__previous:hover {
+  color: var(--text-200);
+}
+.head__previous .ok {
+  color: var(--mint-400);
+}
+.head__previous .bad {
+  color: var(--rose-400);
+  font-weight: 600;
+}
 
 
 .notice {
@@ -769,15 +871,48 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
   background: color-mix(in oklab, var(--rose-400) 7%, transparent);
 }
 
-.notice h2 { font-size: var(--step-1); color: var(--rose-400); margin-bottom: var(--space-2); }
-.head__text, .head__panel, .ticket-listing, .ticket-listing__seller > div { min-width: 0; overflow-wrap: anywhere; }
-.ticket-section { display: grid; gap: var(--space-4); margin-bottom: var(--space-6); }
-.ticket-section__head { justify-content: space-between; }
-.ticket-section h2, .companion-options h2 { font-size: var(--step-2); }
-.ticket-listing { align-content: start; }
-.ticket-listing h3 { font-size: var(--step-1); }
-.ticket-listing__seller { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
-.ticket-listing__seller p { color: var(--text-300); font-size: var(--step--1); }
-.ticket-listing > .btn { margin-top: auto; justify-self: start; white-space: normal; }
-.companion-options { margin-bottom: var(--space-6); }
+.notice h2 {
+  font-size: var(--step-1);
+  color: var(--rose-400);
+  margin-bottom: var(--space-2);
+}
+.head__text, .head__panel, .ticket-listing, .ticket-listing__seller > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ticket-section {
+  display: grid;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+.ticket-section__head {
+  justify-content: space-between;
+}
+.ticket-section h2, .companion-options h2 {
+  font-size: var(--step-2);
+}
+.ticket-listing {
+  align-content: start;
+}
+.ticket-listing h3 {
+  font-size: var(--step-1);
+}
+.ticket-listing__seller {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+.ticket-listing__seller p {
+  color: var(--text-300);
+  font-size: var(--step--1);
+}
+.ticket-listing > .btn {
+  margin-top: auto;
+  justify-self: start;
+  white-space: normal;
+}
+.companion-options {
+  margin-bottom: var(--space-6);
+}
 </style>

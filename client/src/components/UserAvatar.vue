@@ -82,9 +82,15 @@ const dimension = computed(() => `${props.size}px`);
   display: block;
 }
 
-.avatar__fallback { width: 100%; height: 100%; display: block; }
+.avatar__fallback {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
 
-.avatar__bg { fill: color-mix(in oklab, var(--text-400) 22%, transparent); }
+.avatar__bg {
+  fill: color-mix(in oklab, var(--text-400) 22%, transparent);
+}
 
 /* The silhouette is a single flat grey: a figure, not a portrait, so it does
    not read as a real person with an unloaded photo. */

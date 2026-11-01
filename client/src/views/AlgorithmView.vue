@@ -455,8 +455,12 @@ const sortedParties = computed(() =>
   transition: background var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
 }
 
-.play:hover { background: var(--accent-400); }
-.play:active { transform: scale(0.94); }
+.play:hover {
+  background: var(--accent-400);
+}
+.play:active {
+  transform: scale(0.94);
+}
 
 .console__scrub {
   flex: 1;
@@ -547,14 +551,29 @@ const sortedParties = computed(() =>
   line-height: 1.5;
 }
 
-.event--accept { background: color-mix(in oklab, var(--mint-400) 7%, var(--ink-800)); }
-.event--accept .event__badge { background: var(--mint-400); color: var(--ink-900); }
+.event--accept {
+  background: color-mix(in oklab, var(--mint-400) 7%, var(--ink-800));
+}
+.event--accept .event__badge {
+  background: var(--mint-400);
+  color: var(--ink-900);
+}
 
-.event--reject { background: color-mix(in oklab, var(--rose-400) 7%, var(--ink-800)); }
-.event--reject .event__badge { background: var(--rose-400); color: var(--ink-900); }
+.event--reject {
+  background: color-mix(in oklab, var(--rose-400) 7%, var(--ink-800));
+}
+.event--reject .event__badge {
+  background: var(--rose-400);
+  color: var(--ink-900);
+}
 
-.event--evict { background: color-mix(in oklab, var(--amber-400) 8%, var(--ink-800)); }
-.event--evict .event__badge { background: var(--amber-400); color: var(--ink-900); }
+.event--evict {
+  background: color-mix(in oklab, var(--amber-400) 8%, var(--ink-800));
+}
+.event--evict .event__badge {
+  background: var(--amber-400);
+  color: var(--ink-900);
+}
 
 /* ---- Tallies ------------------------------------------------------------ */
 
@@ -588,9 +607,15 @@ const sortedParties = computed(() =>
   line-height: 1.2;
 }
 
-.is-mint { color: var(--mint-400); }
-.is-rose { color: var(--rose-400); }
-.is-amber { color: var(--amber-400); }
+.is-mint {
+  color: var(--mint-400);
+}
+.is-rose {
+  color: var(--rose-400);
+}
+.is-amber {
+  color: var(--amber-400);
+}
 
 /* ---- Board -------------------------------------------------------------- */
 
@@ -845,12 +870,19 @@ const sortedParties = computed(() =>
 }
 
 @media (max-width: 999px) {
-  .board__side { position: static; max-height: none; }
+  .board__side {
+    position: static;
+    max-height: none;
+  }
 }
 
 @media (max-width: 480px) {
-  .event, .verdict { flex-direction: column; }
-  .verdict { padding: var(--space-4); }
+  .event, .verdict {
+    flex-direction: column;
+  }
+  .verdict {
+    padding: var(--space-4);
+  }
 }
 
 /* ---- States ------------------------------------------------------------- */

@@ -28,6 +28,22 @@ const dimension = computed(() => `${props.size}px`);
 </template>
 
 <style scoped>
-.group-avatar { display: inline-grid; place-items: center; flex: none; overflow: hidden; border-radius: 22%; background: linear-gradient(135deg, var(--accent-500), var(--accent-400)); color: #fff; font-weight: 700; line-height: 1; letter-spacing: .02em; }
-.group-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.group-avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  overflow: hidden;
+  border-radius: 22%;
+  background: linear-gradient(135deg, var(--accent-500), var(--accent-400));
+  color: #fff;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: .02em;
+}
+.group-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
 </style>

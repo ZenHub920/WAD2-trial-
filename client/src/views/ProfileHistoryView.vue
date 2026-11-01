@@ -367,9 +367,18 @@ async function undo() {
   color: var(--text-100);
 }
 
-.hist__intro { color: var(--text-300); font-size: var(--step--1); margin-block: var(--space-3) var(--space-5); }
+.hist__intro {
+  color: var(--text-300);
+  font-size: var(--step--1);
+  margin-block: var(--space-3) var(--space-5);
+}
 @media (max-width: 440px) {
-  .hist__row { grid-template-columns: auto minmax(0, 1fr); }
-  .hist__undo { grid-column: 2; justify-self: start; }
+  .hist__row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .hist__undo {
+    grid-column: 2;
+    justify-self: start;
+  }
 }
 </style>

@@ -30,8 +30,24 @@ function select(location) { emit('selected', location); results.value = []; mess
   </div>
 </template>
 <style scoped>
-.meetup-location-search { margin-block: 1rem; }
-.meetup-search-results { list-style: none; padding: 0; display: grid; gap: .4rem; max-height: 18rem; overflow: auto; }
-.meetup-search-results button { display: grid; gap: .25rem; width: 100%; text-align: left; }
-.meetup-search-results small { opacity: .7; }
+.meetup-location-search {
+  margin-block: 1rem;
+}
+.meetup-search-results {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: .4rem;
+  max-height: 18rem;
+  overflow: auto;
+}
+.meetup-search-results button {
+  display: grid;
+  gap: .25rem;
+  width: 100%;
+  text-align: left;
+}
+.meetup-search-results small {
+  opacity: .7;
+}
 </style>

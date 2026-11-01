@@ -439,15 +439,23 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
   text-align: center;
 }
 
-.datefield__seg::placeholder { color: var(--text-400); }
+.datefield__seg::placeholder {
+  color: var(--text-400);
+}
 
 /* Wide enough for the DD/MM/YYYY placeholder, whose letters are wider than the
    digits that replace them, so the separators never shift as the date is typed. */
 .datefield__seg--day,
-.datefield__seg--month { width: 2.9ch; }
-.datefield__seg--year { width: 5.2ch; }
+.datefield__seg--month {
+  width: 2.9ch;
+}
+.datefield__seg--year {
+  width: 5.2ch;
+}
 
-.datefield__sep { color: var(--text-400); }
+.datefield__sep {
+  color: var(--text-400);
+}
 
 .datefield-wrap {
   position: relative;
@@ -469,7 +477,10 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
   transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
-.datefield__toggle svg { width: 18px; height: 18px; }
+.datefield__toggle svg {
+  width: 18px;
+  height: 18px;
+}
 
 .datefield__toggle:hover,
 .datefield--open .datefield__toggle {
@@ -496,10 +507,17 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
   transform-origin: top right;
 }
 
-.cal-enter-active { transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-spring-soft); }
-.cal-leave-active { transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out); }
+.cal-enter-active {
+  transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-spring-soft);
+}
+.cal-leave-active {
+  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
 .cal-enter-from,
-.cal-leave-to { opacity: 0; transform: translateY(-6px) scale(0.96); }
+.cal-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.96);
+}
 
 .cal__head {
   display: flex;
@@ -526,9 +544,15 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
   transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
-.cal__nav:hover { background: var(--accent-glow); color: var(--accent-500); }
+.cal__nav:hover {
+  background: var(--accent-glow);
+  color: var(--accent-500);
+}
 
-.cal__grid { display: grid; gap: 2px; }
+.cal__grid {
+  display: grid;
+  gap: 2px;
+}
 
 .cal__row {
   display: grid;
@@ -557,8 +581,15 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
     transform var(--dur-fast) var(--ease-spring);
 }
 
-.cal__day:hover { background: var(--accent-glow); color: var(--accent-500); transform: scale(1.08); }
-.cal__day--outside { color: var(--text-400); opacity: 0.5; }
+.cal__day:hover {
+  background: var(--accent-glow);
+  color: var(--accent-500);
+  transform: scale(1.08);
+}
+.cal__day--outside {
+  color: var(--text-400);
+  opacity: 0.5;
+}
 
 .cal__day--today {
   font-weight: 800;
@@ -586,7 +617,9 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
   box-shadow: 0 6px 14px -6px var(--accent-400);
 }
 
-.cal__day--selected::after { background: #fff; }
+.cal__day--selected::after {
+  background: #fff;
+}
 
 .cal__foot {
   display: flex;
@@ -606,7 +639,9 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
   font-weight: 700;
 }
 
-.cal__link:hover { background: var(--accent-glow); }
+.cal__link:hover {
+  background: var(--accent-glow);
+}
 
 .cal__legend {
   display: inline-flex;

@@ -279,9 +279,25 @@ function copyLink() {
   font-size: 0.45em;
 }
 
-.dcard__price-note { margin-top: var(--space-2); color: var(--text-300); font-size: var(--step--1); }
-.dcard__payment-note { margin-top: var(--space-3); color: var(--text-400); font-size: var(--step--1); }
-.dcard__seller { display: flex; align-items: center; gap: var(--space-2); min-width: 0; margin-top: var(--space-4); color: var(--text-300); font-size: var(--step--1); }
+.dcard__price-note {
+  margin-top: var(--space-2);
+  color: var(--text-300);
+  font-size: var(--step--1);
+}
+.dcard__payment-note {
+  margin-top: var(--space-3);
+  color: var(--text-400);
+  font-size: var(--step--1);
+}
+.dcard__seller {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-top: var(--space-4);
+  color: var(--text-300);
+  font-size: var(--step--1);
+}
 
 .dcard__facts {
   display: flex;
@@ -387,6 +403,9 @@ function copyLink() {
 }
 
 @media (max-width: 440px) {
-  .dcard__actions { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
+  .dcard__actions {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+  }
 }
 </style>

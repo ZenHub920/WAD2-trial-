@@ -182,8 +182,12 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
 }
 
 @keyframes ping {
-  0% { box-shadow: 0 0 0 0 rgba(230, 157, 219, 0.7); }
-  100% { box-shadow: 0 0 0 8px transparent; }
+  0% {
+    box-shadow: 0 0 0 0 rgba(230, 157, 219, 0.7);
+  }
+  100% {
+    box-shadow: 0 0 0 8px transparent;
+  }
 }
 
 /* ------------------------------------------------------------------ Body -- */
@@ -207,8 +211,12 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
   transition: color var(--dur-base) var(--ease-out);
 }
 
-.spot:hover .spot__link { color: var(--accent-400); }
-.spot__link:focus-visible { outline: none; }
+.spot:hover .spot__link {
+  color: var(--accent-400);
+}
+.spot__link:focus-visible {
+  outline: none;
+}
 
 /* The card's hit area. Sits under the footer button, which is raised. */
 .spot__link::after {
@@ -218,8 +226,16 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
   border-radius: inherit;
 }
 
-.spot__tour { color: var(--accent-400); font-size: var(--step--1); font-weight: 600; }
-.spot__description { color: var(--text-300); font-size: var(--step--1); white-space: pre-line; }
+.spot__tour {
+  color: var(--accent-400);
+  font-size: var(--step--1);
+  font-weight: 600;
+}
+.spot__description {
+  color: var(--text-300);
+  font-size: var(--step--1);
+  white-space: pre-line;
+}
 
 .spot__meta {
   display: flex;
@@ -229,7 +245,10 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
   font-size: var(--step--1);
 }
 
-.spot__meta :deep(svg) { flex: none; color: var(--accent-400); }
+.spot__meta :deep(svg) {
+  flex: none;
+  color: var(--accent-400);
+}
 
 .spot__activity {
   display: grid;
@@ -279,7 +298,9 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
   overflow-wrap: anywhere;
 }
 
-.spot__resale--none { color: var(--text-400); }
+.spot__resale--none {
+  color: var(--text-400);
+}
 
 .spot__see {
   position: relative;
@@ -317,6 +338,8 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
 
 @media (prefers-reduced-motion: reduce) {
   .spot:hover,
-  .spot:focus-within { transform: none; }
+  .spot:focus-within {
+    transform: none;
+  }
 }
 </style>

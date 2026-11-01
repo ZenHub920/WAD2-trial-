@@ -96,8 +96,22 @@ onMounted(loadPush);
 </template>
 
 <style scoped>
-.profile-notifications { display: grid; gap: var(--space-4); margin-top: var(--space-7); padding-top: var(--space-6); border-top: var(--border-hairline); min-width: 0; }
-.profile-notifications h2 { font-size: var(--step-2); }
-.profile-notifications > .btn { justify-self: start; }
-.push-hint { color: var(--text-400); font-size: var(--step--1); }
+.profile-notifications {
+  display: grid;
+  gap: var(--space-4);
+  margin-top: var(--space-7);
+  padding-top: var(--space-6);
+  border-top: var(--border-hairline);
+  min-width: 0;
+}
+.profile-notifications h2 {
+  font-size: var(--step-2);
+}
+.profile-notifications > .btn {
+  justify-self: start;
+}
+.push-hint {
+  color: var(--text-400);
+  font-size: var(--step--1);
+}
 </style>

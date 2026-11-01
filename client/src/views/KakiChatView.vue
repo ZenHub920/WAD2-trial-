@@ -636,19 +636,43 @@ watch(() => props.id, async () => {
 
 /* Backgrounds are a data attribute rather than inline style, so the set is
    closed and nothing user-supplied reaches CSS. */
-.thread[data-bg='default'] { background: var(--ink-900); }
-.thread[data-bg='dusk'] { background: linear-gradient(180deg, #1a1130, #0b0a14); }
-.thread[data-bg='neon'] { background: radial-gradient(120% 80% at 50% 0%, #2a0a3d, #07060d); }
-.thread[data-bg='paper'] { background: #efe9dd; }
-.thread[data-bg='forest'] { background: linear-gradient(180deg, #0d1f18, #060d0a); }
-.thread[data-bg='mono'] { background: #101010; }
+.thread[data-bg='default'] {
+  background: var(--ink-900);
+}
+.thread[data-bg='dusk'] {
+  background: linear-gradient(180deg, #1a1130, #0b0a14);
+}
+.thread[data-bg='neon'] {
+  background: radial-gradient(120% 80% at 50% 0%, #2a0a3d, #07060d);
+}
+.thread[data-bg='paper'] {
+  background: #efe9dd;
+}
+.thread[data-bg='forest'] {
+  background: linear-gradient(180deg, #0d1f18, #060d0a);
+}
+.thread[data-bg='mono'] {
+  background: #101010;
+}
 
-.thread[data-bg='paper'] .bubble:not(.bubble--mine) { background: #fff; color: #1a1a1a; }
+.thread[data-bg='paper'] .bubble:not(.bubble--mine) {
+  background: #fff;
+  color: #1a1a1a;
+}
 .thread[data-bg='paper'] .day,
-.thread[data-bg='paper'] .empty { color: #5b5346; }
-.thread:is([data-bg='dusk'], [data-bg='neon'], [data-bg='forest'], [data-bg='mono']) .empty { color: #e3ddeb; }
-.thread:is([data-bg='dusk'], [data-bg='neon'], [data-bg='forest'], [data-bg='mono']) .day { background: #28222f; color: #e3ddeb; }
-.thread:is([data-bg='dusk'], [data-bg='neon'], [data-bg='forest'], [data-bg='mono']) .row__more { color: #e3ddeb; }
+.thread[data-bg='paper'] .empty {
+  color: #5b5346;
+}
+.thread:is([data-bg='dusk'], [data-bg='neon'], [data-bg='forest'], [data-bg='mono']) .empty {
+  color: #e3ddeb;
+}
+.thread:is([data-bg='dusk'], [data-bg='neon'], [data-bg='forest'], [data-bg='mono']) .day {
+  background: #28222f;
+  color: #e3ddeb;
+}
+.thread:is([data-bg='dusk'], [data-bg='neon'], [data-bg='forest'], [data-bg='mono']) .row__more {
+  color: #e3ddeb;
+}
 
 /* ------------------------------------------------------------------- bar */
 
@@ -674,9 +698,21 @@ watch(() => props.id, async () => {
   padding: 0 var(--space-1);
 }
 
-.bar__who { display: flex; align-items: center; gap: var(--space-3); flex: 1; min-width: 0; }
-.bar__who > div { min-width: 0; overflow-wrap: anywhere; }
-.bar__meetup { flex-shrink: 0; font-size: var(--step--1); }
+.bar__who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+}
+.bar__who > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.bar__meetup {
+  flex-shrink: 0;
+  font-size: var(--step--1);
+}
 
 .avatar {
   display: grid;
@@ -690,8 +726,16 @@ watch(() => props.id, async () => {
   flex-shrink: 0;
 }
 
-.bar__name { margin: 0; font-weight: 600; font-size: var(--step-0); }
-.bar__sub { margin: 0; font-size: var(--step--2); color: var(--text-400); }
+.bar__name {
+  margin: 0;
+  font-weight: 600;
+  font-size: var(--step-0);
+}
+.bar__sub {
+  margin: 0;
+  font-size: var(--step--2);
+  color: var(--text-400);
+}
 
 .bar__menu {
   border: 0;
@@ -744,7 +788,10 @@ watch(() => props.id, async () => {
   min-width: 0;
 }
 
-.row--mine { align-self: flex-end; flex-direction: row-reverse; }
+.row--mine {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
 
 .bubble {
   min-width: 0;
@@ -764,11 +811,22 @@ watch(() => props.id, async () => {
   border-bottom-right-radius: var(--radius-sm);
 }
 
-.bubble--gone { background: transparent; border: 1px dashed var(--ink-500); }
+.bubble--gone {
+  background: transparent;
+  border: 1px dashed var(--ink-500);
+}
 
-.bubble__body { margin: 0; white-space: pre-wrap; }
+.bubble__body {
+  margin: 0;
+  white-space: pre-wrap;
+}
 
-.gone { margin: 0; font-style: italic; color: var(--text-400); font-size: var(--step--1); }
+.gone {
+  margin: 0;
+  font-style: italic;
+  color: var(--text-400);
+  font-size: var(--step--1);
+}
 
 .quote {
   display: block;
@@ -779,8 +837,17 @@ watch(() => props.id, async () => {
   font-size: var(--step--2);
 }
 
-.quote__who { display: block; font-weight: 600; }
-.quote__body { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 24ch; }
+.quote__who {
+  display: block;
+  font-weight: 600;
+}
+.quote__body {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 24ch;
+}
 
 .meta {
   display: flex;
@@ -791,12 +858,17 @@ watch(() => props.id, async () => {
   opacity: 0.65;
 }
 
-.meta__edited { font-style: italic; }
+.meta__edited {
+  font-style: italic;
+}
 
 /* Ticks sit in the bubble's own colour until they turn read, when they take
    a distinct accent — the colour change is what the eye catches, not the
    second stroke, which is small at this size. */
-.ticks { display: inline-flex; align-items: center; }
+.ticks {
+  display: inline-flex;
+  align-items: center;
+}
 
 .ticks svg {
   width: 1.05rem;
@@ -813,7 +885,9 @@ watch(() => props.id, async () => {
   opacity: 1;
 }
 
-.bubble--mine .ticks--read { color: #7ff0ff; }
+.bubble--mine .ticks--read {
+  color: #7ff0ff;
+}
 
 .row__more {
   opacity: 0;
@@ -827,7 +901,9 @@ watch(() => props.id, async () => {
 }
 
 .row:hover .row__more,
-.row__more:focus-visible { opacity: 1; }
+.row__more:focus-visible {
+  opacity: 1;
+}
 
 .popover {
   position: absolute;
@@ -842,7 +918,9 @@ watch(() => props.id, async () => {
   box-shadow: var(--shadow-lg);
 }
 
-.row--mine .popover { right: 0; }
+.row--mine .popover {
+  right: 0;
+}
 
 .popover button {
   text-align: left;
@@ -855,8 +933,12 @@ watch(() => props.id, async () => {
   cursor: pointer;
 }
 
-.popover button:hover { background: var(--ink-700); }
-.popover__danger { color: var(--rose-400); }
+.popover button:hover {
+  background: var(--ink-700);
+}
+.popover__danger {
+  color: var(--rose-400);
+}
 
 /* -------------------------------------------------------------- composer */
 
@@ -878,8 +960,15 @@ watch(() => props.id, async () => {
   background: var(--ink-800);
 }
 
-.context__text { flex: 1; min-width: 0; display: grid; }
-.context__label { font-size: var(--step--2); color: var(--accent-400); }
+.context__text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+.context__label {
+  font-size: var(--step--2);
+  color: var(--accent-400);
+}
 .context__body {
   font-size: var(--step--1);
   color: var(--text-300);
@@ -887,9 +976,19 @@ watch(() => props.id, async () => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.context__x { border: 0; background: none; color: var(--text-400); font-size: var(--step-1); cursor: pointer; }
+.context__x {
+  border: 0;
+  background: none;
+  color: var(--text-400);
+  font-size: var(--step-1);
+  cursor: pointer;
+}
 
-.composer__row { display: flex; align-items: flex-end; gap: var(--space-3); }
+.composer__row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
 
 .composer__input {
   flex: 1;
@@ -904,7 +1003,10 @@ watch(() => props.id, async () => {
   font: inherit;
 }
 
-.composer__input:focus-visible { outline: 2px solid var(--accent-500); outline-offset: 1px; }
+.composer__input:focus-visible {
+  outline: 2px solid var(--accent-500);
+  outline-offset: 1px;
+}
 
 .composer__send {
   display: grid;
@@ -921,8 +1023,13 @@ watch(() => props.id, async () => {
   transition: transform var(--dur-fast) var(--ease-spring);
 }
 
-.composer__send:active:not(:disabled) { transform: scale(0.92); }
-.composer__send:disabled { opacity: 0.4; cursor: not-allowed; }
+.composer__send:active:not(:disabled) {
+  transform: scale(0.92);
+}
+.composer__send:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
 /* ----------------------------------------------------------------- sheet */
 
@@ -951,13 +1058,34 @@ watch(() => props.id, async () => {
   box-shadow: var(--shadow-lg);
 }
 
-.sheet__title { margin: 0 0 var(--space-2); font-size: var(--step-2); }
-.sheet__label { margin: 0 0 var(--space-3); font-size: var(--step--1); color: var(--text-300); }
-.sheet__hint { margin: var(--space-2) 0 0; font-size: var(--step--2); color: var(--text-400); }
-.sheet__section { padding-block: var(--space-4); border-top: var(--border-hairline); }
-.sheet__section--danger { display: grid; gap: var(--space-2); }
+.sheet__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--step-2);
+}
+.sheet__label {
+  margin: 0 0 var(--space-3);
+  font-size: var(--step--1);
+  color: var(--text-300);
+}
+.sheet__hint {
+  margin: var(--space-2) 0 0;
+  font-size: var(--step--2);
+  color: var(--text-400);
+}
+.sheet__section {
+  padding-block: var(--space-4);
+  border-top: var(--border-hairline);
+}
+.sheet__section--danger {
+  display: grid;
+  gap: var(--space-2);
+}
 
-.swatches { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
 
 .swatch {
   padding: var(--space-2) var(--space-3);
@@ -972,14 +1100,34 @@ watch(() => props.id, async () => {
 /* Each swatch previews its own background, so its label needs a colour chosen
    against THAT background rather than the page's — in light mode the inherited
    text colour is near-black and disappears on the dark previews. */
-.swatch[data-bg='default'] { background: var(--ink-900); color: var(--text-100); }
-.swatch[data-bg='dusk'] { background: linear-gradient(180deg, #1a1130, #0b0a14); color: #efeaff; }
-.swatch[data-bg='neon'] { background: radial-gradient(120% 80% at 50% 0%, #2a0a3d, #07060d); color: #ffd9f2; }
-.swatch[data-bg='paper'] { background: #efe9dd; color: #1a1a1a; }
-.swatch[data-bg='forest'] { background: linear-gradient(180deg, #0d1f18, #060d0a); color: #d8f0e4; }
-.swatch[data-bg='mono'] { background: #101010; color: #f0f0f0; }
+.swatch[data-bg='default'] {
+  background: var(--ink-900);
+  color: var(--text-100);
+}
+.swatch[data-bg='dusk'] {
+  background: linear-gradient(180deg, #1a1130, #0b0a14);
+  color: #efeaff;
+}
+.swatch[data-bg='neon'] {
+  background: radial-gradient(120% 80% at 50% 0%, #2a0a3d, #07060d);
+  color: #ffd9f2;
+}
+.swatch[data-bg='paper'] {
+  background: #efe9dd;
+  color: #1a1a1a;
+}
+.swatch[data-bg='forest'] {
+  background: linear-gradient(180deg, #0d1f18, #060d0a);
+  color: #d8f0e4;
+}
+.swatch[data-bg='mono'] {
+  background: #101010;
+  color: #f0f0f0;
+}
 
-.swatch--on { border-color: var(--accent-500); }
+.swatch--on {
+  border-color: var(--accent-500);
+}
 
 .danger {
   padding: var(--space-3);
@@ -1004,10 +1152,23 @@ watch(() => props.id, async () => {
   cursor: pointer;
 }
 
-.sheet__actions { display: flex; flex-wrap: wrap; gap: var(--space-3); justify-content: flex-end; margin-top: var(--space-4); }
+.sheet__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: flex-end;
+  margin-top: var(--space-4);
+}
 
-.field { display: grid; gap: var(--space-2); margin-top: var(--space-4); }
-.field__label { font-size: var(--step--1); color: var(--text-300); }
+.field {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+.field__label {
+  font-size: var(--step--1);
+  color: var(--text-300);
+}
 .field__input {
   min-width: 0;
   width: 100%;
@@ -1019,7 +1180,14 @@ watch(() => props.id, async () => {
   font: inherit;
 }
 
-.centered { display: grid; flex: 1; place-content: center; gap: var(--space-3); text-align: center; padding: var(--space-6); }
+.centered {
+  display: grid;
+  flex: 1;
+  place-content: center;
+  gap: var(--space-3);
+  text-align: center;
+  padding: var(--space-6);
+}
 
 .notice--ok {
   margin: var(--space-3) var(--gutter) 0;
@@ -1030,9 +1198,18 @@ watch(() => props.id, async () => {
 }
 
 @media (max-width: 560px) {
-  .row { max-width: 88%; }
-  .bar__who { flex-basis: calc(100% - 7rem); }
-  .bar__meetup { order: 1; margin-left: 2rem; }
-  .row__more { opacity: 1; }
+  .row {
+    max-width: 88%;
+  }
+  .bar__who {
+    flex-basis: calc(100% - 7rem);
+  }
+  .bar__meetup {
+    order: 1;
+    margin-left: 2rem;
+  }
+  .row__more {
+    opacity: 1;
+  }
 }
 </style>
