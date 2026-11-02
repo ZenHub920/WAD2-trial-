@@ -150,10 +150,14 @@
   --gutter: var(--space-5);
   --header-height: 68px;
 
-  /* The prototype is a phone app. `--app-width` is the width the shell clamps
-     to on a large screen so the product keeps its proportions instead of
-     stretching a 390px design across a desktop monitor. */
-  --app-width: 430px;
+  /* The prototype is a phone app. `--app-width` keeps those proportions
+     instead of stretching a 390px design across a desktop monitor — but it
+     tracks the viewport rather than sitting at one fixed width, because a
+     430px column on a 2000px screen is mostly empty margin. It grows with the
+     window from the phone width up to a ceiling, past which a single column of
+     controls would read as a letterbox rather than a product. The type scale
+     above is fluid on the same axis, so the whole view scales together. */
+  --app-width: clamp(430px, 44vw, 700px);
 }
 
 /**

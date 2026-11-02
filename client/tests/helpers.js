@@ -1,13 +1,13 @@
 import { mount, flushPromises } from '@vue/test-utils';
 import { createRouter, createMemoryHistory } from 'vue-router';
 
-export async function mountPage(component, { path = '/', props = {} } = {}) {
+export async function mountPage(component, { path = '/', props = {}, stubs = {} } = {}) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{
     path: '/:pathMatch(.*)*', component: { template: '<div />' },
   }] });
   await router.push(path);
   await router.isReady();
-  const wrapper = mount(component, { props, attachTo: document.body, global: { plugins: [router] } });
+  const wrapper = mount(component, { props, attachTo: document.body, global: { plugins: [router], stubs } });
   await flushPromises();
   return { wrapper, router };
 }
