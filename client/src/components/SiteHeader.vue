@@ -12,20 +12,35 @@ defineEmits(['toggle-theme']);
 const route = useRoute();
 const scrolled = ref(false);
 const menuOpen = ref(false);
+const mobileMenu = ref(false);
+const menuToggle = ref(null);
+let menuQuery;
 watch(() => route.fullPath, () => { menuOpen.value = false; });
 
 function onScroll() {
   scrolled.value = window.scrollY > 12;
 }
 function onKeydown(event) {
-  if (event.key === 'Escape') menuOpen.value = false;
+  if (event.key === 'Escape' && menuOpen.value) {
+    event.preventDefault();
+    menuOpen.value = false;
+    if (mobileMenu.value) menuToggle.value?.focus();
+  }
+}
+function syncMenu(event) {
+  mobileMenu.value = event.matches;
+  if (!event.matches) menuOpen.value = false;
 }
 onMounted(() => {
+  menuQuery = window.matchMedia('(max-width: 1100px)');
+  syncMenu(menuQuery);
+  menuQuery.addEventListener('change', syncMenu);
   window.addEventListener('scroll', onScroll, { passive: true });
   window.addEventListener('keydown', onKeydown);
   onScroll();
 });
 onUnmounted(() => {
+  menuQuery?.removeEventListener('change', syncMenu);
   window.removeEventListener('scroll', onScroll);
   window.removeEventListener('keydown', onKeydown);
 });
@@ -38,7 +53,8 @@ onUnmounted(() => {
         <span class="brand__mark" aria-hidden="true"><span v-for="n in 4" :key="n" :style="{ height: `${6 + n * 3}px` }" /></span>
         <span>Encore</span>
       </RouterLink>
-      <nav id="main-navigation" class="nav" :class="{ 'nav--open': menuOpen }" aria-label="Main navigation">
+      <nav id="main-navigation" class="nav" :class="{ 'nav--open': menuOpen }" :inert="mobileMenu && !menuOpen ? '' : undefined" aria-label="Main navigation">
+        <div class="nav__context"><strong>Explore Encore</strong><p>Concerts, companions and your plans</p></div>
         <div class="nav__primary">
           <RouterLink to="/concerts">Concerts</RouterLink>
           <RouterLink to="/tickets">Tickets</RouterLink>
@@ -69,7 +85,7 @@ onUnmounted(() => {
           <span class="sr-only">Switch to {{ theme === 'dark' ? 'light' : 'dark' }} theme</span>
         </button>
         <NotificationBell v-if="currentUser" @open="menuOpen = false" />
-      <button class="header__toggle" type="button" aria-controls="main-navigation" :aria-expanded="menuOpen" @click="menuOpen = !menuOpen">
+      <button ref="menuToggle" class="header__toggle" type="button" aria-controls="main-navigation" :aria-expanded="menuOpen" @click="menuOpen = !menuOpen">
         {{ menuOpen ? 'Close menu' : 'Menu' }}
       </button>
       </div>
@@ -137,6 +153,7 @@ onUnmounted(() => {
   min-width: 0;
   justify-content: space-between;
 }
+.nav__context { display: none; }
 .nav a {
   display: inline-flex;
   align-items: center;
@@ -172,7 +189,7 @@ onUnmounted(() => {
   box-shadow: inset 0 1px 0 var(--panel-highlight);
   transition: background-color var(--dur-fast), border-color var(--dur-fast), transform var(--dur-fast) var(--ease-settle);
 }
-.theme-btn:hover, .header__toggle:hover {
+.theme-btn:hover, .header__toggle:hover, .header__toggle[aria-expanded='true'] {
   border-color: var(--accent-400);
   background: var(--ink-800);
 }
@@ -189,6 +206,7 @@ onUnmounted(() => {
   margin-left: auto;
 }
 @media (max-width: 1100px) {
+  .header__inner { gap: var(--space-3); }
   .header__toggle {
     display: block;
   }
@@ -201,7 +219,7 @@ onUnmounted(() => {
     align-items: stretch;
     gap: var(--space-3);
     padding: var(--space-4) var(--gutter);
-    background: var(--panel-bg);
+    background: var(--ink-800);
     border-bottom: 1px solid var(--panel-edge);
     box-shadow: inset 0 1px 0 var(--panel-highlight), var(--shadow-lg);
     visibility: hidden;
@@ -222,6 +240,9 @@ onUnmounted(() => {
     align-items: stretch;
     gap: var(--space-1);
   }
+  .nav__context { display: block; padding: var(--space-2) var(--space-3) var(--space-3); border-bottom: 1px solid var(--panel-edge); }
+  .nav__context strong { color: var(--text-100); font-size: var(--step--1); font-weight: 650; }
+  .nav__context p { margin-top: var(--space-1); color: var(--text-300); font-size: var(--step--2); }
   .nav__account {
     border-top: var(--border-hairline);
     padding-top: var(--space-3);
@@ -234,6 +255,13 @@ onUnmounted(() => {
     box-shadow: inset 3px 0 var(--accent-400);
     background: var(--ink-800);
   }
+}
+
+@media (max-width: 480px) {
+  .header__inner { gap: var(--space-2); }
+  .brand { font-size: 1.1rem; }
+  .header__utilities { gap: var(--space-1); }
+  .header__toggle { padding-inline: var(--space-2); font-size: .8rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {

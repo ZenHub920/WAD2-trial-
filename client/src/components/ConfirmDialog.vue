@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, ref, watch } from 'vue';
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import LoadingSpinner from './LoadingSpinner.vue';
 
 /**
@@ -22,25 +22,70 @@ const props = defineProps({
 const emit = defineEmits(['confirm', 'cancel']);
 
 const confirmEl = ref(null);
+const dialog = ref(null);
+let returnFocus = null;
+let focusVersion = 0;
 
-// Focus lands on the confirm button, so Enter answers and Escape backs out.
+function restoreFocus(container = dialog.value) {
+  if (returnFocus?.isConnected && (document.activeElement === document.body || container?.contains(document.activeElement))) {
+    returnFocus.focus();
+  }
+  returnFocus = null;
+}
+
+// Keep the existing initial action, with a stable focus target while saving.
 watch(() => props.open, async (open) => {
-  if (!open) return;
+  const version = ++focusVersion;
+  if (open) returnFocus = document.activeElement;
   await nextTick();
-  confirmEl.value?.focus();
+  if (version !== focusVersion) return;
+  if (open) (props.busy ? dialog.value : confirmEl.value)?.focus();
+  else restoreFocus();
+}, { immediate: true });
+watch(() => props.busy, async busy => {
+  if (!busy || !props.open) return;
+  await nextTick();
+  if (props.open && props.busy) dialog.value?.focus();
 });
+onBeforeUnmount(() => { focusVersion++; restoreFocus(); });
+
+function onKeydown(event) {
+  if (!props.open || !dialog.value) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!props.busy) emit('cancel');
+  } else if (event.key === 'Tab') {
+    const buttons = [...dialog.value.querySelectorAll('button:not(:disabled)')];
+    const first = buttons[0], last = buttons.at(-1), active = document.activeElement;
+    if (!first) {
+      event.preventDefault();
+      dialog.value.focus();
+    } else if (event.shiftKey && (active === first || !buttons.includes(active))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (active === last || !buttons.includes(active))) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+}
 </script>
 
 <template>
   <Teleport to="body">
+    <Transition name="confirm-shell" @before-leave="element => { restoreFocus(element); element.setAttribute('inert', ''); element.setAttribute('aria-hidden', 'true'); }">
     <div
       v-if="open"
+      ref="dialog"
       class="confirm"
       role="dialog"
       aria-modal="true"
       :aria-label="title"
+      :aria-busy="busy"
+      tabindex="-1"
       @click.self="!busy && emit('cancel')"
-      @keydown.esc="!busy && emit('cancel')"
+      @keydown="onKeydown"
     >
       <div class="confirm__panel">
         <h2 class="confirm__title">{{ title }}</h2>
@@ -63,6 +108,7 @@ watch(() => props.open, async (open) => {
         </div>
       </div>
     </div>
+    </Transition>
   </Teleport>
 </template>
 
@@ -77,7 +123,6 @@ watch(() => props.open, async (open) => {
   padding: var(--space-5);
   background: color-mix(in oklab, var(--ink-900) 62%, transparent);
   backdrop-filter: blur(3px);
-  animation: confirm-in var(--dur-fast) var(--ease-out);
 }
 
 .confirm__panel {
@@ -92,7 +137,6 @@ watch(() => props.open, async (open) => {
   border-radius: var(--radius-lg);
   background: var(--ink-800);
   box-shadow: inset 0 1px 0 var(--panel-highlight), var(--shadow-lg);
-  animation: confirm-rise var(--dur-base) var(--ease-settle);
 }
 
 .confirm__title {
@@ -116,21 +160,15 @@ watch(() => props.open, async (open) => {
   white-space: normal;
 }
 
-@keyframes confirm-in {
-  from {
-    opacity: 0;
-  }
-}
-@keyframes confirm-rise {
-  from {
-    opacity: 0;
-    transform: translateY(8px) scale(0.98);
-  }
-}
+.confirm-shell-enter-active { transition: opacity 160ms var(--ease-out); }
+.confirm-shell-enter-active .confirm__panel { transition: transform 220ms var(--ease-settle); }
+.confirm-shell-leave-active { pointer-events: none; transition: opacity 120ms var(--ease-out); }
+.confirm-shell-enter-from, .confirm-shell-leave-to { opacity: 0; }
+.confirm-shell-enter-from .confirm__panel { transform: translateY(10px) scale(.985); }
 
 @media (prefers-reduced-motion: reduce) {
-  .confirm, .confirm__panel {
-    animation: none;
-  }
+  .confirm-shell-enter-active, .confirm-shell-leave-active,
+  .confirm-shell-enter-active .confirm__panel { transition: none; }
+  .confirm-shell-enter-from .confirm__panel { transform: none; }
 }
 </style>

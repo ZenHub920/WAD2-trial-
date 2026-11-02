@@ -1,5 +1,13 @@
 # Scoped refactoring and feature testing
 
+## Navigation and group workspaces — 3 November 2026
+
+Concert browsing now distinguishes concert details, official purchases and fan inventory, with removable search/date cues and short list transitions. Group workspaces prioritise chat/planning and show clearer request/invitation states. Secondary host settings remain mounted inside native disclosures, reopen on invalid saves and clear only the local validation message after correction. Existing preference fields, routes, pricing, matching, approvals and backend sources are unchanged.
+
+New regression files are `client/tests/confirmation-dialog.test.js`, `navigation-disclosure.test.js` and `group-membership-workspace.test.js`. Their nine cases cover modal focus containment/restoration and busy guards; arrow/Home/End tab navigation; preserved filter values and inert hidden controls; menu focus after Escape/resize; and group validation feedback without clearing API errors. Additional browser previews exercise normal-motion concert filtering, mobile labels, host disclosures, public member links and actual confirmation focus. The group-name label remains stable while its error is supplied separately to assistive technology.
+
+Verification passed **173 Vue tests, all 20 checked-in Chromium workflows and three local visual/interaction previews**, plus the production build. The group preview initially caught the changing accessible name after a validation error; the field label/error association was fixed and that workflow reran successfully. The six affected dialog/group component cases and production build also passed again after the final accessibility fixes. The existing bundle-size warning remains. The preview uses synthetic accounts and controlled external discovery data; no live purchase, real provider credential or production data is involved. Backend sources were unchanged in this UI pass.
+
 ## UI, public profiles and private preferences — 2 November 2026
 
 The planner now uses compact half-hour cells and three mounted steps: time, places and review. Optional journeys, weather and parking are disclosed when needed; switching steps preserves drafts and pauses hidden transport polling. A visible **Plan meetup** action beneath each pair, group and connected-group chat header opens the corresponding planner; existing group dashboard actions remain. Public `/people/:id` profiles show public identity details and the existing six self-rated concert interests, never questionnaire answers. Mutual blocks and suspended accounts produce the same unavailable response.

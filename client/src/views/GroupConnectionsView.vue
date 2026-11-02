@@ -298,6 +298,11 @@ async function host() {
     </template>
 
     <template v-else-if="!groupsLoading">
+      <nav v-if="mode === 'dashboard'" class="workspace-overview" aria-label="Group workspace sections">
+        <a href="#owned-heading"><span class="workspace-overview__value">{{ activeGroups.length + joinedGroups.length }}</span><span>Your active groups<small>Chat, plan and manage</small></span></a>
+        <a v-if="admissionQueues.length || historicalJoins.length" href="#join-requests" :class="{'workspace-overview__attention':incomingCount}"><span class="workspace-overview__value">{{ incomingCount }}</span><span>Requests &amp; offers<small>{{ incomingCount ? 'Review in arrival order' : 'View past requests' }}</small></span></a>
+        <a v-if="incoming.length || outgoing.length || accepted.length" href="#group-connections"><span class="workspace-overview__value">{{ accepted.length }}</span><span>Group connections<small>{{ incoming.length ? `${incoming.length} invitations need a reply` : 'Invitations and shared chats' }}</small></span></a>
+      </nav>
       <template v-if="mode === 'dashboard' || !sourceGroup">
         <p v-if="mode === 'connections'" class="group-muted" role="status">{{ route.query.groupId ? 'This group is unavailable, cancelled, or not owned by you. Choose an active group below.' : 'Choose the group you want to connect with other groups.' }}</p>
         <section class="owned-section" aria-labelledby="owned-heading">
@@ -313,7 +318,8 @@ async function host() {
               <p>{{ g.memberCount }} {{ g.memberCount === 1 ? 'member' : 'members' }} · {{ g.remainingCapacity }} places remaining</p>
               <p class="group-muted">{{ g.settings?.published ? (g.settings.connect_open ? 'Open to meeting other groups.' : 'Group connections are off. Change this in Manage group.') : 'Invite friends, then publish from Manage group.' }}</p>
               <div class="owned-card__actions">
-                <RouterLink :to="mode === 'connections' ? viewLink('connections', g) : `/groups/${encodeURIComponent(g.id)}/members`" class="btn btn--primary">{{ mode === 'connections' ? 'Connect this group' : 'Manage group' }}</RouterLink>
+                <RouterLink v-if="mode === 'dashboard'" :to="`/groups/${encodeURIComponent(g.id)}/channel`" class="btn" :class="g.settings?.published ? 'btn--primary' : 'btn--ghost'">Open group chat</RouterLink>
+                <RouterLink :to="mode === 'connections' ? viewLink('connections', g) : `/groups/${encodeURIComponent(g.id)}/members`" class="btn" :class="mode === 'connections' || !g.settings?.published ? 'btn--primary' : 'btn--ghost'">{{ mode === 'connections' ? 'Connect this group' : 'Manage group' }}</RouterLink>
                 <button type="button" class="btn btn--ghost" @click="router.push({ path: '/meetups', query: { partyId: g.id } })">Plan meetup</button>
               </div>
             </article>
@@ -331,18 +337,20 @@ async function host() {
               <p class="group-muted">{{ membershipSource[g.assignmentOrigin ?? g.source] ?? 'Active group member' }}</p>
               <p>{{ g.host?.displayName }}'s group · {{ g.remainingCapacity }} places remaining</p>
               <div class="owned-card__actions">
-                <RouterLink :to="`/groups/${encodeURIComponent(g.id)}/members`" class="btn btn--primary">View group</RouterLink>
+                <RouterLink :to="{path:'/messages',query:{tab:'groups'}}" class="btn btn--primary">Group messages</RouterLink>
+                <RouterLink :to="`/groups/${encodeURIComponent(g.id)}/members`" class="btn btn--ghost">View group</RouterLink>
                 <button type="button" class="btn btn--ghost" @click="router.push({ path: '/meetups', query: { partyId: g.partyId ?? g.id } })">Plan meetup</button>
               </div>
             </article>
           </div>
         </section>
-        <section v-if="admissionQueues.length || historicalJoins.length" id="join-requests" class="card group-panel" aria-labelledby="requests-heading">
+        <section v-if="admissionQueues.length || historicalJoins.length" id="join-requests" class="card group-panel requests-panel" aria-labelledby="requests-heading">
+          <p class="workspace-eyebrow">Host review</p>
           <div class="section-heading"><h2 id="requests-heading">Join requests</h2><span class="group-muted">{{ incomingCount }} in your queues</span></div>
           <p class="group-muted">Each group has one arrival-order queue for direct applications and automatic proposals. Review the first request only. Later requests may be waiting without a held place; every request expires 48 hours after it was created.</p>
           <p v-if="!admissionQueues.length" class="group-muted">No pending requests to join your groups.</p>
           <section v-for="queue in admissionQueues" :key="queue.partyId" class="admission-queue">
-            <div class="section-heading"><h3>{{ queue.name }}</h3><span class="group-muted">{{ queue.entries.filter(entry => entry.record.seatReserved).length }} places held · {{ queue.entries.length }} requests</span></div>
+            <div class="section-heading"><h3>{{ queue.name }}</h3><span class="queue-summary">{{ queue.entries.filter(entry => entry.record.seatReserved).length }} places held · {{ queue.entries.length }} requests</span></div>
             <p class="group-muted">{{ queue.artist }} · A held request can be approved when it reaches the front, even when no additional places remain.</p>
             <template v-for="entry in queue.entries" :key="entry.key"><GroupApplicationCard v-if="entry.kind === 'direct'" :application="entry.record" :busy="busy" @respond="action => act(() => api.respondGroupJoin(entry.record.id, action))" /><MatchProposalCard v-else :proposal="entry.record" @updated="retry" /></template>
           </section>
@@ -375,20 +383,21 @@ async function host() {
         </template>
       </template>
 
-      <section v-if="sourceGroup || (mode === 'dashboard' && (incoming.length || outgoing.length || accepted.length))" class="card group-panel connections">
+      <section v-if="sourceGroup || (mode === 'dashboard' && (incoming.length || outgoing.length || accepted.length))" id="group-connections" class="card group-panel connections">
+        <p class="workspace-eyebrow">Meet beyond your group</p>
         <h2>{{ mode === 'dashboard' ? 'Group connections and invitations' : 'This group’s connections' }}</h2>
         <div v-if="incoming.length" class="invites">
           <h3 class="invites__title">Received <span class="invites__count tabular">{{ incoming.length }}</span></h3>
-          <article v-for="c in incoming" :key="c.id" class="invite"><p class="invite__who">{{ describe(c) }}</p><div class="invite__actions"><button type="button" class="btn btn--success" :disabled="busy" :aria-label="`Accept the invitation from ${otherParty(c).hostName}`" @click="act(() => api.respondToGroup(c.id, 'accept'))">Accept</button><button type="button" class="btn btn--danger-ghost" :disabled="busy" :aria-label="`Decline the invitation from ${otherParty(c).hostName}`" @click="confirming = { kind: 'decline', connection: c }">Decline</button></div></article>
+          <article v-for="c in incoming" :key="c.id" class="invite invite--received"><div class="invite__context"><span class="connection-state connection-state--attention">Needs your reply</span><p class="invite__who">{{ describe(c) }}</p></div><div class="invite__actions"><button type="button" class="btn btn--success" :disabled="busy" :aria-label="`Accept the invitation from ${otherParty(c).hostName}`" @click="act(() => api.respondToGroup(c.id, 'accept'))">Accept</button><button type="button" class="btn btn--danger-ghost" :disabled="busy" :aria-label="`Decline the invitation from ${otherParty(c).hostName}`" @click="confirming = { kind: 'decline', connection: c }">Decline</button></div></article>
         </div>
         <div v-if="outgoing.length" class="invites">
           <h3 class="invites__title">Sent <span class="invites__count tabular">{{ outgoing.length }}</span></h3>
-          <article v-for="c in outgoing" :key="c.id" class="invite"><p class="invite__who">{{ describe(c) }}</p><button type="button" class="btn btn--danger-ghost" :disabled="busy" :aria-label="`Cancel your invitation to ${otherParty(c).hostName}`" @click="confirming = { kind: 'cancel', connection: c }">Withdraw pending invitation</button></article>
+          <article v-for="c in outgoing" :key="c.id" class="invite"><div class="invite__context"><span class="connection-state">Waiting for the other host</span><p class="invite__who">{{ describe(c) }}</p></div><button type="button" class="btn btn--danger-ghost" :disabled="busy" :aria-label="`Cancel your invitation to ${otherParty(c).hostName}`" @click="confirming = { kind: 'cancel', connection: c }">Withdraw pending invitation</button></article>
         </div>
         <div class="connected">
           <h3 class="invites__title">Connected</h3>
           <p v-if="!accepted.length" class="group-muted">No connected groups yet. Publish your group and invite another group to connect.</p>
-          <article v-for="c in accepted" :key="c.id" class="connection"><p class="invite__who">{{ describe(c) }}</p><p v-if="c.partyA.notes" class="group-notes"><strong>{{ c.partyA.hostName }}:</strong> {{ c.partyA.notes }}</p><p v-if="c.partyB.notes" class="group-notes"><strong>{{ c.partyB.hostName }}:</strong> {{ c.partyB.notes }}</p><div class="connection__foot"><span class="connection__since">Connected {{ whenConnected(c.respondedAt) }}</span><RouterLink class="btn btn--primary" :to="`/groups/connections/${encodeURIComponent(c.id)}/channel`">Open shared chat</RouterLink><button type="button" class="btn btn--ghost" @click="router.push({ path: '/meetups', query: { connectionId: c.id } })">Plan meetup</button></div></article>
+          <article v-for="c in accepted" :key="c.id" class="connection"><span class="connection-state connection-state--accepted">Groups connected</span><p class="invite__who">{{ describe(c) }}</p><details v-if="c.partyA.notes || c.partyB.notes" class="connection-notes"><summary>Host notes</summary><p v-if="c.partyA.notes" class="group-notes"><strong>{{ c.partyA.hostName }}:</strong> {{ c.partyA.notes }}</p><p v-if="c.partyB.notes" class="group-notes"><strong>{{ c.partyB.hostName }}:</strong> {{ c.partyB.notes }}</p></details><div class="connection__foot"><span class="connection__since">Connected {{ whenConnected(c.respondedAt) }}</span><RouterLink class="btn btn--primary" :to="`/groups/connections/${encodeURIComponent(c.id)}/channel`">Open shared chat</RouterLink><button type="button" class="btn btn--ghost" @click="router.push({ path: '/meetups', query: { connectionId: c.id } })">Plan meetup</button></div></article>
         </div>
       </section>
     </template>
@@ -399,6 +408,18 @@ async function host() {
 </template>
 
 <style scoped>
+.workspace-eyebrow { margin:0; color:var(--accent-400); font:600 .68rem var(--font-mono); letter-spacing:.08em; text-transform:uppercase; }
+.workspace-overview { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,15rem),1fr)); gap:var(--space-3); }
+.workspace-overview a { display:flex; align-items:center; gap:var(--space-4); padding:var(--space-4) var(--space-5); border:1px solid var(--panel-edge); border-radius:var(--radius-md); background:var(--panel-bg); box-shadow:var(--panel-shadow); color:var(--text-100); text-decoration:none; transition:border-color var(--dur-fast),transform var(--dur-fast) var(--ease-settle); }
+.workspace-overview a:hover { border-color:var(--accent-400); transform:translateY(-1px); }
+.workspace-overview a:active { transform:translateY(1px); }
+.workspace-overview__value { flex:none; color:var(--accent-400); font:650 var(--step-2) var(--font-mono); }
+.workspace-overview a > span:last-child { min-width:0; font-size:var(--step--1); font-weight:650; }
+.workspace-overview small { display:block; margin-top:var(--space-1); color:var(--text-400); font-size:var(--step--2); font-weight:400; }
+.workspace-overview a.workspace-overview__attention { border-left:3px solid var(--amber-400); }
+.requests-panel { border-left:3px solid var(--amber-400); scroll-margin-top:calc(var(--header-height) + var(--space-4)); }
+.queue-summary { padding:var(--space-1) var(--space-2); border:var(--border-hairline); border-radius:var(--radius-sm); background:var(--ink-900); color:var(--text-300); font-size:var(--step--2); }
+#owned-heading,#group-connections { scroll-margin-top:calc(var(--header-height) + var(--space-4)); }
 .page-heading, .section-heading, .owned-card__top {
   display: flex;
   align-items: center;
@@ -426,6 +447,9 @@ async function host() {
 }
 .owned-card {
   grid-template-rows: auto auto auto 1fr auto;
+  border-top:2px solid color-mix(in srgb,var(--accent-400) 40%,var(--panel-edge));
+  background:var(--panel-bg);
+  box-shadow:var(--panel-shadow);
 }
 .owned-card__top {
   align-items: center;
@@ -451,6 +475,8 @@ async function host() {
   justify-content: center;
   text-align: center;
 }
+.owned-card__actions:has(> :nth-child(3)) { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.owned-card__actions:has(> :nth-child(3)) > :first-child { grid-column:1/-1; }
 .group-picture-field {
   display: grid;
   gap: var(--space-2);
@@ -511,6 +537,7 @@ async function host() {
   gap: var(--space-3);
   padding-top: var(--space-4);
   border-top: var(--border-hairline);
+  min-width:0;
 }
 .join-request, .cancelled-group {
   display: grid;
@@ -520,6 +547,7 @@ async function host() {
   display: grid;
   gap: var(--space-5);
 }
+.connections > .workspace-eyebrow { margin-bottom:calc(-1 * var(--space-4)); }
 .invites, .connected {
   display: grid;
   gap: var(--space-3);
@@ -558,7 +586,16 @@ async function host() {
   border: var(--border-hairline);
   border-radius: var(--radius-md);
   background: var(--ink-850);
+  box-shadow:inset 0 1px 0 var(--panel-highlight);
 }
+.invite--received { border-left:3px solid var(--amber-400); }
+.invite__context { display:grid; gap:var(--space-2); min-width:0; flex:1 1 20rem; }
+.connection-state { width:fit-content; max-width:100%; padding:3px var(--space-2); border:var(--border-hairline); border-radius:var(--radius-pill); background:var(--ink-900); color:var(--text-300); font-size:var(--step--2); }
+.connection-state--attention { color:var(--amber-400); border-color:color-mix(in srgb,var(--amber-400) 45%,var(--panel-edge)); }
+.connection-state--accepted { color:var(--mint-400); border-color:color-mix(in srgb,var(--mint-400) 35%,var(--panel-edge)); }
+.connection-notes { width:100%; padding:var(--space-3); border:var(--border-hairline); border-radius:var(--radius-sm); background:var(--ink-900); }
+.connection-notes summary { cursor:pointer; color:var(--text-300); font-size:var(--step--1); }
+.connection-notes[open] summary { margin-bottom:var(--space-3); }
 .connection {
   display: grid;
   justify-items: start;
@@ -604,4 +641,5 @@ async function host() {
     flex: 1;
   }
 }
+@media(prefers-reduced-motion:reduce) { .workspace-overview a { transition:none; } .workspace-overview a:hover,.workspace-overview a:active { transform:none; } }
 </style>
