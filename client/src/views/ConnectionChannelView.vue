@@ -236,8 +236,13 @@ onUnmounted(() => {
         <RouterLink :to="{ path: '/messages', query: { tab: 'groups' } }" class="channel-back" aria-label="Back to group messages">←</RouterLink>
         <GroupAvatar :name="channel.name" :size="44" />
         <div class="channel-identity"><p class="channel-label">Connected groups</p><h1>{{ channel.name }}</h1><p>{{ channel.concert.artist }} · {{ channel.members.length }} members</p></div>
-        <div class="channel-tools"><button type="button" class="btn btn--ghost" :aria-expanded="showMembers" @click="showMembers = !showMembers">Members</button><button type="button" class="btn btn--ghost" :aria-expanded="showSettings" @click="showSettings = !showSettings">Chat options</button><button type="button" class="btn btn--primary" @click="router.push({ path: '/meetups', query: { connectionId: id } })">Plan meetup</button></div>
+        <div class="channel-tools"><button type="button" class="btn btn--ghost" :aria-expanded="showMembers" @click="showMembers = !showMembers">Members</button><button type="button" class="btn btn--ghost" :aria-expanded="showSettings" @click="showSettings = !showSettings">Chat options</button></div>
       </header>
+      <section class="planner-entry" aria-label="Meetup planner for both connected groups">
+        <svg class="planner-entry__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4M17 3v4M3 11h18M8 15h3M8 18h6"/></svg>
+        <div><strong>One meetup for both groups</strong><p>Compare everyone's availability and agree on a shared meeting point.</p></div>
+        <button type="button" class="btn btn--primary" @click="router.push({ path: '/meetups', query: { connectionId: id } })">Plan meetup</button>
+      </section>
       <p class="channel-hint">Current members of {{ channel.partyA.name }} and {{ channel.partyB.name }} share this room.</p>
       <section v-if="showMembers" class="card channel-panel" aria-label="Shared chat members"><h2>Shared chat members</h2><ul class="members"><li v-for="person in channel.members" :key="person.id"><UserAvatar :src="person.avatarUrl" :name="person.displayName" :size="32" /><div><strong>{{ person.displayName }}{{ person.isHost ? ' · Host' : '' }}</strong><small>{{ groupFor(person) }}</small></div></li></ul><p class="channel-hint">The member list updates when either group’s membership changes.</p></section>
       <section v-if="showSettings" class="card channel-panel" aria-label="Shared chat options"><h2>Your chat background</h2><p class="channel-hint">This changes the background for you.</p><div class="swatches"><button v-for="name in backgrounds" :key="name" type="button" class="swatch" :data-bg="name" :aria-pressed="background === name" :disabled="Boolean(backgroundPending)" @click="chooseBackground(name)"><LoadingSpinner v-if="backgroundPending === name" />{{ name }}</button></div><RouterLink to="/profile#notifications">Message and meetup notification preferences</RouterLink></section>
@@ -258,6 +263,13 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.planner-entry { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-3); margin-block:var(--space-4); padding:var(--space-3) var(--space-4); border:var(--border-soft); border-left:3px solid var(--accent-400); border-radius:var(--radius-md); background:var(--ink-850); box-shadow:inset 0 1px 0 #ffffff08; }
+.planner-entry__icon { width:28px; height:28px; stroke:var(--accent-400); stroke-width:1.5; stroke-linecap:round; flex:none; }
+.planner-entry > div { flex:1 1 14rem; }
+.planner-entry strong { font-size:var(--step--1); color:var(--text-100); }
+.planner-entry p { margin:var(--space-1) 0 0; color:var(--text-400); font-size:var(--step--2); }
+.planner-entry > .btn { flex:none; }
+@media (max-width:480px) { .planner-entry > div { flex-basis:calc(100% - 42px); } .planner-entry > .btn { width:100%; } }
 .connection-channel {
   max-width: 800px;
   display: grid;

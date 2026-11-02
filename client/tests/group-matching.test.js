@@ -3,6 +3,8 @@ import { mount, flushPromises } from '@vue/test-utils';
 import GroupComparisonDeck from '../src/components/GroupComparisonDeck.vue';
 import MatchProposalCard from '../src/components/MatchProposalCard.vue';
 import GroupApplicationCard from '../src/components/GroupApplicationCard.vue';
+import GroupListingCard from '../src/components/GroupListingCard.vue';
+import GroupPrioritiesSummary from '../src/components/GroupPrioritiesSummary.vue';
 import { api } from '../src/api.js';
 import { button, group } from './helpers.js';
 
@@ -110,5 +112,44 @@ describe('automatic approvals and arrival queue', () => {
     expect(wrapper.text()).toContain('One place is held');
     await button(wrapper, 'Approve group place').trigger('click');
     expect(wrapper.emitted('respond')).toEqual([['accept']]);
+  });
+});
+
+describe('private questionnaires and shared group preferences', () => {
+  it('shows safe applicant match reasons and a public vibe link without rendering their questionnaire', () => {
+    const wrapper = mount(GroupApplicationCard, {
+      props: { application: {
+        ...proposal(), status: 'pending', remainingCapacity: 1,
+        seeker: { id: 'person/1', ageBand: '18–24', languages: ['English'], vibe: {} },
+        preferences: { about: [{ text: 'private about answer' }], wants: [{ text: 'private companion answer' }], avoid: [{ text: 'private avoid answer' }] },
+      } },
+      global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } },
+    });
+    expect(wrapper.text()).toContain('Similar concert energy');
+    expect(wrapper.text()).toContain('Their questionnaire stays private');
+    expect(wrapper.get('a').attributes('href')).toBe('/people/person%2F1');
+    expect(wrapper.text()).not.toContain('private about answer');
+    expect(wrapper.text()).not.toContain('private companion answer');
+    expect(wrapper.text()).not.toContain('private avoid answer');
+  });
+  it('shows at most three aggregate preferences with honest incomplete profile coverage', () => {
+    const wrapper = mount(GroupListingCard, { props: { group: { ...group('a', 'Alpha'), profile: {
+      coverage: { answered: 2, total: 3, ratio: 2 / 3, complete: false },
+      representativeWants: ['Similar concert energy', 'Sing together', 'Arrive early', 'Fourth preference'].map((label, key) => ({ key, label, support: 2 / 3, weight: 2 / 3 })),
+      wants: { private_individual_wording: 1 },
+    } } } });
+    expect(wrapper.text()).toContain('2 of 3 profiles represented');
+    expect(wrapper.text()).toContain('Still forming');
+    expect(wrapper.get('.group-priorities__list').findAll('li')).toHaveLength(3);
+    expect(wrapper.text()).not.toContain('Fourth preference');
+    expect(wrapper.text()).not.toContain('private_individual_wording');
+  });
+  it('does not invent consensus when everyone answered but no majority preference exists', () => {
+    const wrapper = mount(GroupPrioritiesSummary, { props: { profile: {
+      coverage: { answered: 4, total: 4, ratio: 1, complete: true }, representativeWants: [],
+    } } });
+    expect(wrapper.text()).toContain('4 of 4 profiles represented');
+    expect(wrapper.text()).toContain('No shared preference yet');
+    expect(wrapper.text()).not.toContain('Still forming');
   });
 });

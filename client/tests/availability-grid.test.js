@@ -50,6 +50,16 @@ describe('drag-to-paint group availability', () => {
     await cell(start).trigger('click');
     expect(values.value).toEqual([]);
   });
+  it('keeps compact cells uncluttered while exposing exact counts on hover and focus', async () => {
+    const { component, cell } = setup();
+    expect(cell(start).get('.availability-grid__count').text()).toBe('0/2');
+    await cell(start + halfHour * 2).trigger('mouseenter');
+    expect(component.get('.availability-grid__inspection').text()).toContain('2 of 2 available');
+    expect(component.get('.availability-grid__inspection').text()).toContain('17:00–17:30');
+    await component.get('.availability-grid__scroll').trigger('mouseleave');
+    await cell(start + halfHour).trigger('focus');
+    expect(component.get('.availability-grid__inspection').text()).toContain('1 of 2 available');
+  });
   it('paints skipped cells in one column without toggling them again on revisit or click', async () => {
     const { component, cell, values } = setup();
     const target = vi.fn(() => cell(start + halfHour * 2).element);

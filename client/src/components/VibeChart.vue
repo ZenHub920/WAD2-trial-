@@ -34,10 +34,16 @@ const radius = computed(() => props.size / 2 - 22);
  */
 const padX = 26;
 
+function score(axis) {
+  const value = props.vibe?.[axis];
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, Math.min(value, props.max)) : 0;
+}
+
 function point(index, value) {
   // Start at 12 o'clock and go clockwise.
   const angle = (Math.PI * 2 * index) / AXES.length - Math.PI / 2;
-  const r = (Math.min(value, props.max) / props.max) * radius.value;
+  const r = (Math.max(0, Math.min(value, props.max)) / props.max) * radius.value;
   return {
     x: centre.value + Math.cos(angle) * r,
     y: centre.value + Math.sin(angle) * r,
@@ -77,7 +83,7 @@ const labelPositions = computed(() =>
     :viewBox="`${-padX} 0 ${size + padX * 2} ${size}`"
     :style="{ maxWidth: `${size + padX * 2}px` }"
     role="img"
-    :aria-label="`Vibe profile: ${AXES.map((a) => `${LABELS.vibe[a]} ${vibe?.[a] ?? 0} of ${max}`).join(', ')}`"
+    :aria-label="`Vibe profile: ${AXES.map((a) => `${LABELS.vibe[a]} ${score(a)} of ${max}`).join(', ')}`"
   >
     <g class="radar__grid">
       <polygon
@@ -92,7 +98,7 @@ const labelPositions = computed(() =>
       />
     </g>
 
-    <polygon class="radar__shape" :points="polygon(vibe)" />
+    <polygon class="radar__shape" :points="polygon(Object.fromEntries(AXES.map((axis) => [axis, score(axis)])))" />
 
     <g class="radar__labels">
       <text
@@ -135,6 +141,10 @@ const labelPositions = computed(() =>
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
   transition: all var(--dur-slow) var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .radar__shape { transition: none; }
 }
 
 

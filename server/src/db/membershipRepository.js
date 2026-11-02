@@ -2,6 +2,7 @@ import { randomBytes, createHash, randomUUID } from "node:crypto";
 import {
   validateAnswers,
   aggregateAnswers,
+  groupPreferenceSummary,
   withoutRetired,
 } from "../services/discoveryPreferences.js";
 import { reservedPlacesSql, availableCapacitySql, expireJoinRequests } from "./capacity.js";
@@ -89,11 +90,11 @@ export function createMembershipRepo(db, repos) {
   const profile = (id) => {
     const rows = db
       .prepare(
-        `SELECT pref.answers_json FROM group_memberships m JOIN group_member_preferences pref
+        `SELECT pref.answers_json FROM group_memberships m LEFT JOIN group_member_preferences pref
       ON pref.party_id=m.party_id AND pref.user_id=m.user_id WHERE m.party_id=? AND m.status='active'`,
       )
       .all(id);
-    return aggregateAnswers(rows.map((r) => JSON.parse(r.answers_json)));
+    return aggregateAnswers(rows.filter((r) => r.answers_json).map((r) => JSON.parse(r.answers_json)), { memberCount: rows.length });
   };
   return {
     party,
@@ -206,7 +207,7 @@ export function createMembershipRepo(db, repos) {
       db.prepare(
         "UPDATE group_settings SET version=version+1 WHERE party_id=?",
       ).run(id);
-      return profile(id);
+      return groupPreferenceSummary(profile(id));
     }).immediate,
     detail(user, id) {
       const p = party(id);
@@ -232,7 +233,7 @@ export function createMembershipRepo(db, repos) {
         strangerPlaces: p.capacity,
         settings: settings(id),
         members,
-        profile: profile(id),
+        profile: groupPreferenceSummary(profile(id)),
         myAnswers: withoutRetired(JSON.parse(
           db
             .prepare(

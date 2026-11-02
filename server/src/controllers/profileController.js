@@ -23,6 +23,24 @@ function profile(user) {
   };
 }
 
+/** Public self-description only; matching answers and account data stay private. */
+function publicProfile(user) {
+  return {
+    id: user.id,
+    displayName: user.display_name,
+    avatarUrl: user.avatar_path ? `/api/avatars/${user.avatar_path}` : null,
+    ageBand: user.age_band,
+    languages: user.languages,
+    verified: Boolean(user.verified),
+    hasVibeRatings: VIBE_AXES.some(axis => Number.isInteger(user.vibe?.[axis])
+      && user.vibe[axis] >= 0 && user.vibe[axis] <= 4),
+    vibe: Object.fromEntries(VIBE_AXES.map((axis) => {
+      const score = user.vibe?.[axis];
+      return [axis, Number.isInteger(score) && score >= 0 && score <= 4 ? score : 0];
+    })),
+  };
+}
+
 export function validProfile(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)
     || Object.keys(body).some((key) => !FIELDS.includes(key))) return false;
@@ -41,6 +59,12 @@ export function validProfile(body) {
 
 export function createProfileController(repos) {
   return {
+    publicGet(req, res) {
+      const user = repos.users.visibleProfile(req.user.id, req.params.id);
+      if (!user) return res.status(404).json({ error: 'profile_unavailable' });
+      // A block, suspension and missing account intentionally look identical.
+      res.json({ profile: publicProfile(user) });
+    },
     get(req, res) {
       res.json({ profile: profile(req.user) });
     },

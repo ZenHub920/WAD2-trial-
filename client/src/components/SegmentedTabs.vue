@@ -68,6 +68,7 @@ const bubble = computed(() => ({
   border: var(--border-hairline);
   border-radius: var(--radius-pill);
   background: var(--ink-850);
+  box-shadow: inset 0 1px 3px rgba(47, 25, 95, 0.06);
 }
 
 .segs__bubble {
@@ -91,13 +92,17 @@ const bubble = computed(() => ({
   justify-content: center;
   gap: var(--space-2);
   min-width: 0;
+  min-height: 44px;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-pill);
   background: none;
   color: var(--text-300);
   font-size: var(--step--1);
   font-weight: 600;
-  transition: color var(--dur-base) var(--ease-out);
+  transition: color var(--dur-base) var(--ease-out), transform var(--dur-fast) var(--ease-settle);
+}
+.segs__tab:active {
+  transform: translateY(1px);
 }
 
 .segs__tab--on {
@@ -158,5 +163,6 @@ const bubble = computed(() => ({
   .segs__bubble {
     transition: none;
   }
+  .segs__tab:active { transform: none; }
 }
 </style>

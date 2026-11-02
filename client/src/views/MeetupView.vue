@@ -39,6 +39,8 @@ const place = reactive({
 const position = reactive({ latitude: 1.3, longitude: 103.85, label: "", travelMode: 'transit' });
 const travelOptions = reactive({ shelteredOnly: false });
 const selectedSlotCount = computed(() => Object.values(slots.value).filter(slot => slot.selected).length);
+const bestSavedOverlap = computed(() => (board.value?.grid ?? []).reduce((best, slot) =>
+  slot.availableCount > (best?.availableCount ?? 0) ? slot : best, null));
 const selectedTimes = computed({
   get: () => Object.entries(slots.value).filter(([, slot]) => slot.selected).map(([start]) => Number(start)),
   set: times => {
@@ -48,6 +50,10 @@ const selectedTimes = computed({
 });
 const scope = computed(() => Object.fromEntries(['partyId', 'connectionId', 'kakiConversationId']
   .filter(key => typeof route.query[key] === 'string').map(key => [key, route.query[key]])));
+const plannerSteps = ['availability', 'places', 'review'];
+const stepFromHash = () => plannerSteps.find(step => route.hash === `#meetup-${step}`) ?? 'availability';
+const activeStep = ref(stepFromHash());
+watch(() => route.hash, () => { activeStep.value = stepFromHash(); });
 const savedSlots = ref('[]'), refreshing = ref(false), syncNote = ref('');
 const selectionSnapshot = rows => JSON.stringify(Object.entries(rows).filter(([, slot]) => slot.selected)
   .map(([start, slot]) => [Number(start), slot.travelMode, slot.latitude, slot.longitude, slot.label]));
@@ -108,6 +114,7 @@ watch(
     error.value = "";
     notice.value = "";
     board.value = null;
+    activeStep.value = stepFromHash();
     boards.value = []; slots.value = {}; savedSlots.value = '[]'; syncNote.value = '';
     busy.value = false; refreshing.value = false; refreshQueued = false; clearTimeout(refreshTimer);
     comment.value = ''; travelRecommendations.value = null;
@@ -159,7 +166,20 @@ function scheduleRefresh() {
     void refreshPlanner();
   }, 150);
 }
-function showStep(id) { document.getElementById(id)?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); }
+function showStep(step) {
+  activeStep.value = step;
+  document.getElementById(`meetup-tab-${step}`)?.focus({ preventScroll: true });
+}
+function navigateSteps(event) {
+  let index = plannerSteps.indexOf(activeStep.value);
+  if (event.key === 'ArrowRight') index = (index + 1) % plannerSteps.length;
+  else if (event.key === 'ArrowLeft') index = (index + plannerSteps.length - 1) % plannerSteps.length;
+  else if (event.key === 'Home') index = 0;
+  else if (event.key === 'End') index = plannerSteps.length - 1;
+  else return;
+  event.preventDefault();
+  showStep(plannerSteps[index]);
+}
 onMounted(() => {
   stopEvents = onChatEvent((type, data) => {
     if (type === 'ready' || ['group-members', 'connection-members'].includes(type)
@@ -302,7 +322,7 @@ async function getParking() {
 }
 </script>
 <template>
-  <div class="container groups-page">
+  <div class="container groups-page meetup-page">
     <BackLink fallback="/groups/connect" fallback-label="Back to My groups" />
     <header class="page-banner">
       <h1>{{ board?.title ?? "Meetup planning" }}</h1>
@@ -354,33 +374,40 @@ async function getParking() {
       <p v-if="!boards.length && !error">No meetup plans yet. Start a plan from your group or an active companion conversation.</p>
       </template>
     <template v-else-if="board"
-      ><p>
-        {{ board.participantCount }} participants — {{ statuses[board.status] ?? "Plan updated" }}
-      </p>
-      <button
-        v-if="
-          board.status !== 'cancelled' &&
-          (board.creator_id === currentUser?.id ||
-            board.requiredApprovers.includes(currentUser?.id))
-        "
+      ><div class="meetup-context"><span>{{ board.participantCount }} participants</span><strong>{{ statuses[board.status] ?? "Plan updated" }}</strong>
+      <details v-if="board.status !== 'cancelled' && (board.creator_id === currentUser?.id || board.requiredApprovers.includes(currentUser?.id))" class="meetup-plan-options"><summary>Plan options</summary><button
         class="btn btn--danger"
         :disabled="busy"
         @click="act(() => api.cancelMeetup(id, board.version))"
       >
         Cancel meetup
-      </button>
-      <nav class="meetup-steps" aria-label="Meeting planning steps">
-        <button type="button" @click="showStep('meetup-availability')"><span>1</span><strong>Find a time</strong><small>Paint your availability</small></button>
-        <button type="button" @click="showStep('meetup-places')"><span>2</span><strong>Choose a place</strong><small>Compare everyone's journey</small></button>
-        <button type="button" @click="showStep('meetup-review')"><span>3</span><strong>Agree on the plan</strong><small>Propose, discuss and approve</small></button>
+      </button></details></div>
+      <nav class="meetup-steps" role="tablist" aria-label="Meeting planning steps">
+        <button id="meetup-tab-availability" type="button" role="tab" data-planner-step="availability" aria-controls="meetup-availability" :aria-selected="activeStep === 'availability'" :tabindex="activeStep === 'availability' ? 0 : -1" @click="showStep('availability')" @keydown="navigateSteps"><span>1</span><strong>Find a time</strong><small>Paint your availability</small></button>
+        <button id="meetup-tab-places" type="button" role="tab" data-planner-step="places" aria-controls="meetup-places" :aria-selected="activeStep === 'places'" :tabindex="activeStep === 'places' ? 0 : -1" @click="showStep('places')" @keydown="navigateSteps"><span>2</span><strong>Choose a place</strong><small>Compare everyone's journey</small></button>
+        <button id="meetup-tab-review" type="button" role="tab" data-planner-step="review" aria-controls="meetup-review" :aria-selected="activeStep === 'review'" :tabindex="activeStep === 'review' ? 0 : -1" @click="showStep('review')" @keydown="navigateSteps"><span>3</span><strong>Agree on the plan</strong><small>Discuss, approve and travel</small></button>
       </nav>
       <p v-if="syncNote" class="group-muted" role="status">{{ syncNote }}</p>
-      <section id="meetup-availability" class="card group-panel meetup-availability">
+      <section id="meetup-availability" v-show="activeStep === 'availability'" role="tabpanel" aria-labelledby="meetup-tab-availability" class="card group-panel meetup-availability meetup-workspace">
+        <span class="meetup-eyebrow">01 / Your availability</span>
         <h2>When are you available?</h2>
-        <p>Share when you’re free, then add your starting place below. Your starting locations stay private.</p>
+        <p class="group-muted">Mark your free times. Stronger green means more people can make it.</p>
         <div class="meetup-availability__summary"><strong>{{ selectedSlotCount }} half-hour {{ selectedSlotCount === 1 ? 'block' : 'blocks' }} selected</strong><span :class="{ 'meetup-unsaved': availabilityDirty }">{{ availabilityDirty ? 'Unsaved changes' : 'Your saved availability' }}</span></div>
-        <MeetupAvailabilityGrid :grid="board.grid" :participant-count="board.participantCount" v-model:selected="selectedTimes" :disabled="busy || board.status === 'cancelled'" />
-        <p class="group-muted">Each participant chooses their own travel method. We can compare car and public transport journeys together.</p>
+        <div class="meetup-time-layout">
+          <MeetupAvailabilityGrid :grid="board.grid" :participant-count="board.participantCount" v-model:selected="selectedTimes" :disabled="busy || board.status === 'cancelled'" />
+          <aside class="meetup-time-context" aria-labelledby="meetup-group-availability-heading">
+            <h3 id="meetup-group-availability-heading">Group availability</h3>
+            <p class="group-muted">{{ board.participantCount }} {{ board.participantCount === 1 ? 'person' : 'people' }} on this plan</p>
+            <dl class="meetup-time-context__metrics">
+              <div><dt>Your selected time</dt><dd><strong>{{ selectedSlotCount / 2 }}</strong> {{ selectedSlotCount === 2 ? 'hour' : 'hours' }}<span>{{ availabilityDirty ? 'In your unsaved draft' : 'In your saved availability' }}</span></dd></div>
+              <div><dt>Most overlap saved</dt><dd v-if="bestSavedOverlap"><strong>{{ bestSavedOverlap.availableCount }}<small>/{{ board.participantCount }}</small></strong> available together<span>{{ time(bestSavedOverlap.startsAt) }}</span></dd><dd v-else class="meetup-time-context__empty">No available times saved yet.</dd></div>
+            </dl>
+            <p class="meetup-time-context__note">Group totals reflect saved answers. Your painted times join the grid when you save.</p>
+          </aside>
+        </div>
+        <details class="meetup-disclosure">
+        <summary>Add your journey <span>Optional · Private starting place</span></summary>
+        <p class="group-muted">Add a starting place and travel method to help compare everyone's journey.</p>
         <fieldset class="meetup-travel-fields" :disabled="busy || board.status === 'cancelled'">
         <legend>Where will you be travelling from?</legend>
         <div class="group-controls">
@@ -439,7 +466,8 @@ async function getParking() {
           ></template>
         </details>
         </fieldset>
-        <div class="group-actions">
+        </details>
+        <div class="group-actions meetup-save-bar">
         <button
           class="btn btn--primary"
           :disabled="busy || board.status === 'cancelled'"
@@ -448,13 +476,17 @@ async function getParking() {
           Save selected availability
         </button>
         <button v-if="availabilityDirty" type="button" class="btn btn--ghost" :disabled="busy" @click="discardAvailability">Discard my changes</button>
+        <button type="button" class="btn btn--ghost" @click="showStep('places')">Continue to places <span aria-hidden="true">→</span></button>
         </div>
       </section>
+      <div id="meetup-places" v-show="activeStep === 'places'" role="tabpanel" aria-labelledby="meetup-tab-places" class="meetup-workspace meetup-place-workspace">
       <form
-        id="meetup-places" class="card group-panel"
+        class="card group-panel meetup-place-editor"
         @submit.prevent="act(() => api.proposeMeetupPlace(id, place))"
       >
+        <span class="meetup-eyebrow">02 / Places &amp; journeys</span>
         <h2>Suggest a meeting place</h2>
+        <p class="group-muted">Search for a public place, or enter its details. Everyone can suggest and vote.</p>
         <fieldset class="meetup-travel-fields" :disabled="busy || board.status === 'cancelled'">
         <MeetupLocationSearch :meetup-id="id" @selected="location => Object.assign(place, { label: location.label, latitude: location.latitude, longitude: location.longitude })" />
         <label
@@ -485,7 +517,7 @@ async function getParking() {
         ><button class="btn btn--primary" :disabled="busy">Add place</button>
         </fieldset>
       </form>
-      <section id="meetup-review" class="card group-panel">
+      <section class="card group-panel meetup-recommendations">
         <h2>Recommended options</h2>
         <p class="group-muted">Options consider how many people are available, then compare journeys using each person's saved travel method.</p>
         <div class="group-controls">
@@ -497,6 +529,7 @@ async function getParking() {
         <article
           v-for="s in (travelRecommendations?.options ?? board.suggestions)"
           :key="`${s.placeId}:${s.startsAt}`"
+          class="meetup-option"
         >
           <p>
             {{ s.label }}, {{ time(s.startsAt) }}, {{ s.availableCount }}/{{
@@ -533,7 +566,11 @@ async function getParking() {
           </div>
         </article>
       </section>
-      <section v-if="board.selected_place_id" class="card group-panel">
+      <button type="button" class="btn btn--ghost meetup-review-link" @click="showStep('review')">Review the plan <span aria-hidden="true">→</span></button>
+      </div>
+      <div id="meetup-review" v-show="activeStep === 'review'" role="tabpanel" aria-labelledby="meetup-tab-review" class="meetup-workspace meetup-review-workspace">
+      <section v-if="board.selected_place_id" class="card group-panel meetup-current-proposal">
+        <span class="meetup-eyebrow">03 / Group decision</span>
         <h2>Current proposal</h2>
         <p>
           {{
@@ -555,7 +592,8 @@ async function getParking() {
           @click="act(() => api.approveMeetup(id, board.version))"
         >
           Approve plan</button
-        ><button class="btn btn--ghost" :disabled="busy" @click="getWeather">
+        >
+        <details class="meetup-disclosure meetup-weather"><summary>Weather &amp; nearby parking <span>Check before travelling</span></summary><button class="btn btn--ghost" :disabled="busy" @click="getWeather">
           Check weather and recent rainfall
         </button>
         <p v-if="weather">{{ weather.message ?? 'Weather is unavailable right now.' }}</p>
@@ -577,9 +615,11 @@ async function getParking() {
             </template>
           </template>
         </div>
+        </details>
       </section>
-      <MeetupTransportPanel :key="`${id}:${currentUser?.id}`" :meetup-id="id" :concert="board.concert" :plan-version="board.version" :has-meeting-place="Boolean(board.selected_place_id)" />
-      <section class="card group-panel">
+      <section v-else class="card group-panel meetup-current-proposal"><span class="meetup-eyebrow">03 / Group decision</span><h2>A plan everyone can agree on</h2><p class="group-muted">Choose a suggested time and place first. Your group can then discuss the proposal and give the required approvals.</p><button type="button" class="btn btn--primary" @click="showStep('places')">Choose a time &amp; place</button></section>
+      <MeetupTransportPanel :key="`${id}:${currentUser?.id}`" :active="activeStep === 'review'" :meetup-id="id" :concert="board.concert" :plan-version="board.version" :has-meeting-place="Boolean(board.selected_place_id)" />
+      <section class="card group-panel meetup-discussion">
         <h2>Discuss and revise</h2>
         <p>
           Changes to the plan require fresh approvals.
@@ -605,11 +645,54 @@ async function getParking() {
             /></label
           ><button class="btn btn--primary" :disabled="busy">Post</button>
         </form>
-      </section></template
+      </section></div></template
     >
   </div>
 </template>
 <style scoped>
+.meetup-page {
+  max-width: 66rem;
+  gap: var(--space-5);
+}
+.meetup-context {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .55rem 1rem;
+  color: var(--text-300);
+  font-size: var(--step--1);
+}
+.meetup-context > strong {
+  padding: .3rem .65rem;
+  border: 1px solid color-mix(in srgb, var(--accent-400) 25%, var(--panel-edge));
+  border-radius: 5px;
+  color: var(--text-100);
+  background: color-mix(in srgb, var(--accent-400) 5%, var(--ink-800));
+  font-weight: 500;
+}
+.meetup-plan-options {
+  margin-left: auto;
+  position: relative;
+}
+.meetup-plan-options summary {
+  padding: .45rem .2rem;
+  color: var(--text-300);
+}
+.meetup-plan-options .btn {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 4;
+  white-space: nowrap;
+  box-shadow: var(--shadow-md);
+}
+.meetup-eyebrow {
+  color: var(--mint-400);
+  font-size: .69rem;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
 .meetup-live {
   display: inline-flex;
   align-items: center;
@@ -626,8 +709,12 @@ async function getParking() {
 .meetup-steps {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-3);
-  margin-block: var(--space-4);
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid var(--ink-500);
+  border-radius: 12px;
+  background: var(--ink-850);
+  box-shadow: inset 0 1px 4px color-mix(in srgb, var(--ink-500) 20%, transparent), var(--shadow-md);
 }
 .meetup-steps button {
   display: grid;
@@ -635,36 +722,152 @@ async function getParking() {
   gap: .2rem .7rem;
   align-items: center;
   text-align: left;
-  padding: var(--space-4);
-  border: var(--border-soft);
-  border-radius: var(--radius-md);
-  background: var(--ink-800);
+  min-height: 4.4rem;
+  padding: .8rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
   color: var(--text-100);
   cursor: pointer;
+  transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 120ms ease;
+}
+.meetup-steps button[aria-selected="true"] {
+  border-color: color-mix(in srgb, var(--accent-400) 50%, var(--panel-edge));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-400) 10%, var(--ink-800)), var(--ink-750));
+  box-shadow: inset 0 1px 0 var(--panel-highlight), var(--shadow-sm);
+}
+.meetup-steps button:hover {
+  background-color: var(--ink-750);
+}
+.meetup-steps button:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px color-mix(in srgb, var(--ink-500) 30%, transparent);
+}
+.meetup-steps button:focus-visible {
+  outline: 2px solid var(--accent-400);
+  outline-offset: 1px;
 }
 .meetup-steps button > span {
   grid-row: span 2;
   display: grid;
   place-items: center;
-  width: 1.8rem;
-  height: 1.8rem;
-  border: 1px solid var(--mint-400);
-  border-radius: 50%;
+  width: 1.65rem;
+  height: 1.65rem;
+  border: 1px solid var(--ink-500);
+  border-radius: 6px;
+  color: var(--text-300);
+  font-size: .75rem;
+}
+.meetup-steps button[aria-selected="true"] > span {
   color: var(--mint-400);
+  border-color: color-mix(in srgb, var(--accent-400) 50%, var(--panel-edge));
+  background: color-mix(in srgb, var(--accent-400) 8%, var(--ink-800));
 }
 .meetup-steps small {
   color: var(--text-300);
+}
+.meetup-workspace {
+  animation: meetup-panel-in 220ms cubic-bezier(.2, .75, .3, 1) both;
+  min-width: 0;
+}
+.meetup-place-workspace, .meetup-review-workspace {
+  display: grid;
+  gap: var(--space-5);
+  align-content: start;
+}
+.meetup-page .group-panel {
+  gap: 1rem;
+  padding: clamp(1rem, 3vw, 2rem);
+}
+.meetup-page .meetup-workspace > p, .meetup-page .group-panel > p {
+  max-width: 70ch;
+}
+.meetup-availability > h2 {
+  margin-bottom: -.5rem;
 }
 .meetup-availability__summary {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   gap: .5rem;
-  margin-block: var(--space-4);
+  padding-block: .85rem;
+  border-block: 1px solid var(--ink-500);
   color: var(--text-300);
 }
 .meetup-unsaved {
   color: var(--accent-400);
+}
+.meetup-availability__summary strong {
+  color: var(--text-200);
+  font-weight: 500;
+}
+.meetup-time-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(12rem, .6fr);
+  align-items: start;
+  gap: clamp(1.5rem, 4vw, 3rem);
+  padding-block: .25rem 1rem;
+}
+.meetup-time-context {
+  padding-left: clamp(1.25rem, 3vw, 2rem);
+  border-left: 1px solid var(--panel-edge);
+  display: grid;
+  gap: .5rem;
+}
+.meetup-time-context h3 { font-size: var(--step-0); }
+.meetup-time-context > p { font-size: var(--step--1); }
+.meetup-time-context__metrics { display: grid; gap: 1.5rem; margin: 1rem 0; }
+.meetup-time-context__metrics dt { color: var(--text-300); font-size: var(--step--1); }
+.meetup-time-context__metrics dd { margin: .3rem 0 0; color: var(--text-200); font-size: .8rem; }
+.meetup-time-context__metrics dd > strong { color: var(--text-100); font-size: 2rem; font-weight: 600; letter-spacing: -.05em; line-height: 1.2; }
+.meetup-time-context__metrics strong > small { color: var(--text-300); font-size: 1rem; font-weight: 400; letter-spacing: 0; }
+.meetup-time-context__metrics dd > span { display: block; margin-top: .4rem; color: var(--text-300); line-height: 1.5; }
+.meetup-time-context__metrics .meetup-time-context__empty { margin-top: .5rem; color: var(--text-300); line-height: 1.5; }
+.meetup-time-context .meetup-time-context__note { color: var(--text-300); font-size: .75rem; line-height: 1.65; }
+.meetup-save-bar {
+  border-top: 1px solid var(--ink-500);
+  padding-top: 1rem;
+  margin-top: .25rem;
+}
+.meetup-save-bar > .btn:last-child:not(:first-child) {
+  margin-left: auto;
+}
+.meetup-disclosure {
+  border: 1px solid var(--ink-500);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ink-900) 45%, var(--ink-800));
+  padding: 1rem;
+}
+.meetup-disclosure > summary {
+  font-weight: 600;
+  color: var(--text-200);
+  line-height: 1.5;
+}
+.meetup-disclosure > summary span {
+  font-size: .75rem;
+  font-weight: 400;
+  color: var(--text-300);
+  margin-left: .7rem;
+}
+.meetup-disclosure[open] > summary {
+  padding-bottom: .75rem;
+  border-bottom: 1px solid var(--ink-500);
+  margin-bottom: 1rem;
+}
+.meetup-weather > .btn {
+  margin-bottom: .75rem;
+}
+.meetup-option {
+  display: grid;
+  gap: .7rem;
+  padding: 1.1rem;
+  background: color-mix(in srgb, var(--accent-400) 3%, var(--ink-800));
+  border: 1px solid var(--ink-500);
+  border-left: 2px solid color-mix(in srgb, var(--accent-400) 55%, var(--panel-edge));
+  border-radius: 6px;
+}
+.meetup-review-link {
+  justify-self: end;
 }
 .meetup-travel-fields {
   display: block;
@@ -678,19 +881,45 @@ async function getParking() {
   font-weight: 600;
   padding-bottom: var(--space-3);
 }
-#meetup-availability, #meetup-places, #meetup-review {
-  scroll-margin-top: 6rem;
+@keyframes meetup-panel-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 @media (max-width: 620px) {
   .meetup-steps {
-    grid-template-columns: 1fr;
+    gap: 2px;
+    padding: 3px;
   }
   .meetup-steps small {
     display: none;
   }
+  .meetup-steps button {
+    grid-template-columns: 1fr;
+    gap: .45rem;
+    align-content: start;
+    min-height: 5.1rem;
+    padding: .65rem .45rem;
+    font-size: .77rem;
+  }
   .meetup-steps button > span {
     grid-row: auto;
+    width: 1.35rem;
+    height: 1.35rem;
+    font-size: .65rem;
   }
+  .meetup-save-bar > .btn:last-child:not(:first-child) {
+    margin-left: 0;
+  }
+  .meetup-disclosure > summary span {
+    display: block;
+    margin-left: 1rem;
+    margin-top: .2rem;
+  }
+}
+@media (max-width: 800px) {
+  .meetup-time-layout { grid-template-columns: minmax(0, 1fr); gap: 1.25rem; }
+  .meetup-time-context { padding: 1.25rem 0 0; border-left: 0; border-top: 1px solid var(--panel-edge); }
+  .meetup-time-context__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin: .75rem 0; }
 }
 .meetup-parking {
   display: grid;
@@ -720,5 +949,9 @@ async function getParking() {
 .meetup-parking__list span {
   color: var(--text-300);
   font-size: var(--step--1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .meetup-workspace { animation: none; }
+  .meetup-steps button { transition: none; }
 }
 </style>

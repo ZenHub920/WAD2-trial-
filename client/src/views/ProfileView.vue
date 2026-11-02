@@ -1,6 +1,6 @@
 <script setup>
-import { ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { api, LABELS } from '../api.js';
 import { currentUser, sessionReady, refreshSession, setCurrentUser, signOut } from '../auth.js';
 import AvatarPicker from '../components/AvatarPicker.vue';
@@ -8,11 +8,19 @@ import PreferenceEditor from '../components/PreferenceEditor.vue';
 import { myPreferences, loadMyPreferences, saveMyPreferences } from '../groupPreferences.js';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import ProfileNotifications from '../components/ProfileNotifications.vue';
+import VibeChart from '../components/VibeChart.vue';
 
 const avatarBusy = ref(false);
 const avatarError = ref('');
 
 const router = useRouter();
+const route = useRoute();
+const settingUp = computed(() => route.query.setup === '1');
+const setupNext = computed(() => {
+  const target = route.query.next;
+  return typeof target === 'string' && target.startsWith('/') && !target.startsWith('//') && !target.includes('\\')
+    ? target : '/concerts';
+});
 const signingOut = ref(false);
 const signOutError = ref('');
 
@@ -68,6 +76,9 @@ const prefSaving = ref(false);
 const prefLoading = ref(true);
 const prefNotice = ref('');
 const prefError = ref('');
+const prefEditing = ref(false);
+const showPreferenceEditor = computed(() => settingUp.value || !myPreferences.value || prefEditing.value);
+const continueAfterSetup = () => router.replace(setupNext.value);
 
 async function savePreferences(answers) {
   prefSaving.value = true;
@@ -76,6 +87,8 @@ async function savePreferences(answers) {
   try {
     await saveMyPreferences(answers);
     prefNotice.value = 'Saved. Groups and companion matching now use these.';
+    prefEditing.value = false;
+    if (settingUp.value) await continueAfterSetup();
   } catch {
     prefError.value = 'Could not save your answers. Please try again.';
   } finally {
@@ -184,9 +197,9 @@ async function save() {
 <template>
   <div class="profile container section">
     <header class="profile__head page-banner">
-      <h1>Profile</h1>
-      <p>Manage your profile, concert preferences and notifications.</p>
-      <RouterLink to="/account/security" class="btn btn--outline-light profile__security">Account security</RouterLink>
+      <h1>{{ settingUp ? 'Make it feel like you' : 'Profile' }}</h1>
+      <p>{{ settingUp ? 'Your account is ready. Add a few private matching preferences, or explore first.' : 'Manage your profile, concert preferences and notifications.' }}</p>
+      <RouterLink v-if="!settingUp" to="/account/security" class="btn btn--outline-light profile__security">Account security</RouterLink>
     </header>
 
     <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading your profile…</p>
@@ -196,6 +209,7 @@ async function save() {
       <button v-else class="btn btn--ghost" type="button" @click="loadProfile">Retry</button>
     </div>
     <div v-else-if="form" class="profile__form">
+      <template v-if="!settingUp">
       <!-- Outside the save flow on purpose: a picture applies the moment it is
            chosen, so nobody picks one, forgets to press Save, and loses it. -->
       <section class="profile__card" aria-labelledby="profile-picture">
@@ -256,14 +270,18 @@ async function save() {
       <p class="profile__hint">
         {{ profile.verified ? 'Profile verified' : 'Profile not verified' }} · Reliability {{ Math.round(profile.reliability * 100) }}%
       </p>
+      </template>
 
       <!-- The site's one questionnaire. Groups and companion ranking both
            read these answers, which is why it is here and not in either. -->
       <section id="preferences" class="profile__card" aria-labelledby="profile-preferences">
-        <h2 id="profile-preferences">Tell us what you enjoy</h2>
+        <div class="profile__preference-heading">
+          <div><p class="profile__private-label">Private · Only you can see your answers</p><h2 id="profile-preferences">{{ settingUp ? 'A few answers. A better fit.' : 'Your matching preferences' }}</h2></div>
+          <button v-if="!settingUp && myPreferences" type="button" class="btn btn--ghost" :aria-expanded="prefEditing" @click="prefEditing = !prefEditing">{{ prefEditing ? 'Close editor' : 'Edit private preferences' }}</button>
+        </div>
         <p class="profile__hint">
-          Optional, and answered once. Groups use these to suggest a fit, and the companion finder
-          uses them to order who you see. Without them you can still browse and filter normally.
+          Answer once for Kaki Finder and group recommendations. Your group combines every member's answers;
+          nobody sees your individual checklist. You can edit these here anytime. Browsing and direct group requests work without completing this step.
         </p>
         <p v-if="prefNotice" class="profile__success" role="status">{{ prefNotice }}</p>
         <p v-if="prefError" class="profile__error" role="alert">{{ prefError }}</p>
@@ -274,25 +292,38 @@ async function save() {
              with nothing. -->
         <p v-if="prefLoading" class="loading-state" role="status"><LoadingSpinner />Loading your answers…</p>
         <PreferenceEditor
-          v-if="!prefLoading && myPreferences !== undefined"
+          v-if="!prefLoading && myPreferences !== undefined && showPreferenceEditor"
           :initial="myPreferences ?? undefined"
           :busy="prefSaving"
           :saving="prefSaving"
           require-one
-          submit-label="Save answers"
+          :submit-label="settingUp ? 'Save and continue' : 'Save answers'"
           @save="savePreferences"
         />
+        <div v-if="settingUp" class="profile__setup-footer">
+          <p class="profile__hint">Automatic matching needs saved preferences. You can return here before switching it on.</p>
+          <button type="button" class="btn btn--ghost" :disabled="prefSaving" @click="continueAfterSetup">Skip for now</button>
+        </div>
       </section>
 
-      <section class="profile__card" aria-labelledby="profile-vibe">
+      <template v-if="!settingUp">
+      <section id="your-vibe" class="profile__card" aria-labelledby="profile-vibe">
         <h2 id="profile-vibe">Your concert vibe</h2>
-        <p class="profile__hint">Rate each from 0 (not for me) to 4 (love it).</p>
-        <div class="profile__vibes">
-          <label v-for="(label, axis) in LABELS.vibe" :key="axis" class="profile__vibe">
-            <span>{{ label }}</span>
-            <input v-model.number="form.vibe[axis]" form="profile-form" type="range" min="0" max="4" step="1" :aria-valuetext="`${form.vibe[axis]} out of 4`" />
-            <output>{{ form.vibe[axis] }}</output>
-          </label>
+        <p class="profile__hint">These six interests appear on your public concert profile. Your matching questionnaire stays private.</p>
+        <div class="profile__vibe-layout">
+          <div class="profile__vibe-preview">
+            <VibeChart :vibe="form.vibe" :size="220" />
+            <RouterLink :to="`/people/${encodeURIComponent(profile.id)}`">View your public profile</RouterLink>
+            <span class="profile__hint">Preview updates as you move the sliders. Save profile to share changes.</span>
+          </div>
+          <div class="profile__vibes">
+            <p class="profile__hint">0 = not for me · 4 = love it</p>
+            <label v-for="(label, axis) in LABELS.vibe" :key="axis" class="profile__vibe">
+              <span>{{ label }}</span>
+              <input v-model.number="form.vibe[axis]" form="profile-form" type="range" min="0" max="4" step="1" :aria-valuetext="`${form.vibe[axis]} out of 4`" />
+              <output>{{ form.vibe[axis] }}</output>
+            </label>
+          </div>
         </div>
       </section>
 
@@ -306,10 +337,11 @@ async function save() {
           {{ saving ? 'Saving…' : 'Save profile' }}
         </button>
       </form>
+      </template>
     </div>
-    <ProfileNotifications v-if="currentUser" />
+    <ProfileNotifications v-if="currentUser && !settingUp" />
 
-    <section v-if="currentUser" class="profile__card profile__logout" aria-labelledby="profile-logout">
+    <section v-if="currentUser && !settingUp" class="profile__card profile__logout" aria-labelledby="profile-logout">
       <div>
         <h2 id="profile-logout">Log out</h2>
         <p class="profile__hint">Signed in as {{ currentUser.email ?? currentUser.displayName }}.</p>
@@ -341,6 +373,10 @@ async function save() {
   color: var(--text-400);
   font-size: var(--step--1);
 }
+.profile__preference-heading { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:var(--space-3); }
+.profile__private-label { margin:0 0 var(--space-2); color:var(--accent-400); font:600 0.68rem var(--font-mono); text-transform:uppercase; letter-spacing:.08em; }
+.profile__setup-footer { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:var(--space-3); padding-top:var(--space-4); margin-top:var(--space-4); border-top:var(--border-soft); }
+.profile__setup-footer p { max-width:54ch; }
 .profile__form {
   display: grid;
   gap: var(--space-5);
@@ -402,6 +438,10 @@ async function save() {
   gap: var(--space-4);
   margin-top: var(--space-5);
 }
+.profile__vibe-layout { display:grid; grid-template-columns:minmax(200px, 280px) minmax(0, 1fr); gap:var(--space-6); align-items:center; }
+.profile__vibe-preview { display:grid; justify-items:center; gap:var(--space-3); text-align:center; }
+.profile__vibe-preview > .profile__hint { max-width:28ch; font-size:var(--step--2); }
+@media (max-width:800px) { .profile__vibe-layout { grid-template-columns:1fr; } }
 .profile__vibe {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) 2ch;

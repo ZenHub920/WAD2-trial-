@@ -19,7 +19,6 @@ const holdDeadline = computed(() => {
   const date = new Date(typeof value === 'number' ? value : value.includes('T') ? value : `${value.replace(' ', 'T')}Z`);
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('en-SG');
 });
-const preferenceText = intent => props.application.preferences?.[intent]?.map(preference => preference.text).join(', ');
 </script>
 
 <template>
@@ -37,11 +36,12 @@ const preferenceText = intent => props.application.preferences?.[intent]?.map(pr
     <p v-else-if="application.legacyAutomatic || application.matchingRoundId" class="group-muted">Created under the earlier automatic matching flow.</p>
     <p v-if="application.applicationNote" class="application-card__note">{{ application.applicationNote }}</p>
     <div v-if="application.compatibility != null || application.reasons?.length" class="application-card__compatibility"><p v-if="application.compatibility != null"><strong>{{ application.compatibility >= 0.75 ? 'Strong fit' : application.compatibility >= 0.5 ? 'Potential fit' : 'Explore this applicant' }}</strong></p><ul v-if="application.reasons?.length"><li v-for="reason in application.reasons.slice(0, 3)" :key="reason.concept ?? reason.label">{{ reason.label }}</li></ul></div>
-    <details><summary>Public profile &amp; preferences</summary><div class="application-card__profile">
-      <p v-if="application.seeker">{{ application.seeker.ageBand }} · {{ application.seeker.languages.join(', ') }}</p>
+    <details><summary>Public profile</summary><div class="application-card__profile">
+      <p v-if="application.seeker">{{ application.seeker.ageBand }} · {{ application.seeker.languages?.join(', ') }}</p>
       <p v-if="application.seeker?.reliability != null">Reliability: {{ Math.round(application.seeker.reliability * 100) }}%</p>
       <ul v-if="publicVibe.length"><li v-for="[axis, label] in publicVibe" :key="axis">{{ label }} {{ application.seeker.vibe[axis] }}/4</li></ul>
-      <p>Enjoys: {{ preferenceText('about') || 'No preferences specified' }}</p><p>Companion preferences: {{ preferenceText('wants') || 'Flexible' }}</p><p v-if="preferenceText('avoid')">Prefers to avoid: {{ preferenceText('avoid') }}</p>
+      <RouterLink v-if="application.seeker?.id" :to="`/people/${encodeURIComponent(application.seeker.id)}`">View {{ application.seekerName }}'s concert vibe <span aria-hidden="true">→</span></RouterLink>
+      <p class="group-muted">Their questionnaire stays private. Match reasons above summarise compatibility.</p>
     </div></details>
     <div v-if="application.status === 'pending'" class="group-actions"><button type="button" class="btn btn--success" :disabled="busy || !canRespond" @click="$emit('respond', 'accept')">Approve group place</button><button type="button" class="btn btn--danger-ghost" :disabled="busy || !canRespond" @click="$emit('respond', 'reject')">Decline request</button></div>
   </article>

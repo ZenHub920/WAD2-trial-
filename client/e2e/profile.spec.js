@@ -60,7 +60,7 @@ test('a signed-in fan edits their profile, saves it, and the change survives a r
     await page.getByLabel('Age range').selectOption('25-29');
     await page.getByLabel('Home region').selectOption('west');
     await page.getByLabel('Chinese').check();
-    await page.getByLabel('Singalong').press('ArrowRight');
+    await page.getByRole('slider', { name: 'Singalong', exact: true }).press('ArrowRight');
     await page.getByRole('button', { name: 'Save profile' }).click();
 
     // Assert: the page confirms the save.

@@ -29,6 +29,7 @@ import GroupChannelView from './views/GroupChannelView.vue';
 import ConnectionChannelView from './views/ConnectionChannelView.vue';
 import ProfileHistoryView from './views/ProfileHistoryView.vue';
 import ProfileView from './views/ProfileView.vue';
+import PublicProfileView from './views/PublicProfileView.vue';
 import NotFoundView from './views/NotFoundView.vue';
 import GroupExplorerView from './views/GroupExplorerView.vue';
 import GroupConnectionsView from './views/GroupConnectionsView.vue';
@@ -109,6 +110,7 @@ const router = createRouter({
 
     { path: '/chat/:id', name: 'chat-thread', component: ChatThreadView, props: true, meta: { title: 'Ticket conversation' } },
     { path: '/profile', name: 'profile', component: ProfileView, meta: { title: 'Profile' } },
+    { path: '/people/:id', name: 'public-profile', component: PublicProfileView, props: true, meta: { title: 'Concert vibe', requiresAuth: true } },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView, meta: { title: 'Page not found' } },
   ],
   scrollBehavior(to, from, saved) {

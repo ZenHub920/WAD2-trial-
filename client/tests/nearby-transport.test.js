@@ -28,6 +28,19 @@ beforeEach(() => {
 });
 
 describe('nearby meetup and concert transport', () => {
+  it('pauses hidden planner steps and resumes without losing the selected journey', async () => {
+    vi.useFakeTimers();
+    const wrapper = render();
+    await button(wrapper, 'After the concert').trigger('click');
+    await button(wrapper, 'Check nearby transport').trigger('click'); await flushPromises();
+    await wrapper.setProps({ active: false });
+    await vi.advanceTimersByTimeAsync(120000);
+    expect(api.meetupTransport).toHaveBeenCalledTimes(1);
+    expect(wrapper.attributes('data-transport-phase')).toBe('post');
+    await wrapper.setProps({ active: true }); await flushPromises();
+    expect(api.meetupTransport).toHaveBeenCalledTimes(2);
+    expect(api.meetupTransport).toHaveBeenLastCalledWith('meetup-1', { phase: 'post' });
+  });
   it('keeps the post-concert panel and refresh choice when live board data replaces the same venue object', async () => {
     vi.useFakeTimers();
     const wrapper = render();

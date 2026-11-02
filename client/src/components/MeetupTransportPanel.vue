@@ -9,6 +9,7 @@ const props = defineProps({
   concert: { type: Object, default: null },
   hasMeetingPlace: { type: Boolean, default: false },
   planVersion: { type: Number, default: 0 },
+  active: { type: Boolean, default: true },
 });
 const headingId = `nearby-transport-${useId()}`;
 const phase = ref('pre'), pending = ref(false), venueOverride = ref(null);
@@ -38,7 +39,7 @@ const stationCrowds = station => {
 const busReport = stop => result.value?.buses?.stops?.find(row => row.code === stop.code);
 
 async function check({ auto = false } = {}) {
-  if (pending.value || !canCheck.value || !alive) return;
+  if (pending.value || !canCheck.value || !alive || !props.active) return;
   const requestedPhase = phase.value, context = key(), version = generation;
   const options = { phase: requestedPhase };
   if (requestedPhase === 'post' && venueOverride.value) Object.assign(options, venueOverride.value);
@@ -72,9 +73,13 @@ function useConcertVenue() {
   generation++; venueOverride.value = null; results.post = null; automatic.post = false; errors.post = '';
 }
 function refreshIfVisible() {
-  if (document.visibilityState === 'visible' && automatic[phase.value] && results[phase.value]?.anchor)
+  if (props.active && document.visibilityState === 'visible' && automatic[phase.value] && results[phase.value]?.anchor)
     void check({ auto: true });
 }
+watch(() => props.active, active => {
+  generation++;
+  if (active) refreshIfVisible();
+});
 watch([() => props.meetupId, () => props.concert?.venue], () => {
   generation++; phase.value = 'pre'; venueOverride.value = null;
   results.pre = null; results.post = null; errors.pre = ''; errors.post = '';

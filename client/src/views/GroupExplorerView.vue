@@ -65,7 +65,7 @@ function failureMessage(err) {
     already_in_concert_group: 'You already have a group for this show. You can find it at the top of the page.',
     already_group_member: 'You’re already in this group.',
     previously_declined: 'This group passed earlier, so try a different one.',
-    save_discovery_preferences_first: 'We need your preferences to find you a match. Save them above first, or browse groups yourself instead.',
+    save_discovery_preferences_first: 'Save your private preferences in Profile to find a match, or browse and choose a group yourself.',
     join_request_already_exists: 'You’ve already asked to join this group.',
     group_changed_withdraw_and_resubmit: 'This group changed after you asked. Cancel your request, take another look and ask again.',
     preferences_changed_withdraw_and_resubmit: 'Your preferences changed after you asked. Cancel and ask again so the host sees your latest answers.',
@@ -298,7 +298,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
             <button type="button" class="btn btn--ghost" :disabled="busy || !canApply || pendingFor(group.id) || declinedFor(group.id) || !canQueueFor(group) || group.status === 'cancelled'" @click="applicationFor = applicationFor === group.id ? '' : group.id; applicationNote = ''">{{ pendingFor(group.id) ? 'Request sent' : declinedFor(group.id) ? 'Not this time' : !canQueueFor(group) ? 'Group is full' : group.remainingCapacity < 1 ? 'Join the waitlist' : 'Ask to join' }}</button>
             <form v-if="applicationFor === group.id" class="application-form" @submit.prevent="join(group.id)">
               <label>Say hi to the host (optional)<textarea v-model="applicationNote" maxlength="500" rows="3" :disabled="busy" placeholder="e.g. First time seeing them live, keen to grab dinner before!" /></label>
-              <small class="group-muted">{{ applicationNote.length }}/500 · The host will see your public profile and preferences. Requests expire 48 hours after submission, even while waiting in line.</small>
+              <small class="group-muted">{{ applicationNote.length }}/500 · The host will see your public profile and match reasons. Your questionnaire answers stay private. Requests expire 48 hours after submission, even while waiting in line.</small>
               <div class="group-actions">
                 <button class="btn btn--primary" :disabled="busy || !canApply || !canQueueFor(group)">Send request</button>
                 <button type="button" class="btn btn--ghost" :disabled="busy" @click="applicationFor = ''">Cancel</button>

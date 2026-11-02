@@ -7,7 +7,13 @@ async function fixture(request, mode = 'direct') {
   return response.json();
 }
 async function person(browser, data, who) {
-  const context = await browser.newContext({ reducedMotion: 'reduce', timezoneId: 'UTC' });
+  const context = await browser.newContext({ reducedMotion: 'reduce', timezoneId: 'UTC',
+    ...(process.env.ENCORE_RECORD_DEMO === '1' ? {
+      reducedMotion: 'no-preference',
+      viewport: { width: 1280, height: 900 },
+      recordVideo: { dir: test.info().outputPath(`demo-${who}`), size: { width: 1280, height: 900 } },
+    } : {}),
+  });
   // Remote fonts/images are outside these feature tests. Application API traffic
   // remains real; blocking optional HTTPS assets avoids internet-dependent loads.
   await context.route(/^https:\/\//, route => route.abort());
@@ -53,6 +59,62 @@ test('direct search: comparing sends no request; applying waits for host approva
     await expect(seeker.page.getByRole('heading', { name: `Supper crew ${data.suffix}`, exact: true })).toBeVisible();
     expect((await api(seeker.context, '/me/current-group-memberships')).groups[0].partyId).toBe(data.parties.a);
   } finally { await seeker.context.close(); await host.context.close(); }
+});
+
+test('Kaki finder: two people like each other, view a public vibe and open their conversation', async ({ browser, request }) => {
+  const data = await fixture(request);
+  const a = await person(browser, data, 'seeker'), b = await person(browser, data, 'outsider');
+  try {
+    for (const person of [a, b]) await api(person.context, `/concerts/${data.concertId}/participation`, 'POST', { sectionPref: 'ga_standing', arrivalPref: 'doors' });
+    await a.page.goto('/kaki');
+    await a.page.getByRole('button', { name: 'Find people', exact: true }).click();
+    await a.page.getByRole('link', { name: 'View concert vibe →', exact: true }).first().click();
+    await expect(a.page.getByRole('heading', { name: 'outsider', exact: true })).toBeVisible();
+    await expect(a.page.getByRole('img', { name: /^Vibe profile:/ })).toBeVisible();
+    await a.page.goto('/kaki');
+    await a.page.getByRole('button', { name: 'Find people', exact: true }).click();
+    await a.page.getByRole('button', { name: 'Like this profile', exact: true }).click();
+    await expect(a.page.getByText('Waiting for them to like you back.', { exact: true })).toBeVisible();
+    expect((await api(a.context, '/kaki/matches')).matches).toHaveLength(0);
+    await b.page.goto('/kaki');
+    await b.page.getByRole('button', { name: 'Find people', exact: true }).click();
+    await b.page.getByRole('button', { name: 'Like this profile', exact: true }).click();
+    await expect(b.page.getByText('You both liked each other.', { exact: true })).toBeVisible();
+    expect((await api(a.context, '/kaki/matches')).matches).toHaveLength(1);
+    await b.page.locator('.kaki__panel--centre').getByRole('link', { name: 'Messages', exact: true }).click();
+    await b.page.getByRole('button').filter({ hasText: 'Start a conversation' }).first().click();
+    await expect(b.page.getByRole('textbox', { name: 'Message', exact: true })).toBeVisible();
+  } finally { await a.context.close(); await b.context.close(); }
+});
+
+test('private preference setup: registration keeps the same fields and saves private answers in Profile', async ({ browser, request }) => {
+  const data = await fixture(request);
+  const viewer = await person(browser, data, 'hostA');
+  const context = await browser.newContext({ reducedMotion: 'reduce' });
+  await context.route(/^https:\/\//, route => route.abort());
+  const page = await context.newPage();
+  try {
+    await page.goto('/login?redirect=%2Fgroups');
+    await page.getByRole('tab', { name: 'Sign up', exact: true }).click();
+    await page.locator('#display-name').fill('New concert friend');
+    await page.locator('#email').fill(`setup-${data.suffix}@example.test`);
+    await page.locator('#password').fill('Example-only-passphrase-2026!');
+    await page.getByRole('button', { name: 'Create account', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Make it feel like you', exact: true })).toBeVisible();
+    await expect(page.getByText('Private · Only you can see your answers', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: "meet someone I'd go to more concerts with", exact: true }).click();
+    const save = page.waitForRequest(req => req.url().includes('/api/me/preferences') && req.method() === 'PUT');
+    await page.getByRole('button', { name: 'Save and continue', exact: true }).click();
+    expect(Object.keys((await save).postDataJSON()).sort()).toEqual(['about', 'avoid', 'dealbreakers', 'quiz', 'wants']);
+    await expect(page).toHaveURL(/\/groups$/);
+    const own = (await api(context, '/me/profile')).profile;
+    const publicProfile = (await api(viewer.context, `/users/${own.id}/profile`)).profile;
+    for (const privateField of ['email', 'quiz', 'traits', 'about', 'wants', 'avoid', 'dealbreakers']) expect(publicProfile).not.toHaveProperty(privateField);
+    await page.goto('/profile#preferences');
+    await page.getByRole('button', { name: 'Edit private preferences', exact: true }).click();
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    await expect(page.getByRole('button', { name: "meet someone I'd go to more concerts with", exact: true })).toHaveAttribute('aria-pressed', 'true');
+  } finally { await context.close(); await viewer.context.close(); }
 });
 
 test('automatic matching: joining pool produces an offer; both approvals are required', async ({ browser, request }) => {
@@ -144,6 +206,7 @@ test('meeting planner: create, save car availability, suggest a place, fallback 
     await expect(a.page.getByRole('heading', { name: 'Before the show' })).toBeVisible();
     const availability = a.page.locator('section').filter({ has: a.page.getByRole('heading', { name: 'When are you available?', exact: true }) });
     await availability.locator('[data-availability-start]').first().click();
+    await availability.locator('summary').filter({ hasText: 'Add your journey' }).click();
     await a.page.getByLabel('Travel method for selected times').selectOption('drive');
     await a.page.getByRole('button', { name: 'Apply travel method to selected times', exact: true }).click();
     await availability.getByLabel('Location label', { exact: true }).first().fill('City Hall MRT');
@@ -155,6 +218,7 @@ test('meeting planner: create, save car availability, suggest a place, fallback 
     const path = new URL(a.page.url()).pathname;
     const { meetup: saved } = await api(a.context, path);
     expect(saved.availability[0]).toMatchObject({ travel_mode: 'drive', latitude: 1.293, longitude: 103.852, starts_at: Date.parse('2030-01-01T08:00:00Z') });
+    await a.page.locator('[data-planner-step="places"]').click();
     await a.page.getByLabel('Place name', { exact: true }).fill('Stadium sheltered entrance');
     const placeForm = a.page.locator('form').filter({ has: a.page.getByRole('heading', { name: 'Suggest a meeting place', exact: true }) });
     await placeForm.getByLabel('Latitude', { exact: true }).fill('1.3028');
@@ -163,13 +227,15 @@ test('meeting planner: create, save car availability, suggest a place, fallback 
     await a.page.getByRole('button', { name: 'Compare travel options', exact: true }).click();
     await expect(a.page.getByText('Straight-line distance estimate. Fresh route times are unavailable for this option.').first()).toBeVisible();
     await a.page.getByRole('button', { name: 'Propose this time & place', exact: true }).first().click();
+    await a.page.locator('[data-planner-step="review"]').click();
     await a.page.getByRole('button', { name: 'Approve plan', exact: true }).click();
-    await expect(a.page.getByText(/participants — Awaiting required approvals/)).toBeVisible();
+    await expect(a.page.locator('.meetup-context').getByText('Awaiting required approvals', { exact: true })).toBeVisible();
     await b.page.goto(path);
+    await b.page.locator('[data-planner-step="review"]').click();
     await b.page.getByRole('button', { name: 'Approve plan', exact: true }).click();
-    await expect(b.page.getByText(/participants — Meetup confirmed/)).toBeVisible();
+    await expect(b.page.locator('.meetup-context').getByText('Meetup confirmed', { exact: true })).toBeVisible();
     await b.page.reload();
-    await expect(b.page.getByText(/participants — Meetup confirmed/)).toBeVisible();
+    await expect(b.page.locator('.meetup-context').getByText('Meetup confirmed', { exact: true })).toBeVisible();
   } finally { await a.context.close(); await b.context.close(); }
 });
 
@@ -223,14 +289,16 @@ test('availability heatmap: drag paints/erases and updates another member live w
     await expect(a.page.locator('[data-availability-start][aria-pressed="true"]')).toHaveCount(3);
     await a.page.getByRole('button', { name: 'Save selected availability', exact: true }).click();
     const other = b.page.locator('[data-availability-start]');
-    await expect(other.first()).toHaveText('1/4');
+    await expect(other.first()).toHaveAttribute('aria-label', /1 of 4 available/);
     await a.page.locator('.meetup-availability').screenshot({ path: test.info().outputPath('heatmap-desktop.png') });
     // Keep an unsaved member selection and discussion while the host erases.
     await other.nth(1).click();
+    await b.page.locator('[data-planner-step="review"]').click();
     await b.page.getByLabel('Message', { exact: true }).fill('My unsaved discussion');
+    await b.page.locator('[data-planner-step="availability"]').click();
     await cells.first().click();
     await a.page.getByRole('button', { name: 'Save selected availability', exact: true }).click();
-    await expect(other.first()).toHaveText('0/4');
+    await expect(other.first()).toHaveAttribute('aria-label', /0 of 4 available/);
     await expect(other.nth(1)).toHaveAttribute('aria-pressed', 'true');
     await expect(b.page.getByLabel('Message', { exact: true })).toHaveValue('My unsaved discussion');
     await expect(b.page.getByText('Unsaved changes', { exact: true })).toBeVisible();
@@ -253,6 +321,7 @@ test('nearby transport: before-meetup checks use the meeting place and after-con
     const version = (await api(host.context, `/meetups/${meetup.id}`)).meetup.version;
     await api(host.context, `/meetups/${meetup.id}/propose`, 'POST', { placeId: place.id, startsAt: '2030-01-01T08:00:00Z', version });
     await host.page.goto(`/meetups/${meetup.id}`);
+    await host.page.locator('[data-planner-step="review"]').click();
     const panel = host.page.locator('[data-transport-phase]');
     await panel.getByRole('button', { name: 'Check nearby transport', exact: true }).click();
     await expect(panel.getByRole('heading', { name: 'CITY HALL MRT STATION', exact: true })).toBeVisible();

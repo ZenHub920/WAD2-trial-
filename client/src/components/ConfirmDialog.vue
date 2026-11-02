@@ -88,10 +88,10 @@ watch(() => props.open, async (open) => {
   overflow-y: auto;
   overflow-wrap: anywhere;
   padding: var(--space-6);
-  border: var(--border-soft);
+  border: 1px solid var(--panel-edge);
   border-radius: var(--radius-lg);
   background: var(--ink-800);
-  box-shadow: var(--shadow-lg);
+  box-shadow: inset 0 1px 0 var(--panel-highlight), var(--shadow-lg);
   animation: confirm-rise var(--dur-base) var(--ease-settle);
 }
 

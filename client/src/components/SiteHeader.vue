@@ -86,10 +86,11 @@ onUnmounted(() => {
   background: var(--glass-tint);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
-  border-bottom: var(--border-hairline);
+  border-bottom: 1px solid var(--panel-edge);
+  transition: box-shadow var(--dur-base) var(--ease-settle);
 }
 .header--scrolled {
-  box-shadow: var(--shadow-sm);
+  box-shadow: inset 0 -1px 0 var(--panel-highlight), var(--shadow-md);
 }
 .header__inner {
   min-height: var(--header-height);
@@ -146,6 +147,7 @@ onUnmounted(() => {
   font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-base) var(--ease-settle);
 }
 .nav a:hover, .nav a.router-link-active {
   color: var(--accent-400);
@@ -166,6 +168,16 @@ onUnmounted(() => {
   border: var(--border-hairline);
   border-radius: var(--radius-sm);
   color: var(--text-200);
+  background: color-mix(in srgb, var(--ink-800) 65%, transparent);
+  box-shadow: inset 0 1px 0 var(--panel-highlight);
+  transition: background-color var(--dur-fast), border-color var(--dur-fast), transform var(--dur-fast) var(--ease-settle);
+}
+.theme-btn:hover, .header__toggle:hover {
+  border-color: var(--accent-400);
+  background: var(--ink-800);
+}
+.theme-btn:active, .header__toggle:active {
+  transform: translateY(1px) scale(0.97);
 }
 .theme-btn {
   display: grid;
@@ -189,17 +201,21 @@ onUnmounted(() => {
     align-items: stretch;
     gap: var(--space-3);
     padding: var(--space-4) var(--gutter);
-    background: var(--ink-900);
-    border-bottom: var(--border-hairline);
-    box-shadow: var(--shadow-md);
+    background: var(--panel-bg);
+    border-bottom: 1px solid var(--panel-edge);
+    box-shadow: inset 0 1px 0 var(--panel-highlight), var(--shadow-lg);
     visibility: hidden;
     opacity: 0;
     pointer-events: none;
+    transform: translateY(-8px);
+    transition: opacity 180ms var(--ease-settle), transform var(--dur-base) var(--ease-settle), visibility 0s 180ms;
   }
   .nav--open {
     visibility: visible;
     opacity: 1;
     pointer-events: auto;
+    transform: translateY(0);
+    transition-delay: 0s;
   }
   .nav__primary, .nav__account {
     flex-direction: column;
@@ -218,5 +234,10 @@ onUnmounted(() => {
     box-shadow: inset 3px 0 var(--accent-400);
     background: var(--ink-800);
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav { transition: none; transform: none; }
+  .theme-btn:active, .header__toggle:active { transform: none; }
 }
 </style>

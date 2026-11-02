@@ -97,6 +97,7 @@ export const api = {
   me: () => request('/auth/me'),
   logout: () => request('/auth/logout', { method: 'POST' }),
   profile: () => request('/me/profile'),
+  publicProfile: (id) => request(`/users/${encodeURIComponent(id)}/profile`),
   updateProfile: (data) => request('/me/profile', { method: 'PATCH', body: JSON.stringify(data) }),
   myConcerts: () => request('/me/concerts'),
   myConcertResult: (concertId) => request(`/me/concerts/${encodeURIComponent(concertId)}/result`),

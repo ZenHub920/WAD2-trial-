@@ -9,6 +9,7 @@ import GroupAvatar from "../components/GroupAvatar.vue";
 import AvatarPicker from "../components/AvatarPicker.vue";
 import BackLink from "../components/BackLink.vue";
 import GroupPreferencesGate from "../components/GroupPreferencesGate.vue";
+import GroupPrioritiesSummary from "../components/GroupPrioritiesSummary.vue";
 import "../assets/groups.css";
 const props = defineProps({ id: String, token: String });
 const router = useRouter();
@@ -96,7 +97,7 @@ async function act(fn, done = "Saved.") {
       invitation_used: "This single-use invitation has already been accepted. Ask the host for a new link.",
       already_in_concert_group: "You already belong to or host a group for this concert.",
       active_matching_proposal_exists: "Review your active matching proposal before joining another group.",
-      save_group_preferences_first: "Save your preferences above before joining.",
+      save_group_preferences_first: "Save your private preferences in Profile before joining.",
       invalid_group_name: "Group names can be up to 60 characters.",
       invalid_image: "That file is not a readable image.",
     })[e.message] ?? (e.status === 401 ? "Sign in to manage your group." : "Could not save this change. Review your group and try again.");
@@ -171,7 +172,7 @@ async function leave() {
       </nav>
       <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading your group…</p>
       <section v-if="token && !group" class="card group-panel">
-        <p>Join your friend's group using this invitation. Your saved preferences are shared with the group automatically.</p>
+        <p>Join your friend's group using this invitation. Your saved profile preferences contribute to the group's shared preferences; your individual answers stay private.</p>
         <p v-if="error" role="alert" class="group-error">{{ error }}</p>
         <button class="btn btn--success" :disabled="busy" @click="accept">Accept invitation</button>
       </section>
@@ -187,6 +188,13 @@ async function leave() {
           <ul>
             <li v-for="m in group.members" :key="m.id">{{ m.name }} — {{ memberSource[m.source] ?? 'Member' }}<span v-if="!m.answered" class="group-muted"> · preferences missing</span></li>
           </ul>
+        </section>
+
+        <section class="card group-panel" aria-labelledby="group-priorities-heading">
+          <h2 id="group-priorities-heading">What represents your group?</h2>
+          <p class="group-muted">The group's shared preferences come from members' saved profiles, rather than the host's choices alone.</p>
+          <GroupPrioritiesSummary :profile="group.profile" />
+          <RouterLink to="/profile#preferences">Update your private preferences <span aria-hidden="true">→</span></RouterLink>
         </section>
 
         <template v-if="isHost">

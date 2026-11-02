@@ -481,7 +481,10 @@ test('seeker preference changes preserve submitted answers and require renewed c
   repos.recommendations.savePersonal(cookies.seekerId, 'c1', original);
   assert.equal(db.prepare('SELECT group_version FROM group_join_requests WHERE id=?').get(join.id).group_version, repos.membership.settings('pA').version);
   repos.recommendations.savePersonal(cookies.seekerId, 'c1', { about: ['dancing'] });
-  assert.deepEqual(repos.recommendations.requests(cookies.hostAId)[0].preferences, submitted);
+  assert.equal(Object.hasOwn(repos.recommendations.requests(cookies.hostAId)[0], 'preferences'), false,
+    'the receiving host does not see the applicant private answers');
+  assert.deepEqual(repos.recommendations.requests(cookies.seekerId)[0].preferences, submitted,
+    'the applicant can review their own unchanged submitted snapshot');
   assert.throws(() => repos.recommendations.respond(cookies.hostAId, join.id, 'accept'), /preferences_changed_withdraw_and_resubmit/);
   repos.recommendations.savePersonal(cookies.seekerId, 'c1', original);
   assert.throws(() => repos.recommendations.respond(cookies.hostAId, join.id, 'accept'), /preferences_changed_withdraw_and_resubmit/);
@@ -489,6 +492,26 @@ test('seeker preference changes preserve submitted answers and require renewed c
   const renewed = directJoin(cookies.seekerId, 'pA');
   assert.notEqual(renewed.id, join.id);
   assert.equal(repos.recommendations.respond(cookies.hostAId, renewed.id, 'accept').status, 'accepted');
+});
+
+test('hosted application HTTP responses keep the applicant questionnaire private', async () => {
+  publishGroup('pA');
+  const submitted = repos.recommendations.savePersonal(cookies.seekerId, 'c1', {
+    about: ['supper'], wants: ['quiet'], avoid: ['dancing'], dealbreakers: ['dancing'],
+  });
+  const listing = await call('/groups/discover/c1', 'seeker');
+  assert.equal(listing.status, 200);
+  const card = listing.body.groups.find((g) => g.id === 'pA');
+  assert.ok(card);
+  assert.deepEqual(Object.keys(card.profile).sort(), ['coverage', 'representativeWants']);
+  directJoin(cookies.seekerId, 'pA');
+  const hosted = await call('/me/hosted-group-join-requests', 'hostA');
+  assert.equal(hosted.status, 200);
+  assert.equal(Object.hasOwn(hosted.body.requests[0], 'preferences'), false);
+  assert.equal(hosted.body.requests[0].seeker.id, cookies.seekerId);
+  assert.ok(Array.isArray(hosted.body.requests[0].reasons));
+  const own = await call('/me/group-join-requests?scope=own', 'seeker');
+  assert.deepEqual(own.body.requests[0].preferences, submitted);
 });
 
 test('repeated community migrations preserve unknown historical consent and require resubmission', () => {
@@ -499,7 +522,8 @@ test('repeated community migrations preserve unknown historical consent and requ
   migrateCommunity(db);
   migrateCommunity(db);
   assert.equal(db.prepare('SELECT preferences_json FROM group_join_requests WHERE id=?').get(join.id).preferences_json, null);
-  assert.equal(repos.recommendations.requests(cookies.hostAId)[0].preferences, null);
+  assert.equal(Object.hasOwn(repos.recommendations.requests(cookies.hostAId)[0], 'preferences'), false);
+  assert.equal(repos.recommendations.requests(cookies.seekerId)[0].preferences, null);
   assert.throws(() => repos.recommendations.respond(cookies.hostAId, join.id, 'accept'), /preferences_changed_withdraw_and_resubmit/);
   repos.recommendations.respond(cookies.seekerId, join.id, 'withdraw');
   const renewed = directJoin(cookies.seekerId, 'pA');

@@ -29,6 +29,48 @@ beforeEach(() => {
   api.meetupAvailability.mockResolvedValue({});
 });
 describe('meeting planner with real OneMap search child', () => {
+  it('summarises selected duration separately from the best saved group overlap', async () => {
+    api.meetup.mockResolvedValue({ meetup: { ...board(), participantCount: 3, grid: [
+      { startsAt: start, availableCount: 1 },
+      { startsAt: start + 1800000, availableCount: 2 },
+      { startsAt: start + 3600000, availableCount: 2 },
+    ] } });
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    const summary = wrapper.get('.meetup-time-context');
+    expect(summary.text()).toContain('3 people on this plan');
+    expect(summary.text()).toContain('0.5 hours');
+    expect(summary.text()).toContain('2/3 available together');
+    expect(summary.text()).toContain('12:30');
+    await wrapper.get(`[data-availability-start="${start + 1800000}"]`).trigger('click');
+    expect(summary.text()).toContain('1 hour');
+    expect(summary.text()).toContain('In your unsaved draft');
+    expect(summary.text()).toContain('2/3 available together');
+    expect(api.meetupAvailability).not.toHaveBeenCalled();
+  });
+  it('shows one planning step at a time, keeps drafts across steps and supports keyboard navigation', async () => {
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    const timePanel = wrapper.get('#meetup-availability'), placesPanel = wrapper.get('#meetup-places');
+    expect(timePanel.isVisible()).toBe(true);
+    expect(placesPanel.isVisible()).toBe(false);
+    expect(wrapper.get('#meetup-review').isVisible()).toBe(false);
+    await wrapper.get('[data-availability-start]').trigger('click');
+    await wrapper.get('[data-planner-step="places"]').trigger('click');
+    expect(timePanel.isVisible()).toBe(false);
+    expect(placesPanel.isVisible()).toBe(true);
+    expect(wrapper.get('[data-planner-step="places"]').attributes('aria-selected')).toBe('true');
+    await wrapper.get('[data-planner-step="places"]').trigger('keydown', { key: 'ArrowRight' });
+    expect(wrapper.get('#meetup-review').isVisible()).toBe(true);
+    await wrapper.get('[data-planner-step="review"]').trigger('keydown', { key: 'Home' });
+    expect(timePanel.isVisible()).toBe(true);
+    expect(wrapper.get('[data-availability-start]').attributes('aria-pressed')).toBe('false');
+    expect(wrapper.text()).toContain('Unsaved changes');
+    expect(api.meetupAvailability).not.toHaveBeenCalled();
+  });
+  it('opens an existing step anchor without changing the planner route', async () => {
+    const { wrapper } = await mountPage(MeetupView, { path: '/meetups/meetup-1#meetup-review', props: { id: 'meetup-1' } });
+    expect(wrapper.get('#meetup-review').isVisible()).toBe(true);
+    expect(wrapper.get('#meetup-availability').isVisible()).toBe(false);
+  });
   it.each(['drive', 'transit'])('saves selected availability using %s', async mode => {
     const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
     const travel = wrapper.findAll('select').find(select => select.findAll('option').some(option => option.text() === 'Car'));

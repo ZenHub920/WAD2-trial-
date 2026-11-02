@@ -9,7 +9,7 @@ const batches = [
   { name: 'matching, connections, chats, planning and notifications', files: [
     'galeShapley', 'compatibility', 'hybridDirect', 'hybridReservations',
     'managedMatching', 'managedJoinLifecycle', 'admissionQueue', 'queueLifecycle',
-    'groupDiscovery', 'proposalPresentation', 'groupChannel', 'connectionChannel',
+    'groupDiscovery', 'groupConsensus', 'publicProfile', 'profileParticipation', 'proposalPresentation', 'groupChannel', 'connectionChannel',
     'messagePagination', 'chatCatchup', 'connectionChatClient', 'meetupCarPlanning',
     'meetupIntegrations', 'meetupRealtime', 'meetupTransport', 'nearbyTransport', 'carTravel', 'delivery', 'browserPush', 'pushWorker', 'providerSecurity',
   ] },

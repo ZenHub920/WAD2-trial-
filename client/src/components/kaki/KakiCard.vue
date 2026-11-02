@@ -38,6 +38,7 @@ const interests = computed(() => {
 
     <div class="kaki-card__body">
       <h3 class="kaki-card__name">{{ person.user.displayName }}</h3>
+      <RouterLink class="kaki-card__profile" :to="`/people/${encodeURIComponent(person.user.id)}`" @pointerdown.stop @click.stop @keydown.stop>View concert vibe →</RouterLink>
 
       <p class="kaki-card__meta">
         {{ person.user.ageBand }}, {{ person.user.homeRegion.replace('_', ' ') }}
@@ -112,6 +113,7 @@ const interests = computed(() => {
   color: var(--text-200);
   text-transform: capitalize;
 }
+.kaki-card__profile { align-self:flex-start; font-size:var(--step--1); padding:var(--space-1) 0; color:var(--accent-400); }
 
 .kaki-card__verified {
   margin-left: var(--space-2);

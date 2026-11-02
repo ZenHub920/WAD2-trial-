@@ -190,13 +190,18 @@ onUnmounted(() => stopListening?.());
           </div>
         </div>
         <div class="channel__tools">
-          <button type="button" class="btn btn--primary" @click="router.push({ path: '/meetups', query: { partyId: id } })">Plan meetup</button>
           <button type="button" class="btn btn--ghost" :aria-expanded="showMembers" @click="showMembers = !showMembers">
             Members
           </button>
           <button v-if="!isHost" type="button" class="btn btn--ghost" @click="confirmingLeave = true">Leave</button>
         </div>
       </header>
+
+      <section class="planner-entry" aria-label="Meetup planner for this group">
+        <svg class="planner-entry__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4M17 3v4M3 11h18M8 15h3M8 18h6"/></svg>
+        <div><strong>Bring the group together</strong><p>Compare availability and choose a meeting point with this group.</p></div>
+        <button type="button" class="btn btn--primary" @click="router.push({ path: '/meetups', query: { partyId: id } })">Plan meetup</button>
+      </section>
 
       <p v-if="actionError" class="notice notice--error" role="alert">{{ actionError }}</p>
 
@@ -205,7 +210,7 @@ onUnmounted(() => stopListening?.());
         <ul class="members__list">
           <li v-for="person in channel.members" :key="person.id">
             <UserAvatar :src="person.avatarUrl" :name="person.displayName" :size="32" />
-            <span>{{ person.displayName }}</span>
+            <RouterLink :to="`/people/${encodeURIComponent(person.id)}`" :aria-label="`View ${person.displayName}'s concert vibe`">{{ person.displayName }}</RouterLink>
             <span v-if="person.isHost" class="members__tag">Host</span>
           </li>
         </ul>
@@ -288,6 +293,13 @@ onUnmounted(() => stopListening?.());
 </template>
 
 <style scoped>
+.planner-entry { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-3); margin-block:var(--space-4); padding:var(--space-3) var(--space-4); border:var(--border-soft); border-left:3px solid var(--accent-400); border-radius:var(--radius-md); background:var(--ink-850); box-shadow:inset 0 1px 0 #ffffff08; }
+.planner-entry__icon { width:28px; height:28px; stroke:var(--accent-400); stroke-width:1.5; stroke-linecap:round; flex:none; }
+.planner-entry > div { flex:1 1 14rem; }
+.planner-entry strong { font-size:var(--step--1); color:var(--text-100); }
+.planner-entry p { margin:var(--space-1) 0 0; color:var(--text-400); font-size:var(--step--2); }
+.planner-entry > .btn { flex:none; }
+@media (max-width:480px) { .planner-entry > div { flex-basis:calc(100% - 42px); } .planner-entry > .btn { width:100%; } }
 .channel {
   max-width: 800px;
   display: grid;

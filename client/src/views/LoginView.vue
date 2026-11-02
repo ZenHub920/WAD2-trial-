@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, onUnmounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api.js';
 import { setCurrentUser } from '../auth.js';
@@ -12,7 +12,7 @@ const router = useRouter();
 // Only same-site paths, so a crafted link cannot bounce people off-site after sign-in.
 const redirect = computed(() => {
   const target = route.query.redirect;
-  return typeof target === 'string' && target.startsWith('/') && !target.startsWith('//')
+  return typeof target === 'string' && target.startsWith('/') && !target.startsWith('//') && !target.includes('\\')
     ? target
     : '/concerts';
 });
@@ -24,6 +24,8 @@ const loading = ref(false);
 const error = ref('');
 const success = ref('');
 const showPassword = ref(false);
+let navigationTimer;
+onUnmounted(() => clearTimeout(navigationTimer));
 
 // The same form supports both sign-in and account creation.
 const isRegistering = computed(() => mode.value === 'register');
@@ -56,12 +58,14 @@ function messageFor(code) {
 
 // Submit data to backend
 async function submit() {
+  if (loading.value) return;
+  const registering = isRegistering.value;
   error.value = '';
   success.value = '';
   loading.value = true;
   try {
     // Registration persists the account; sign-in verifies the existing account.
-    const response = isRegistering.value
+    const response = registering
       //If on register page, call the register function, else call the login function
       ? await api.register({
         display_name: displayName.value.trim(),
@@ -74,8 +78,11 @@ async function submit() {
       });
 
     setCurrentUser(response.user);
-    success.value = isRegistering.value ? 'Your account is ready.' : `Welcome back, ${response.user.displayName}.`;
-    setTimeout(() => router.push(redirect.value), 500);
+    success.value = registering ? 'Your account is ready. Next: a few optional preferences.' : `Welcome back, ${response.user.displayName}.`;
+    const destination = registering
+      ? { path: '/profile', query: { setup: '1', next: redirect.value }, hash: '#preferences' }
+      : redirect.value;
+    navigationTimer = setTimeout(() => router.push(destination), 500);
   } catch (err) {
     error.value = messageFor(err.body?.error ?? err.message);
   } finally {

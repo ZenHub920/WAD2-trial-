@@ -392,12 +392,11 @@ watch(() => props.id, async () => {
           :size="36"
         />
         <div>
-          <h1 class="bar__name">{{ conversation.other.displayName }}</h1>
+          <h1 class="bar__name"><RouterLink :to="`/people/${encodeURIComponent(conversation.other.id)}`" :aria-label="`View ${conversation.other.displayName}'s concert vibe`">{{ conversation.other.displayName }}</RouterLink></h1>
           <p class="bar__sub">{{ conversation.concert.artist }}</p>
         </div>
       </div>
       <div v-else class="bar__who"><h1 class="bar__name">Companion conversation</h1></div>
-      <button v-if="conversation && !closed" type="button" class="btn btn--ghost bar__meetup" @click="router.push({path:'/meetups',query:{kakiConversationId:id}})">Plan meetup</button>
 
       <button
         class="bar__menu"
@@ -453,6 +452,12 @@ watch(() => props.id, async () => {
       </div>
       </Teleport>
     </header>
+
+    <section v-if="conversation && !closed && !loading" class="planner-entry" aria-label="Meetup planner for this pair">
+      <svg class="planner-entry__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4M17 3v4M3 11h18M8 15h3M8 18h6"/></svg>
+      <div><strong>Meet up, just the two of you</strong><p>Find a shared time and place, then agree on the plan together.</p></div>
+      <button type="button" class="btn btn--primary" @click="router.push({path:'/meetups',query:{kakiConversationId:id}})">Plan meetup</button>
+    </section>
 
     <!-- ------------------------------------------------------------ states -->
     <p v-if="notice" class="notice notice--ok">{{ notice }}</p>
@@ -626,6 +631,13 @@ watch(() => props.id, async () => {
 </template>
 
 <style scoped>
+.planner-entry { display:flex; align-items:center; flex-wrap:wrap; flex-shrink:0; gap:var(--space-3); margin:var(--space-3) var(--space-4); padding:var(--space-3) var(--space-4); border:var(--border-soft); border-left:3px solid var(--accent-400); border-radius:var(--radius-md); background:var(--ink-850); box-shadow:inset 0 1px 0 #ffffff08; }
+.planner-entry__icon { width:28px; height:28px; stroke:var(--accent-400); stroke-width:1.5; stroke-linecap:round; flex:none; }
+.planner-entry > div { flex:1 1 14rem; }
+.planner-entry strong { font-size:var(--step--1); color:var(--text-100); }
+.planner-entry p { margin:var(--space-1) 0 0; color:var(--text-400); font-size:var(--step--2); }
+.planner-entry > .btn { flex:none; }
+@media (max-width:480px) { .planner-entry > div { flex-basis:calc(100% - 42px); } .planner-entry > .btn { width:100%; } }
 .thread {
   display: flex;
   flex-direction: column;
@@ -708,10 +720,6 @@ watch(() => props.id, async () => {
 .bar__who > div {
   min-width: 0;
   overflow-wrap: anywhere;
-}
-.bar__meetup {
-  flex-shrink: 0;
-  font-size: var(--step--1);
 }
 
 .avatar {
@@ -1203,10 +1211,6 @@ watch(() => props.id, async () => {
   }
   .bar__who {
     flex-basis: calc(100% - 7rem);
-  }
-  .bar__meetup {
-    order: 1;
-    margin-left: 2rem;
   }
   .row__more {
     opacity: 1;

@@ -7,6 +7,7 @@ import {
   individualProfile,
   compareProfiles,
   withoutRetired,
+  groupPreferenceSummary,
 } from "../services/discoveryPreferences.js";
 import { checkFeasibility, scorePair } from "../matching/compatibility.js";
 import { groupImageUrl } from "../presentation/groupIdentity.js";
@@ -114,7 +115,7 @@ export function createRecommendationRepo(db, repos) {
         : null,
       reasons: concepts.reasons,
       confidence: concepts.confidence,
-      profile,
+      profile: groupPreferenceSummary(profile),
       requiresHostApproval: true,
       directRequiresHostApproval: true,
       automaticRequiresSeekerApproval: true,
@@ -194,6 +195,7 @@ export function createRecommendationRepo(db, repos) {
               10000,
             reasons: result.reasons,
             confidence: result.confidence,
+            profile: groupPreferenceSummary(repos.membership.profile(c.id)),
           };
         })
         .sort(
@@ -340,7 +342,9 @@ export function createRecommendationRepo(db, repos) {
               vibe: seeker.vibe,
               reliability: seeker.reliability,
             },
-            preferences: preferences_json ? JSON.parse(preferences_json) : null,
+            // The applicant may review their own submitted snapshot. Receiving
+            // hosts see compatibility evidence, not the private questionnaire.
+            ...(r.userId === user ? { preferences: preferences_json ? JSON.parse(preferences_json) : null } : {}),
           };
         });
     },
