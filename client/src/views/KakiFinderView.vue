@@ -348,7 +348,7 @@ function backToDeck() {
       <div v-if="swipeError" class="notice notice--error" role="alert">
         <p>Could not save this change. Please try again.</p>
         <RouterLink v-if="swipeError.status === 401" to="/login">Sign in</RouterLink>
-        <p v-else class="mono">{{ swipeError.message }}</p>
+        <p v-else>Your choice has not been saved. Try the same profile again.</p>
       </div>
       <p v-if="!ranking && deck.length === 0" class="kaki__state">
         No one left under these filters.
@@ -423,7 +423,7 @@ function backToDeck() {
 
 .kaki__head {
   display: grid;
-  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  grid-template-columns: 2.75rem minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-2);
   margin-bottom: var(--space-5);
@@ -456,8 +456,8 @@ function backToDeck() {
 .kaki__icon-btn {
   display: grid;
   place-items: center;
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 2.75rem;
+  height: 2.75rem;
   border: 1px solid var(--panel-edge);
   background: var(--panel-bg);
   box-shadow: var(--panel-shadow);

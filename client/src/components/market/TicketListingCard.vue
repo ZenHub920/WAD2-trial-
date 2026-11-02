@@ -72,14 +72,16 @@ const quantity = computed(() => `${props.listing.quantity} ${props.listing.quant
   min-width: 0;
   overflow: hidden;
   overflow-wrap: anywhere;
-  border: var(--border-soft);
+  border: 1px solid var(--panel-edge);
   border-radius: var(--radius-lg);
-  background: var(--ink-850);
-  transition: border-color 0.15s ease, transform 0.15s ease;
+  background: var(--panel-bg);
+  box-shadow: var(--panel-shadow);
+  transition: border-color var(--dur-fast) var(--ease-settle), box-shadow var(--dur-fast) var(--ease-settle), transform var(--dur-fast) var(--ease-settle);
 }
 .tcard:hover,
 .tcard:focus-within {
   border-color: color-mix(in oklab, var(--accent-500) 55%, var(--ink-600));
+  box-shadow: inset 0 1px 0 var(--panel-highlight), var(--shadow-md);
 }
 .tcard:hover {
   transform: translateY(-2px);
@@ -94,15 +96,20 @@ const quantity = computed(() => `${props.listing.quantity} ${props.listing.quant
   z-index: 2;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: rgb(0 0 0 / 55%);
   color: #fff;
+  box-shadow: inset 0 1px 0 #ffffff20, var(--shadow-sm);
+  transition: background-color var(--dur-fast), box-shadow var(--dur-fast), transform var(--dur-press) var(--ease-settle);
 }
+.tcard__save:hover { background: rgba(0, 0, 0, .8); }
+.tcard__save:active { transform: translateY(1px) scale(.96); box-shadow: inset 0 2px 4px #00000040; }
 .tcard__save--on {
-  background: var(--accent-500);
+  background: var(--action-start);
 }
+.tcard__save--on:hover { background: var(--action-hover); }
 .tcard__body {
   display: flex;
   flex: 1;
@@ -129,7 +136,7 @@ const quantity = computed(() => `${props.listing.quantity} ${props.listing.quant
   outline: none;
 }
 .tcard:has(.tcard__link:focus-visible) {
-  outline: 2px solid var(--accent-400);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 .tcard__when {
@@ -190,5 +197,6 @@ const quantity = computed(() => `${props.listing.quantity} ${props.listing.quant
   .tcard:hover {
     transform: none;
   }
+  .tcard__save:active { transform: none; }
 }
 </style>

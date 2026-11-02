@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue';
+import { formatMeetupDay, formatMeetupClock, singaporeDayKey } from '../utils/meetupTime.js';
 
 const props = defineProps({
   grid: { type: Array, required: true },
@@ -10,20 +11,11 @@ const props = defineProps({
 const emit = defineEmits(['update:selected']);
 const root = ref(null), preview = ref(null), focused = ref(null), hovered = ref(null);
 const helpId = `availability-help-${useId()}`;
-const dateParts = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Asia/Singapore', year: 'numeric', month: '2-digit', day: '2-digit',
-});
-const dayLabel = new Intl.DateTimeFormat('en-SG', {
-  timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short',
-});
-const clock = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Asia/Singapore', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-});
 const cells = computed(() => [...new Map(props.grid.filter(slot => Number.isFinite(slot.startsAt))
-  .map(slot => [slot.startsAt, { ...slot, day: dateParts.format(slot.startsAt), time: clock.format(slot.startsAt) }])).values()]
+  .map(slot => [slot.startsAt, { ...slot, day: singaporeDayKey(slot.startsAt), time: formatMeetupClock(slot.startsAt) }])).values()]
   .sort((a, b) => a.startsAt - b.startsAt));
 const days = computed(() => [...new Map(cells.value.map(slot => [slot.day, {
-  key: slot.day, label: dayLabel.format(slot.startsAt),
+  key: slot.day, label: formatMeetupDay(slot.startsAt),
 }])).values()]);
 const times = computed(() => [...new Set(cells.value.map(slot => slot.time))].sort());
 const byDayTime = computed(() => new Map(cells.value.map(slot => [`${slot.day}:${slot.time}`, slot])));
@@ -32,7 +24,7 @@ const selectedSet = computed(() => new Set(preview.value ?? props.selected));
 const inspected = computed(() => byStamp.value.get(hovered.value ?? focused.value) ?? cells.value[0]);
 const count = slot => Math.min(Math.max(0, Number(slot.availableCount) || 0), Math.max(0, props.participantCount));
 const heat = slot => props.participantCount > 0 ? Math.ceil(count(slot) / props.participantCount * 4) : 0;
-const label = slot => `${dayLabel.format(slot.startsAt)}, ${slot.time}–${clock.format(slot.startsAt + 1800000)}: ${count(slot)} of ${props.participantCount} available. ${selectedSet.value.has(slot.startsAt) ? 'You are available.' : 'You are unavailable.'}`;
+const label = slot => `${formatMeetupDay(slot.startsAt)}, ${slot.time}–${formatMeetupClock(slot.startsAt + 1800000)}: ${count(slot)} of ${props.participantCount} available. ${selectedSet.value.has(slot.startsAt) ? 'You are available.' : 'You are unavailable.'}`;
 let gesture = null, suppressPointerClickUntil = 0;
 
 function publish(selection) {
@@ -156,7 +148,7 @@ onBeforeUnmount(() => {
       </table>
     </div>
     <div v-if="inspected" class="availability-grid__inspection" aria-live="polite" aria-atomic="true">
-      <span>{{ dayLabel.format(inspected.startsAt) }} · {{ inspected.time }}–{{ clock.format(inspected.startsAt + 1800000) }}</span>
+      <span>{{ formatMeetupDay(inspected.startsAt) }} · {{ inspected.time }}–{{ formatMeetupClock(inspected.startsAt + 1800000) }}</span>
       <strong>{{ count(inspected) }} of {{ participantCount }} available</strong>
       <span>{{ selectedSet.has(inspected.startsAt) ? 'You’re available' : 'You’re unavailable' }}</span>
     </div>

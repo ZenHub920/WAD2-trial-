@@ -182,7 +182,7 @@ watch(() => currentUser.value?.id, userId => {
   <div class="container section inbox">
     <header class="head">
       <div class="head__title"><p class="inbox__eyebrow">Your conversations</p><h1>Messages</h1><p class="head__hint">Pick a space, then carry on where you left off.</p></div>
-      <SegmentedTabs v-model="tab" :tabs="tabs" aria-label="Message type" />
+      <div class="head__actions"><RouterLink to="/meetups" class="btn btn--ghost">My meetups</RouterLink><SegmentedTabs v-model="tab" :tabs="tabs" aria-label="Message type" /></div>
     </header>
 
     <p v-if="actionError" class="notice notice--error" role="alert">{{ actionError }}</p>
@@ -322,6 +322,7 @@ watch(() => currentUser.value?.id, userId => {
 </template>
 
 <style scoped>
+.head__actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:.75rem; }
 .inbox {
   max-width: 800px;
 }
@@ -533,8 +534,8 @@ watch(() => currentUser.value?.id, userId => {
   height: 44px;
   flex: none;
   border-radius: var(--radius-md);
-  background: var(--accent-500);
-  color: #fff;
+  background: var(--action-start);
+  color: var(--on-action);
   font-weight: 700;
   font-size: var(--step-0);
 }

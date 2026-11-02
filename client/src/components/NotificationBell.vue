@@ -60,12 +60,19 @@ async function markRead(id) {
     readingId.value = '';
   }
 }
-function close() {
+function dismiss() {
   open.value = false;
+}
+function close() {
+  dismiss();
   trigger.value?.focus();
 }
+defineExpose({ dismiss });
 function outside(event) {
   if (!root.value?.contains(event.target)) open.value = false;
+}
+function onFocusout(event) {
+  if (event.relatedTarget && !root.value?.contains(event.relatedTarget)) dismiss();
 }
 function onKeydown(event) {
   if (event.key === 'Escape' && open.value) {
@@ -78,9 +85,12 @@ watch(open, async (visible) => {
   emit('open');
   load();
   await nextTick();
-  panel.value?.focus();
+  if (open.value) panel.value?.focus();
 });
-watch(() => route.fullPath, () => { open.value = false; });
+// A first lazy-route commit can arrive after the user has opened the inbox.
+watch(() => [route.fullPath, route.matched], (_, previous) => {
+  if (previous[1].length) dismiss();
+});
 watch(notificationRevision, () => open.value ? load() : refreshUnread());
 onMounted(() => {
   navigator.serviceWorker?.addEventListener('message', onPush);
@@ -98,7 +108,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="root" class="notification-bell">
+  <div ref="root" class="notification-bell" @focusout="onFocusout">
     <button ref="trigger" type="button" class="notification-bell__button"
       :aria-label="unreadCount ? `Notifications, ${unreadCount} unread` : 'Notifications'"
       aria-controls="notification-popover" :aria-expanded="open" @click="open = !open">
@@ -109,21 +119,21 @@ onUnmounted(() => {
       <span v-if="unreadCount" class="notification-bell__badge" aria-hidden="true">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
     </button>
     <Transition name="notification-panel" @before-leave="element => element.setAttribute('inert', '')">
-    <section v-if="open" id="notification-popover" ref="panel" class="notification-popover" tabindex="-1" aria-labelledby="notification-popover-title">
+    <section v-if="open" id="notification-popover" ref="panel" class="notification-popover" tabindex="-1" aria-labelledby="notification-popover-title" :aria-busy="loading">
       <header class="notification-popover__head">
         <div><p class="notification-popover__eyebrow">Your latest updates</p><div class="notification-popover__title-row"><h2 id="notification-popover-title">Notifications</h2><span v-if="unreadCount" class="notification-popover__total">{{ unreadCount }} unread</span></div></div>
         <button type="button" class="notification-popover__close" aria-label="Close notifications" @click="close">×</button>
       </header>
       <div class="notification-popover__tools">
-        <RouterLink to="/profile#notifications">Notification preferences</RouterLink>
+        <RouterLink to="/profile#notifications" @click="dismiss">Notification preferences</RouterLink>
         <button type="button" :disabled="loading" @click="load"><LoadingSpinner v-if="loading && items.length" /><svg v-else viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 8a7 7 0 0 1 11.5-2L20 12M4 12l2.5 6A7 7 0 0 0 18 16"/></svg>Refresh</button>
       </div>
       <p v-if="error" class="notification-popover__error" role="alert">{{ error }}</p>
       <p v-if="loading && !items.length" class="loading-state"><LoadingSpinner /> Loading notifications…</p>
-      <p v-else-if="!items.length && !error" class="notification-popover__empty">No notifications yet.</p>
+      <div v-else-if="!items.length && !error" class="notification-popover__empty"><strong>No notifications yet.</strong><p>Messages, group requests and meetup updates will appear here.</p></div>
       <ul v-if="items.length" class="notification-popover__list">
         <li v-for="item in items" :key="item.id" :class="{ 'notification-popover__unread': !item.readAt }">
-          <RouterLink :to="item.path === '/kaki/chat' || item.path === '/chat' ? '/messages' : item.path === '/marketplace' ? '/concerts' : item.path">{{ titles[item.title] ?? item.title }}</RouterLink>
+          <RouterLink :to="item.path === '/kaki/chat' || item.path === '/chat' ? '/messages' : item.path === '/marketplace' ? '/concerts' : item.path" @click="dismiss">{{ titles[item.title] ?? item.title }}</RouterLink>
           <p class="notification-popover__meta">{{ formatDateTime(item.createdAt) }} · {{ item.readAt ? 'Read' : 'Unread' }}</p>
           <button v-if="!item.readAt" type="button" class="notification-popover__read" :disabled="Boolean(readingId)" @click="markRead(item.id)">
             <LoadingSpinner v-if="readingId === item.id" /><svg v-else viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> Mark read
@@ -144,7 +154,7 @@ onUnmounted(() => {
   place-items: center;
   width: 44px;
   height: 44px;
-  border: var(--border-hairline);
+  border: var(--control-border);
   border-radius: var(--radius-sm);
   color: var(--text-200);
   background: color-mix(in srgb, var(--ink-800) 65%, transparent);
@@ -166,8 +176,8 @@ onUnmounted(() => {
   height: 20px;
   padding-inline: 4px;
   border-radius: 999px;
-  background: var(--accent-400);
-  color: var(--ink-900);
+  background: var(--action-start);
+  color: var(--on-action);
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
@@ -186,10 +196,10 @@ onUnmounted(() => {
   max-height: min(70dvh, 560px);
   overflow-y: auto;
   padding: var(--space-4);
-  border: 1px solid var(--panel-edge);
+  border: 1px solid var(--floating-edge);
   border-radius: var(--radius-lg);
-  background: var(--panel-bg);
-  box-shadow: inset 0 1px 0 var(--panel-highlight), var(--shadow-lg);
+  background: var(--surface-floating);
+  box-shadow: var(--floating-shadow);
   color: var(--text-200);
   transform-origin: top right;
   overscroll-behavior: contain;
@@ -252,6 +262,8 @@ onUnmounted(() => {
   color: var(--text-300);
   text-align: center;
 }
+.notification-popover__empty strong { display: block; color: var(--text-100); font-size: var(--step--1); }
+.notification-popover__empty p { max-width: 30ch; margin: var(--space-2) auto 0; font-size: var(--step--1); }
 .notification-popover__list {
   list-style: none;
   padding: 0;

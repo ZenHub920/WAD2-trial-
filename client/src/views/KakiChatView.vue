@@ -20,6 +20,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api.js';
+import MeetupEntryCard from '../components/MeetupEntryCard.vue';
 import { fetchChatUpdates } from '../chatPages.js';
 import { onChatEvent, connectionState, refreshUnread } from '../chatLive.js';
 import UserAvatar from '../components/UserAvatar.vue';
@@ -453,11 +454,7 @@ watch(() => props.id, async () => {
       </Teleport>
     </header>
 
-    <section v-if="conversation && !closed && !loading" class="planner-entry" aria-label="Meetup planner for this pair">
-      <svg class="planner-entry__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4M17 3v4M3 11h18M8 15h3M8 18h6"/></svg>
-      <div><strong>Meet up, just the two of you</strong><p>Find a shared time and place, then agree on the plan together.</p></div>
-      <button type="button" class="btn btn--primary" @click="router.push({path:'/meetups',query:{kakiConversationId:id}})">Plan meetup</button>
-    </section>
+    <MeetupEntryCard v-if="conversation && !closed && !loading" :scope="{ kakiConversationId: id }" label="Meetup planner for this pair" class="pair-meetup-entry" />
 
     <!-- ------------------------------------------------------------ states -->
     <p v-if="notice" class="notice notice--ok">{{ notice }}</p>
@@ -631,13 +628,7 @@ watch(() => props.id, async () => {
 </template>
 
 <style scoped>
-.planner-entry { display:flex; align-items:center; flex-wrap:wrap; flex-shrink:0; gap:var(--space-3); margin:var(--space-3) var(--space-4); padding:var(--space-3) var(--space-4); border:var(--border-soft); border-left:3px solid var(--accent-400); border-radius:var(--radius-md); background:var(--ink-850); box-shadow:inset 0 1px 0 #ffffff08; }
-.planner-entry__icon { width:28px; height:28px; stroke:var(--accent-400); stroke-width:1.5; stroke-linecap:round; flex:none; }
-.planner-entry > div { flex:1 1 14rem; }
-.planner-entry strong { font-size:var(--step--1); color:var(--text-100); }
-.planner-entry p { margin:var(--space-1) 0 0; color:var(--text-400); font-size:var(--step--2); }
-.planner-entry > .btn { flex:none; }
-@media (max-width:480px) { .planner-entry > div { flex-basis:calc(100% - 42px); } .planner-entry > .btn { width:100%; } }
+.pair-meetup-entry { margin-inline:var(--space-4); }
 .thread {
   display: flex;
   flex-direction: column;
@@ -813,8 +804,8 @@ watch(() => props.id, async () => {
 }
 
 .bubble--mine {
-  background: linear-gradient(145deg, var(--accent-500), var(--accent-600));
-  color: #fff;
+  background: linear-gradient(145deg, var(--action-start), var(--action-end));
+  color: var(--on-action);
   border-bottom-left-radius: var(--radius-lg);
   border-bottom-right-radius: var(--radius-sm);
 }
@@ -869,6 +860,7 @@ watch(() => props.id, async () => {
 .meta__edited {
   font-style: italic;
 }
+.bubble--mine .meta { opacity:1; color:var(--on-action); }
 
 /* Ticks sit in the bubble's own colour until they turn read, when they take
    a distinct accent — the colour change is what the eye catches, not the
@@ -1024,8 +1016,8 @@ watch(() => props.id, async () => {
   height: 2.75rem;
   border-radius: 50%;
   border: 0;
-  background: var(--accent-500);
-  color: #fff;
+  background: var(--action-start);
+  color: var(--on-action);
   font-size: var(--step-1);
   cursor: pointer;
   transition: transform var(--dur-fast) var(--ease-spring);

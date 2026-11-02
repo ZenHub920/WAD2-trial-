@@ -87,7 +87,7 @@ test('planner mutations invalidate only current connected-group members after co
     }
     assert.doesNotMatch(JSON.stringify(batch), /private-origin|latitude|longitude|actorId|body|title/);
   }
-  const created = await call('/meetups', 'friendA', 'POST', { connectionId, title: 'Private title', startsAt, endsAt });
+  const created = await call('/meetups', 'hostA', 'POST', { connectionId, title: 'Private title', startsAt, endsAt });
   assert.equal(created.status, 200);
   const id = created.body.meetup.id;
   takeEvents(id);
@@ -102,7 +102,7 @@ test('planner mutations invalidate only current connected-group members after co
   const beforeComment = repos.meetups.access('hostA', id).version;
   assert.equal((await call(`/meetups/${id}/comments`, 'friendA', 'POST', { body: 'Private discussion' })).status, 200); takeEvents(id);
   assert.equal(repos.meetups.access('hostA', id).version, beforeComment, 'comments still notify without revising the plan');
-  assert.equal((await call(`/meetups/${id}/propose`, 'friendA', 'POST', { placeId: place.body.place.id, startsAt, version: beforeComment })).status, 200); takeEvents(id);
+  assert.equal((await call(`/meetups/${id}/propose`, 'hostA', 'POST', { placeId: place.body.place.id, startsAt, version: beforeComment })).status, 200); takeEvents(id);
   const version = repos.meetups.access('hostA', id).version;
   const first = await call(`/meetups/${id}/approve`, 'hostA', 'POST', { version });
   assert.equal(first.body.approval.confirmed, false); takeEvents(id);

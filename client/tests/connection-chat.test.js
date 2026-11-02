@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises } from '@vue/test-utils';
 import ConnectionChannelView from '../src/views/ConnectionChannelView.vue';
 import { api } from '../src/api.js';
+import { invalidateMeetupSummaries } from '../src/composables/useMeetupSummaries.js';
 import { button, mountPage } from './helpers.js';
 vi.mock('../src/api.js', async original => ({ ...await original(), api: {
   connectionChannel: vi.fn(), readConnectionChannel: vi.fn(), sendConnectionChannelMessage: vi.fn(),
+  meetups: vi.fn(), meetupContext: vi.fn(),
 } }));
 vi.mock('../src/auth.js', async () => {
   const { ref } = await import('vue');
@@ -24,9 +26,14 @@ const channel = messages => ({
   members: [{ id: 'user-1', displayName: 'Alex', partyId: 'group-a' }, { id: 'user-2', displayName: 'Sam', partyId: 'group-b' }],
   messages, page: { nextCursor: null }, background: 'default',
 });
-beforeEach(() => { vi.resetAllMocks(); api.readConnectionChannel.mockResolvedValue({}); });
+beforeEach(() => {
+  vi.resetAllMocks(); invalidateMeetupSummaries(); api.readConnectionChannel.mockResolvedValue({});
+  api.meetups.mockResolvedValue({ meetups: [{ id: 'shared-plan', title: 'Shared group meetup', status: 'planning',
+    scope: { connectionId: 'connection-1' }, isHistorical: false, hasAvailability: false,
+    participantCount: 2, availabilityParticipantCount: 1, capabilities: { canApprove: false } }] });
+});
 describe('connected groups shared chat', () => {
-  it('shows both groups and members and opens their planner with a button', async () => {
+  it('shows both groups and members and opens their existing scoped plan', async () => {
     api.connectionChannel.mockResolvedValue({ channel: channel([]) });
     const { wrapper, router } = await mountPage(ConnectionChannelView, { props: { id: 'connection-1' } });
     expect(wrapper.text()).toContain('Current members of Alpha and Beta share this room.');
@@ -34,9 +41,13 @@ describe('connected groups shared chat', () => {
     expect(wrapper.get('[aria-label="Shared chat members"]').text()).toContain('Alex');
     expect(wrapper.get('[aria-label="Shared chat members"]').text()).toContain('Sam');
     expect(api.readConnectionChannel).toHaveBeenCalledWith('connection-1');
-    await button(wrapper, 'Plan meetup').trigger('click');
+    const action = wrapper.get('[aria-label="Meetup planner for both connected groups"] a.btn');
+    expect(action.text()).toBe('Share availability');
+    expect(action.attributes('href')).toBe('/meetups/shared-plan?from=conversation#meetup-availability');
+    expect(api.meetupContext).not.toHaveBeenCalled();
+    await action.trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.fullPath).toBe('/meetups?connectionId=connection-1');
+    expect(router.currentRoute.value.fullPath).toBe('/meetups/shared-plan?from=conversation#meetup-availability');
   });
   it('sends a reply to the selected message and displays the saved result', async () => {
     api.connectionChannel.mockResolvedValue({ channel: channel([message()]) });

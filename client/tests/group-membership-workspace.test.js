@@ -4,6 +4,8 @@ import GroupMembershipView from '../src/views/GroupMembershipView.vue';
 import { api } from '../src/api.js';
 import { button, mountPage } from './helpers.js';
 
+vi.mock('../src/chatLive.js', () => ({ onChatEvent: () => () => {} }));
+
 vi.mock('../src/api.js', async original => ({ ...await original(), api: {
   groupMembership: vi.fn(), renameGroup: vi.fn(), configureGroup: vi.fn(),
 } }));

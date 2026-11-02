@@ -84,8 +84,9 @@ export function createDeliveryService({ db, repos, webPush, env = process.env, n
     const created = Date.parse(`${row.created_at.replace(' ','T')}Z`);
     if (!Number.isFinite(created) || now()-created > DAY || (row.category==='chat' && !accessibleChat(user,row.resource_path))) return null;
     if (row.category==='meetup') {
-      const id = /^\/meetups\/([^/]+)$/.exec(row.resource_path)?.[1];
-      if (id) try { repos.meetups.access(user,id); } catch { return null; }
+      const id = /^\/meetups\/([^/?#]+)(?:#meetup-(?:availability|places|review))?$/.exec(row.resource_path)?.[1];
+      if (!id) return null;
+      try { repos.meetups.access(user,decodeURIComponent(id)); } catch { return null; }
     }
     // The inbox keeps useful titles, but lock-screen previews never reveal names,
     // private group titles, chat contents or precise meeting details.
@@ -152,7 +153,7 @@ export function createDeliveryService({ db, repos, webPush, env = process.env, n
     }
     for (const m of db.prepare(`SELECT * FROM meetups WHERE status='confirmed' AND selected_start>? AND selected_start<=?`)
       .all(time,time+3600000)) for (const user of repos.meetups.participants(m))
-        notify(user,'meetup',`reminder:meetup:${m.id}:${m.version}`,'Your meetup starts within an hour',`/meetups/${m.id}`);
+        notify(user,'meetup',`reminder:meetup:${m.id}:${m.version}`,'Your meetup starts within an hour',`/meetups/${encodeURIComponent(m.id)}#meetup-review`);
     // Limit feedback reminders to recent concerts and ask the existing eligibility
     // service so former members and people who already rated cannot be nagged.
     const users = db.prepare(`SELECT DISTINCT user_id FROM (
@@ -221,7 +222,7 @@ export function createDeliveryService({ db, repos, webPush, env = process.env, n
           db.transaction(()=>{
             for(const user of repos.meetups.participants(current))
               notify(user,'meetup',`weather:meetup:${m.id}:${m.version}`,
-                forecast.precision === 'local_area' ? 'Rain is forecast near your meetup; check your plan' : 'Rain is forecast in Singapore; check your meetup plan',`/meetups/${m.id}`);
+                forecast.precision === 'local_area' ? 'Rain is forecast near your meetup; check your plan' : 'Rain is forecast in Singapore; check your meetup plan',`/meetups/${encodeURIComponent(m.id)}#meetup-review`);
           }).immediate();
         }
       },{intervalMs});

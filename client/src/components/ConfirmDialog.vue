@@ -133,10 +133,10 @@ function onKeydown(event) {
   overflow-y: auto;
   overflow-wrap: anywhere;
   padding: var(--space-6);
-  border: 1px solid var(--panel-edge);
+  border: 1px solid var(--floating-edge);
   border-radius: var(--radius-lg);
-  background: var(--ink-800);
-  box-shadow: inset 0 1px 0 var(--panel-highlight), var(--shadow-lg);
+  background: var(--surface-floating);
+  box-shadow: var(--floating-shadow);
 }
 
 .confirm__title {
@@ -161,7 +161,7 @@ function onKeydown(event) {
 }
 
 .confirm-shell-enter-active { transition: opacity 160ms var(--ease-out); }
-.confirm-shell-enter-active .confirm__panel { transition: transform 220ms var(--ease-settle); }
+.confirm-shell-enter-active .confirm__panel { transition: transform var(--dur-panel) var(--ease-settle); }
 .confirm-shell-leave-active { pointer-events: none; transition: opacity 120ms var(--ease-out); }
 .confirm-shell-enter-from, .confirm-shell-leave-to { opacity: 0; }
 .confirm-shell-enter-from .confirm__panel { transform: translateY(10px) scale(.985); }

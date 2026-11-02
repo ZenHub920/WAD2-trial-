@@ -2,6 +2,8 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, LABELS, SECTION_OPTIONS, ARRIVAL_OPTIONS } from '../api.js';
+import { useMeetupSummaries } from '../composables/useMeetupSummaries.js';
+import { meetupDestination, meetupActionForScope, meetupNeedsAttention, isMeetupHistorical } from '../utils/meetupSummaries.js';
 import { filterGroups } from '../groupFilters.js';
 import GroupFilters from '../components/GroupFilters.vue';
 import GroupListingCard from '../components/GroupListingCard.vue';
@@ -19,6 +21,11 @@ import '../assets/groups.css';
 import { currentUser } from '../auth.js';
 
 const route = useRoute(), router = useRouter();
+const { plans: meetupPlans } = useMeetupSummaries();
+const meetupAttentionCount = computed(() => meetupPlans.value.filter(meetupNeedsAttention).length);
+const upcomingMeetupCount = computed(() => meetupPlans.value.filter(plan => plan.status === 'confirmed' && !isMeetupHistorical(plan)).length);
+const meetupLink = scope => meetupDestination(meetupPlans.value, scope);
+const meetupLabel = scope => meetupActionForScope(meetupPlans.value, scope);
 const hosted = ref([]), candidates = ref([]), connections = ref([]), joins = ref([]);
 const attendance = ref([]);
 const automaticOffers = ref([]);
@@ -245,7 +252,7 @@ async function host() {
         <p v-else-if="mode === 'create'">Start with a draft, then invite friends and publish when your group is ready.</p>
         <p v-else>Meet another group at the same concert. Connecting groups does not merge their members.</p>
       </div>
-      <RouterLink v-if="mode === 'dashboard' && preferencesReady" :to="viewLink('create')" class="btn btn--primary">Create a group</RouterLink>
+      <div v-if="mode === 'dashboard'" class="group-actions"><RouterLink to="/meetups" class="btn btn--ghost">My meetups</RouterLink><RouterLink v-if="preferencesReady" :to="viewLink('create')" class="btn btn--primary">Create a group</RouterLink></div>
     </header>
     <GroupPreferencesGate :summary="mode === 'dashboard'" @saved="retry">
     <template #before><GroupNavigation /></template>
@@ -302,6 +309,7 @@ async function host() {
         <a href="#owned-heading"><span class="workspace-overview__value">{{ activeGroups.length + joinedGroups.length }}</span><span>Your active groups<small>Chat, plan and manage</small></span></a>
         <a v-if="admissionQueues.length || historicalJoins.length" href="#join-requests" :class="{'workspace-overview__attention':incomingCount}"><span class="workspace-overview__value">{{ incomingCount }}</span><span>Requests &amp; offers<small>{{ incomingCount ? 'Review in arrival order' : 'View past requests' }}</small></span></a>
         <a v-if="incoming.length || outgoing.length || accepted.length" href="#group-connections"><span class="workspace-overview__value">{{ accepted.length }}</span><span>Group connections<small>{{ incoming.length ? `${incoming.length} invitations need a reply` : 'Invitations and shared chats' }}</small></span></a>
+        <RouterLink v-if="meetupAttentionCount || upcomingMeetupCount" to="/meetups" :class="{ 'workspace-overview__attention': meetupAttentionCount }"><span class="workspace-overview__value">{{ meetupAttentionCount || upcomingMeetupCount }}</span><span>Meetup plans<small>{{ meetupAttentionCount ? `${meetupAttentionCount} need your attention` : `${upcomingMeetupCount} upcoming confirmed` }}</small></span></RouterLink>
       </nav>
       <template v-if="mode === 'dashboard' || !sourceGroup">
         <p v-if="mode === 'connections'" class="group-muted" role="status">{{ route.query.groupId ? 'This group is unavailable, cancelled, or not owned by you. Choose an active group below.' : 'Choose the group you want to connect with other groups.' }}</p>
@@ -320,7 +328,7 @@ async function host() {
               <div class="owned-card__actions">
                 <RouterLink v-if="mode === 'dashboard'" :to="`/groups/${encodeURIComponent(g.id)}/channel`" class="btn" :class="g.settings?.published ? 'btn--primary' : 'btn--ghost'">Open group chat</RouterLink>
                 <RouterLink :to="mode === 'connections' ? viewLink('connections', g) : `/groups/${encodeURIComponent(g.id)}/members`" class="btn" :class="mode === 'connections' || !g.settings?.published ? 'btn--primary' : 'btn--ghost'">{{ mode === 'connections' ? 'Connect this group' : 'Manage group' }}</RouterLink>
-                <button type="button" class="btn btn--ghost" @click="router.push({ path: '/meetups', query: { partyId: g.id } })">Plan meetup</button>
+                <button type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: g.id }))">{{ meetupLabel({ partyId: g.id }) }}</button>
               </div>
             </article>
           </div>
@@ -339,7 +347,7 @@ async function host() {
               <div class="owned-card__actions">
                 <RouterLink :to="{path:'/messages',query:{tab:'groups'}}" class="btn btn--primary">Group messages</RouterLink>
                 <RouterLink :to="`/groups/${encodeURIComponent(g.id)}/members`" class="btn btn--ghost">View group</RouterLink>
-                <button type="button" class="btn btn--ghost" @click="router.push({ path: '/meetups', query: { partyId: g.partyId ?? g.id } })">Plan meetup</button>
+                <button type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: g.partyId ?? g.id }))">{{ meetupLabel({ partyId: g.partyId ?? g.id }) }}</button>
               </div>
             </article>
           </div>
@@ -367,7 +375,7 @@ async function host() {
           <p>{{ sourceGroup.eventDate }} · {{ sectionName(sourceGroup.section) }} · {{ sourceGroup.memberCount }} {{ sourceGroup.memberCount === 1 ? 'member' : 'members' }}</p>
           <p v-if="!canConnect" class="group-muted">Publish this group and enable “Open to meeting other groups” in Manage group before sending invitations.</p>
           <p v-else class="group-muted">Open to meeting other groups at this concert.</p>
-          <div class="group-actions"><RouterLink :to="`/groups/${encodeURIComponent(sourceId)}/members`" class="btn btn--ghost">Manage group</RouterLink><button type="button" class="btn btn--ghost" @click="router.push({ path: '/meetups', query: { partyId: sourceId } })">Plan meetup</button></div>
+          <div class="group-actions"><RouterLink :to="`/groups/${encodeURIComponent(sourceId)}/members`" class="btn btn--ghost">Manage group</RouterLink><button type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: sourceId }))">{{ meetupLabel({ partyId: sourceId }) }}</button></div>
         </section>
         <template v-if="canConnect">
           <section class="card group-panel"><h2>Find another group</h2><GroupFilters :filters="filters" /></section>
@@ -397,7 +405,7 @@ async function host() {
         <div class="connected">
           <h3 class="invites__title">Connected</h3>
           <p v-if="!accepted.length" class="group-muted">No connected groups yet. Publish your group and invite another group to connect.</p>
-          <article v-for="c in accepted" :key="c.id" class="connection"><span class="connection-state connection-state--accepted">Groups connected</span><p class="invite__who">{{ describe(c) }}</p><details v-if="c.partyA.notes || c.partyB.notes" class="connection-notes"><summary>Host notes</summary><p v-if="c.partyA.notes" class="group-notes"><strong>{{ c.partyA.hostName }}:</strong> {{ c.partyA.notes }}</p><p v-if="c.partyB.notes" class="group-notes"><strong>{{ c.partyB.hostName }}:</strong> {{ c.partyB.notes }}</p></details><div class="connection__foot"><span class="connection__since">Connected {{ whenConnected(c.respondedAt) }}</span><RouterLink class="btn btn--primary" :to="`/groups/connections/${encodeURIComponent(c.id)}/channel`">Open shared chat</RouterLink><button type="button" class="btn btn--ghost" @click="router.push({ path: '/meetups', query: { connectionId: c.id } })">Plan meetup</button></div></article>
+          <article v-for="c in accepted" :key="c.id" class="connection"><span class="connection-state connection-state--accepted">Groups connected</span><p class="invite__who">{{ describe(c) }}</p><details v-if="c.partyA.notes || c.partyB.notes" class="connection-notes"><summary>Host notes</summary><p v-if="c.partyA.notes" class="group-notes"><strong>{{ c.partyA.hostName }}:</strong> {{ c.partyA.notes }}</p><p v-if="c.partyB.notes" class="group-notes"><strong>{{ c.partyB.hostName }}:</strong> {{ c.partyB.notes }}</p></details><div class="connection__foot"><span class="connection__since">Connected {{ whenConnected(c.respondedAt) }}</span><RouterLink class="btn btn--primary" :to="`/groups/connections/${encodeURIComponent(c.id)}/channel`">Open shared chat</RouterLink><button type="button" class="btn btn--ghost" @click="router.push(meetupLink({ connectionId: c.id }))">{{ meetupLabel({ connectionId: c.id }) }}</button></div></article>
         </div>
       </section>
     </template>

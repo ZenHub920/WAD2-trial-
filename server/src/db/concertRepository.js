@@ -7,9 +7,9 @@ export function createConcertRepo(db) {
       const id = data.id ?? `c_${randomUUID().slice(0, 8)}`;
       db.prepare(`
         INSERT INTO concerts (id, artist, tour_name, venue, city, event_date,
-                              doors_time, hero_image_url, blurb, matching_closes_at)
+                              doors_time, hero_image_url, blurb, matching_closes_at,event_time,event_timezone)
         VALUES (@id, @artist, @tour_name, @venue, @city, @event_date,
-                @doors_time, @hero_image_url, @blurb, @matching_closes_at)
+                @doors_time, @hero_image_url, @blurb, @matching_closes_at,@event_time,@event_timezone)
       `).run({
         id,
         artist: data.artist,
@@ -21,6 +21,8 @@ export function createConcertRepo(db) {
         hero_image_url: data.hero_image_url ?? null,
         blurb: data.blurb ?? null,
         matching_closes_at: data.matching_closes_at ?? null,
+        event_time: data.event_time ?? null,
+        event_timezone: data.event_timezone ?? null,
       });
       return this.findById(id);
     },

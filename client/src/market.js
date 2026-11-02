@@ -122,8 +122,10 @@ export function useSavedListings() {
     saved.value = next;
     try {
       localStorage.setItem(SAVED_KEY, JSON.stringify([...next]));
+      return { saved: next.has(id), persisted: true };
     } catch {
       // Storage can be unavailable (private mode); the toggle still works for this visit.
+      return { saved: next.has(id), persisted: false };
     }
   }
 

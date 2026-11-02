@@ -2,6 +2,8 @@
 import { computed, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "../api.js";
+import { useMeetupSummaries } from '../composables/useMeetupSummaries.js';
+import { meetupDestination, meetupActionForScope } from '../utils/meetupSummaries.js';
 import { currentUser } from "../auth.js";
 import LoadingSpinner from "../components/LoadingSpinner.vue";
 import GroupNavigation from "../components/GroupNavigation.vue";
@@ -13,6 +15,9 @@ import GroupPrioritiesSummary from "../components/GroupPrioritiesSummary.vue";
 import "../assets/groups.css";
 const props = defineProps({ id: String, token: String });
 const router = useRouter();
+const { plans: meetupPlans } = useMeetupSummaries();
+const meetupLink = scope => meetupDestination(meetupPlans.value, scope);
+const meetupLabel = scope => meetupActionForScope(meetupPlans.value, scope);
 const settingsPanel = ref(null);
 const group = ref(null),
   error = ref(""),
@@ -172,7 +177,7 @@ async function leave() {
       <section v-if="group" class="member-workspace" aria-label="Selected group links">
         <div class="member-workspace__context"><p class="member-eyebrow">Your group workspace</p><strong>From meeting the group to making a plan.</strong><p>Compare availability, choose a meeting point and coordinate your concert day.</p></div>
         <div class="member-workspace__primary">
-          <button type="button" class="btn btn--primary" @click="router.push({path:'/meetups',query:{partyId:id}})">Plan meetup</button>
+          <button type="button" class="btn btn--primary" @click="router.push(meetupLink({ partyId: id }))">{{ meetupLabel({ partyId: id }) }}</button>
           <RouterLink class="btn btn--ghost" :to="{path:'/messages',query:{tab:'groups'}}">Group messages</RouterLink>
         </div>
         <nav class="member-workspace__links" aria-label="Group management links">

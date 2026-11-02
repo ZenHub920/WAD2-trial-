@@ -2,6 +2,8 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, LABELS, SECTION_OPTIONS, ARRIVAL_OPTIONS } from '../api.js';
+import { useMeetupSummaries } from '../composables/useMeetupSummaries.js';
+import { meetupDestination, meetupActionForScope } from '../utils/meetupSummaries.js';
 import { currentUser, sessionReady } from '../auth.js';
 import GroupFilters from '../components/GroupFilters.vue';
 import GroupListingCard from '../components/GroupListingCard.vue';
@@ -15,6 +17,9 @@ import GroupNavigation from '../components/GroupNavigation.vue';
 import '../assets/groups.css';
 
 const route = useRoute(), router = useRouter();
+const { plans: meetupPlans } = useMeetupSummaries();
+const meetupLink = scope => meetupDestination(meetupPlans.value, scope);
+const meetupLabel = scope => meetupActionForScope(meetupPlans.value, scope);
 const concerts = ref([]), groups = ref([]), saved = ref([]), seeker = ref(null);
 const concertId = ref(typeof route.query.concertId === 'string' ? route.query.concertId : '');
 const concertsLoading = ref(true), loading = ref(false), busy = ref(false);
@@ -203,7 +208,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
         <p class="group-muted">{{ originLabels[currentGroup.assignmentOrigin] ?? 'You’re in' }} · {{ currentGroup.remainingCapacity }} {{ currentGroup.remainingCapacity === 1 ? 'spot' : 'spots' }} still open. You can be in one group per concert.</p>
         <div class="group-actions">
           <RouterLink :to="`/groups/${encodeURIComponent(currentGroup.partyId ?? currentGroup.id)}/members`" class="btn btn--primary">See your group</RouterLink>
-          <button type="button" class="btn btn--ghost" @click="router.push({path:'/meetups',query:{partyId:currentGroup.partyId ?? currentGroup.id}})">Plan meetup</button>
+          <button type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: currentGroup.partyId ?? currentGroup.id }))">{{ meetupLabel({ partyId: currentGroup.partyId ?? currentGroup.id }) }}</button>
         </div>
       </section>
 

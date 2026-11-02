@@ -1,387 +1,63 @@
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
-import { api } from "../api.js";
-import { currentUser } from "../auth.js";
-import LoadingSpinner from "../components/LoadingSpinner.vue";
-import BackLink from "../components/BackLink.vue";
-import MeetupLocationSearch from "../components/MeetupLocationSearch.vue";
-import MeetupAvailabilityGrid from "../components/MeetupAvailabilityGrid.vue";
+import LoadingSpinner from '../components/LoadingSpinner.vue';
+import MeetupOverview from '../components/MeetupOverview.vue';
+import MeetupLocationSearch from '../components/MeetupLocationSearch.vue';
+import MeetupAvailabilityGrid from '../components/MeetupAvailabilityGrid.vue';
 import MeetupTransportPanel from '../components/MeetupTransportPanel.vue';
-import { connectionState, onChatEvent } from '../chatLive.js';
-import "../assets/groups.css";
+import MeetupCreationForm from '../components/MeetupCreationForm.vue';
+import MeetupDiscussionPanel from '../components/MeetupDiscussionPanel.vue';
+import ConfirmDialog from '../components/ConfirmDialog.vue';
+import { useMeetupBoard } from '../composables/useMeetupBoard.js';
+import '../assets/groups.css';
 const props = defineProps({ id: String });
-const route = useRoute(),
-  router = useRouter();
-const board = ref(null),
-  boards = ref([]),
-  error = ref(""),
-  busy = ref(false),
-  loading = ref(true),
-  notice = ref(""),
-  weather = ref(null),
-  rainfall = ref(null),
-  travelRecommendations = ref(null),
-  transport = ref(null),
-  comment = ref(""),
-  slots = ref({});
-const form = reactive({
-  title: "Meet before the concert",
-  startsAt: "",
-  endsAt: "",
-});
-const place = reactive({
-  label: "",
-  latitude: 1.3,
-  longitude: 103.85,
-  sheltered: true,
-});
-const position = reactive({ latitude: 1.3, longitude: 103.85, label: "", travelMode: 'transit' });
-const travelOptions = reactive({ shelteredOnly: false });
-const selectedSlotCount = computed(() => Object.values(slots.value).filter(slot => slot.selected).length);
-const bestSavedOverlap = computed(() => (board.value?.grid ?? []).reduce((best, slot) =>
-  slot.availableCount > (best?.availableCount ?? 0) ? slot : best, null));
-const selectedTimes = computed({
-  get: () => Object.entries(slots.value).filter(([, slot]) => slot.selected).map(([start]) => Number(start)),
-  set: times => {
-    const chosen = new Set(times);
-    for (const [start, slot] of Object.entries(slots.value)) slot.selected = chosen.has(Number(start));
-  },
-});
-const scope = computed(() => Object.fromEntries(['partyId', 'connectionId', 'kakiConversationId']
-  .filter(key => typeof route.query[key] === 'string').map(key => [key, route.query[key]])));
-const plannerSteps = ['availability', 'places', 'review'];
-const stepFromHash = () => plannerSteps.find(step => route.hash === `#meetup-${step}`) ?? 'availability';
-const activeStep = ref(stepFromHash());
-watch(() => route.hash, () => { activeStep.value = stepFromHash(); });
-const savedSlots = ref('[]'), refreshing = ref(false), syncNote = ref('');
-const selectionSnapshot = rows => JSON.stringify(Object.entries(rows).filter(([, slot]) => slot.selected)
-  .map(([start, slot]) => [Number(start), slot.travelMode, slot.latitude, slot.longitude, slot.label]));
-const availabilityDirty = computed(() => selectionSnapshot(slots.value) !== savedSlots.value);
-const liveLabel = computed(() => connectionState.value === 'live' ? 'Live with your group' : 'Keeping your group in sync');
-let alive = true, loadRequest = 0, refreshTimer, pollTimer, stopEvents, refreshQueued = false;
-const context = () => `${props.id ?? ''}:${currentUser.value?.id ?? ''}:${JSON.stringify(scope.value)}`;
-const statuses = { planning: "Collecting availability", proposed: "Awaiting required approvals", confirmed: "Meetup confirmed", cancelled: "Meetup cancelled" };
-const iso = (ms) => new Date(ms).toISOString();
-const time = (ms) =>
-  new Date(ms).toLocaleString("en-SG", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: 'Asia/Singapore',
-  });
-async function load({ preserveDrafts = false } = {}) {
-  const key = context(), request = ++loadRequest;
-  if (props.id) {
-    const data = (await api.meetup(props.id)).meetup;
-    if (!alive || context() !== key || request !== loadRequest) return;
-    const keepDraft = preserveDrafts && availabilityDirty.value;
-    if (board.value?.version !== data.version) {
-      travelRecommendations.value = null; transport.value = null; weather.value = null; rainfall.value = null;
-    }
-    const nextSlots = Object.fromEntries(
-      data.grid.map((s) => {
-        const own = data.availability.find(
-          (a) => a.starts_at <= s.startsAt && a.ends_at >= s.startsAt + 1800000,
-        );
-        return [
-          s.startsAt,
-          {
-            selected: Boolean(own),
-            latitude: own?.latitude ?? null,
-            longitude: own?.longitude ?? null,
-            label: own?.label ?? "",
-            travelMode: own?.travel_mode ?? own?.travelMode ?? 'transit',
-          },
-        ];
-      }),
-    );
-    savedSlots.value = selectionSnapshot(nextSlots);
-    if (keepDraft) for (const start of Object.keys(nextSlots)) if (slots.value[start]) nextSlots[start] = slots.value[start];
-    slots.value = nextSlots;
-    board.value = data;
-    if (data.status === 'cancelled') syncNote.value = 'This plan was cancelled. Your draft has been kept for reference.';
-    else if (keepDraft) syncNote.value = 'Group updates received. Your unsaved availability is kept.';
-    else syncNote.value = '';
-  } else {
-    const data = await api.meetups(scope.value);
-    if (alive && context() === key && request === loadRequest) boards.value = data.meetups;
-  }
-}
-watch(
-  context,
-  async () => {
-    loadRequest++;
-    error.value = "";
-    notice.value = "";
-    board.value = null;
-    activeStep.value = stepFromHash();
-    boards.value = []; slots.value = {}; savedSlots.value = '[]'; syncNote.value = '';
-    busy.value = false; refreshing.value = false; refreshQueued = false; clearTimeout(refreshTimer);
-    comment.value = ''; travelRecommendations.value = null;
-    Object.assign(form, { title: 'Meet before the concert', startsAt: '', endsAt: '' });
-    Object.assign(place, { label: '', latitude: 1.3, longitude: 103.85, sheltered: true });
-    Object.assign(position, { latitude: 1.3, longitude: 103.85, label: '', travelMode: 'transit' });
-    travelOptions.shelteredOnly = false;
-    weather.value = null;
-    rainfall.value = null;
-    transport.value = null;
-    loading.value = true;
-    const key = context();
-    if (!currentUser.value) { loading.value = false; return; }
-    try {
-      await load();
-    } catch (e) {
-      if (context() === key) error.value = e.status === 404 ? "This meetup is unavailable, or you are no longer a participant." : "Could not load your meetup plans. Please try again.";
-    } finally {
-      if (alive && context() === key) loading.value = false;
-    }
-  },
-  { immediate: true },
-);
-async function refreshPlanner() {
-  if (!alive || !currentUser.value || document.visibilityState !== 'visible') return;
-  if (busy.value || refreshing.value) { refreshQueued = true; return; }
-  const key = context();
-  refreshing.value = true;
-  try { await load({ preserveDrafts: true }); }
-  catch (e) {
-    if (context() !== key) return;
-    if ([401, 403, 404].includes(e.status)) {
-      board.value = null; slots.value = {}; savedSlots.value = '[]';
-      error.value = 'This meetup is unavailable, or you are no longer a participant.';
-    } else syncNote.value = 'Live refresh paused. Your draft is safe; use Refresh planner to retry.';
-  } finally {
-    if (context() === key) {
-      refreshing.value = false;
-      if (refreshQueued && !busy.value) scheduleRefresh();
-    }
-  }
-}
-function scheduleRefresh() {
-  refreshQueued = true;
-  clearTimeout(refreshTimer);
-  refreshTimer = setTimeout(() => {
-    if (busy.value || refreshing.value) return;
-    refreshQueued = false;
-    void refreshPlanner();
-  }, 150);
-}
-function showStep(step) {
-  activeStep.value = step;
-  document.getElementById(`meetup-tab-${step}`)?.focus({ preventScroll: true });
-}
-function navigateSteps(event) {
-  let index = plannerSteps.indexOf(activeStep.value);
-  if (event.key === 'ArrowRight') index = (index + 1) % plannerSteps.length;
-  else if (event.key === 'ArrowLeft') index = (index + plannerSteps.length - 1) % plannerSteps.length;
-  else if (event.key === 'Home') index = 0;
-  else if (event.key === 'End') index = plannerSteps.length - 1;
-  else return;
-  event.preventDefault();
-  showStep(plannerSteps[index]);
-}
-onMounted(() => {
-  stopEvents = onChatEvent((type, data) => {
-    if (type === 'ready' || ['group-members', 'connection-members'].includes(type)
-      || (type === 'meetup-updated' && (!props.id || data.meetupId === props.id))) scheduleRefresh();
-  });
-  window.addEventListener('focus', scheduleRefresh);
-  document.addEventListener('visibilitychange', scheduleRefresh);
-  // Reconcile missed events and separate server processes without provider calls.
-  pollTimer = setInterval(scheduleRefresh, 15000);
-});
-onUnmounted(() => {
-  alive = false; loadRequest++; stopEvents?.(); clearTimeout(refreshTimer); clearInterval(pollTimer);
-  window.removeEventListener('focus', scheduleRefresh);
-  document.removeEventListener('visibilitychange', scheduleRefresh);
-});
-async function act(fn, { savingAvailability = false } = {}) {
-  if (busy.value) return;
-  const key = context();
-  busy.value = true;
-  error.value = "";
-  notice.value = "";
-  try {
-    await fn();
-    if (!alive || context() !== key) return;
-    await load({ preserveDrafts: !savingAvailability });
-    if (context() !== key) return;
-    notice.value = "Meetup updated.";
-  } catch (e) {
-    if (!alive || context() !== key) return;
-    error.value = ({
-      invalid_meetup_window: "Choose a window between 30 minutes and 7 days, starting and ending on a half-hour.",
-      stale_meetup_version: "This plan has changed. Your draft is kept; review the refreshed plan and try again.",
-      scope_membership_required: "Only members of this group or conversation can create its meetup.",
-      meetup_cancelled: "This meetup has been cancelled and can no longer be changed.",
-      invalid_place: "Enter a place name and valid latitude and longitude.",
-      invalid_availability: "Check your selected times and location coordinates before saving.",
-    })[e.message] ?? "Could not update this meetup. Please try again.";
-    if (e.message === 'stale_meetup_version') await refreshPlannerAfterConflict();
-  } finally {
-    if (context() === key) {
-      busy.value = false;
-      if (refreshQueued) scheduleRefresh();
-    }
-  }
-}
-async function discardAvailability() {
-  if (busy.value) return;
-  const key = context(); busy.value = true;
-  try { await load(); }
-  catch { if (context() === key) error.value = 'Could not reload your saved availability. Please try again.'; }
-  finally { if (context() === key) busy.value = false; }
-}
-async function refreshPlannerAfterConflict() {
-  try { await load({ preserveDrafts: true }); }
-  catch { /* Keep the original conflict and the draft available for retry. */ }
-}
-async function create() {
-  await act(async () => {
-    const scope = {};
-    for (const k of ["partyId", "connectionId", "kakiConversationId"])
-      if (typeof route.query[k] === "string") scope[k] = route.query[k];
-    const r = await api.createMeetup({
-      ...form,
-      ...scope,
-      startsAt: new Date(`${form.startsAt}+08:00`).toISOString(),
-      endsAt: new Date(`${form.endsAt}+08:00`).toISOString(),
-    });
-    await router.push(`/meetups/${r.meetup.id}`);
-  });
-}
-async function saveAvailability() {
-  await act(() =>
-    api.meetupAvailability(
-      props.id,
-      Object.entries(slots.value)
-        .filter(([, s]) => s.selected)
-        .map(([start, s]) => ({
-          startsAt: iso(Number(start)),
-          endsAt: iso(Number(start) + 1800000),
-          travelMode: s.travelMode ?? 'transit',
-          ...(s.latitude !== null && s.longitude !== null
-            ? { latitude: s.latitude, longitude: s.longitude, label: s.label }
-            : {}),
-        })),
-      board.value.version,
-    ),
-    { savingAvailability: true },
-  );
-}
-function assignLocation() {
-  for (const slot of Object.values(slots.value))
-    if (slot.selected)
-      Object.assign(slot, {
-        latitude: position.latitude,
-        longitude: position.longitude,
-        label: position.label,
-      });
-}
-function assignTravelMode() {
-  for (const slot of Object.values(slots.value))
-    if (slot.selected) slot.travelMode = position.travelMode;
-}
-async function getWeather() {
-  if (busy.value) return;
-  const key = context(), version = board.value?.version, id = props.id;
-  busy.value = true;
-  error.value = "";
-  try {
-    const { environment } = await api.meetupEnvironment(id);
-    if (!alive || context() !== key || board.value?.version !== version) return;
-    weather.value = environment.forecast;
-    rainfall.value = environment.rainfall;
-  } catch (e) {
-    if (alive && context() === key && board.value?.version === version) error.value = "Could not load the weather forecast. Please try again.";
-  } finally {
-    if (context() === key) { busy.value = false; if (refreshQueued) scheduleRefresh(); }
-  }
-}
-async function getTravelSuggestions() {
-  if (busy.value) return;
-  const key = context(), version = board.value?.version, id = props.id;
-  busy.value = true; error.value = '';
-  try {
-    const data = await api.meetupTravelSuggestions(id, { ...travelOptions });
-    if (alive && context() === key && board.value?.version === version) travelRecommendations.value = data.recommendations;
-  }
-  catch { if (alive && context() === key && board.value?.version === version) error.value = 'Could not refresh travel options. Reload the plan if it has changed.'; }
-  finally { if (context() === key) { busy.value = false; if (refreshQueued) scheduleRefresh(); } }
-}
-async function getParking() {
-  if (busy.value) return;
-  const key = context(), version = board.value?.version, id = props.id;
-  busy.value = true; error.value = '';
-  try {
-    const data = await api.meetupTransport(id, { parkingOnly: 'true' });
-    if (alive && context() === key && board.value?.version === version) transport.value = data.transport;
-  }
-  catch { if (alive && context() === key && board.value?.version === version) error.value = 'Could not check nearby parking. Please try again.'; }
-  finally { if (context() === key) { busy.value = false; if (refreshQueued) scheduleRefresh(); } }
-}
+const {
+  route, router, currentUser, context, board, boards, error, busy, loading, creationContext,
+  scope, hasActiveBoards, showCreation, creatingAdditional, returnRoute, returnLabel,
+  weather, rainfall, travelRecommendations, transport, comment, slots, place, position, travelOptions,
+  feedback, failures, placeSearchKey, confirmAction, capabilities, contributionsLocked, selectedOrigins,
+  selectedSlotCount, bestSavedOverlap, selectedTimes, activeStep, availabilityDirty, refreshing, syncNote,
+  liveLabel, statuses, time, validCoordinates, recommendedOptions, hasSavedAvailability, recommendationEmpty,
+  refreshPlanner, showStep, navigateSteps, create, saveAvailability, discardAvailability, assignJourney,
+  addPlace, vote, propose, approve, requestOrganizerAction, organizerAction, postComment, getWeather, getTravelSuggestions, getParking,
+ } = useMeetupBoard(props);
 </script>
 <template>
-  <div class="container groups-page meetup-page">
-    <BackLink fallback="/groups/connect" fallback-label="Back to My groups" />
+  <div class="container groups-page meetup-page" :class="{ 'meetup-page--board': board }">
+    <RouterLink class="back-link" :to="returnRoute"><span aria-hidden="true">&larr;</span> {{ returnLabel }}</RouterLink>
     <header class="page-banner">
-      <h1>{{ board?.title ?? "Meetup planning" }}</h1>
-      <p>Find a time together, compare places and agree on the plan.</p>
+      <h1>{{ board?.title ?? (Object.keys(scope).length ? "Plan with your conversation" : "My meetups") }}</h1>
+      <p>{{ board ? "Find a time together, compare places and agree on the plan." : "Your concert plans, required approvals and next steps in one place." }}</p>
     </header>
     <nav v-if="id" class="group-actions">
-      <button type="button" class="btn btn--ghost" @click="router.push('/meetups')">All meetup plans</button>
+      <button type="button" class="btn btn--ghost" @click="router.push('/meetups')">All plans</button>
       <button type="button" class="btn btn--ghost" :disabled="refreshing || busy" @click="refreshPlanner">Refresh planner</button>
       <span class="meetup-live" role="status"><span aria-hidden="true"></span>{{ liveLabel }}{{ refreshing ? ' · Updating…' : '' }}</span>
     </nav>
     <p v-if="error" class="group-error" role="alert">{{ error }}</p>
-    <p v-if="notice" class="group-success" role="status">{{ notice }}</p>
     <p v-if="busy" class="loading-state" role="status"><LoadingSpinner />Updating your meetup plan…</p>
     <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading meetup plans…</p>
     <template v-else-if="!id"
       ><p>
         Plan a meetup with your group or a mutual companion match.
       </p>
-      <form
-        v-if="
-          route.query.partyId ||
-          route.query.connectionId ||
-          route.query.kakiConversationId
-        "
-        class="card group-panel"
-        @submit.prevent="create"
-      >
-        <h2>Create a meetup plan</h2>
-        <p>Choose a 30-minute to 7-day window, using half-hour increments. Your companions can then share their availability.</p>
-        <label
-          >Title<input v-model="form.title" maxlength="120" required /></label
-        ><label
-          >First possible meeting time (Singapore time)<input
-            v-model="form.startsAt"
-            type="datetime-local"
-            step="1800"
-            required /></label
-        ><label
-          >End of availability window (Singapore time)<input
-            v-model="form.endsAt"
-            type="datetime-local"
-            step="1800"
-            required /></label
-        ><button class="btn btn--primary" :disabled="busy">
-          Create planning board
-        </button>
-      </form>
-      <div class="group-grid"><article v-for="m in boards" :key="m.id" class="card group-panel"><h2>{{ m.title }}</h2><p class="group-muted">{{ statuses[m.status] ?? "Plan updated" }}</p><button type="button" class="btn btn--primary" @click="router.push(`/meetups/${m.id}`)">Open planner</button></article></div>
+      <div v-if="creationContext" class="meetup-overview-context"><strong>{{ creationContext.concert?.artist }}</strong><span>{{ creationContext.scopeLabel }}</span><RouterLink v-if="hasActiveBoards" to="/meetups">All my meetup plans</RouterLink></div>
+      <MeetupOverview :plans="boards" :scoped="Boolean(creationContext)" />
+      <div v-if="creationContext?.capabilities.canCreate && hasActiveBoards" class="meetup-additional-plan"><p>Continue an existing plan above. Need a genuinely separate arrangement?</p><button type="button" class="btn btn--ghost" :disabled="busy" :aria-expanded="creatingAdditional" aria-controls="meetup-creation-area" @click="creatingAdditional = !creatingAdditional">{{ creatingAdditional ? 'Keep existing plans' : 'Create a separate plan' }}</button></div>
+      <div id="meetup-creation-area"><MeetupCreationForm v-if="showCreation" :key="context()" :context="creationContext" :additional-plan="hasActiveBoards" :busy="busy" :error="failures.creation" @submit="create" /></div>
+      <p v-if="creationContext && !creationContext.capabilities.canCreate && !boards.length" class="meetup-role-note">Your group host creates the planning board. You can contribute availability, places and discussion once it is open.</p>
       <p v-if="!boards.length && !error">No meetup plans yet. Start a plan from your group or an active companion conversation.</p>
       </template>
     <template v-else-if="board"
       ><div class="meetup-context"><span>{{ board.participantCount }} participants</span><strong>{{ statuses[board.status] ?? "Plan updated" }}</strong>
-      <details v-if="board.status !== 'cancelled' && (board.creator_id === currentUser?.id || board.requiredApprovers.includes(currentUser?.id))" class="meetup-plan-options"><summary>Plan options</summary><button
+      <details v-if="capabilities.canCancel || capabilities.canReopen" class="meetup-plan-options"><summary>Plan options</summary><div class="group-actions"><button v-if="capabilities.canReopen" type="button" class="btn btn--ghost" :disabled="busy" @click="requestOrganizerAction('reopen')">Reopen planning</button><button v-if="capabilities.canCancel"
         class="btn btn--danger"
         :disabled="busy"
-        @click="act(() => api.cancelMeetup(id, board.version))"
+        @click="requestOrganizerAction('cancel')"
       >
         Cancel meetup
-      </button></details></div>
+      </button></div></details></div>
+      <p v-if="board.status === 'proposed' || board.status === 'confirmed'" class="meetup-role-note">{{ board.status === 'confirmed' ? 'This plan is confirmed.' : 'This proposal is awaiting organizer approval.' }} Availability, suggestions and votes stay locked until an organizer explicitly reopens planning. You can still discuss changes.</p>
+      <p v-else-if="board.status === 'planning' && !capabilities.isOrganizer" class="group-muted">Share your availability, suggest places and vote. Your group host will propose and approve the final plan.</p>
       <nav class="meetup-steps" role="tablist" aria-label="Meeting planning steps">
         <button id="meetup-tab-availability" type="button" role="tab" data-planner-step="availability" aria-controls="meetup-availability" :aria-selected="activeStep === 'availability'" :tabindex="activeStep === 'availability' ? 0 : -1" @click="showStep('availability')" @keydown="navigateSteps"><span>1</span><strong>Find a time</strong><small>Paint your availability</small></button>
         <button id="meetup-tab-places" type="button" role="tab" data-planner-step="places" aria-controls="meetup-places" :aria-selected="activeStep === 'places'" :tabindex="activeStep === 'places' ? 0 : -1" @click="showStep('places')" @keydown="navigateSteps"><span>2</span><strong>Choose a place</strong><small>Compare everyone's journey</small></button>
@@ -394,7 +70,7 @@ async function getParking() {
         <p class="group-muted">Mark your free times. Stronger green means more people can make it.</p>
         <div class="meetup-availability__summary"><strong>{{ selectedSlotCount }} half-hour {{ selectedSlotCount === 1 ? 'block' : 'blocks' }} selected</strong><span :class="{ 'meetup-unsaved': availabilityDirty }">{{ availabilityDirty ? 'Unsaved changes' : 'Your saved availability' }}</span></div>
         <div class="meetup-time-layout">
-          <MeetupAvailabilityGrid :grid="board.grid" :participant-count="board.participantCount" v-model:selected="selectedTimes" :disabled="busy || board.status === 'cancelled'" />
+          <MeetupAvailabilityGrid :grid="board.grid" :participant-count="board.participantCount" v-model:selected="selectedTimes" :disabled="busy || contributionsLocked" />
           <aside class="meetup-time-context" aria-labelledby="meetup-group-availability-heading">
             <h3 id="meetup-group-availability-heading">Group availability</h3>
             <p class="group-muted">{{ board.participantCount }} {{ board.participantCount === 1 ? 'person' : 'people' }} on this plan</p>
@@ -405,170 +81,116 @@ async function getParking() {
             <p class="meetup-time-context__note">Group totals reflect saved answers. Your painted times join the grid when you save.</p>
           </aside>
         </div>
-        <details class="meetup-disclosure">
-        <summary>Add your journey <span>Optional · Private starting place</span></summary>
-        <p class="group-muted">Add a starting place and travel method to help compare everyone's journey.</p>
-        <fieldset class="meetup-travel-fields" :disabled="busy || board.status === 'cancelled'">
-        <legend>Where will you be travelling from?</legend>
-        <div class="group-controls">
-          <label>Travel method for selected times<select v-model="position.travelMode"><option value="transit">Public transport</option><option value="drive">Car</option></select></label>
-          <button type="button" class="btn btn--ghost" :disabled="busy || !selectedSlotCount" @click="assignTravelMode">Apply travel method to selected times</button>
-        </div>
-        <div class="group-controls">
-          <label
-            >Location label<input
-              v-model="position.label"
-              placeholder="e.g. nearby MRT station" /></label
-          ><label
-            >Latitude<input
-              v-model.number="position.latitude"
-              type="number"
-              min="-90"
-              max="90"
-              step="any" /></label
-          ><label
-            >Longitude<input
-              v-model.number="position.longitude"
-              type="number"
-              min="-180"
-              max="180"
-              step="any"
-          /></label>
-        </div>
-        <MeetupLocationSearch :meetup-id="id" label="Find your approximate starting place" @selected="location => Object.assign(position, location)" />
-        <button class="btn btn--ghost" :disabled="busy || !selectedSlotCount" @click="assignLocation">
-          Apply this location to selected times
-        </button>
-        <p>
-          Starting locations are optional. Use an approximate public place;
-          adjust individual time periods below if your location or travel method changes. Save your selected availability to share these choices with the planner.
-        </p>
-        <details>
-          <summary>Different locations or travel methods during the day</summary>
-          <template v-for="s in board.grid" :key="s.startsAt"
-            ><div v-if="slots[s.startsAt].selected" class="group-controls">
-              <span>{{ time(s.startsAt) }}</span
-              ><label>Travel method<select v-model="slots[s.startsAt].travelMode"><option value="transit">Public transport</option><option value="drive">Car</option></select></label><label>Location label<input v-model="slots[s.startsAt].label" maxlength="150" placeholder="Approximate public place" /></label><label
-                >Latitude<input
-                  v-model.number="slots[s.startsAt].latitude"
-                  type="number"
-                  min="-90"
-                  max="90"
-                  step="any" /></label
-              ><label
-                >Longitude<input
-                  v-model.number="slots[s.startsAt].longitude"
-                  type="number"
-                  min="-180"
-                  max="180"
-                  step="any"
-              /></label></div
-          ></template>
+        <details class="meetup-disclosure meetup-journey">
+          <summary>Your journey to the meetup <span>Optional &middot; Private starting place</span></summary>
+          <p class="group-muted">Use an approximate public place, building, MRT station or postal code. Your starting location stays private.</p>
+          <fieldset class="meetup-travel-fields" :disabled="busy || contributionsLocked">
+            <label>Travel method<select v-model="position.travelMode"><option value="transit">Public transport</option><option value="drive">Car</option></select></label>
+            <MeetupLocationSearch :meetup-id="id" label="Find your approximate starting place" :disabled="busy || contributionsLocked" selection-hint="Selection is not saved. Apply journey to selected times, then save availability and journey." @selected="location => Object.assign(position, location)" />
+            <details class="meetup-manual-entry"><summary>Advanced/manual entry</summary>
+              <div class="group-controls">
+                <label>Location label<input v-model="position.label" maxlength="100" placeholder="e.g. nearby MRT station" /></label>
+                <label>Latitude<input v-model="position.latitude" type="number" min="-90" max="90" step="any" placeholder="No location supplied" /></label>
+                <label>Longitude<input v-model="position.longitude" type="number" min="-180" max="180" step="any" placeholder="No location supplied" /></label>
+              </div>
+            </details>
+            <button type="button" class="btn btn--ghost" :disabled="busy || contributionsLocked || !selectedSlotCount" @click="assignJourney">Apply journey to selected times</button>
+            <p v-if="!selectedSlotCount" class="group-muted">Paint or select times in the grid first, then apply your journey.</p>
+            <p v-else class="group-muted">Without a new starting location, this updates the travel method and keeps each selected time's existing location.</p>
+            <p v-if="feedback.journey" class="group-success" role="status">{{ feedback.journey }}</p>
+            <p v-if="failures.journey" class="group-error" role="alert">{{ failures.journey }}</p>
+            <details class="meetup-slot-overrides"><summary>Different locations or travel methods during the day</summary>
+              <p class="group-muted">Fine-tune individual selected periods. These changes also need saving.</p>
+              <template v-for="s in board.grid" :key="s.startsAt">
+                <div v-if="slots[s.startsAt].selected" class="meetup-slot-override">
+                  <strong>{{ time(s.startsAt) }}</strong>
+                  <div class="group-controls">
+                    <label>Travel method<select v-model="slots[s.startsAt].travelMode"><option value="transit">Public transport</option><option value="drive">Car</option></select></label>
+                    <label>Location label<input v-model="slots[s.startsAt].label" maxlength="100" placeholder="Approximate public place" /></label>
+                  </div>
+                  <details><summary>Manual coordinates for this period</summary><div class="group-controls">
+                    <label>Latitude<input v-model="slots[s.startsAt].latitude" type="number" min="-90" max="90" step="any" /></label>
+                    <label>Longitude<input v-model="slots[s.startsAt].longitude" type="number" min="-180" max="180" step="any" /></label>
+                  </div></details>
+                </div>
+              </template>
+            </details>
+          </fieldset>
         </details>
-        </fieldset>
-        </details>
+        <p class="group-muted meetup-journey-summary">{{ selectedOrigins }} of {{ selectedSlotCount }} selected times have a private starting location. {{ availabilityDirty ? 'Draft changes are not saved yet.' : 'Showing your saved availability and journey.' }}</p>
+        <p v-if="feedback.availability" class="group-success" role="status">{{ feedback.availability }}</p>
+        <p v-if="failures.availability" class="group-error" role="alert">{{ failures.availability }}</p>
         <div class="group-actions meetup-save-bar">
         <button
           class="btn btn--primary"
-          :disabled="busy || board.status === 'cancelled'"
+          :disabled="busy || contributionsLocked"
           @click="saveAvailability"
         >
-          Save selected availability
+          Save availability and journey
         </button>
         <button v-if="availabilityDirty" type="button" class="btn btn--ghost" :disabled="busy" @click="discardAvailability">Discard my changes</button>
         <button type="button" class="btn btn--ghost" @click="showStep('places')">Continue to places <span aria-hidden="true">→</span></button>
         </div>
       </section>
       <div id="meetup-places" v-show="activeStep === 'places'" role="tabpanel" aria-labelledby="meetup-tab-places" class="meetup-workspace meetup-place-workspace">
-      <form
-        class="card group-panel meetup-place-editor"
-        @submit.prevent="act(() => api.proposeMeetupPlace(id, place))"
-      >
+      <form class="card group-panel meetup-place-editor" @submit.prevent="addPlace">
         <span class="meetup-eyebrow">02 / Places &amp; journeys</span>
         <h2>Suggest a meeting place</h2>
-        <p class="group-muted">Search for a public place, or enter its details. Everyone can suggest and vote.</p>
-        <fieldset class="meetup-travel-fields" :disabled="busy || board.status === 'cancelled'">
-        <MeetupLocationSearch :meetup-id="id" @selected="location => Object.assign(place, { label: location.label, latitude: location.latitude, longitude: location.longitude })" />
-        <label
-          >Place name<input v-model="place.label" required maxlength="150"
-        /></label>
-        <div class="group-controls">
-          <label
-            >Latitude<input
-              v-model.number="place.latitude"
-              type="number"
-              min="-90"
-              max="90"
-              step="any"
-              required /></label
-          ><label
-            >Longitude<input
-              v-model.number="place.longitude"
-              type="number"
-              min="-180"
-              max="180"
-              step="any"
-              required
-          /></label>
-        </div>
-        <label class="group-check"
-          ><input v-model="place.sheltered" type="checkbox" />Sheltered
-          place</label
-        ><button class="btn btn--primary" :disabled="busy">Add place</button>
+        <p class="group-muted">Search, select a result, then add it to suggested places. Everyone can contribute while planning is open.</p>
+        <fieldset class="meetup-travel-fields" :disabled="busy || contributionsLocked">
+          <MeetupLocationSearch :meetup-id="id" :reset-key="placeSearchKey" :disabled="busy || contributionsLocked" selection-hint="Selection is not saved. Press Add place to share this suggestion." @selected="location => Object.assign(place, { label: location.label, latitude: location.latitude, longitude: location.longitude })" />
+          <label>Place name<input v-model="place.label" required maxlength="150" /></label>
+          <p v-if="validCoordinates(place)" class="group-muted">Location selected. Add the place to save it for everyone.</p>
+          <details class="meetup-manual-entry"><summary>Advanced/manual entry</summary><p class="group-muted">If search is unavailable, enter the public place name above and both coordinates here.</p><div class="group-controls">
+            <label>Latitude<input v-model="place.latitude" type="number" min="-90" max="90" step="any" /></label>
+            <label>Longitude<input v-model="place.longitude" type="number" min="-180" max="180" step="any" /></label>
+          </div></details>
+          <label class="group-check"><input v-model="place.sheltered" type="checkbox" />Sheltered place</label>
+          <button class="btn btn--primary" :disabled="busy || contributionsLocked">{{ busy ? 'Saving place...' : 'Add place' }}</button>
         </fieldset>
+        <p v-if="failures.places" class="group-error" role="alert">{{ failures.places }}</p>
+        <p v-if="feedback.places" class="group-success" role="status">{{ feedback.places }}</p>
       </form>
+      <section class="card group-panel meetup-suggested-places" aria-labelledby="suggested-places-heading">
+        <h2 id="suggested-places-heading">Suggested meeting places</h2>
+        <p class="group-muted">Saved suggestions stay here even before anyone shares availability.</p>
+        <p v-if="!board.places.length">No places suggested yet. Add a public meeting place above.</p>
+        <article v-for="candidate in board.places" :key="candidate.id" class="meetup-place-row">
+          <div><h3>{{ candidate.label }}</h3><p class="group-muted">{{ candidate.sheltered ? 'Sheltered' : 'Not marked sheltered' }} &middot; {{ candidate.votes ?? 0 }} {{ candidate.votes === 1 ? 'vote' : 'votes' }}<span v-if="candidate.proposed_by === currentUser?.id"> &middot; Suggested by you</span></p></div>
+          <button type="button" class="btn btn--ghost" :disabled="busy || contributionsLocked" :aria-pressed="board.currentVotePlaceId === candidate.id" @click="vote(candidate.id)">{{ board.currentVotePlaceId === candidate.id ? 'Your vote' : 'Vote for place' }}</button>
+        </article>
+      </section>
       <section class="card group-panel meetup-recommendations">
-        <h2>Recommended options</h2>
-        <p class="group-muted">Options consider how many people are available, then compare journeys using each person's saved travel method.</p>
-        <div class="group-controls">
-          <label class="group-check"><input v-model="travelOptions.shelteredOnly" type="checkbox" />Only places marked sheltered</label>
-        </div>
-        <button class="btn btn--ghost" :disabled="busy || board.status === 'cancelled'" @click="getTravelSuggestions">Compare travel options</button>
-        <p v-if="travelRecommendations" class="group-muted" role="status">{{ travelRecommendations.message }}</p>
-        <p v-if="!board.suggestions.length">No meeting options yet. Add a public meeting place and ask participants to save their availability.</p>
-        <article
-          v-for="s in (travelRecommendations?.options ?? board.suggestions)"
-          :key="`${s.placeId}:${s.startsAt}`"
-          class="meetup-option"
-        >
-          <p>
-            {{ s.label }}, {{ time(s.startsAt) }}, {{ s.availableCount }}/{{
-              s.participantCount
-            }}
-            available, {{ s.totalDistanceKm === null ? 'distance unavailable' : `${s.totalDistanceKm} km combined distance` }}
-            ({{ s.locationRespondents }} locations supplied)
-          </p>
-          <p v-if="s.travelModes" class="group-muted">Travel methods: {{ s.travelModes.transit }} by public transport · {{ s.travelModes.drive }} by car.</p>
-          <p v-if="s.totalTravelMinutes !== null && s.totalTravelMinutes !== undefined" class="group-muted">{{ s.totalTravelMinutes }} minutes combined journey time; longest journey {{ s.maximumTravelMinutes }} minutes.</p>
-          <p v-if="s.basis === 'straight_line_distance'" class="group-muted">Straight-line distance estimate. Fresh route times are unavailable for this option.</p>
+        <h2>Recommended meeting times and places</h2>
+        <p class="group-muted">Find times when more people are free, then compare convenient meeting places.</p>
+        <details class="meetup-disclosure"><summary>How recommendations work</summary><ul>
+          <li>More available participants rank higher.</li>
+          <li>Journey times are compared when reliable routes are sufficiently complete. The longest journey helps break ties.</li>
+          <li>Without complete routes, straight-line distances are approximate. Missing journeys never count as zero.</li>
+          <li>Votes and time help break remaining ties. Travel estimates are not guarantees.</li>
+        </ul></details>
+        <label class="group-check"><input v-model="travelOptions.shelteredOnly" type="checkbox" :disabled="busy" @change="travelRecommendations = null" />Only places marked sheltered</label>
+        <button class="btn btn--ghost" :disabled="busy || board.status === 'cancelled' || !hasSavedAvailability || !board.places.length" @click="getTravelSuggestions">Compare travel options</button>
+        <p v-if="failures.recommendations" class="group-error" role="alert">{{ failures.recommendations }}</p>
+        <p v-if="travelRecommendations" class="group-muted" role="status">{{ travelRecommendations.rankingBasis === 'route_times' ? 'Comparing estimated journey times.' : 'Fresh routes are incomplete or unavailable. Comparing approximate distances instead.' }}</p>
+        <p v-if="!recommendedOptions.length" class="meetup-empty-state" role="status">{{ recommendationEmpty }}</p>
+        <article v-for="s in recommendedOptions" :key="`${s.placeId}:${s.startsAt}`" class="meetup-option">
+          <h3>{{ s.label }}</h3><p>{{ time(s.startsAt) }}</p>
+          <div class="group-tags"><span>{{ s.availableCount }} of {{ s.participantCount }} participants available</span><span v-if="s.totalTravelMinutes !== null && s.totalTravelMinutes !== undefined">Estimated journey time: {{ s.totalTravelMinutes }} minutes combined</span><span v-else>{{ s.totalDistanceKm === null ? 'Distance unavailable' : `Approximate distance: ${s.totalDistanceKm} km combined` }}</span></div>
+          <p v-if="s.travelModes" class="group-muted">Travel methods: {{ s.travelModes.transit }} by public transport &middot; {{ s.travelModes.drive }} by car.</p>
+          <p v-if="s.totalTravelMinutes !== null && s.totalTravelMinutes !== undefined" class="group-muted">Longest estimated journey: {{ s.maximumTravelMinutes }} minutes.</p>
+          <p v-if="s.basis === 'straight_line_distance' || s.basis === undefined" class="group-muted">Straight-line distance estimate. Fresh route times are unavailable for this option.</p>
           <div class="group-actions">
-            <button
-              class="btn btn--ghost"
-              :disabled="busy"
-              @click="act(() => api.voteMeetupPlace(id, s.placeId))"
-            >
-              Vote for place</button
-            ><button
-              class="btn btn--primary"
-              :disabled="busy"
-              @click="
-                act(() =>
-                  api.proposeMeetupPlan(id, {
-                    placeId: s.placeId,
-                    startsAt: iso(s.startsAt),
-                    version: board.version,
-                  }),
-                )
-              "
-            >
-              Propose this time &amp; place
-            </button>
+            <button type="button" class="btn btn--ghost" :disabled="busy || contributionsLocked" @click="vote(s.placeId)">Vote for place</button>
+            <button v-if="capabilities.canPropose" type="button" class="btn btn--primary" :disabled="busy" @click="propose(s)">Propose this time &amp; place</button>
           </div>
         </article>
       </section>
       <button type="button" class="btn btn--ghost meetup-review-link" @click="showStep('review')">Review the plan <span aria-hidden="true">→</span></button>
       </div>
       <div id="meetup-review" v-show="activeStep === 'review'" role="tabpanel" aria-labelledby="meetup-tab-review" class="meetup-workspace meetup-review-workspace">
+      <p v-if="feedback.review" class="group-success" role="status">{{ feedback.review }}</p>
+      <p v-if="failures.review" class="group-error" role="alert">{{ failures.review }}</p>
       <section v-if="board.selected_place_id" class="card group-panel meetup-current-proposal">
         <span class="meetup-eyebrow">03 / Group decision</span>
         <h2>Current proposal</h2>
@@ -584,12 +206,11 @@ async function getParking() {
         </p>
         <button
           v-if="
-            board.status === 'proposed' &&
-            board.requiredApprovers.includes(currentUser?.id)
+            capabilities.canApprove
           "
           class="btn btn--success"
           :disabled="busy"
-          @click="act(() => api.approveMeetup(id, board.version))"
+          @click="approve"
         >
           Approve plan</button
         >
@@ -619,41 +240,40 @@ async function getParking() {
       </section>
       <section v-else class="card group-panel meetup-current-proposal"><span class="meetup-eyebrow">03 / Group decision</span><h2>A plan everyone can agree on</h2><p class="group-muted">Choose a suggested time and place first. Your group can then discuss the proposal and give the required approvals.</p><button type="button" class="btn btn--primary" @click="showStep('places')">Choose a time &amp; place</button></section>
       <MeetupTransportPanel :key="`${id}:${currentUser?.id}`" :active="activeStep === 'review'" :meetup-id="id" :concert="board.concert" :plan-version="board.version" :has-meeting-place="Boolean(board.selected_place_id)" />
-      <section class="card group-panel meetup-discussion">
-        <h2>Discuss and revise</h2>
-        <p>
-          Changes to the plan require fresh approvals.
-        </p>
-        <p v-if="!board.comments.length">No discussion yet. Share a suggestion with the other participants.</p>
-        <p v-for="c in board.comments" :key="c.id">
-          <strong>{{ c.name }}:</strong> {{ c.body }}
-        </p>
-        <form
-          @submit.prevent="
-            act(async () => {
-              await api.meetupComment(id, comment);
-              comment = '';
-            })
-          "
-        class="group-panel">
-          <label
-            >Message<textarea
-              v-model="comment"
-              :disabled="busy || board.status === 'cancelled'"
-              maxlength="2000"
-              required
-            /></label
-          ><button class="btn btn--primary" :disabled="busy">Post</button>
-        </form>
-      </section></div></template
+      <MeetupDiscussionPanel v-model="comment" :comments="board.comments" :busy="busy" :can-discuss="capabilities.canDiscuss" :notice="feedback.discussion" :error="failures.discussion" @submit="postComment" /></div></template
     >
+    <ConfirmDialog :open="Boolean(confirmAction)" :busy="busy" :title="confirmAction === 'reopen' ? 'Reopen planning?' : 'Cancel this meetup?'" :body="confirmAction === 'reopen' ? 'The selected time and place will be cleared. Previous approvals will no longer authorize the plan; all required organizers must approve a new proposal.' : 'This meetup will become read-only. Participants will be notified.'" :confirm-label="confirmAction === 'reopen' ? 'Reopen planning' : 'Cancel meetup'" cancel-label="Keep current plan" :danger="confirmAction === 'cancel'" @cancel="confirmAction = null" @confirm="organizerAction" />
   </div>
 </template>
 <style scoped>
+.back-link { display:inline-flex; align-items:center; gap:.5rem; width:fit-content; padding:.5rem 0; color:var(--text-300); font-size:var(--step--1); text-decoration:none; }
+.back-link:hover { color:var(--accent-400); }
+.meetup-overview-context { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1rem; color:var(--text-300); padding-block:.5rem 1rem; border-bottom:var(--border-soft); font-size:var(--step--1); }
+.meetup-overview-context strong { color:var(--text-100); }
+.meetup-overview-context a { margin-left:auto; }
+.meetup-additional-plan { display:flex; flex-wrap:wrap; align-items:center; gap:1rem; padding-top:1rem; border-top:var(--border-soft); }
+.meetup-additional-plan p { flex:1 1 18rem; color:var(--text-300); font-size:var(--step--1); }
+
 .meetup-page {
   max-width: 66rem;
   gap: var(--space-5);
 }
+.meetup-page--board { gap: var(--space-4); }
+.meetup-page--board .page-banner {
+  padding: 1rem 1.25rem;
+  border: var(--border-soft);
+  border-left: 3px solid var(--accent-400);
+  border-radius: var(--radius-md);
+  background: var(--surface-interactive);
+  box-shadow: inset 0 1px 0 var(--panel-highlight);
+}
+.meetup-page--board .page-banner h1 {
+  font-size: clamp(1.45rem, 3vw, 2rem);
+  line-height: 1.2;
+  color: var(--text-100);
+}
+.meetup-page--board .page-banner p { margin-top: .35rem; color: var(--text-300); font-size: var(--step--1); }
+.meetup-page--board .page-banner::before, .meetup-page--board .page-banner::after { display: none; }
 .meetup-context {
   display: flex;
   align-items: center;
@@ -678,14 +298,30 @@ async function getParking() {
   padding: .45rem .2rem;
   color: var(--text-300);
 }
-.meetup-plan-options .btn {
+.meetup-plan-options > .group-actions {
   position: absolute;
   top: 100%;
   right: 0;
   z-index: 4;
   white-space: nowrap;
   box-shadow: var(--shadow-md);
+  padding: .65rem;
+  width: min(19rem, 75vw);
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  background: var(--ink-800);
 }
+.meetup-role-note, .meetup-empty-state { padding: .85rem 1rem; border: 1px solid var(--panel-edge); border-radius: 8px; background: var(--ink-850); color: var(--text-300); }
+.meetup-journey .meetup-travel-fields { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 1rem; }
+.meetup-journey .meetup-travel-fields > button { justify-self: start; }
+.meetup-manual-entry, .meetup-slot-overrides { border-top: 1px solid var(--panel-edge); padding-top: .8rem; }
+.meetup-manual-entry > summary, .meetup-slot-overrides > summary { color: var(--text-300); font-size: var(--step--1); }
+.meetup-slot-override { display: grid; gap: .85rem; padding-block: 1rem; border-bottom: 1px solid var(--panel-edge); }
+.meetup-slot-override > strong { font-size: var(--step--1); color: var(--text-200); }
+.meetup-place-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-top: 1rem; }
+.meetup-place-row h3 { margin-bottom: .35rem; }
+.meetup-place-row .btn { flex-shrink: 0; }
+.meetup-place-row .btn[aria-pressed="true"] { border-color: var(--mint-400); color: var(--mint-400); }
 .meetup-eyebrow {
   color: var(--mint-400);
   font-size: .69rem;
@@ -886,6 +522,7 @@ async function getParking() {
   to { opacity: 1; transform: translateY(0); }
 }
 @media (max-width: 620px) {
+  .meetup-place-row { align-items: start; flex-direction: column; }
   .meetup-steps {
     gap: 2px;
     padding: 3px;

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref, useId, watch } from 'vue';
 import { api } from '../api.js';
+import { formatMeetupObservationTime } from '../utils/meetupTime.js';
 import MeetupLocationSearch from './MeetupLocationSearch.vue';
 import LoadingSpinner from './LoadingSpinner.vue';
 
@@ -12,7 +13,7 @@ const props = defineProps({
   active: { type: Boolean, default: true },
 });
 const headingId = `nearby-transport-${useId()}`;
-const phase = ref('pre'), pending = ref(false), venueOverride = ref(null);
+const phase = ref('pre'), pending = ref(false), venueOverride = ref(null), venueSearchReset = ref(0);
 const results = reactive({ pre: null, post: null });
 const errors = reactive({ pre: '', post: '' });
 const automatic = reactive({ pre: false, post: false });
@@ -22,13 +23,7 @@ const venueName = computed(() => props.concert?.venue || result.value?.venueName
 const canCheck = computed(() => phase.value === 'post' || props.hasMeetingPlace);
 const key = () => `${props.meetupId}:${props.planVersion}:${props.concert?.venue ?? ''}`;
 let alive = true, generation = 0, refreshTimer;
-const time = value => {
-  if (value === null || value === undefined || value === '') return 'Time not reported';
-  const date = new Date(value);
-  return Number.isFinite(date.getTime())
-    ? date.toLocaleString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-    : 'Time not reported';
-};
+const time = formatMeetupObservationTime;
 const distance = value => Number.isFinite(value) ? `${Math.round(value * 1000)} m away` : 'Distance not reported';
 const crowdLabel = value => ({ l: 'Low crowding', m: 'Moderate crowding', h: 'High crowding' })[String(value).toLowerCase()] || 'Crowding not reported';
 const busLabel = value => ({ SEA: 'Seats available', SDA: 'Standing available', LSD: 'Limited standing space' })[value] || 'Crowding not reported';
@@ -37,6 +32,8 @@ const stationCrowds = station => {
   return (result.value?.crowding?.stations ?? []).filter(row => codes.has(row.station));
 };
 const busReport = stop => result.value?.buses?.stops?.find(row => row.code === stop.code);
+const providerNote = reason => reason === 'lta_not_configured' ? ' LTA DataMall is not configured.'
+  : reason === 'onemap_not_configured' ? ' OneMap is not configured.' : '';
 
 async function check({ auto = false } = {}) {
   if (pending.value || !canCheck.value || !alive || !props.active) return;
@@ -70,7 +67,7 @@ function selectVenue(location) {
   results.post = null; automatic.post = false; errors.post = '';
 }
 function useConcertVenue() {
-  generation++; venueOverride.value = null; results.post = null; automatic.post = false; errors.post = '';
+  generation++; venueOverride.value = null; venueSearchReset.value++; results.post = null; automatic.post = false; errors.post = '';
 }
 function refreshIfVisible() {
   if (props.active && document.visibilityState === 'visible' && automatic[phase.value] && results[phase.value]?.anchor)
@@ -81,7 +78,7 @@ watch(() => props.active, active => {
   if (active) refreshIfVisible();
 });
 watch([() => props.meetupId, () => props.concert?.venue], () => {
-  generation++; phase.value = 'pre'; venueOverride.value = null;
+  generation++; phase.value = 'pre'; venueOverride.value = null; venueSearchReset.value++;
   results.pre = null; results.post = null; errors.pre = ''; errors.post = '';
   automatic.pre = false; automatic.post = false;
 });
@@ -100,18 +97,18 @@ onUnmounted(() => { alive = false; generation++; clearInterval(refreshTimer); do
 
 <template>
   <section class="card group-panel nearby-transport" :aria-labelledby="headingId" :data-transport-phase="phase">
-    <header><h2 :id="headingId">Getting there and getting home</h2><p>Check train disruptions, station crowds and bus loads close to your plans.</p></header>
+    <header><h2 :id="headingId">Getting there and getting home</h2><p>Check current MRT disruptions, station crowds and nearby buses. These are live conditions, not predictions for concert day.</p></header>
     <div class="nearby-transport__choices" role="group" aria-label="Transport journey">
       <button type="button" class="btn" :class="phase === 'pre' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="phase === 'pre'" @click="switchPhase('pre')">Before the meetup</button>
       <button type="button" class="btn" :class="phase === 'post' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="phase === 'post'" @click="switchPhase('post')">After the concert</button>
     </div>
     <p v-if="phase === 'pre'">Look around your proposed meeting place before travelling to meet the group.</p>
     <p v-else>Look around <strong>{{ venueName }}</strong> when deciding how to leave the concert.</p>
-    <p v-if="phase === 'pre' && !hasMeetingPlace" class="group-muted">Propose a meeting place above first, then check nearby transport here.</p>
+    <p v-if="phase === 'pre' && !hasMeetingPlace" class="group-muted">Choose a meeting place first to check nearby transport.</p>
     <details v-if="phase === 'post'" :open="Boolean(result && !result.anchor)" class="nearby-transport__venue">
       <summary>{{ venueOverride ? `Selected venue: ${venueOverride.label}` : 'Check or correct the concert venue' }}</summary>
       <p class="group-muted">Choose the venue itself, rather than your home or meeting place. This selection is only for these transport checks.</p>
-      <MeetupLocationSearch :key="meetupId" :meetup-id="meetupId" label="Find the concert venue" @selected="selectVenue" />
+      <MeetupLocationSearch :key="meetupId" :meetup-id="meetupId" :reset-key="venueSearchReset" :manual-fallback="false" label="Find the concert venue" selection-hint="This only selects a location for transport checks. Press Check nearby transport to use it; the concert and meetup are unchanged." @selected="selectVenue" />
       <button v-if="venueOverride" type="button" class="btn btn--ghost" @click="useConcertVenue">Use the concert's venue again</button>
     </details>
     <p v-if="venueOverride && phase === 'post'" class="group-muted">Using {{ venueOverride.label }}. Press Check nearby transport to refresh this location.</p>
@@ -119,17 +116,26 @@ onUnmounted(() => { alive = false; generation++; clearInterval(refreshTimer); do
       <button type="button" class="btn btn--primary" :disabled="pending || !canCheck" @click="check()"><LoadingSpinner v-if="pending" />{{ pending ? 'Checking nearby transport…' : 'Check nearby transport' }}</button>
       <label v-if="result?.anchor" class="group-check"><input v-model="automatic[phase]" type="checkbox" />Refresh every minute while open</label>
     </div>
-    <p class="nearby-transport__timing">Conditions now, not a prediction for the concert date. Station crowd observations are updated by LTA about every ten minutes; bus loads describe approaching vehicles at that stop, rather than an entire route.</p>
+    <details class="nearby-transport__about">
+      <summary>About this transport data</summary>
+      <ul>
+        <li>Checks show conditions now, not a prediction for a future meetup or the concert journey home.</li>
+        <li>The checked time is when this panel refreshed. Station observations have their own reported time; LTA updates them about every ten minutes. Saved information is marked when a fresh check is unavailable.</li>
+        <li>Bus loads describe approaching vehicles at that stop, rather than an entire route. Arrival times are not shown.</li>
+        <li>Station crowding describes the reported station area, rather than individual trains. Missing reports do not mean an empty station or bus.</li>
+        <li>Coverage can be incomplete. Up to three nearby stations and bus stops are shown; distances are straight-line estimates. OneMap and LTA must be configured for their respective checks.</li>
+      </ul>
+    </details>
     <p v-if="error" role="alert" class="group-error">{{ error }}</p>
     <template v-if="result">
-      <p v-if="!result.anchor" role="status" class="group-muted">{{ phase === 'post' ? 'Choose the exact concert venue above so nearby checks use the right location.' : 'Choose a meeting place before checking nearby transport.' }}</p>
+      <p v-if="!result.anchor" role="status" class="group-muted">{{ phase === 'post' ? 'Confirm the concert venue to see nearby MRT stations and bus stops.' : 'Choose a meeting place first to check nearby transport.' }}</p>
       <template v-else>
         <div class="nearby-transport__context"><strong>Near {{ result.anchor.label }}</strong><span v-if="result.checkedAt">Checked {{ time(result.checkedAt) }} SGT</span></div>
-        <p v-if="result.nearby?.status !== 'available'" role="status" class="group-muted">Nearby station and bus-stop lookup is unavailable. No citywide crowd levels are substituted.</p>
+        <p v-if="result.nearby?.status !== 'available'" role="status" class="group-muted">Nearby station and bus-stop lookup is unavailable.{{ providerNote(result.nearby?.reason) }}</p>
         <template v-else>
           <div class="nearby-transport__advisory">
             <h3>Train advisories for nearby lines</h3>
-            <p v-if="result.trains?.status !== 'available'">Train advisories are unavailable right now.</p>
+            <p v-if="result.trains?.status !== 'available'">Train advisories are unavailable right now.{{ providerNote(result.trains?.reason) }}</p>
             <template v-else>
               <p v-if="result.trains.serviceStatus === 'normal'">No disruption reported on these nearby lines.</p>
               <p v-else-if="result.trains.serviceStatus === 'disrupted'" class="nearby-transport__warning">Disruption reported on a nearby line.</p>
@@ -176,7 +182,6 @@ onUnmounted(() => { alive = false; generation++; clearInterval(refreshTimer); do
           </div>
         </template>
       </template>
-      <p v-if="result.message" class="group-muted">{{ result.message }}</p>
     </template>
   </section>
 </template>
@@ -195,10 +200,16 @@ onUnmounted(() => { alive = false; generation++; clearInterval(refreshTimer); do
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-.nearby-transport__timing, .nearby-transport__context span, .nearby-transport small {
+.nearby-transport__about, .nearby-transport__context span, .nearby-transport small {
   color: var(--text-300);
   font-size: var(--step--1);
   line-height: 1.5;
+}
+.nearby-transport__about ul {
+  display: grid;
+  gap: var(--space-2);
+  padding-left: var(--space-4);
+  margin-top: var(--space-3);
 }
 .nearby-transport__context {
   display: flex;

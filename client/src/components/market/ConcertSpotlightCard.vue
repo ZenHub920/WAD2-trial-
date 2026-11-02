@@ -216,6 +216,10 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
 .spot__link:focus-visible {
   outline: none;
 }
+.spot:has(.spot__link:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
 
 /* The card's hit area. Sits under the footer button, which is raised. */
 .spot__link::after {
@@ -334,8 +338,9 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
   gap: var(--space-1);
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-pill);
-  background: var(--accent-500);
-  color: #fff;
+  min-height: 44px;
+  background: var(--action-start);
+  color: var(--on-action);
   font-size: var(--step--2);
   font-weight: 700;
   text-decoration: none;
@@ -352,7 +357,8 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
 }
 
 .spot__see:hover {
-  background: var(--accent-400);
+  background: var(--action-hover);
+  color: var(--on-action);
   box-shadow: 0 8px 20px -8px var(--accent-400);
 }
 
@@ -371,5 +377,6 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
   }
   .spot, .spot__poster img, .spot__see, .spot__see svg { transition: none; }
   .spot:hover .spot__poster img, .spot:hover .spot__see svg { transform: none; }
+  .spot__see:active { transform: none; }
 }
 </style>

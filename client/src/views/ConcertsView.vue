@@ -30,24 +30,22 @@ onMounted(() => {
   }).finally(() => {
     ticketsLoading.value = false;
   });
-  const shows = api.externalConcerts().then((body) => {
-    concerts.value = body.events;
-  }).catch((err) => {
-    concertError.value = err.body?.error ?? err.message;
-  }).finally(() => {
-    concertsLoading.value = false;
-  });
-  // Read counts after discovery persists IDs, even if the provider is unavailable.
-  shows.then(async () => {
-    try {
-      activity.value = (await api.concerts()).concerts;
-    } catch (err) {
-      activityError.value = err.body?.error ?? err.message;
-    } finally {
-      activityLoading.value = false;
-    }
-  });
+  void loadShows();
 });
+
+let showsPending = false;
+async function loadShows() {
+  if (showsPending) return;
+  showsPending = true; concertsLoading.value = true; activityLoading.value = true;
+  concertError.value = ''; activityError.value = '';
+  try { concerts.value = (await api.externalConcerts()).events; }
+  catch (err) { concertError.value = err.body?.error ?? err.message; }
+  finally { concertsLoading.value = false; }
+  // Read persisted discovery IDs after the provider request settles.
+  try { activity.value = (await api.concerts()).concerts; }
+  catch (err) { activityError.value = err.body?.error ?? err.message; }
+  finally { activityLoading.value = false; showsPending = false; }
+}
 
 const discovered = computed(() => {
   const inventory = new Map();
@@ -156,6 +154,7 @@ function clearFilters() {
         <div v-if="concertError" class="concert-empty" role="alert">
           <h3>Ticketmaster discovery unavailable</h3>
           <p>{{ concertError === 'concert_provider_not_configured' ? 'Ticketmaster discovery is not configured.' : 'Live concerts could not be loaded. Available local concerts and fan listings are still shown below.' }}</p>
+          <button type="button" class="btn btn--ghost" :disabled="concertsLoading || activityLoading" @click="loadShows">Retry live discovery</button>
         </div>
         <div v-if="!matchingConcerts.length && !concertError" class="concert-empty">
           <h3>{{ hasFilters ? 'No concerts match your filters' : 'No upcoming concerts available' }}</h3>
@@ -277,7 +276,7 @@ function clearFilters() {
   gap: var(--space-2);
   min-height: 44px;
   padding: var(--space-2) var(--space-3);
-  border: var(--border-soft);
+  border: var(--control-border);
   border-radius: var(--radius-md);
   background: var(--field-bg);
 }
@@ -311,6 +310,7 @@ function clearFilters() {
   font-size: var(--step--2);
 }
 .concert-filters__chip {
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);

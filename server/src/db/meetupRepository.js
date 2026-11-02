@@ -1,6 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { communityError } from "./membershipRepository.js";
 import { rankMeetupOptions, SLOT_MS } from "../services/meetupPlanning.js";
+import { meetupDatePolicy, parseMeetupTimestamp } from '../../../shared/meetupDates.mjs';
+import { meetupActionError, meetupCapabilities, requiredMeetupApprovers } from '../services/meetupPolicy.js';
+import { normalizeMeetupAvailability, normalizeMeetupPlace, normalizeMeetupTitle, requireMeetupWindow } from '../services/meetupValidation.js';
+export { coordinates } from '../services/meetupValidation.js';
 export function migrateMeetups(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS meetups(
   id TEXT PRIMARY KEY,creator_id TEXT NOT NULL REFERENCES users(id),party_id TEXT REFERENCES parties(id),
@@ -9,6 +13,9 @@ export function migrateMeetups(db) {
   status TEXT NOT NULL DEFAULT 'planning' CHECK(status IN('planning','proposed','confirmed','cancelled')),
   selected_place_id TEXT,selected_start INTEGER,
   CHECK((party_id IS NOT NULL)+(connection_id IS NOT NULL)+(kaki_conversation_id IS NOT NULL)=1));
+  CREATE TABLE IF NOT EXISTS meetup_creation_requests(
+    request_key TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    meetup_id TEXT NOT NULL REFERENCES meetups(id) ON DELETE CASCADE,payload_fingerprint TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS meetup_places(id TEXT PRIMARY KEY,meetup_id TEXT NOT NULL REFERENCES meetups(id),
     proposed_by TEXT NOT NULL REFERENCES users(id),label TEXT NOT NULL,latitude REAL NOT NULL,longitude REAL NOT NULL,sheltered INTEGER NOT NULL DEFAULT 0);
   CREATE TABLE IF NOT EXISTS meetup_availability(meetup_id TEXT NOT NULL REFERENCES meetups(id),user_id TEXT NOT NULL REFERENCES users(id),
@@ -25,15 +32,8 @@ export function migrateMeetups(db) {
   if (!db.prepare("PRAGMA table_info(meetup_availability)").all().some((column) => column.name === "travel_mode"))
     db.exec("ALTER TABLE meetup_availability ADD COLUMN travel_mode TEXT NOT NULL DEFAULT 'transit' CHECK(travel_mode IN ('transit','drive'))");
 }
-export const coordinates = (lat, lon) =>
-  Number.isFinite(lat) &&
-  Math.abs(lat) <= 90 &&
-  Number.isFinite(lon) &&
-  Math.abs(lon) <= 180;
-const timestamp = (value) =>
-  typeof value === "string" && /(Z|[+-]\d{2}:\d{2})$/.test(value)
-    ? Date.parse(value)
-    : NaN;
+const timestamp = parseMeetupTimestamp;
+const scopeFields = { partyId: 'party_id', connectionId: 'connection_id', kakiConversationId: 'kaki_conversation_id' };
 export function createMeetupRepo(db, repos) {
   const row = (id) => {
     const m = db.prepare("SELECT * FROM meetups WHERE id=?").get(id);
@@ -96,6 +96,8 @@ export function createMeetupRepo(db, repos) {
     return m;
   };
   const notify = (m, actor, event, title) => {
+    const stage = /^(?:place|vote):/.test(event) ? 'places'
+      : /^(?:proposal|confirmed|cancelled|comment):/.test(event) ? 'review' : 'availability';
     for (const user of participants(m).filter((u) => u !== actor))
       if (
         db
@@ -111,35 +113,63 @@ export function createMeetupRepo(db, repos) {
           user,
           `meetup:${m.id}:${event}`,
           title,
-          `/meetups/${m.id}`,
+          `/meetups/${encodeURIComponent(m.id)}#meetup-${stage}`,
         );
   };
+  const enforcePolicy = (action, m, isOrganizer = true) => {
+    const error = meetupActionError(action, m.status, isOrganizer);
+    if (error) throw communityError(error.code, error.status);
+  };
+  const writable = m => enforcePolicy('contribute', m);
+  const checkVersion = (m, version) => {
+    if (version !== undefined && m.version !== version) throw communityError('stale_meetup_version');
+  };
   const revision = (m, user, event) => {
-    if (m.status === "cancelled") throw communityError("meetup_cancelled");
+    writable(m);
     db.prepare(
-      "UPDATE meetups SET version=version+1,status='planning',selected_place_id=NULL,selected_start=NULL WHERE id=?",
+      "UPDATE meetups SET version=version+1 WHERE id=?",
     ).run(m.id);
     notify(m, user, `${event}:${m.version + 1}`, "Meetup planning was updated");
   };
   const approvers = (m) => {
-    if (m.party_id) return [repos.parties.findById(m.party_id).host_user_id];
+    if (m.party_id) return requiredMeetupApprovers(m, [repos.parties.findById(m.party_id).host_user_id]);
     if (m.connection_id) {
       const c = db
         .prepare("SELECT * FROM group_connections WHERE id=?")
         .get(m.connection_id);
-      return [
+      return requiredMeetupApprovers(m, [
         repos.parties.findById(c.party_a_id).host_user_id,
         repos.parties.findById(c.party_b_id).host_user_id,
-      ];
+      ]);
     }
-    return participants(m);
+    return requiredMeetupApprovers(m, [], participants(m));
+  };
+  const organizer = (m, user) => {
+    enforcePolicy('create', m, approvers(m).includes(user));
+  };
+  const capabilities = (m, user) => {
+    return meetupCapabilities(m.status, approvers(m), user);
+  };
+  const scopeFor = input => {
+    const scope = Object.fromEntries(Object.entries(scopeFields).map(([key, field]) => [field, input?.[key] ?? null]));
+    if (Object.values(scope).filter(Boolean).length !== 1
+      || Object.values(scope).some(value => value !== null && (typeof value !== 'string' || !value)))
+      throw communityError('one_meetup_scope_required', 400);
+    return scope;
+  };
+  const scopedAccess = (user, input) => {
+    const scope = scopeFor(input);
+    if (!participants(scope).includes(user)) throw communityError('scope_membership_required', 403);
+    return scope;
   };
   const concertFor = m => {
     const concertId = m.party_id ? repos.parties.findById(m.party_id)?.concert_id
       : m.connection_id ? db.prepare('SELECT p.concert_id FROM group_connections c JOIN parties p ON p.id=c.party_a_id WHERE c.id=?').get(m.connection_id)?.concert_id
       : db.prepare('SELECT concert_id FROM conversations WHERE id=?').get(m.kaki_conversation_id)?.concert_id;
     const concert = concertId ? repos.concerts.findById(concertId) : null;
-    return concert ? { id: concert.id, artist: concert.artist, venue: concert.venue, city: concert.city, event_date: concert.event_date } : null;
+    return concert ? { id: concert.id, artist: concert.artist, venue: concert.venue, city: concert.city,
+      event_date: concert.event_date, event_time: concert.event_time ?? null,
+      event_timezone: concert.event_timezone ?? null, doors_time: concert.doors_time ?? null } : null;
   };
   const planningData = (id, ids) => ({
     availability: db.prepare('SELECT * FROM meetup_availability WHERE meetup_id=?')
@@ -148,11 +178,75 @@ export function createMeetupRepo(db, repos) {
       AND v.user_id IN(SELECT value FROM json_each(?))) AS votes FROM meetup_places p WHERE p.meetup_id=? ORDER BY p.rowid`)
       .all(JSON.stringify(ids), id),
   });
+  const scopeMetadata = (m, user) => {
+    if (m.party_id) {
+      const party = repos.parties.findById(m.party_id);
+      return { scope: { partyId: m.party_id }, scopeLabel: party.name || `${party.host?.display_name || 'Your host'}'s group`,
+        returnPath: `/groups/${encodeURIComponent(m.party_id)}/channel` };
+    }
+    if (m.connection_id) {
+      const connection = db.prepare('SELECT party_a_id,party_b_id FROM group_connections WHERE id=?').get(m.connection_id);
+      const names = [connection.party_a_id, connection.party_b_id].map(id => {
+        const party = repos.parties.findById(id);
+        return party.name || `${party.host?.display_name || 'Host'}'s group`;
+      });
+      return { scope: { connectionId: m.connection_id }, scopeLabel: names.join(' + '),
+        returnPath: `/groups/connections/${encodeURIComponent(m.connection_id)}/channel` };
+    }
+    const conversation = db.prepare(`SELECT a.display_name AS a,b.display_name AS b,c.user_a_id
+      FROM conversations c JOIN users a ON a.id=c.user_a_id JOIN users b ON b.id=c.user_b_id WHERE c.id=?`).get(m.kaki_conversation_id);
+    return { scope: { kakiConversationId: m.kaki_conversation_id },
+      scopeLabel: `Kaki conversation with ${conversation.user_a_id === user ? conversation.b : conversation.a}`,
+      returnPath: `/kaki/chat/${encodeURIComponent(m.kaki_conversation_id)}` };
+  };
+  const currentApprovals = m => {
+    const requiredApprovers = approvers(m);
+    const approvals = db.prepare('SELECT user_id FROM meetup_approvals WHERE meetup_id=? AND version=?')
+      .all(m.id, m.version).map(a => a.user_id).filter(id => requiredApprovers.includes(id));
+    return { requiredApprovers, approvals };
+  };
+  const isHistorical = m => m.status === 'cancelled'
+    || (m.selected_start == null ? m.ends_at : m.selected_start + SLOT_MS) <= Date.now();
+  // Summaries intentionally avoid loading origins, raw availability, discussion or
+  // route recommendations. The shared overview/chat cache needs only public plan
+  // details and the caller's own participation/approval state.
+  const summary = (m, user) => {
+    const ids = participants(m), { requiredApprovers, approvals } = currentApprovals(m);
+    const availabilityParticipantCount = db.prepare(`SELECT COUNT(DISTINCT user_id) AS n FROM meetup_availability
+      WHERE meetup_id=? AND user_id IN(SELECT value FROM json_each(?))`).get(m.id, JSON.stringify(ids)).n;
+    const hasAvailability = Boolean(db.prepare('SELECT 1 FROM meetup_availability WHERE meetup_id=? AND user_id=? LIMIT 1').get(m.id, user));
+    const hasApproved = approvals.includes(user);
+    const permissions = capabilities(m, user);
+    const selectedPlace = m.selected_place_id ? db.prepare('SELECT id,label FROM meetup_places WHERE id=? AND meetup_id=?')
+      .get(m.selected_place_id, m.id) ?? null : null;
+    return {
+      id: m.id, title: m.title, status: m.status, version: m.version,
+      startsAt: m.starts_at, endsAt: m.ends_at,
+      ...scopeMetadata(m, user), concert: concertFor(m),
+      participantCount: ids.length, availabilityParticipantCount, hasAvailability,
+      selectedStart: m.selected_start, selectedPlace,
+      requiredApprovers, approvals, approvalCount: approvals.length, requiredApprovalCount: requiredApprovers.length, hasApproved,
+      capabilities: { ...permissions, canApprove: permissions.canApprove && !hasApproved },
+      nextStage: m.status !== 'planning' ? 'review' : hasAvailability ? 'places' : 'availability',
+      isHistorical: isHistorical(m),
+    };
+  };
+  const scopedBoards = scope => {
+    const field = Object.values(scopeFields).find(key => scope[key]);
+    return db.prepare(`SELECT * FROM meetups WHERE ${field}=? ORDER BY rowid DESC`).all(scope[field]);
+  };
   return {
     access,
     participants,
+    context(user, input = {}) {
+      const scope = scopedAccess(user, input), concert = concertFor(scope);
+      return { concert, policy: meetupDatePolicy(concert), ...scopeMetadata(scope, user),
+        capabilities: capabilities({ ...scope, status: 'planning' }, user),
+        participantCount: participants(scope).length, requiredApprovers: approvers(scope),
+        meetups: scopedBoards(scope).map(m => summary(m, user)) };
+    },
     list(user, scope = {}) {
-      const fields = { partyId: 'party_id', connectionId: 'connection_id', kakiConversationId: 'kaki_conversation_id' };
+      const fields = scopeFields;
       const selected = Object.keys(fields).filter(key => scope[key] !== undefined);
       if (selected.length > 1 || selected.some(key => typeof scope[key] !== 'string' || !scope[key]))
         throw communityError('one_meetup_scope_required', 400);
@@ -169,12 +263,7 @@ export function createMeetupRepo(db, repos) {
           ORDER BY m.rowid DESC`)
         .all(user,user,user,user,user,user)
         .filter((m) => participants(m).includes(user) && selected.every(key => m[fields[key]] === scope[key]))
-        .map((m) => ({
-          id: m.id,
-          title: m.title,
-          status: m.status,
-          version: m.version,
-        }));
+        .map((m) => summary(m, user));
     },
     // Server-internal input. Public detail deliberately returns only the caller's origins.
     planningInput(user, id) {
@@ -187,33 +276,48 @@ export function createMeetupRepo(db, repos) {
       };
     },
     create: db.transaction((user, input = {}) => {
-      const starts = timestamp(input.startsAt),
-        ends = timestamp(input.endsAt);
-      if (
-        !Number.isFinite(starts) ||
-        !Number.isFinite(ends) ||
-        ends - starts < SLOT_MS ||
-        ends - starts > 7 * 86400000 ||
-        starts % SLOT_MS ||
-        ends % SLOT_MS
-      )
-        throw communityError("invalid_meetup_window", 400);
-      const title = typeof input.title === "string" ? input.title.trim() : "";
-      if (!title || title.length > 120)
-        throw communityError("invalid_title", 400);
-      const scope = {
-        party_id: input.partyId ?? null,
-        connection_id: input.connectionId ?? null,
-        kaki_conversation_id: input.kakiConversationId ?? null,
+      const scope = scopedAccess(user, input);
+      organizer(scope, user);
+      const { starts, ends } = requireMeetupWindow(input.startsAt, input.endsAt, concertFor(scope));
+      const title = normalizeMeetupTitle(input.title);
+      if (input.createAnother !== undefined && typeof input.createAnother !== 'boolean')
+        throw communityError('invalid_meetup_creation_options', 400);
+      const requestId = input.creationRequestId;
+      if (requestId !== undefined && (typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(requestId)))
+        throw communityError('invalid_meetup_creation_options', 400);
+      // Scope and account bind each opaque request ID. Persist even a reused
+      // board: a lost response must not create another if that board is cancelled
+      // before the original request is retried.
+      const id = requestId === undefined ? `meet_${randomUUID()}`
+        : `meet_${createHash('sha256').update(JSON.stringify([user, scope, requestId])).digest('hex')}`;
+      const fingerprint = createHash('sha256').update(JSON.stringify([title, starts, ends, input.createAnother === true])).digest('hex');
+      const attempt = requestId === undefined ? null : db.prepare('SELECT meetup_id,payload_fingerprint FROM meetup_creation_requests WHERE request_key=? AND user_id=?').get(id, user);
+      if (attempt) {
+        if (attempt.payload_fingerprint !== fingerprint) throw communityError('meetup_creation_conflict', 409);
+        return { id: attempt.meetup_id, reused: true };
+      }
+      const rememberAttempt = meetupId => {
+        if (requestId !== undefined) db.prepare('INSERT INTO meetup_creation_requests(request_key,user_id,meetup_id,payload_fingerprint) VALUES(?,?,?,?)')
+          .run(id, user, meetupId, fingerprint);
       };
-      if (
-        Object.values(scope).filter(Boolean).length !== 1 ||
-        Object.values(scope).some((v) => v !== null && typeof v !== "string")
-      )
-        throw communityError("one_meetup_scope_required", 400);
-      if (!participants(scope).includes(user))
-        throw communityError("scope_membership_required", 403);
-      const id = `meet_${randomUUID()}`;
+      // Retain compatibility with an existing deterministic board from before
+      // the additive request ledger was installed.
+      const previousAttempt = db.prepare('SELECT * FROM meetups WHERE id=?').get(id);
+      if (previousAttempt) {
+        if (previousAttempt.title !== title || previousAttempt.starts_at !== starts || previousAttempt.ends_at !== ends)
+          throw communityError('meetup_creation_conflict', 409);
+        rememberAttempt(id);
+        return { id, reused: true };
+      }
+      const existing = scopedBoards(scope).filter(m => !isHistorical(m));
+      // Opening a scope normally resumes its latest active board. An organizer
+      // can explicitly create another genuine plan; tokened retries still reuse it.
+      const reusable = input.createAnother !== true ? existing[0]
+        : requestId === undefined ? existing.find(m => m.title === title && m.starts_at === starts && m.ends_at === ends) : null;
+      if (reusable) {
+        rememberAttempt(reusable.id);
+        return { id: reusable.id, reused: true };
+      }
       db.prepare(
         "INSERT INTO meetups(id,creator_id,party_id,connection_id,kaki_conversation_id,title,starts_at,ends_at) VALUES(?,?,?,?,?,?,?,?)",
       ).run(
@@ -226,6 +330,7 @@ export function createMeetupRepo(db, repos) {
         starts,
         ends,
       );
+      rememberAttempt(id);
       notify(row(id), user, "created", "A meetup planning board was created");
       return { id };
     }).immediate,
@@ -233,18 +338,18 @@ export function createMeetupRepo(db, repos) {
       const m = access(user, id),
         ids = participants(m);
       const { availability, places } = planningData(id, ids);
+      const { requiredApprovers, approvals } = currentApprovals(m), hasApproved = approvals.includes(user);
+      const permissions = capabilities(m, user);
       return {
         ...m,
+        ...scopeMetadata(m, user),
         concert: concertFor(m),
+        policy: meetupDatePolicy(concertFor(m)),
+        capabilities: { ...permissions, canApprove: permissions.canApprove && !hasApproved },
         participantCount: ids.length,
-        requiredApprovers: approvers(m),
-        approvals: db
-          .prepare(
-            "SELECT user_id FROM meetup_approvals WHERE meetup_id=? AND version=?",
-          )
-          .all(id, m.version)
-          .map((a) => a.user_id),
+        requiredApprovers, approvals, hasApproved,
         places,
+        currentVotePlaceId: db.prepare('SELECT place_id FROM meetup_votes WHERE meetup_id=? AND user_id=?').get(id, user)?.place_id ?? null,
         availability: availability.filter((a) => a.user_id === user),
         grid: Array.from(
           { length: (m.ends_at - m.starts_at) / SLOT_MS },
@@ -278,41 +383,11 @@ export function createMeetupRepo(db, repos) {
     },
     availability: db.transaction((user, id, input, expectedVersion) => {
       const m = access(user, id);
-      if (expectedVersion !== undefined && m.version !== expectedVersion)
-        throw communityError('stale_meetup_version');
-      if (!Array.isArray(input) || input.length > (m.ends_at - m.starts_at) / SLOT_MS)
-        throw communityError("invalid_availability", 400);
-      const rows = input.map((r) => {
-        if (!r || typeof r !== "object" || Array.isArray(r))
-          throw communityError("invalid_availability", 400);
-        const start = timestamp(r.startsAt),
-          end = timestamp(r.endsAt);
-        const hasCoordinates =
-          r.latitude !== undefined || r.longitude !== undefined;
-        if (
-          !Number.isFinite(start) ||
-          !Number.isFinite(end) ||
-          start < m.starts_at ||
-          end > m.ends_at ||
-          end <= start ||
-          start % SLOT_MS ||
-          end % SLOT_MS ||
-          (r.travelMode !== undefined && !["transit", "drive"].includes(r.travelMode)) ||
-          (hasCoordinates && !coordinates(r.latitude, r.longitude))
-        )
-          throw communityError("invalid_availability", 400);
-        return {
-          start,
-          end,
-          latitude: hasCoordinates ? r.latitude : null,
-          longitude: hasCoordinates ? r.longitude : null,
-          label: typeof r.label === "string" ? r.label.slice(0, 100) : null,
-          travelMode: r.travelMode ?? "transit",
-        };
-      });
-      rows.sort((a, b) => a.start - b.start);
-      if (rows.some((r, i) => i && r.start < rows[i - 1].end))
-        throw communityError("overlapping_availability", 400);
+      checkVersion(m, expectedVersion);
+      enforcePolicy('retryContribution', m);
+      const rows = normalizeMeetupAvailability(input, m.starts_at, m.ends_at);
+      const saved = db.prepare('SELECT starts_at AS start,ends_at AS end,latitude,longitude,label,travel_mode AS travelMode FROM meetup_availability WHERE meetup_id=? AND user_id=? ORDER BY starts_at').all(id, user);
+      if (JSON.stringify(rows) === JSON.stringify(saved)) return { saved: true, unchanged: true };
       revision(m, user, "availability");
       db.prepare(
         "DELETE FROM meetup_availability WHERE meetup_id=? AND user_id=?",
@@ -333,13 +408,12 @@ export function createMeetupRepo(db, repos) {
     }).immediate,
     place: db.transaction((user, id, input = {}) => {
       const m = access(user, id);
-      if (
-        !coordinates(input.latitude, input.longitude) ||
-        typeof input.label !== "string" ||
-        !input.label.trim() ||
-        input.label.length > 150
-      )
-        throw communityError("invalid_place", 400);
+      checkVersion(m, input?.version);
+      enforcePolicy('retryContribution', m);
+      const place = normalizeMeetupPlace(input);
+      const duplicate = db.prepare('SELECT id FROM meetup_places WHERE meetup_id=? AND lower(trim(label))=lower(?) AND latitude=? AND longitude=? AND sheltered=?')
+        .get(id, place.label, place.latitude, place.longitude, place.sheltered);
+      if (duplicate) return { id: duplicate.id, unchanged: true };
       if (
         db
           .prepare("SELECT COUNT(*) n FROM meetup_places WHERE meetup_id=?")
@@ -352,15 +426,17 @@ export function createMeetupRepo(db, repos) {
         placeId,
         id,
         user,
-        input.label.trim(),
-        input.latitude,
-        input.longitude,
-        input.sheltered === true ? 1 : 0,
+        place.label,
+        place.latitude,
+        place.longitude,
+        place.sheltered,
       );
       return { id: placeId };
     }).immediate,
-    vote: db.transaction((user, id, place) => {
+    vote: db.transaction((user, id, place, expectedVersion) => {
       const m = access(user, id);
+      checkVersion(m, expectedVersion);
+      enforcePolicy('retryContribution', m);
       if (
         typeof place !== "string" ||
         !db
@@ -368,6 +444,8 @@ export function createMeetupRepo(db, repos) {
           .get(place, id)
       )
         throw communityError("place_not_found", 404);
+      if (db.prepare('SELECT place_id FROM meetup_votes WHERE meetup_id=? AND user_id=?').get(id, user)?.place_id === place)
+        return { voted: true, unchanged: true };
       revision(m, user, "vote");
       db.prepare(
         "INSERT INTO meetup_votes VALUES(?,?,?) ON CONFLICT(meetup_id,user_id) DO UPDATE SET place_id=excluded.place_id",
@@ -376,7 +454,7 @@ export function createMeetupRepo(db, repos) {
     }).immediate,
     comment: db.transaction((user, id, body) => {
       const m = access(user, id);
-      if (m.status === "cancelled") throw communityError("meetup_cancelled");
+      enforcePolicy('discuss', m);
       if (typeof body !== "string" || !body.trim() || body.length > 2000)
         throw communityError("invalid_comment", 400);
       const cid = randomUUID();
@@ -388,6 +466,7 @@ export function createMeetupRepo(db, repos) {
     }).immediate,
     propose: db.transaction((user, id, input = {}) => {
       const m = access(user, id);
+      organizer(m, user);
       if (m.version !== input.version)
         throw communityError("stale_meetup_version");
       const start = timestamp(input.startsAt);
@@ -402,7 +481,8 @@ export function createMeetupRepo(db, repos) {
           .get(input.placeId, id)
       )
         throw communityError("invalid_meetup_choice", 400);
-      if (m.status === "cancelled") throw communityError("meetup_cancelled");
+      writable(m);
+      requireMeetupWindow(input.startsAt, new Date(start + SLOT_MS).toISOString(), concertFor(m));
       db.prepare(
         "UPDATE meetups SET selected_place_id=?,selected_start=?,status='proposed',version=version+1 WHERE id=?",
       ).run(input.placeId, start, id);
@@ -419,8 +499,9 @@ export function createMeetupRepo(db, repos) {
       if (m.version !== version || m.status !== "proposed")
         throw communityError("stale_meetup_version");
       const required = approvers(m);
-      if (!required.includes(user))
-        throw communityError("meetup_approver_required", 403);
+      enforcePolicy('approve', m, required.includes(user));
+      requireMeetupWindow(new Date(m.selected_start).toISOString(),
+        new Date(m.selected_start + SLOT_MS).toISOString(), concertFor(m));
       db.prepare("INSERT OR IGNORE INTO meetup_approvals VALUES(?,?,?)").run(
         id,
         version,
@@ -444,11 +525,21 @@ export function createMeetupRepo(db, repos) {
       }
       return { confirmed, version };
     }).immediate,
+    reopen: db.transaction((user, id, version) => {
+      const m = access(user, id);
+      organizer(m, user);
+      if (m.version !== version) throw communityError('stale_meetup_version');
+      enforcePolicy('reopen', m);
+      db.prepare("UPDATE meetups SET status='planning',selected_place_id=NULL,selected_start=NULL,version=version+1 WHERE id=? AND version=?")
+        .run(id, version);
+      notify(m, user, `reopened:${version + 1}`, 'An organizer reopened meetup planning; previous approvals no longer apply');
+      return { reopened: true, version: version + 1 };
+    }).immediate,
     cancel: db.transaction((user, id, version) => {
       const m = access(user, id);
       if (m.version !== version) throw communityError("stale_meetup_version");
-      if (m.creator_id !== user && !approvers(m).includes(user))
-        throw communityError("meetup_organizer_required", 403);
+      organizer(m, user);
+      if (m.status === 'cancelled') return { cancelled: true, unchanged: true };
       db.prepare(
         "UPDATE meetups SET status='cancelled',version=version+1 WHERE id=?",
       ).run(id);

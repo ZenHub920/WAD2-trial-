@@ -7,9 +7,12 @@ export function registerCommunityRoutes(
 ) {
   const route = (method, path, key, fn) =>
     router[method](path, requireUser, (req, res, next) => {
+      if (method === 'get' && (path === '/meetup-context' || path === '/me/meetups' || path.startsWith('/meetups/')))
+        res.set('Cache-Control', 'private, no-store');
       try {
         const result = fn(req);
-        if (realtime && method !== "get" && (path === "/meetups" || path.startsWith("/meetups/:id/"))) {
+        if (realtime && method !== "get" && !result.unchanged && !result.reused
+          && (path === "/meetups" || path.startsWith("/meetups/:id/"))) {
           const id = path === "/meetups" ? result.id : req.params.id;
           // Transactions have committed before the response finishes. Send only
           // an invalidation; each recipient reloads through normal authorization.
@@ -120,6 +123,7 @@ export function registerCommunityRoutes(
     repos.notifications.setSettings(r.user.id, r.body),
   );
   route("get", "/me/meetups", "meetups", (r) => repos.meetups.list(r.user.id, r.query));
+  route('get', '/meetup-context', 'context', (r) => repos.meetups.context(r.user.id, r.query));
   route("post", "/meetups", "meetup", (r) =>
     repos.meetups.create(r.user.id, r.body),
   );
@@ -133,7 +137,7 @@ export function registerCommunityRoutes(
     repos.meetups.place(r.user.id, r.params.id, r.body),
   );
   route("put", "/meetups/:id/vote", "result", (r) =>
-    repos.meetups.vote(r.user.id, r.params.id, r.body?.placeId),
+    repos.meetups.vote(r.user.id, r.params.id, r.body?.placeId, r.body?.version),
   );
   route("post", "/meetups/:id/comments", "comment", (r) =>
     repos.meetups.comment(r.user.id, r.params.id, r.body?.body),
@@ -146,6 +150,9 @@ export function registerCommunityRoutes(
   );
   route("post", "/meetups/:id/cancel", "result", (r) =>
     repos.meetups.cancel(r.user.id, r.params.id, r.body?.version),
+  );
+  route('post', '/meetups/:id/reopen', 'result', (r) =>
+    repos.meetups.reopen(r.user.id, r.params.id, r.body?.version),
   );
   route("post", "/feedback", "feedback", (r) =>
     repos.feedback.submit(r.user.id, r.body),
@@ -169,6 +176,7 @@ export function registerCommunityRoutes(
       }),
   );
   router.get("/meetups/:id/weather", requireUser, async (req, res, next) => {
+    res.set('Cache-Control', 'private, no-store');
     try {
       const m = repos.meetups.detail(req.user.id, req.params.id);
       const place = m.places.find((p) => p.id === m.selected_place_id);
@@ -179,12 +187,10 @@ export function registerCommunityRoutes(
             reason: "choose_a_meeting_place_and_time_first",
           },
         });
-      return res.json({
-        weather: await weather.forecast({
-          ...place,
-          startsAt: m.selected_start,
-        }),
-      });
+      const forecast = await weather.forecast({ ...place, startsAt: m.selected_start });
+      const current = repos.meetups.access(req.user.id, m.id);
+      if (current.version !== m.version) return res.status(409).json({ error: 'stale_meetup_version' });
+      return res.json({ weather: forecast });
     } catch (e) {
       if (e.status) return res.status(e.status).json({ error: e.message });
       next(e);
