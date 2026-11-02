@@ -201,6 +201,10 @@ async function save() {
       <p>{{ settingUp ? 'Your account is ready. Add a few private matching preferences, or explore first.' : 'Manage your profile, concert preferences and notifications.' }}</p>
       <RouterLink v-if="!settingUp" to="/account/security" class="btn btn--outline-light profile__security">Account security</RouterLink>
     </header>
+    <nav v-if="!settingUp && form" class="profile__sections" aria-label="Profile sections">
+      <a href="#your-vibe"><span class="profile__section-dot" aria-hidden="true" />Public concert vibe</a>
+      <a href="#preferences"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4" y="8" width="12" height="9" rx="2"/><path d="M6.5 8V5.5a3.5 3.5 0 0 1 7 0V8"/></svg>Private matching</a>
+    </nav>
 
     <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading your profile…</p>
     <div v-else-if="loadError" class="profile__notice" role="alert">
@@ -274,7 +278,7 @@ async function save() {
 
       <!-- The site's one questionnaire. Groups and companion ranking both
            read these answers, which is why it is here and not in either. -->
-      <section id="preferences" class="profile__card" aria-labelledby="profile-preferences">
+      <section id="preferences" class="profile__card profile__card--private" aria-labelledby="profile-preferences">
         <div class="profile__preference-heading">
           <div><p class="profile__private-label">Private · Only you can see your answers</p><h2 id="profile-preferences">{{ settingUp ? 'A few answers. A better fit.' : 'Your matching preferences' }}</h2></div>
           <button v-if="!settingUp && myPreferences" type="button" class="btn btn--ghost" :aria-expanded="prefEditing" @click="prefEditing = !prefEditing">{{ prefEditing ? 'Close editor' : 'Edit private preferences' }}</button>
@@ -307,7 +311,8 @@ async function save() {
       </section>
 
       <template v-if="!settingUp">
-      <section id="your-vibe" class="profile__card" aria-labelledby="profile-vibe">
+      <section id="your-vibe" class="profile__card profile__card--public" aria-labelledby="profile-vibe">
+        <p class="profile__public-label">Public · Visible to other members</p>
         <h2 id="profile-vibe">Your concert vibe</h2>
         <p class="profile__hint">These six interests appear on your public concert profile. Your matching questionnaire stays private.</p>
         <div class="profile__vibe-layout">
@@ -320,7 +325,7 @@ async function save() {
             <p class="profile__hint">0 = not for me · 4 = love it</p>
             <label v-for="(label, axis) in LABELS.vibe" :key="axis" class="profile__vibe">
               <span>{{ label }}</span>
-              <input v-model.number="form.vibe[axis]" form="profile-form" type="range" min="0" max="4" step="1" :aria-valuetext="`${form.vibe[axis]} out of 4`" />
+              <input v-model.number="form.vibe[axis]" :style="{ '--vibe-fill': `${form.vibe[axis] / 4 * 100}%` }" form="profile-form" type="range" min="0" max="4" step="1" :aria-valuetext="`${form.vibe[axis]} out of 4`" />
               <output>{{ form.vibe[axis] }}</output>
             </label>
           </div>
@@ -369,6 +374,12 @@ async function save() {
 .profile__security {
   margin-top: var(--space-5);
 }
+.profile__sections { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-2); margin:0 0 var(--space-5); padding-bottom:var(--space-4); border-bottom:var(--border-hairline); }
+.profile__sections a { display:inline-flex; align-items:center; gap:var(--space-2); min-height:40px; padding:var(--space-2) var(--space-3); border:1px solid var(--panel-edge); border-radius:var(--radius-pill); background:var(--panel-bg); color:var(--text-200); font-size:var(--step--1); text-decoration:none; box-shadow:var(--panel-shadow); transition:border-color var(--dur-fast), transform var(--dur-fast); }
+.profile__sections a:hover { border-color:var(--accent-400); transform:translateY(-1px); }
+.profile__sections a:active { transform:translateY(1px); }
+.profile__sections svg { width:16px; height:16px; stroke:var(--text-300); stroke-width:1.4; }
+.profile__section-dot { width:8px; height:8px; border-radius:50%; background:var(--accent-400); box-shadow:0 0 0 3px var(--focus-halo); }
 .profile__hint {
   color: var(--text-400);
   font-size: var(--step--1);
@@ -385,8 +396,15 @@ async function save() {
   padding: var(--space-5);
   border: var(--border-soft);
   border-radius: var(--radius-lg);
-  background: var(--ink-850);
+  background: var(--panel-bg);
+  box-shadow: var(--panel-shadow);
+  scroll-margin-top: calc(var(--header-height) + var(--space-4));
 }
+.profile__card--private { border-left:3px solid var(--ink-500); }
+.profile__card--private:has(.preference-editor) { border-left-color:var(--accent-400); }
+.profile__card--public { border-color:color-mix(in oklab, var(--accent-400) 34%, var(--panel-edge)); background:linear-gradient(125deg, color-mix(in oklab, var(--accent-500) 4%, var(--panel-bg)), var(--panel-bg)); }
+.profile__public-label { margin:0 0 var(--space-2); font:600 0.68rem var(--font-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--accent-400); }
+.profile__card--private :deep(.preference-editor) { margin-top:var(--space-5); padding-top:var(--space-4); border-top:var(--border-hairline); }
 .profile__card h2 {
   margin-bottom: var(--space-4);
   font-size: var(--step-1);
@@ -439,22 +457,49 @@ async function save() {
   margin-top: var(--space-5);
 }
 .profile__vibe-layout { display:grid; grid-template-columns:minmax(200px, 280px) minmax(0, 1fr); gap:var(--space-6); align-items:center; }
-.profile__vibe-preview { display:grid; justify-items:center; gap:var(--space-3); text-align:center; }
+.profile__vibe-preview { display:grid; justify-items:center; gap:var(--space-3); text-align:center; padding:var(--space-5) var(--space-3); border:var(--border-hairline); border-radius:var(--radius-lg); background:radial-gradient(ellipse at 50% 25%, color-mix(in oklab, var(--accent-400) 7%, transparent), transparent 72%), var(--ink-900); box-shadow:inset 0 2px 8px color-mix(in oklab, var(--accent-600) 5%, transparent); }
 .profile__vibe-preview > .profile__hint { max-width:28ch; font-size:var(--step--2); }
 @media (max-width:800px) { .profile__vibe-layout { grid-template-columns:1fr; } }
 .profile__vibe {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) 2ch;
+  grid-template-columns: minmax(6rem, 1fr) minmax(7rem, 1.8fr) 2.25rem;
   align-items: center;
   gap: var(--space-3);
 }
 .profile__vibe input {
   width: 100%;
   min-width: 0;
+  height: 36px;
+  margin: 0;
+  padding: 0;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-pill);
+  cursor: grab;
   accent-color: var(--accent-500);
 }
+.profile__vibe input:active { cursor:grabbing; }
+.profile__vibe input:focus-visible { outline:2px solid var(--accent-400); outline-offset:4px; }
+.profile__vibe input::-webkit-slider-runnable-track { height:6px; border-radius:var(--radius-pill); background:linear-gradient(to right,var(--accent-400) var(--vibe-fill),var(--ink-600) var(--vibe-fill)); box-shadow:inset 0 1px 2px color-mix(in oklab,var(--accent-600) 14%,transparent); }
+.profile__vibe input::-moz-range-track { height:6px; border-radius:var(--radius-pill); background:var(--ink-600); box-shadow:inset 0 1px 2px color-mix(in oklab,var(--accent-600) 14%,transparent); }
+.profile__vibe input::-moz-range-progress { height:6px; border-radius:var(--radius-pill); background:var(--accent-400); }
+.profile__vibe input::-webkit-slider-thumb { appearance:none; width:22px; height:22px; margin-top:-8px; border:3px solid var(--panel-bg); border-radius:50%; background:var(--accent-400); box-shadow:0 0 0 1px var(--accent-400),0 2px 5px color-mix(in oklab,var(--accent-600) 22%,transparent); transition:transform var(--dur-fast) var(--ease-out),box-shadow var(--dur-fast); }
+.profile__vibe input::-moz-range-thumb { width:16px; height:16px; border:3px solid var(--panel-bg); border-radius:50%; background:var(--accent-400); box-shadow:0 0 0 1px var(--accent-400),0 2px 5px color-mix(in oklab,var(--accent-600) 22%,transparent); transition:transform var(--dur-fast) var(--ease-out),box-shadow var(--dur-fast); }
+.profile__vibe input:active::-webkit-slider-thumb { transform:scale(1.13); box-shadow:0 0 0 6px var(--focus-halo); }
+.profile__vibe input:active::-moz-range-thumb { transform:scale(1.13); box-shadow:0 0 0 6px var(--focus-halo); }
+.profile__vibe:focus-within > span { color:var(--accent-400); }
 .profile__vibe output {
   font-variant-numeric: tabular-nums;
+  display:grid;
+  place-items:center;
+  min-height:30px;
+  border:var(--border-hairline);
+  border-radius:var(--radius-sm);
+  background:var(--ink-900);
+  color:var(--accent-400);
+  font-family:var(--font-mono);
+  font-size:var(--step--1);
 }
 .profile__error {
   color: var(--rose-400);
@@ -477,8 +522,9 @@ async function save() {
   padding: var(--space-4) var(--space-5);
   border: var(--border-soft);
   border-radius: var(--radius-lg);
-  background: var(--ink-850);
-  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.08);
+  background: var(--glass-tint);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--panel-shadow), 0 -6px 20px color-mix(in oklab,var(--accent-600) 6%,transparent);
 }
 .profile__actions p {
   margin: 0;
@@ -510,7 +556,7 @@ async function save() {
     padding: var(--space-4);
   }
   .profile__vibe {
-    grid-template-columns: minmax(0, 1fr) 2ch;
+    grid-template-columns: minmax(0, 1fr) 2.25rem;
   }
   .profile__vibe input {
     grid-row: 2;
@@ -519,7 +565,6 @@ async function save() {
   .profile__vibe output {
     grid-column: 2;
     grid-row: 1;
-    text-align: right;
   }
   .profile__actions {
     padding: var(--space-3) var(--space-4);
@@ -528,5 +573,13 @@ async function save() {
     min-width: 0;
     flex: 1;
   }
+}
+@media (prefers-reduced-motion:reduce) {
+  .profile__sections a { transition:none; }
+  .profile__vibe input::-webkit-slider-thumb { transition:none; }
+  .profile__vibe input::-moz-range-thumb { transition:none; }
+  .profile__sections a:hover,.profile__sections a:active { transform:none; }
+  .profile__vibe input:active::-webkit-slider-thumb { transform:none; }
+  .profile__vibe input:active::-moz-range-thumb { transform:none; }
 }
 </style>

@@ -181,7 +181,7 @@ watch(() => currentUser.value?.id, userId => {
 <template>
   <div class="container section inbox">
     <header class="head">
-      <h1>Messages</h1>
+      <div class="head__title"><p class="inbox__eyebrow">Your conversations</p><h1>Messages</h1><p class="head__hint">Pick a space, then carry on where you left off.</p></div>
       <SegmentedTabs v-model="tab" :tabs="tabs" aria-label="Message type" />
     </header>
 
@@ -189,7 +189,7 @@ watch(() => currentUser.value?.id, userId => {
 
     <section v-show="tab === 'companion'" class="inbox__section" aria-labelledby="companion-messages">
       <div class="section-head">
-        <h2 id="companion-messages" class="sr-only">Companion messages</h2>
+        <div><h2 id="companion-messages">Companion messages</h2><p class="section-head__hint">One-to-one conversations with your mutual matches.</p></div>
         <button v-if="blocked.length" class="btn btn--ghost" type="button" :aria-expanded="showBlocked" @click="showBlocked = !showBlocked">
           Blocked people ({{ blocked.length }})
         </button>
@@ -235,7 +235,7 @@ watch(() => currentUser.value?.id, userId => {
 
         <ul v-if="conversations.length" class="threads">
           <li v-for="c in conversations" :key="c.id">
-            <RouterLink :to="`/kaki/chat/${c.id}`" class="thread">
+            <RouterLink :to="`/kaki/chat/${c.id}`" class="thread" :class="{ 'thread--unread': c.unread > 0 }">
               <UserAvatar :src="c.other.avatarUrl" :name="c.other.displayName" :size="44" />
               <span class="thread__text">
                 <span class="thread__top">
@@ -246,6 +246,7 @@ watch(() => currentUser.value?.id, userId => {
                 <span class="thread__context">{{ c.concert.artist }}</span>
               </span>
               <span v-if="c.unread > 0" class="thread__unread" :aria-label="`${c.unread} unread messages`">{{ c.unread > 9 ? '9+' : c.unread }}</span>
+              <span class="thread__arrow" aria-hidden="true">&rsaquo;</span>
             </RouterLink>
           </li>
         </ul>
@@ -256,7 +257,7 @@ watch(() => currentUser.value?.id, userId => {
     </section>
 
     <section v-show="tab === 'tickets'" class="inbox__section" aria-labelledby="ticket-messages">
-      <h2 id="ticket-messages" class="sr-only">Ticket messages</h2>
+      <div class="section-head"><div><h2 id="ticket-messages">Ticket messages</h2><p class="section-head__hint">Keep seller enquiries and listing details together.</p></div></div>
       <p v-if="ticketLoading" class="empty loading-state" role="status"><LoadingSpinner />Loading ticket messages…</p>
       <div v-else-if="ticketError" class="notice notice--error" role="alert">
         <p>{{ ticketError.status === 401 ? 'Sign in to see your ticket messages.' : 'Could not load ticket messages.' }}</p>
@@ -275,6 +276,7 @@ watch(() => currentUser.value?.id, userId => {
               <span class="thread__preview">{{ c.lastMessage?.body ?? 'No messages yet' }}</span>
               <span class="thread__context">{{ c.role === 'buyer' ? 'Ticket enquiry' : 'Your listing' }}: {{ c.listing.title }} · {{ formatMoney(c.listing.priceCents) }} listing total</span>
             </span>
+            <span class="thread__arrow" aria-hidden="true">&rsaquo;</span>
           </RouterLink>
         </li>
       </ul>
@@ -283,7 +285,7 @@ watch(() => currentUser.value?.id, userId => {
 
     <!-- Single-group channels and accepted connections share the Groups inbox. -->
     <section v-show="tab === 'groups'" class="inbox__section" aria-labelledby="group-messages">
-      <h2 id="group-messages" class="sr-only">Group messages</h2>
+      <div class="section-head"><div><h2 id="group-messages">Group messages</h2><p class="section-head__hint">Your concert groups and shared rooms for connected groups.</p></div></div>
       <p v-if="channelsLoading" class="empty loading-state" role="status"><LoadingSpinner />Loading group channels…</p>
       <div v-if="!channelsLoading && channelsError" class="notice notice--error" role="alert">
         <p>{{ channelsError.status === 401 ? 'Sign in to see your group channels.' : channels.length ? 'Some group chats could not be refreshed. You can still open the chats shown below.' : 'Could not load group channels.' }}</p>
@@ -292,7 +294,7 @@ watch(() => currentUser.value?.id, userId => {
       </div>
       <ul v-if="!channelsLoading && channels.length" class="threads">
         <li v-for="channel in channels" :key="channel.connectionId ? `connection:${channel.connectionId}` : `group:${channel.partyId}`">
-          <RouterLink :to="channelLink(channel)" class="thread">
+          <RouterLink :to="channelLink(channel)" class="thread" :class="{ 'thread--unread': channel.unread > 0 }">
             <span class="thread__group" aria-hidden="true">{{ (channel.concert.artist || '?').slice(0, 1) }}</span>
             <span class="thread__text">
               <span class="thread__top">
@@ -307,6 +309,7 @@ watch(() => currentUser.value?.id, userId => {
               </span>
             </span>
             <span v-if="channel.unread > 0" class="thread__unread" :aria-label="`${channel.unread} unread messages`">{{ channel.unread > 9 ? '9+' : channel.unread }}</span>
+            <span class="thread__arrow" aria-hidden="true">&rsaquo;</span>
           </RouterLink>
         </li>
       </ul>
@@ -329,12 +332,23 @@ watch(() => currentUser.value?.id, userId => {
 .head h1 {
   margin: 0;
 }
+.head__title { padding-bottom: var(--space-2); }
+.head .inbox__eyebrow {
+  margin: 0 0 var(--space-2);
+  color: var(--accent-400);
+  font-size: .7rem;
+  font-weight: 650;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.head__hint { margin-top: var(--space-2); font-size: var(--step--1); }
 .head p, .hint {
   color: var(--text-300);
 }
 .inbox__section {
   margin-top: var(--space-5);
   min-width: 0;
+  animation: inbox-section-in 180ms var(--ease-settle) both;
 }
 .inbox__section h2 {
   margin: 0;
@@ -346,7 +360,9 @@ watch(() => currentUser.value?.id, userId => {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
+.section-head__hint { margin-top: var(--space-1); color: var(--text-300); font-size: var(--step--1); }
 .hint {
   margin: var(--space-2) 0 var(--space-4);
   font-size: var(--step--1);
@@ -354,9 +370,10 @@ watch(() => currentUser.value?.id, userId => {
 .blocked {
   margin-block: var(--space-4);
   padding: var(--space-4);
-  border: var(--border-hairline);
+  border: 1px solid var(--panel-edge);
   border-radius: var(--radius-md);
   background: var(--ink-850);
+  box-shadow: inset 0 1px 0 var(--panel-highlight);
 }
 .blocked h3, .fresh h3 {
   margin: 0 0 var(--space-3);
@@ -399,13 +416,18 @@ watch(() => currentUser.value?.id, userId => {
   padding: var(--space-3);
   width: 100%;
   min-width: 0;
-  border: var(--border-hairline);
+  border: 1px solid var(--panel-edge);
   border-radius: var(--radius-md);
   background: var(--ink-850);
   color: var(--text-100);
   text-align: left;
   cursor: pointer;
+  box-shadow: var(--panel-shadow);
+  transition: border-color var(--dur-fast), background-color var(--dur-fast), transform var(--dur-fast) var(--ease-settle), box-shadow var(--dur-fast);
 }
+.fresh__item:hover:not(:disabled) { border-color: var(--accent-400); background: var(--ink-800); }
+.fresh__item:active:not(:disabled) { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0, 0, 0, .12); }
+.fresh__item:disabled { opacity: .55; cursor: wait; }
 .fresh__text {
   display: grid;
   gap: var(--space-1);
@@ -418,19 +440,33 @@ watch(() => currentUser.value?.id, userId => {
 }
 .threads {
   display: grid;
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--panel-bg);
+  box-shadow: var(--panel-shadow);
 }
 .thread {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-4) var(--space-2);
+  padding: var(--space-4);
   border-bottom: var(--border-hairline);
+  border-left: 3px solid transparent;
   color: inherit;
   text-decoration: none;
+  transition: background-color var(--dur-fast), border-color var(--dur-fast), box-shadow var(--dur-fast);
 }
+.threads > li:last-child .thread { border-bottom: 0; }
+.thread--unread { border-left-color: var(--accent-400); background: color-mix(in srgb, var(--accent-400) 5%, var(--ink-800)); }
 .thread:hover {
   background: var(--ink-850);
+  color: var(--text-100);
 }
+.thread:active { background: var(--ink-750); box-shadow: inset 0 2px 5px rgba(0, 0, 0, .08); }
+.thread:focus-visible { position: relative; z-index: 1; outline-offset: -3px; }
+.thread__arrow { flex: none; color: var(--text-400); font-size: 1.5rem; line-height: 1; transition: color var(--dur-fast), transform var(--dur-fast) var(--ease-settle); }
+.thread:hover .thread__arrow, .thread:focus-visible .thread__arrow { color: var(--accent-400); transform: translateX(2px); }
 .thread__text {
   display: grid;
   gap: var(--space-1);
@@ -467,6 +503,7 @@ watch(() => currentUser.value?.id, userId => {
   font-size: var(--step--2);
   color: var(--text-300);
   overflow-wrap: anywhere;
+  padding-top: 2px;
 }
 .thread__unread {
   display: grid;
@@ -483,6 +520,10 @@ watch(() => currentUser.value?.id, userId => {
 }
 .empty {
   margin-block: var(--space-5);
+  padding: var(--space-5);
+  border: 1px dashed var(--ink-500);
+  border-radius: var(--radius-md);
+  background: var(--ink-850);
   color: var(--text-300);
 }
 .thread__group {
@@ -496,5 +537,17 @@ watch(() => currentUser.value?.id, userId => {
   color: #fff;
   font-weight: 700;
   font-size: var(--step-0);
+}
+@keyframes inbox-section-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+@media (max-width: 480px) {
+  .thread { padding: var(--space-3); gap: var(--space-2); }
+  .thread__arrow { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .inbox__section { animation: none; }
+  .fresh__item:active:not(:disabled), .thread:hover .thread__arrow, .thread:focus-visible .thread__arrow { transform: none; }
 }
 </style>

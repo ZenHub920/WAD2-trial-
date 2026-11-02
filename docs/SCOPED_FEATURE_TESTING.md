@@ -20,6 +20,8 @@ Current verification: **382 backend tests, 164 Vue tests and 13 checked-in Chrom
 
 The four recording workflows also passed with normal motion enabled and produced ten non-empty actor clips. Light/dark planner and public-profile captures were reviewed. A configured-private-value scan found no matches in pending files, build output or reachable history. These checks remain bounded to the data and environments described below.
 
+A subsequent presentation pass strengthens discovery context, expands optional Kaki section/age filters on demand, distinguishes public profile controls from private matching answers, and clarifies inbox/unread actions. Native sliders and buttons have pressed/focused feedback; non-home entrances are shorter and accent rules are reserved for section anchors. Home opening transitions, questionnaire wording/fields, API calls, ranking and approvals are unchanged. Existing browser workflows were rerun, including notification read/open actions after preserving the panel's stable accessible name. Fresh synthetic-account snippets cover the chat entry, planner steps/grid, public profile, private questionnaire, inbox and discovery, with a 390-pixel filter layout checked for overflow. Reduced-motion mode disables the added movement and press scaling.
+
 The results below retain the earlier 30 October baseline.
 
 ## Scope and result
