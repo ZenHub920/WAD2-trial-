@@ -171,7 +171,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="availability-grid">
+  <div class="availability-grid" :class="{ 'availability-grid--short': days.length <= 2 && times.length <= 8 }">
     <div class="availability-grid__intro">
       <p :id="helpId"><span class="availability-grid__mouse-help">Drag to mark when you’re free. Drag from a selected time to erase.</span><span class="availability-grid__touch-help">Tap a time, or hold then drag to paint or erase. Swipe to scroll.</span> <span>All times are Singapore time.</span></p>
       <div class="availability-grid__legend" aria-label="Availability colour scale">
@@ -182,7 +182,7 @@ onBeforeUnmount(() => {
     <p v-if="!cells.length" class="group-muted">No time slots in this planning window.</p>
     <p v-if="horizontalOverflow && cells.length" :id="scrollHelpId" class="availability-grid__scroll-hint">Scroll sideways for more days <span aria-hidden="true">→</span></p>
     <div v-if="cells.length" ref="root" class="availability-grid__scroll" :data-touch-painting="touchPainting" @pointermove="move" @pointerup="finish" @pointercancel="finish" @contextmenu="preventPaintingMenu" @mouseleave="hovered = null">
-      <table :aria-describedby="horizontalOverflow ? `${helpId} ${scrollHelpId}` : helpId" :style="{ width: `${2.5 + days.length * 3.25}rem` }" aria-label="Group availability in Singapore time">
+      <table :aria-describedby="horizontalOverflow ? `${helpId} ${scrollHelpId}` : helpId" :style="{ minWidth: `${2.5 + days.length * 3.25}rem` }" aria-label="Group availability in Singapore time">
         <thead><tr><th scope="col">Time</th><th v-for="day in days" :key="day.key" scope="col">{{ day.label }}</th></tr></thead>
         <tbody>
           <tr v-for="timeOfDay in times" :key="timeOfDay" :class="{ 'availability-grid__hour': timeOfDay.endsWith(':00') }">
@@ -270,7 +270,8 @@ onBeforeUnmount(() => {
   color: var(--text-100);
 }
 .availability-grid__scroll {
-  width: fit-content;
+  width: 100%;
+  min-width: 0;
   max-width: 100%;
   max-height: 25rem;
   overflow: auto;
@@ -285,6 +286,7 @@ onBeforeUnmount(() => {
 .availability-grid__scroll[data-touch-painting='true'] { outline: 2px solid var(--accent-400); outline-offset: 2px; }
 .availability-grid__scroll-hint { margin: 0; color: var(--text-300); font-size: .8rem; }
 table {
+  width: 100%;
   border-spacing: 0;
   table-layout: fixed;
   border-collapse: separate;
@@ -404,6 +406,8 @@ td {
 .availability-grid__inspection strong {
   color: var(--text-100);
 }
+.availability-grid--short .availability-grid__cell,
+.availability-grid--short .availability-grid__outside { min-height: 2.75rem; }
 @media (max-width: 600px), (any-pointer: coarse) {
   .availability-grid__mouse-help { display: none; }
   .availability-grid__touch-help { display: inline; }

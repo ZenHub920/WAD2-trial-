@@ -1,8 +1,11 @@
 <script setup>
 import { computed } from 'vue';
 import { LABELS } from '../api.js';
+import { useConcertEligibility } from '../composables/useConcertEligibility.js';
 defineEmits(['respond']);
 const props = defineProps({ application: { type: Object, required: true }, busy: Boolean });
+const { canCoordinate, isFinished } = useConcertEligibility(() => props.application);
+const canAccept = computed(() => !props.application.eventDate || canCoordinate.value);
 const canRespond = computed(() => props.application.canHostRespond !== false && props.application.queueStatus !== 'waiting');
 const held = computed(() => props.application.seatReserved ?? props.application.queueStatus !== 'waiting');
 const statuses = { pending: 'Awaiting your approval', accepted: 'Approved', rejected: 'Declined', declined: 'Declined', withdrawn: 'Withdrawn', expired: 'Expired', superseded: 'Applicant joined another group', cancelled: 'Membership ended' };
@@ -35,6 +38,7 @@ const holdDeadline = computed(() => {
     <p v-if="application.resolutionReason === 'migrated_to_mutual_proposal'" class="group-muted">Review the replacement Automatic proposal card in this group's request queue. Both you and the companion must approve it when it reaches the front.</p>
     <p v-else-if="application.legacyAutomatic || application.matchingRoundId" class="group-muted">Created under the earlier automatic matching flow.</p>
     <p v-if="application.applicationNote" class="application-card__note">{{ application.applicationNote }}</p>
+    <p v-if="application.status === 'pending' && isFinished" class="group-muted">This concert has finished. New membership approvals are closed; this request remains in your history.</p>
     <div v-if="application.compatibility != null || application.reasons?.length" class="application-card__compatibility"><p v-if="application.compatibility != null"><strong>{{ application.compatibility >= 0.75 ? 'Strong fit' : application.compatibility >= 0.5 ? 'Potential fit' : 'Explore this applicant' }}</strong></p><ul v-if="application.reasons?.length"><li v-for="reason in application.reasons.slice(0, 3)" :key="reason.concept ?? reason.label">{{ reason.label }}</li></ul></div>
     <details><summary>Public profile</summary><div class="application-card__profile">
       <p v-if="application.seeker">{{ application.seeker.ageBand }} · {{ application.seeker.languages?.join(', ') }}</p>
@@ -43,7 +47,7 @@ const holdDeadline = computed(() => {
       <RouterLink v-if="application.seeker?.id" :to="`/people/${encodeURIComponent(application.seeker.id)}`">View {{ application.seekerName }}'s concert vibe <span aria-hidden="true">→</span></RouterLink>
       <p class="group-muted">Their questionnaire stays private. Match reasons above summarise compatibility.</p>
     </div></details>
-    <div v-if="application.status === 'pending'" class="group-actions"><button type="button" class="btn btn--success" :disabled="busy || !canRespond" @click="$emit('respond', 'accept')">Approve group place</button><button type="button" class="btn btn--danger-ghost" :disabled="busy || !canRespond" @click="$emit('respond', 'reject')">Decline request</button></div>
+    <div v-if="application.status === 'pending'" class="group-actions"><button type="button" class="btn btn--success" :disabled="busy || !canRespond || !canAccept" @click="$emit('respond', 'accept')">Approve group place</button><button type="button" class="btn btn--danger-ghost" :disabled="busy || !canRespond" @click="$emit('respond', 'reject')">Decline request</button></div>
   </article>
 </template>
 

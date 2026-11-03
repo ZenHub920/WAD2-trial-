@@ -13,7 +13,7 @@ import '../assets/groups.css';
 const props = defineProps({ id: String });
 const {
   route, router, currentUser, context, board, boards, error, busy, loading, creationContext,
-  scope, hasActiveBoards, showCreation, creatingAdditional, returnRoute, returnLabel,
+  scope, hasActiveBoards, showCreation, creatingAdditional, returnRoute, returnLabel, proposalLabel, proposalGuidance, approvalGuidance,
   weather, rainfall, travelRecommendations, transport, comment, slots, place, position, travelOptions,
   feedback, failures, placeSearchKey, confirmAction, capabilities, contributionsLocked, selectedOrigins,
   journeySearchKey, leavePrompt, settleLeave, journeyDirty,
@@ -44,23 +44,22 @@ const {
         Plan a meetup with your group or a mutual companion match.
       </p>
       <div v-if="creationContext" class="meetup-overview-context"><strong>{{ creationContext.concert?.artist }}</strong><span>{{ creationContext.scopeLabel }}</span><RouterLink v-if="hasActiveBoards" to="/meetups">All my meetup plans</RouterLink></div>
-      <MeetupOverview :plans="boards" :scoped="Boolean(creationContext)" />
-      <div v-if="creationContext?.capabilities.canCreate && hasActiveBoards" class="meetup-additional-plan"><p>Continue an existing plan above. Need a genuinely separate arrangement?</p><button type="button" class="btn btn--ghost" :disabled="busy" :aria-expanded="creatingAdditional" aria-controls="meetup-creation-area" @click="creatingAdditional = !creatingAdditional">{{ creatingAdditional ? 'Keep existing plans' : 'Create a separate plan' }}</button></div>
+      <MeetupOverview :plans="boards" :scoped="Boolean(creationContext)" :from="route.query.from" />
+      <p v-if="creationContext?.policy?.canSchedule === false" class="meetup-role-note" role="status">No future pre-concert meeting window remains. Existing plans and conversations stay available.</p>
+      <div v-if="creationContext?.capabilities.canCreate && creationContext.policy?.canSchedule !== false && hasActiveBoards" class="meetup-additional-plan"><p>Continue an existing plan above. Need a genuinely separate arrangement?</p><button type="button" class="btn btn--ghost" :disabled="busy" :aria-expanded="creatingAdditional" aria-controls="meetup-creation-area" @click="creatingAdditional = !creatingAdditional">{{ creatingAdditional ? 'Keep existing plans' : 'Create a separate plan' }}</button></div>
       <div id="meetup-creation-area"><MeetupCreationForm v-if="showCreation" :key="context()" :context="creationContext" :additional-plan="hasActiveBoards" :busy="busy" :error="failures.creation" @submit="create" /></div>
       <p v-if="creationContext && !creationContext.capabilities.canCreate && !boards.length" class="meetup-role-note">Your group host creates the planning board. You can contribute availability, places and discussion once it is open.</p>
-      <p v-if="!boards.length && !error">No meetup plans yet. Start a plan from your group or an active companion conversation.</p>
+      <p v-if="!boards.length && !error && creationContext?.policy?.canSchedule !== false">No meetup plans yet. Start a plan from your group or an active companion conversation.</p>
       </template>
     <template v-else-if="board"
-      ><div class="meetup-context"><span>{{ board.participantCount }} participants</span><strong>{{ statuses[board.status] ?? "Plan updated" }}</strong>
-      <details v-if="capabilities.canCancel || capabilities.canReopen" class="meetup-plan-options"><summary>Plan options</summary><div class="group-actions"><button v-if="capabilities.canReopen" type="button" class="btn btn--ghost" :disabled="busy" @click="requestOrganizerAction('reopen')">Reopen planning</button><button v-if="capabilities.canCancel"
-        class="btn btn--danger"
-        :disabled="busy"
-        @click="requestOrganizerAction('cancel')"
-      >
-        Cancel meetup
-      </button></div></details></div>
-      <p v-if="board.status === 'proposed' || board.status === 'confirmed'" class="meetup-role-note">{{ board.status === 'confirmed' ? 'This plan is confirmed.' : 'This proposal is awaiting organizer approval.' }} Availability, suggestions and votes stay locked until an organizer explicitly reopens planning. You can still discuss changes.</p>
-      <p v-else-if="board.status === 'planning' && !capabilities.isOrganizer" class="group-muted">Share your availability, suggest places and vote. Your group host will propose and approve the final plan.</p>
+      ><div class="meetup-context"><span>{{ board.participantCount }} participants</span><strong>{{ statuses[board.status] ?? "Plan updated" }}</strong></div>
+      <section v-if="board.status === 'proposed' || board.status === 'confirmed'" class="meetup-role-note meetup-recovery" aria-label="Planning is locked">
+        <p>{{ board.status === 'confirmed' ? 'This plan is confirmed.' : 'This proposal is awaiting organizer approval.' }} Availability, suggestions and votes stay locked to protect the agreed version. Discussion stays open.</p>
+        <p v-if="capabilities.canReopen">Need to change it? {{ board.status === 'proposed' ? 'Withdraw this proposal' : 'Reopen planning' }} to keep everyone’s contributions and choose again. A revised proposal needs fresh approvals.</p>
+        <p v-else>Ask an organizer to reopen planning before changing availability, places or votes.</p>
+        <div v-if="activeStep !== 'review'" class="group-actions"><button type="button" class="btn btn--ghost" @click="showStep('review')">View the {{ board.status === 'confirmed' ? 'confirmed plan' : 'proposal' }}</button><button v-if="capabilities.canReopen" type="button" class="btn btn--primary" :disabled="busy" @click="requestOrganizerAction('reopen')">{{ board.status === 'proposed' ? 'Withdraw proposal and reopen planning' : 'Reopen planning' }}</button></div>
+      </section>
+      <p v-else-if="board.status === 'planning' && !capabilities.isOrganizer" class="group-muted">Share your availability, suggest places and vote. Your group host chooses and confirms the final plan.</p>
       <nav class="meetup-steps" role="tablist" aria-label="Meeting planning steps">
         <button id="meetup-tab-availability" type="button" role="tab" data-planner-step="availability" aria-controls="meetup-availability" :aria-selected="activeStep === 'availability'" :tabindex="activeStep === 'availability' ? 0 : -1" @click="showStep('availability')" @keydown="navigateSteps"><span>1</span><strong>Find a time</strong><small>Paint your availability</small></button>
         <button id="meetup-tab-places" type="button" role="tab" data-planner-step="places" aria-controls="meetup-places" :aria-selected="activeStep === 'places'" :tabindex="activeStep === 'places' ? 0 : -1" @click="showStep('places')" @keydown="navigateSteps"><span>2</span><strong>Choose a place</strong><small>Compare everyone's journey</small></button>
@@ -189,10 +188,11 @@ const {
           <p v-if="s.basis === 'straight_line_distance' || s.basis === undefined" class="group-muted">Straight-line distance estimate. Fresh route times are unavailable for this option.</p>
           <div class="group-actions">
             <button type="button" class="btn btn--ghost" :disabled="busy || contributionsLocked" @click="vote(s.placeId)">Vote for place</button>
-            <button v-if="capabilities.canPropose" type="button" class="btn btn--primary" :disabled="busy" @click="propose(s)">Propose this time &amp; place</button>
+            <button v-if="capabilities.canPropose" type="button" class="btn btn--primary" :disabled="busy" @click="propose(s)">{{ proposalLabel }}</button>
           </div>
         </article>
       </section>
+      <p v-if="capabilities.canPropose && recommendedOptions.length" class="group-muted meetup-proposal-guidance">{{ proposalGuidance }}</p>
       <button type="button" class="btn btn--ghost meetup-review-link" @click="showStep('review')">Review the plan <span aria-hidden="true">→</span></button>
       </div>
       <div id="meetup-review" v-show="activeStep === 'review'" role="tabpanel" aria-labelledby="meetup-tab-review" class="meetup-workspace meetup-review-workspace">
@@ -206,11 +206,7 @@ const {
             board.places.find((p) => p.id === board.selected_place_id)?.label
           }}, {{ time(board.selected_start) }}
         </p>
-        <p>
-          Approvals: {{ board.approvals.length }}/{{
-            board.requiredApprovers.length
-          }}
-        </p>
+        <div class="meetup-approval-progress" role="status"><strong>Approvals: {{ board.approvals.length }}/{{ board.requiredApprovers.length }}</strong><p>{{ approvalGuidance }}</p><p v-if="board.status === 'proposed' && board.requiredApprovers.length > 1" class="group-muted">{{ board.scope?.kakiConversationId || board.kaki_conversation_id ? 'Both companions' : 'Both group hosts' }} must explicitly approve this version. Submitting the proposal does not approve it.</p></div>
         <button
           v-if="
             capabilities.canApprove
@@ -221,6 +217,7 @@ const {
         >
           Approve plan</button
         >
+        <button v-if="capabilities.canReopen" type="button" class="btn btn--ghost meetup-reopen" :disabled="busy" @click="requestOrganizerAction('reopen')">{{ board.status === 'proposed' ? 'Withdraw proposal and reopen planning' : 'Reopen planning' }}</button>
         <details class="meetup-disclosure meetup-weather"><summary>Weather &amp; nearby parking <span>Check before travelling</span></summary><button class="btn btn--ghost" :disabled="busy" @click="getWeather">
           Check weather and recent rainfall
         </button>
@@ -247,9 +244,11 @@ const {
       </section>
       <section v-else class="card group-panel meetup-current-proposal"><span class="meetup-eyebrow">03 / Group decision</span><h2>A plan everyone can agree on</h2><p class="group-muted">Choose a suggested time and place first. Your group can then discuss the proposal and give the required approvals.</p><button type="button" class="btn btn--primary" @click="showStep('places')">Choose a time &amp; place</button></section>
       <MeetupTransportPanel :key="`${id}:${currentUser?.id}`" :active="activeStep === 'review'" :meetup-id="id" :concert="board.concert" :plan-version="board.version" :has-meeting-place="Boolean(board.selected_place_id)" />
-      <MeetupDiscussionPanel v-model="comment" :comments="board.comments" :busy="busy" :can-discuss="capabilities.canDiscuss" :notice="feedback.discussion" :error="failures.discussion" @submit="postComment" /></div></template
+      <MeetupDiscussionPanel v-model="comment" :comments="board.comments" :busy="busy" :can-discuss="capabilities.canDiscuss" :notice="feedback.discussion" :error="failures.discussion" @submit="postComment" />
+      <section v-if="capabilities.canCancel" class="meetup-management" aria-label="Manage this meetup"><h2>Manage this meetup</h2><p class="group-muted">To revise the time or place, reopen planning. Cancel only if this meetup is no longer going ahead.</p><button type="button" class="btn btn--ghost meetup-cancel" :disabled="busy" @click="requestOrganizerAction('cancel')">Cancel meetup</button></section>
+      </div></template
     >
-    <ConfirmDialog :open="Boolean(confirmAction)" :busy="busy" :title="confirmAction === 'reopen' ? 'Reopen planning?' : 'Cancel this meetup?'" :body="confirmAction === 'reopen' ? 'The selected time and place will be cleared. Previous approvals will no longer authorize the plan; all required organizers must approve a new proposal.' : 'This meetup will become read-only. Participants will be notified.'" :confirm-label="confirmAction === 'reopen' ? 'Reopen planning' : 'Cancel meetup'" cancel-label="Keep current plan" :danger="confirmAction === 'cancel'" @cancel="confirmAction = null" @confirm="organizerAction" />
+    <ConfirmDialog :open="Boolean(confirmAction)" :busy="busy" :title="confirmAction === 'reopen' ? (board?.status === 'proposed' ? 'Withdraw proposal and reopen planning?' : 'Reopen planning?') : 'Cancel this meetup?'" :body="confirmAction === 'reopen' ? 'The selected time and place will be cleared. Availability, places, votes and discussion are kept. Previous approvals will no longer authorize the plan; all required organizers must approve a new proposal. Participants will be notified.' : 'This meetup will become read-only. Participants will be notified.'" :confirm-label="confirmAction === 'reopen' ? 'Reopen planning' : 'Cancel meetup'" cancel-label="Keep current plan" :danger="confirmAction === 'cancel'" @cancel="confirmAction = null" @confirm="organizerAction" />
     <ConfirmDialog :open="leavePrompt" title="Leave with unsaved changes?" body="Your availability, journey, place or discussion draft has not been saved. Leaving this planner discards it. Any update already sent may still complete." confirm-label="Discard changes and leave" cancel-label="Keep editing" initial-focus="cancel" danger @cancel="settleLeave(false)" @confirm="settleLeave(true)" />
   </div>
 </template>
@@ -296,28 +295,15 @@ const {
   background: color-mix(in srgb, var(--accent-400) 5%, var(--ink-800));
   font-weight: 500;
 }
-.meetup-plan-options {
-  margin-left: auto;
-  position: relative;
-}
-.meetup-plan-options summary {
-  padding: .45rem .2rem;
-  color: var(--text-300);
-}
-.meetup-plan-options > .group-actions {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  z-index: 4;
-  white-space: nowrap;
-  box-shadow: var(--shadow-md);
-  padding: .65rem;
-  width: min(19rem, 75vw);
-  border: 1px solid var(--panel-edge);
-  border-radius: 8px;
-  background: var(--ink-800);
-}
 .meetup-role-note, .meetup-empty-state { padding: .85rem 1rem; border: 1px solid var(--panel-edge); border-radius: 8px; background: var(--ink-850); color: var(--text-300); }
+.meetup-recovery { display: grid; gap: .65rem; border-left: 3px solid var(--accent-400); }
+.meetup-recovery p { margin: 0; }
+.meetup-approval-progress { padding: .85rem 1rem; border: var(--border-soft); border-radius: var(--radius-sm); background: var(--surface-interactive); }
+.meetup-approval-progress p { margin: .5rem 0 0; }
+.meetup-reopen { justify-self: start; }
+.meetup-management { border-top: var(--border-soft); padding-top: 1.25rem; display: grid; justify-items: start; gap: .75rem; }
+.meetup-management h2 { font-size: var(--step-0); }
+.meetup-cancel { color: var(--text-300); }
 .meetup-journey .meetup-travel-fields { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 1rem; }
 .meetup-journey .meetup-travel-fields > button { justify-self: start; }
 .meetup-manual-entry, .meetup-slot-overrides { border-top: 1px solid var(--panel-edge); padding-top: .8rem; }

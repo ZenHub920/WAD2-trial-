@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { availableCapacitySql, reservedPlacesSql } from './capacity.js';
+import { requireConcertCoordination } from './concertEligibility.js';
 
 export function createConcertRepo(db) {
   return {
@@ -104,6 +105,7 @@ export function createParticipationRepo(db) {
       }));
     },
     join: db.transaction((userId, concertId, sectionPref, arrivalPref) => {
+      requireConcertCoordination(db, concertId);
       upsert.run(userId, concertId, sectionPref, arrivalPref);
       return byUserConcert.get(userId, concertId);
     }),

@@ -318,15 +318,23 @@ export function createGroupChannelRepo(db, repos) {
       requireMember(partyId, userId);
       const top = db.prepare('SELECT COALESCE(MAX(rowid), 0) AS seq FROM group_channel_messages WHERE party_id = ?')
         .get(partyId).seq;
-      db.prepare('UPDATE group_channel_members SET last_read_seq = ? WHERE party_id = ? AND user_id = ?')
-        .run(top, partyId, userId);
-      return { read: top };
+      const changed = db.prepare('UPDATE group_channel_members SET last_read_seq = ? WHERE party_id = ? AND user_id = ? AND last_read_seq < ?')
+        .run(top, partyId, userId, top).changes > 0;
+      return { read: top, changed };
     }),
 
     /** Member ids, for fanning a new message out over SSE and notifications. */
     memberIds(partyId) {
       return db.prepare('SELECT user_id FROM group_channel_members WHERE party_id = ?')
         .all(partyId).map((r) => r.user_id);
+    },
+
+    /** Snapshot only this user's rooms, so membership mutations can invalidate
+     * both the old and new audiences without scanning unrelated rooms. */
+    audiences(userId) {
+      ensureHostRooms.run(userId);
+      return db.prepare('SELECT party_id FROM group_channel_members WHERE user_id = ? ORDER BY party_id').all(userId)
+        .map(({ party_id: partyId }) => ({ partyId, memberIds: memberRows.all(partyId).map(row => row.user_id).sort() }));
     },
 
     unreadTotal(userId) {

@@ -21,6 +21,16 @@ export function createGroupChannelController(repos, realtime) {
   /** Push to everyone in the room, including the sender's other tabs. */
   const fanOut = (partyId, type, payload = {}) =>
     realtime?.emitTo(repos.groupChannels.memberIds(partyId), type, { partyId, ...payload });
+  const markRead = (partyId, userId) => {
+    const result = repos.groupChannels.markRead(partyId, userId);
+    const notificationsRead = repos.notifications.readConversation(userId, `/groups/${partyId}/channel`);
+    // Only this user's other tabs need the read invalidation. An unchanged GET
+    // must not cause a reload -> read -> event loop in every open group room.
+    if (result.changed || notificationsRead) realtime?.emitTo([userId], 'group-read', {
+      partyId, readerId: userId, lastReadSeq: result.read,
+    });
+    return { ...result, notificationsRead };
+  };
 
   return {
     list(req, res) {
@@ -35,9 +45,8 @@ export function createGroupChannelController(repos, realtime) {
       return send(res, () => {
         const channel = repos.groupChannels.open(req.params.partyId, req.user.id, req.query);
         // Opening is reading; the badge should not survive the visit.
-        repos.groupChannels.markRead(req.params.partyId, req.user.id);
-        repos.notifications.readConversation(req.user.id, `/groups/${req.params.partyId}/channel`);
-        return { channel };
+        const { notificationsRead } = markRead(req.params.partyId, req.user.id);
+        return { channel, notificationsRead };
       });
     },
 
@@ -69,9 +78,9 @@ export function createGroupChannelController(repos, realtime) {
     send(req, res) {
       return send(res, () => {
         const message = repos.groupChannels.send(req.params.partyId, req.user.id, req.body?.body);
-        repos.notifications.readConversation(req.user.id, `/groups/${req.params.partyId}/channel`);
+        const { notificationsRead } = markRead(req.params.partyId, req.user.id);
         fanOut(req.params.partyId, 'group-message', { messageId: message.id });
-        return { message };
+        return { message, notificationsRead };
       });
     },
 
@@ -87,9 +96,7 @@ export function createGroupChannelController(repos, realtime) {
 
     markRead(req, res) {
       return send(res, () => {
-        const result = repos.groupChannels.markRead(req.params.partyId, req.user.id);
-        repos.notifications.readConversation(req.user.id, `/groups/${req.params.partyId}/channel`);
-        return result;
+        return markRead(req.params.partyId, req.user.id);
       });
     },
   };

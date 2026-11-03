@@ -7,11 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run --config vitest.config.js",
-    "test:watch": "vitest --config vitest.config.js",
-    "test:e2e": "playwright test",
-    "test:e2e:report": "playwright show-report",
-    "demo:matching": "playwright test --config playwright.demo.config.js"
+    "test": "node ../test/scripts/run-client-tests.mjs",
+    "test:watch": "vitest --config ../test/config/vitest.config.mjs",
+    "test:e2e": "playwright test --config ../test/config/playwright.config.mjs",
+    "test:e2e:report": "playwright show-report ../test/results/playwright-report",
+    "demo:matching": "playwright test --config ../test/config/playwright.demo.config.mjs"
   },
   "dependencies": {
     "bootstrap": "^5.3.3",

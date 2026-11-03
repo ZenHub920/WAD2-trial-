@@ -5,7 +5,11 @@
   "main": "index.js",
   "scripts": {
     "dev": "pnpm --dir server run dev",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npm run test:server && npm run test:client",
+    "test:server": "node test/scripts/run-node-tests.mjs server",
+    "test:client": "node test/scripts/run-client-tests.mjs",
+    "test:e2e": "npm --prefix client run test:e2e --",
+    "test:all": "npm test && npm run test:e2e"
   },
   "keywords": [],
   "author": "",

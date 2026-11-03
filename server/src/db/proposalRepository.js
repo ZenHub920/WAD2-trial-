@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { reservedPlacesSql,availableCapacitySql,queueablePlacesSql,expireJoinRequests } from './capacity.js';
 import { queueInfo } from './admissionQueue.js';
 import { groupImageUrl } from '../presentation/groupIdentity.js';
+import { requireConcertCoordination } from './concertEligibility.js';
+import { concertParticipationEligibility } from '../../../shared/concertEligibility.mjs';
 
 /**
  * Operational offers are separate from immutable matching history. The shared FIFO
@@ -22,6 +24,7 @@ export function createProposalRepo(db, repos = null) {
 
       artist: p.artist,
       eventDate: p.event_date,
+      eventTimezone: p.event_timezone,
       section: p.section,
       groupName: p.group_name ?? null,
       imageUrl: groupImageUrl(p.group_image_path),
@@ -52,6 +55,7 @@ export function createProposalRepo(db, repos = null) {
       mp.*,
       c.artist,
       c.event_date,
+      c.event_timezone,
       p.section,
       p.name AS group_name,
       p.image_path AS group_image_path,
@@ -181,6 +185,8 @@ export function createProposalRepo(db, repos = null) {
       `);
 
       for (const match of matches) {
+        const concertId = db.prepare('SELECT concert_id FROM parties WHERE id=?').get(match.party_id)?.concert_id;
+        requireConcertCoordination(db, concertId);
         const party = db.prepare(`SELECT ${queueablePlacesSql('p.id')} queueable_places,p.status FROM parties p WHERE p.id = ?`).get(match.party_id);
         if (!party || party.status === 'cancelled' || party.queueable_places < 1) {
           throw new Error('party_capacity_exceeded');
@@ -313,6 +319,11 @@ export function createProposalRepo(db, repos = null) {
       expire();
       repos?.recommendations?.expire();
       const role = proposal.seeker_user_id === userId ? 'seeker' : 'host';
+      if (decision === 'accept') {
+        const eligibility = concertParticipationEligibility(db.prepare('SELECT * FROM concerts WHERE id=?').get(proposal.concert_id));
+        if (!eligibility.eligible) return { error: eligibility.reason,
+          status: eligibility.reason === 'concert_date_unavailable' ? 400 : 409 };
+      }
       const queue = queueInfo(db, { proposalId });
       // Hosts process the queue in order; seekers can withdraw from any position.
       if ((decision === 'accept' || role === 'host') && (!queue.canHostRespond || !queue.seatReserved))

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { communityError } from "./membershipRepository.js";
+import { concertParticipationEligibility } from '../../../shared/concertEligibility.mjs';
 export function migrateFeedback(db) {
   db.transaction(() => {
     if (!db.prepare("PRAGMA table_info(match_proposals)").all().some((c) => c.name === "confirmed_at"))
@@ -29,11 +30,13 @@ export function createFeedbackRepo(db, repos) {
   const event = (partyId) =>
     db
       .prepare(
-        `SELECT p.*,c.event_date FROM parties p JOIN concerts c ON c.id=p.concert_id WHERE p.id=?`,
+        `SELECT p.*,c.event_date,c.event_timezone FROM parties p JOIN concerts c ON c.id=p.concert_id WHERE p.id=?`,
       )
       .get(partyId);
-  const end = (p) =>
-    Date.parse(`${p.event_date.slice(0, 10)}T23:59:59.999+08:00`);
+  const end = (p) => {
+    const cutoff = concertParticipationEligibility(p).cutoffAt;
+    return cutoff === null ? NaN : cutoff - 1;
+  };
   const eligibleMember = (user, p) => {
     const cutoff = end(p);
     if (

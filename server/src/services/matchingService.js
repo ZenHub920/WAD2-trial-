@@ -20,12 +20,15 @@ import {
   getSolver,
 } from '../matching/index.js';
 import { communityError } from '../db/membershipRepository.js';
+import { requireConcertCoordination } from '../db/concertEligibility.js';
+import { concertParticipationEligibility } from '../../../shared/concertEligibility.mjs';
 
 export function createMatchingService({ db, repos }) {
   return {
     // Keep the existing user-facing queue API; only an operator runs a round.
     managedState(concertId, userId) {
-      if (!repos.concerts.findById(concertId)) throw communityError('concert_not_found', 404);
+      const concert = repos.concerts.findById(concertId);
+      if (!concert) throw communityError('concert_not_found', 404);
       repos.proposals.expire();
       repos.recommendations.expire();
       const seeker = repos.groups.seeker(userId, concertId);
@@ -40,7 +43,8 @@ export function createMatchingService({ db, repos }) {
         r.userId === userId && r.concertId === concertId && r.matchingRoundId
         && repos.parties.findById(r.partyId)?.status !== 'cancelled');
       const legacy = requests.find(r => r.status === 'pending' && r.expiresAt > Date.now()) ?? null;
-      const optedIn = seeker?.joining_mode === 'algorithm' && seeker?.status === 'open';
+      const optedIn = concertParticipationEligibility(concert).eligible
+        && seeker?.joining_mode === 'algorithm' && seeker?.status === 'open';
       return { matching: {
         optedIn: Boolean(optedIn),
         state: active || proposal?.status === 'confirmed' ? 'accepted'
@@ -164,6 +168,9 @@ run(concertId, { trace = true, batchKey } = {}) {
         replayed: true
       };
     }
+
+    // Saved batches replay above; a new round must not create historical offers.
+    requireConcertCoordination(db, concertId);
 
     // Expiry transfers held places to the next queued request before inputs load;
     // capacity becomes free only when no eligible entry remains.
@@ -391,6 +398,9 @@ run(concertId, { trace = true, batchKey } = {}) {
 function loadInstance(repos, concertId) {
   repos.proposals.expire();
   repos.recommendations.expire();
+
+  if (!concertParticipationEligibility(repos.concerts.findById(concertId)).eligible)
+    return { seekers: [], parties: [], blocklist: repos.users.blocklist() };
 
   // Every batch matches against places that do not yet have confirmed members.
   // Existing pending entries keep their earlier FIFO positions; new offers may

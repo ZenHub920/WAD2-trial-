@@ -1,11 +1,17 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { api, LABELS } from '../api.js';
 import FeedbackForm from './FeedbackForm.vue';
 import LoadingSpinner from './LoadingSpinner.vue';
 import GroupAvatar from './GroupAvatar.vue';
+import { useConcertEligibility } from '../composables/useConcertEligibility.js';
 
 const props = defineProps({ proposal: { type: Object, required: true } });
+const savedResponse = ref(null);
+const currentProposal = computed(() => ({ ...props.proposal, ...(savedResponse.value?.id === props.proposal.id ? savedResponse.value.result : {}) }));
+watch(() => props.proposal, () => { savedResponse.value = null; });
+const { canCoordinate, isFinished } = useConcertEligibility(() => currentProposal.value);
+const canAccept = computed(() => !currentProposal.value.eventDate || canCoordinate.value);
 
 const emit = defineEmits(['updated']);
 
@@ -16,27 +22,27 @@ const error = ref('');
 const explanation = ref(null);
 const explanationOpen = ref(false);
 const statuses = { confirmed: 'Place confirmed', declined: 'Declined', expired: 'Expired', cancelled: 'Cancelled' };
-const isHost = computed(() => props.proposal.role === 'host');
-const myApproval = computed(() => isHost.value ? props.proposal.hostApproved : props.proposal.seekerApproved);
-const readyToReview = computed(() => props.proposal.canHostRespond !== false && props.proposal.queueStatus !== 'waiting');
-const held = computed(() => props.proposal.seatReserved ?? props.proposal.queueStatus !== 'waiting');
-const groupName = computed(() => props.proposal.groupName || `${props.proposal.hostName}'s group`);
+const isHost = computed(() => currentProposal.value.role === 'host');
+const myApproval = computed(() => isHost.value ? currentProposal.value.hostApproved : currentProposal.value.seekerApproved);
+const readyToReview = computed(() => currentProposal.value.canHostRespond !== false && currentProposal.value.queueStatus !== 'waiting');
+const held = computed(() => currentProposal.value.seatReserved ?? currentProposal.value.queueStatus !== 'waiting');
+const groupName = computed(() => currentProposal.value.groupName || `${currentProposal.value.hostName}'s group`);
 const statusLabel = computed(() => {
-  if (props.proposal.resolutionReason === 'group_full') return 'Group filled before your turn';
-  if (props.proposal.status !== 'proposed') return statuses[props.proposal.status] ?? 'Proposal updated';
+  if (currentProposal.value.resolutionReason === 'group_full') return 'Group filled before your turn';
+  if (currentProposal.value.status !== 'proposed') return statuses[currentProposal.value.status] ?? 'Proposal updated';
   if (!readyToReview.value) return 'Waiting in queue';
   if (myApproval.value) return isHost.value ? 'Waiting for companion' : 'Waiting for host';
   return 'Ready for your reply';
 });
 const deadline = computed(() => {
-  const date = new Date(props.proposal.expiresAt);
+  const date = new Date(currentProposal.value.expiresAt);
   return Number.isNaN(date.getTime()) ? 'Check the latest proposal' : date.toLocaleString('en-SG', {
     day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
   });
 });
 const matchReasons = computed(() => {
   const saved = explanation.value?.breakdown;
-  const reasons = (saved?.discovery?.reasons ?? props.proposal.reasons ?? []).map(reason => reason.label).filter(Boolean);
+  const reasons = (saved?.discovery?.reasons ?? currentProposal.value.reasons ?? []).map(reason => reason.label).filter(Boolean);
   const components = saved?.components ?? {};
   // Fall back only to positive evidence recorded with this matching round.
   const supported = [
@@ -58,8 +64,11 @@ async function respond(action) {
   error.value = '';
 
   try {
-    if (action === 'accept') await api.acceptProposal(props.proposal.id);
-    else await api.declineProposal(props.proposal.id);
+    const id = currentProposal.value.id;
+    const response = action === 'accept' ? await api.acceptProposal(id) : await api.declineProposal(id);
+    if (id !== props.proposal.id) return;
+    const result = response?.proposal;
+    if (result?.status) savedResponse.value = { id, result };
     emit('updated');
   } catch (err) {
     error.value = err.status === 409 ? 'This proposal is not ready for a reply, changed or expired. Refresh the queue before replying.' : 'Could not update this proposal. Please try again.';
@@ -77,7 +86,7 @@ async function explain() {
   explanationLoading.value = true;
   error.value = '';
   try {
-    const response = await api.proposalExplanation(props.proposal.id);
+    const response = await api.proposalExplanation(currentProposal.value.id);
     explanation.value = response.explanation;
   } catch (err) {
     error.value = 'Could not load the saved match explanation. Please try again.';
@@ -88,34 +97,34 @@ async function explain() {
 </script>
 
 <template>
-  <article class="proposal card" :class="{ 'proposal--confirmed': proposal.status === 'confirmed' }">
+  <article class="proposal card" :class="{ 'proposal--confirmed': currentProposal.status === 'confirmed' }">
     <header class="proposal__head">
-      <GroupAvatar :src="proposal.imageUrl" :name="groupName" :size="48" />
+      <GroupAvatar :src="currentProposal.imageUrl" :name="groupName" :size="48" />
       <div class="proposal__identity">
         <p class="proposal__eyebrow">{{ isHost ? 'Automatic match for your group' : 'Your automatic group match' }}</p>
         <h3>{{ groupName }}</h3>
-        <p class="proposal__meta">{{ isHost ? `Proposed companion: ${proposal.seekerName}` : `Hosted by ${proposal.hostName}` }}</p>
+        <p class="proposal__meta">{{ isHost ? `Proposed companion: ${currentProposal.seekerName}` : `Hosted by ${currentProposal.hostName}` }}</p>
       </div>
-      <span class="tag proposal__status" :class="{ 'tag--mint': proposal.status === 'confirmed', 'tag--accent': proposal.status === 'proposed' && readyToReview }">{{ statusLabel }}</span>
+      <span class="tag proposal__status" :class="{ 'tag--mint': currentProposal.status === 'confirmed', 'tag--accent': currentProposal.status === 'proposed' && readyToReview }">{{ statusLabel }}</span>
     </header>
 
     <div class="proposal__concert">
-      <strong>{{ proposal.artist }}</strong>
-      <span>{{ LABELS.section[proposal.section] ?? proposal.section }}</span>
+      <strong>{{ currentProposal.artist }}</strong>
+      <span>{{ LABELS.section[currentProposal.section] ?? currentProposal.section }}</span>
     </div>
 
     <div v-if="matchReasons.length" class="proposal__fit">
       <p class="proposal__label">Why you were matched</p>
       <ul aria-label="Saved match reasons"><li v-for="reason in matchReasons" :key="reason">{{ reason }}</li></ul>
-      <p v-if="proposal.confidence === 'limited'" class="proposal__meta">Based on limited preference information.</p>
+      <p v-if="currentProposal.confidence === 'limited'" class="proposal__meta">Based on limited preference information.</p>
     </div>
 
-    <template v-if="proposal.status === 'proposed'">
+    <template v-if="currentProposal.status === 'proposed'">
       <div class="proposal__reservation">
         <div>
           <span class="proposal__label">{{ isHost ? 'Group place' : 'Your place' }}</span>
           <strong>{{ held ? 'One place held' : 'Waiting for a place' }}</strong>
-          <span class="proposal__meta">Queue position {{ proposal.queuePosition ?? '—' }}{{ readyToReview ? ' · Next to review' : '' }}</span>
+          <span class="proposal__meta">Queue position {{ currentProposal.queuePosition ?? '—' }}{{ readyToReview ? ' · Next to review' : '' }}</span>
         </div>
         <div>
           <span class="proposal__label">Reply before</span>
@@ -127,33 +136,34 @@ async function explain() {
       <div class="proposal__approvals">
         <p class="proposal__label">Both approvals confirm the group place. Either person can approve first.</p>
         <ul aria-label="Match approval progress">
-          <li :class="{ 'is-approved': proposal.hostApproved }"><span class="proposal__check" aria-hidden="true">{{ proposal.hostApproved ? '✓' : '·' }}</span><span><strong>{{ isHost ? 'You · Host' : 'Group host' }}</strong><small>{{ proposal.hostApproved ? 'Approved' : 'Awaiting approval' }}</small></span></li>
-          <li :class="{ 'is-approved': proposal.seekerApproved }"><span class="proposal__check" aria-hidden="true">{{ proposal.seekerApproved ? '✓' : '·' }}</span><span><strong>{{ isHost ? proposal.seekerName : 'You · Companion' }}</strong><small>{{ proposal.seekerApproved ? 'Approved' : 'Awaiting approval' }}</small></span></li>
+          <li :class="{ 'is-approved': currentProposal.hostApproved }"><span class="proposal__check" aria-hidden="true">{{ currentProposal.hostApproved ? '✓' : '·' }}</span><span><strong>{{ isHost ? 'You · Host' : 'Group host' }}</strong><small>{{ currentProposal.hostApproved ? 'Approved' : 'Awaiting approval' }}</small></span></li>
+          <li :class="{ 'is-approved': currentProposal.seekerApproved }"><span class="proposal__check" aria-hidden="true">{{ currentProposal.seekerApproved ? '✓' : '·' }}</span><span><strong>{{ isHost ? currentProposal.seekerName : 'You · Companion' }}</strong><small>{{ currentProposal.seekerApproved ? 'Approved' : 'Awaiting approval' }}</small></span></li>
         </ul>
       </div>
 
       <p v-if="!readyToReview" class="proposal__note">Earlier direct or automatic requests must be resolved first. {{ isHost ? 'Review requests in arrival order.' : 'You can still decline while waiting.' }}</p>
       <p v-else-if="myApproval" class="proposal__note" role="status">Your approval is saved. {{ isHost ? 'The companion still needs to accept.' : 'The host still needs to approve.' }} The place stays held until the deadline.</p>
-      <p v-else class="proposal__note">{{ isHost ? 'Approve this companion to join your group.' : 'Like the sound of this group? Accept your offer.' }} {{ (isHost ? proposal.seekerApproved : proposal.hostApproved) ? 'Their approval is already saved; yours will confirm the place.' : 'Their approval is also needed to confirm the place.' }}</p>
+      <p v-else class="proposal__note">{{ isHost ? 'Approve this companion to join your group.' : 'Like the sound of this group? Accept your offer.' }} {{ (isHost ? currentProposal.seekerApproved : currentProposal.hostApproved) ? 'Their approval is already saved; yours will confirm the place.' : 'Their approval is also needed to confirm the place.' }}</p>
 
       <div class="actions">
-        <button v-if="!myApproval" type="button" class="btn btn--primary" :disabled="busy || !readyToReview" @click="respond('accept')"><LoadingSpinner v-if="busy && responding === 'accept'" />{{ isHost ? 'Approve companion' : 'Accept group offer' }}</button>
+        <button v-if="!myApproval" type="button" class="btn btn--primary" :disabled="busy || !readyToReview || !canAccept" @click="respond('accept')"><LoadingSpinner v-if="busy && responding === 'accept'" />{{ isHost ? 'Approve companion' : 'Accept group offer' }}</button>
         <button type="button" class="btn btn--danger-ghost" :disabled="busy || (isHost && !readyToReview)" @click="respond('decline')"><LoadingSpinner v-if="busy && responding === 'decline'" />Decline proposal</button>
       </div>
+      <p v-if="isFinished" class="proposal__note">This concert has finished. New membership approvals are closed; your proposal remains available here.</p>
     </template>
-    <p v-else-if="proposal.status === 'confirmed'" class="proposal__note">{{ isHost ? `${proposal.seekerName} is now a member of your group.` : 'Your group place is confirmed. You can find the group under My groups.' }}</p>
+    <p v-else-if="currentProposal.status === 'confirmed'" class="proposal__note">{{ isHost ? `${currentProposal.seekerName} is now a member of your group.` : 'Your group place is confirmed. You can find the group under My groups.' }}</p>
 
     <div class="proposal__explanation">
       <button type="button" class="proposal__why" :disabled="busy || explanationLoading" :aria-expanded="explanationOpen" @click="explain"><LoadingSpinner v-if="explanationLoading" />{{ explanationOpen ? 'Hide match reasons' : 'Why this group match?' }}<span aria-hidden="true">{{ explanationOpen ? '−' : '+' }}</span></button>
       <div v-if="explanationOpen && explanation" class="proposal__reasons">
-        <p v-if="!matchReasons.length">No detailed match reasons were saved for this proposal.</p>
+        <p v-if="!matchReasons.length">No detailed match reasons were saved for this currentProposal.</p>
         <p>These reasons come from the preferences saved when this match was made. Matching considers both sides' preferences and group capacity.</p>
       </div>
     </div>
     <FeedbackForm
-      v-if="proposal.status === 'confirmed' && new Date(proposal.eventDate + 'T23:59:59+08:00') < new Date()"
-      :round-id="proposal.roundId"
-      :rated-user-id="proposal.role === 'host' ? proposal.seekerUserId : proposal.hostUserId"
+      v-if="currentProposal.status === 'confirmed' && isFinished"
+      :round-id="currentProposal.roundId"
+      :rated-user-id="currentProposal.role === 'host' ? currentProposal.seekerUserId : currentProposal.hostUserId"
     />
     <p class="proposal__footnote">A group place does not include a concert ticket.</p>
     <p v-if="error" class="proposal__error" role="alert">{{ error }}</p>

@@ -3,7 +3,9 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, LABELS, SECTION_OPTIONS, ARRIVAL_OPTIONS } from '../api.js';
 import { useMeetupSummaries } from '../composables/useMeetupSummaries.js';
-import { meetupDestination, meetupActionForScope, meetupNeedsAttention, isMeetupHistorical } from '../utils/meetupSummaries.js';
+import { meetupDestination, meetupActionForScope, meetupNeedsAttention, isMeetupHistorical, meetupsForScope } from '../utils/meetupSummaries.js';
+import { concertGroupCreationEligibility, concertParticipationEligibility } from '../../../shared/concertEligibility.mjs';
+import { meetupDatePolicy } from '../../../shared/meetupDates.mjs';
 import { filterGroups } from '../groupFilters.js';
 import GroupFilters from '../components/GroupFilters.vue';
 import GroupListingCard from '../components/GroupListingCard.vue';
@@ -16,7 +18,6 @@ import GroupAvatar from '../components/GroupAvatar.vue';
 import AvatarPicker from '../components/AvatarPicker.vue';
 import BackLink from '../components/BackLink.vue';
 import GroupPreferencesGate from '../components/GroupPreferencesGate.vue';
-import { preferencesReady } from '../groupPreferences.js';
 import '../assets/groups.css';
 import { currentUser } from '../auth.js';
 
@@ -24,22 +25,28 @@ const route = useRoute(), router = useRouter();
 const { plans: meetupPlans } = useMeetupSummaries();
 const meetupAttentionCount = computed(() => meetupPlans.value.filter(meetupNeedsAttention).length);
 const upcomingMeetupCount = computed(() => meetupPlans.value.filter(plan => plan.status === 'confirmed' && !isMeetupHistorical(plan)).length);
-const meetupLink = scope => meetupDestination(meetupPlans.value, scope);
+const meetupLink = scope => meetupDestination(meetupPlans.value, scope, { from: 'groups' });
 const meetupLabel = scope => meetupActionForScope(meetupPlans.value, scope);
+const hasMeetup = scope => meetupsForScope(meetupPlans.value, scope).length > 0;
 const hosted = ref([]), candidates = ref([]), connections = ref([]), joins = ref([]);
 const attendance = ref([]);
 const automaticOffers = ref([]);
-const groupsLoading = ref(true), loading = ref(false), busy = ref(false);
-const error = ref(''), message = ref('');
+const loading = ref(false), busy = ref(false), candidateError = ref('');
+const error = ref(''), message = ref(''), refreshWarning = ref('');
 const offset = ref(0), total = ref(0);
 /** One screen of candidates; the server pages in the same size. */
 const PAGE_SIZE = 20;
 const hasPreviousPage = computed(() => offset.value > 0);
 const hasNextPage = computed(() => offset.value + PAGE_SIZE < total.value);
 const allConcerts = ref([]), hostConcertId = ref('');
+const concertNow = ref(Date.now()), concertNotice = ref('');
+const eligibleConcerts = computed(() => allConcerts.value.filter(concert => concertGroupCreationEligibility(concert, concertNow.value).eligible));
 const selectedConcert = computed(() => allConcerts.value.find(concert => concert.id === hostConcertId.value));
+const selectedConcertEligible = computed(() => Boolean(selectedConcert.value && concertGroupCreationEligibility(selectedConcert.value, concertNow.value).eligible));
 const hostForm = reactive({ name: '', capacity: 2, section: 'standing_pen', spend_band: 2, arrival_plan: 'doors', plans: {}, notes: '' });
 const hostImage = ref(null);
+const createdDraftId = ref(''), createdDraftNote = ref('');
+const uncertainCreation = ref(null);
 // Highlight missing fields only after the first attempt to create.
 const attempted = ref(false);
 const capacityValid = computed(() => Number.isInteger(hostForm.capacity) && hostForm.capacity >= 1);
@@ -48,9 +55,18 @@ const groupTitle = g => g.name || g.group?.name || g.artist;
 const filters = reactive({ query: '', section: '', minCapacity: 0, spendBand: '', arrival: '', activity: '', vibe: '', sort: 'compatibility' });
 const mode = computed(() => ['create', 'connections'].includes(route.query.view) ? route.query.view : 'dashboard');
 const concertId = computed(() => typeof route.query.concertId === 'string' ? route.query.concertId : '');
-const activeGroups = computed(() => hosted.value.filter(g => g.status !== 'cancelled'));
+const groupEligibility = group => concertParticipationEligibility({ event_date: group.eventDate, event_timezone: group.eventTimezone }, concertNow.value);
+const connectionEligible = connection => groupEligibility(connection.partyA).eligible && groupEligibility(connection.partyB).eligible;
+const canOpenMeetup = (group, scope) => hasMeetup(scope) || meetupDatePolicy({ event_date: group.eventDate, event_time: group.eventTime, event_timezone: group.eventTimezone }, concertNow.value).canSchedule;
+const activeGroups = computed(() => hosted.value.filter(g => g.status !== 'cancelled' && groupEligibility(g).eligible));
 const cancelledGroups = computed(() => hosted.value.filter(g => g.status === 'cancelled'));
 const joinedGroups = computed(() => attendance.value.filter(g => !hosted.value.some(owned => owned.id === g.id)));
+const upcomingJoinedGroups = computed(() => joinedGroups.value.filter(g => groupEligibility(g).eligible));
+const historicalGroups = computed(() => [
+  ...hosted.value.filter(g => g.status !== 'cancelled' && !groupEligibility(g).eligible).map(g => ({ ...g, owned: true })),
+  ...joinedGroups.value.filter(g => !groupEligibility(g).eligible).map(g => ({ ...g, owned: false })),
+]);
+const historicalTitle = computed(() => historicalGroups.value.some(group => groupEligibility(group).reason === 'concert_date_unavailable') ? 'Past concerts & undated groups' : 'Past concert groups');
 const membershipSource = { friend: 'Joined through a friend invitation', join: 'Joined through an approved request', proposal: 'Joined through matching', direct: 'Joined through an approved direct application', algorithm: 'Joined through a confirmed automatic match' };
 const sourceGroup = computed(() => activeGroups.value.find(g => g.id === route.query.groupId) ?? null);
 const sourceId = computed(() => sourceGroup.value?.id ?? '');
@@ -85,7 +101,50 @@ const canConnect = computed(() => Boolean(sourceGroup.value?.settings?.published
 const pageTitle = computed(() => mode.value === 'create' ? 'Create a group' : mode.value === 'connections' ? 'Connect groups' : 'My groups');
 const sectionName = key => LABELS.section[key] ?? key;
 const describe = c => `${c.partyA.name || c.partyA.hostName} (${sectionName(c.partyA.section)}) ↔ ${c.partyB.name || c.partyB.hostName} (${sectionName(c.partyB.section)}), ${c.partyA.artist}`;
-let generation = 0, refreshGeneration = 0, alive = true, filterTimer;
+let generation = 0, sessionGeneration = 0, operationGeneration = 0, alive = true, filterTimer, concertClock;
+const groupSourceKeys = ['owned', 'joined', 'connections', 'applications', 'offers'];
+const sources = {
+  concerts: { label: 'concerts', load: () => api.concerts(), apply: result => {
+    allConcerts.value = result.concerts; concertNow.value = Date.now(); selectConcert(concertId.value);
+  } },
+  owned: { label: 'owned groups', load: async context => {
+    const result = await api.hostedGroups();
+    if (!contextIsCurrent(context.session, context.user)) return [];
+    return Promise.all(result.groups.map(async group => {
+      if (group.status === 'cancelled' || group.settings) return group;
+      const membership = await api.groupMembership(group.id);
+      return { ...group, settings: membership.group.settings };
+    }));
+  }, apply: result => { hosted.value = result; } },
+  joined: { label: 'joined groups', load: () => api.currentGroupMemberships(), apply: result => { attendance.value = result.groups ?? result.memberships ?? []; } },
+  connections: { label: 'invitations', load: () => api.groupConnections(), apply: result => { connections.value = result.connections; } },
+  applications: { label: 'applications', load: () => api.hostedGroupJoinRequests(), apply: result => { joins.value = result.requests.filter(j => j.hostId === currentUser.value?.id); } },
+  offers: { label: 'automatic offers', load: () => api.myProposals(), apply: result => { automaticOffers.value = result.proposals.filter(proposal => proposal.role === 'host' && proposal.status === 'proposed'); } },
+};
+const reads = reactive(Object.fromEntries(Object.keys(sources).map(key => [key, { loading: false, loaded: false, error: '', sequence: 0 }])));
+const groupsLoading = computed(() => groupSourceKeys.every(key => !reads[key].loaded && !reads[key].error) && groupSourceKeys.some(key => reads[key].loading));
+const creationDisabled = computed(() => busy.value || reads.concerts.loading || Boolean(uncertainCreation.value));
+const contextIsCurrent = (session, user) => alive && session === sessionGeneration && user === currentUser.value?.id;
+
+function unavailableConcertMessage(concert) {
+  const reason = concert && concertGroupCreationEligibility(concert, concertNow.value).reason;
+  return reason === 'concert_started' ? 'This concert has already started. Choose another upcoming concert.'
+    : reason === 'concert_day_ended' ? 'This concert has already finished. Choose another upcoming concert.'
+      : 'This concert is unavailable for a new group. Choose an upcoming concert.';
+}
+function selectConcert(id) {
+  concertNotice.value = '';
+  const requested = allConcerts.value.find(concert => concert.id === id);
+  if (id && (!requested || !concertGroupCreationEligibility(requested, concertNow.value).eligible)) {
+    hostConcertId.value = ''; concertNotice.value = unavailableConcertMessage(requested);
+  } else hostConcertId.value = id || eligibleConcerts.value[0]?.id || '';
+}
+watch(hostConcertId, id => { if (id && selectedConcertEligible.value) concertNotice.value = ''; });
+watch(eligibleConcerts, () => {
+  if (hostConcertId.value && !selectedConcertEligible.value) {
+    concertNotice.value = unavailableConcertMessage(selectedConcert.value); hostConcertId.value = '';
+  }
+});
 
 function viewLink(view, group) {
   return { path: '/groups/connect', query: { concertId: group?.concertId || concertId.value || undefined, view: view || undefined, groupId: group?.id } };
@@ -126,8 +185,9 @@ async function runConfirmed() {
 }
 
 async function loadCandidates() {
-  const current = ++generation, group = sourceGroup.value;
+  const current = ++generation, group = sourceGroup.value, user = currentUser.value?.id;
   candidates.value = []; total.value = 0;
+  candidateError.value = '';
   if (mode.value !== 'connections' || !group || !canConnect.value) { loading.value = false; return; }
   loading.value = true;
   try {
@@ -135,71 +195,82 @@ async function loadCandidates() {
       offset: offset.value, q: filters.query, section: filters.section, arrival: filters.arrival,
       spendBand: filters.spendBand, minCapacity: filters.minCapacity, activity: filters.activity, vibe: filters.vibe, sort: filters.sort,
     });
-    if (alive && current === generation) { candidates.value = result.groups; total.value = result.total; }
+    if (alive && current === generation && currentUser.value?.id === user) { candidates.value = result.groups; total.value = result.total; }
   } catch (e) {
-    if (alive && current === generation) error.value = 'Could not load groups to connect with. Please try again.';
+    if (alive && current === generation && currentUser.value?.id === user) candidateError.value = 'Could not load groups to connect with. Please try again.';
   } finally {
     if (alive && current === generation) loading.value = false;
   }
 }
 
-async function refresh() {
-  const current = ++refreshGeneration, userId = currentUser.value?.id;
-  if (!userId) return;
-  const [groups, inbox, requests, memberships, offers] = await Promise.all([api.hostedGroups(), api.groupConnections(), api.hostedGroupJoinRequests(), api.currentGroupMemberships(), api.myProposals()]);
-  if (!alive || current !== refreshGeneration || currentUser.value?.id !== userId) return;
-  const owned = await Promise.all(groups.groups.map(async group => {
-    if (group.status === 'cancelled' || group.settings) return group;
-    const membership = await api.groupMembership(group.id);
-    return { ...group, settings: membership.group.settings };
-  }));
-  if (!alive || current !== refreshGeneration || currentUser.value?.id !== userId) return;
-  hosted.value = owned;
-  attendance.value = memberships.groups ?? memberships.memberships ?? [];
-  connections.value = inbox.connections;
-  joins.value = requests.requests.filter(j => j.hostId === currentUser.value?.id);
-  automaticOffers.value = offers.proposals.filter(proposal => proposal.role === 'host' && proposal.status === 'proposed');
-  await loadCandidates();
+async function loadSource(key, { force = false } = {}) {
+  const state = reads[key], source = sources[key];
+  if (!currentUser.value?.id || (state.loading && !force)) return false;
+  const sequence = ++state.sequence, session = sessionGeneration, user = currentUser.value.id;
+  state.loading = true; state.error = '';
+  try {
+    const result = await source.load({ session, user });
+    if (!contextIsCurrent(session, user) || sequence !== state.sequence) return false;
+    source.apply(result); state.loaded = true;
+    return true;
+  } catch (e) {
+    if (contextIsCurrent(session, user) && sequence === state.sequence)
+      state.error = e.status === 401 ? `Sign in again to load ${source.label}.` : `Could not load ${source.label}.`;
+    return false;
+  } finally {
+    if (contextIsCurrent(session, user) && sequence === state.sequence) state.loading = false;
+  }
 }
+async function refresh({ onlyFailed = false, force = false } = {}) {
+  const failed = groupSourceKeys.filter(key => reads[key].error);
+  const keys = onlyFailed && failed.length ? failed : groupSourceKeys;
+  return (await Promise.all(keys.map(key => loadSource(key, { force })))).every(Boolean);
+}
+watch(() => [sourceGroup.value, canConnect.value, mode.value], () => { void loadCandidates(); });
 
 watch(() => [route.query.view, route.query.groupId], () => {
   message.value = ''; offset.value = 0; confirming.value = null;
-  loadCandidates();
 });
 watch(() => Object.values(filters), () => {
   clearTimeout(filterTimer);
   filterTimer = setTimeout(() => { offset.value = 0; loadCandidates(); }, 250);
 });
 watch(() => currentUser.value?.id, () => {
-  refreshGeneration++; generation++;
-  hosted.value = []; attendance.value = []; connections.value = []; joins.value = []; automaticOffers.value = []; candidates.value = []; error.value = ''; message.value = '';
-  if (currentUser.value) retry();
+  sessionGeneration++; operationGeneration++; generation++;
+  hosted.value = []; attendance.value = []; connections.value = []; joins.value = []; automaticOffers.value = []; candidates.value = []; error.value = ''; message.value = ''; refreshWarning.value = '';
+  createdDraftId.value = ''; createdDraftNote.value = ''; uncertainCreation.value = null; busy.value = false; candidateError.value = '';
+  hostForm.name = ''; hostForm.notes = ''; hostImage.value = null; attempted.value = false;
+  allConcerts.value = []; hostConcertId.value = ''; concertNotice.value = '';
+  for (const state of Object.values(reads)) { state.sequence++; state.loading = false; state.loaded = false; state.error = ''; }
+  if (currentUser.value) { void loadSource('concerts'); void refresh(); }
 });
 watch(concertId, id => {
-  if (allConcerts.value.some(c => c.id === id)) hostConcertId.value = id;
+  if (allConcerts.value.length) { concertNow.value = Date.now(); selectConcert(id); }
 });
 
-onMounted(async () => {
-  try {
-    const result = await api.concerts();
-    if (!alive) return;
-    allConcerts.value = result.concerts;
-    hostConcertId.value = allConcerts.value.some(c => c.id === concertId.value) ? concertId.value : allConcerts.value[0]?.id || '';
-    await refresh();
-  } catch (e) {
-    if (alive) error.value = e.status === 401 ? 'Sign in to create groups and manage connections.' : 'Could not load your groups. Please try again.';
-  } finally { if (alive) groupsLoading.value = false; }
+onMounted(() => {
+  concertClock = setInterval(() => { concertNow.value = Date.now(); }, 60000);
+  void loadSource('concerts'); void refresh();
 });
-onUnmounted(() => { alive = false; generation++; clearTimeout(filterTimer); });
+onUnmounted(() => { alive = false; sessionGeneration++; generation++; clearTimeout(filterTimer); clearInterval(concertClock); });
 
 async function act(operation) {
   if (busy.value) return;
-  const userId = currentUser.value?.id;
-  busy.value = true; error.value = ''; message.value = '';
-  try { await operation(); if (alive && currentUser.value?.id === userId) { await refresh(); message.value = 'Group updated.'; } }
+  const userId = currentUser.value?.id, session = sessionGeneration, operationId = ++operationGeneration;
+  if (!userId) return;
+  busy.value = true; error.value = ''; message.value = ''; refreshWarning.value = '';
+  try {
+    const result = await operation();
+    if (contextIsCurrent(session, userId)) {
+      message.value = result?.feedback ?? 'Group updated.';
+      if (!await refresh({ force: true }) && contextIsCurrent(session, userId))
+        refreshWarning.value = 'The update was saved, but the latest group details could not be loaded. Retry the refresh before making another change.';
+    }
+  }
   catch (e) {
-    if (alive && currentUser.value?.id === userId) {
-      try { await refresh(); } catch {}
+    if (contextIsCurrent(session, userId)) {
+      await refresh({ force: true });
+      if (!contextIsCurrent(session, userId)) return;
       error.value = ({
         group_not_open_to_connections: 'Both groups must be published and open to meeting other groups. Update your group settings first.',
         group_changed_withdraw_and_resubmit: 'The group changed after this application. Ask the applicant to review it, withdraw and apply again.',
@@ -213,32 +284,113 @@ async function act(operation) {
         request_not_pending: 'This application was already resolved or expired. The inbox has been refreshed.',
         queue_head_required: 'An earlier request must be resolved first. The queue has been refreshed.',
         request_waiting_in_queue: 'An earlier request must be resolved first. The queue has been refreshed.',
+        concert_no_longer_upcoming: 'This concert has already started or finished. Choose another upcoming concert.',
+        concert_date_unavailable: 'This concert does not have a valid date. Choose another upcoming concert.',
+        concert_not_found: 'This concert is no longer available. Choose another upcoming concert.',
       })[e.message] ?? (e.status === 409 ? 'This group or request has changed. Review the latest information before trying again.' : 'Could not update the group. Please try again.');
     }
-  } finally { busy.value = false; }
+  } finally { if (contextIsCurrent(session, userId) && operationId === operationGeneration) busy.value = false; }
 }
 async function retry() {
-  groupsLoading.value = true; error.value = '';
-  try { await refresh(); }
-  catch (e) { if (alive) error.value = 'Could not load your groups. Please try again.'; }
-  finally { if (alive) groupsLoading.value = false; }
+  const session = sessionGeneration, user = currentUser.value?.id;
+  error.value = '';
+  if (await refresh({ onlyFailed: true }) && contextIsCurrent(session, user)) refreshWarning.value = '';
+}
+async function retrySource(key) {
+  const session = sessionGeneration, user = currentUser.value?.id;
+  if (await loadSource(key) && contextIsCurrent(session, user) && !groupSourceKeys.some(source => reads[source].error)) refreshWarning.value = '';
 }
 async function host() {
+  if (busy.value) return;
+  const userId = currentUser.value?.id, session = sessionGeneration;
+  if (!userId) return;
+  if (createdDraftId.value) {
+    await act(() => openCreatedDraft()); return;
+  }
+  if (uncertainCreation.value) {
+    await act(() => reconcileCreation(uncertainCreation.value)); return;
+  }
   attempted.value = true;
+  concertNow.value = Date.now();
+  if (!selectedConcertEligible.value) {
+    error.value = selectedConcert.value ? unavailableConcertMessage(selectedConcert.value) : 'Choose an upcoming concert before creating your group.';
+    message.value = ''; return;
+  }
   if (!hostForm.name.trim() || !capacityValid.value) {
     error.value = 'Fill in the highlighted fields to create your group.';
     message.value = '';
     return;
   }
+  const submission = { concertId: hostConcertId.value, path: route.fullPath,
+    form: { ...hostForm, plans: { ...hostForm.plans }, name: hostForm.name.trim() }, image: hostImage.value, userId, session };
   await act(async () => {
-    const result = await api.createParty(hostConcertId.value, { ...hostForm, name: hostForm.name.trim() });
-    if (!alive) return;
-    await api.configureGroup(result.party.id, { expectedFriends: 0 });
-    // The group exists by now; a picture that fails to upload can be added
-    // again from Manage group, so it does not block finishing creation.
-    if (hostImage.value) await api.setGroupImage(result.party.id, hostImage.value).catch(() => {});
-    await router.push(`/groups/${encodeURIComponent(result.party.id)}/members`);
+    let result;
+    try { result = await api.createParty(submission.concertId, submission.form); }
+    catch (e) {
+      if (!contextIsCurrent(session, userId)) return;
+      // A lost response and the one-host-per-concert constraint are resolved
+      // against authoritative records before allowing another creation attempt.
+      if (!e.status || e.status >= 500 || e.status === 409 && ['could_not_create_party', 'already_in_concert_group'].includes(e.message)) {
+        submission.conflict = e.status === 409;
+        uncertainCreation.value = submission;
+        return reconcileCreation(submission);
+      }
+      throw e;
+    }
+    if (!contextIsCurrent(session, userId)) return;
+    createdDraftId.value = result.party.id;
+    createdDraftNote.value = 'Your draft group was created. Open it to continue setup.';
+    const warnings = [];
+    try { await api.configureGroup(result.party.id, { expectedFriends: 0 }); }
+    catch { warnings.push('its settings still need to be saved in Manage group'); }
+    if (!contextIsCurrent(session, userId)) return;
+    if (submission.image) {
+      try { await api.setGroupImage(result.party.id, submission.image); }
+      catch { warnings.push('its picture could not be saved; add a picture in Manage group'); }
+    }
+    if (!contextIsCurrent(session, userId)) return;
+    if (warnings.length) createdDraftNote.value = `Your draft group was created, but ${warnings.join(' and ')}.`;
+    // Keep partial setup warnings visible instead of losing them on navigation.
+    else if (route.fullPath === submission.path && mode.value === 'create') await openCreatedDraft();
   });
+}
+async function reconcileCreation(submission) {
+  const outcome = { feedback: '' };
+  if (!submission || !contextIsCurrent(submission.session, submission.userId)) return outcome;
+  let result;
+  try { result = await api.hostedGroups(); }
+  catch {
+    if (contextIsCurrent(submission.session, submission.userId))
+      createdDraftNote.value = 'The creation response was interrupted and your groups could not be checked. Check group creation before trying to create another group.';
+    return outcome;
+  }
+  if (!contextIsCurrent(submission.session, submission.userId)) return outcome;
+  const existing = result.groups.filter(group => group.concertId === submission.concertId && group.status !== 'cancelled');
+  if (existing.length === 1) {
+    createdDraftId.value = existing[0].id; uncertainCreation.value = null;
+    createdDraftNote.value = 'A group you own for this concert was found. Open it to review its settings and picture; no second group was created.';
+  } else if (!existing.length) {
+    uncertainCreation.value = null; createdDraftNote.value = '';
+    error.value = submission.conflict
+      ? 'You may already belong to another group for this concert. Review Groups I joined in My groups before trying to create another group. Your answers are kept.'
+      : 'No created group was found. Your answers are kept; try Create draft group again.';
+  } else {
+    createdDraftNote.value = 'Your group records need to be reviewed in My groups before another group can be created.';
+  }
+  return outcome;
+}
+async function openCreatedDraft() {
+  const session = sessionGeneration, user = currentUser.value?.id, id = createdDraftId.value;
+  if (!id || !user) return;
+  const explainFailure = () => {
+    if (!contextIsCurrent(session, user)) return;
+    const note = 'The page could not open; try Open created group again.';
+    if (!createdDraftNote.value.includes(note)) createdDraftNote.value = `${createdDraftNote.value || 'Your group exists.'} ${note}`;
+  };
+  try {
+    const failure = await router.push(`/groups/${encodeURIComponent(id)}/members`);
+    if (failure) explainFailure();
+  } catch { explainFailure(); }
 }
 </script>
 
@@ -252,24 +404,31 @@ async function host() {
         <p v-else-if="mode === 'create'">Start with a draft, then invite friends and publish when your group is ready.</p>
         <p v-else>Meet another group at the same concert. Connecting groups does not merge their members.</p>
       </div>
-      <div v-if="mode === 'dashboard'" class="group-actions"><RouterLink to="/meetups" class="btn btn--ghost">My meetups</RouterLink><RouterLink v-if="preferencesReady" :to="viewLink('create')" class="btn btn--primary">Create a group</RouterLink></div>
+      <div v-if="mode === 'dashboard'" class="group-actions"><RouterLink to="/meetups" class="btn btn--ghost">My meetups</RouterLink><RouterLink :to="viewLink('create')" class="btn btn--primary">Create a group</RouterLink></div>
     </header>
     <GroupPreferencesGate :summary="mode === 'dashboard'" @saved="retry">
     <template #before><GroupNavigation /></template>
     <p v-if="error" class="group-error" role="alert">{{ error }} <button class="btn btn--ghost" :disabled="busy || groupsLoading" @click="retry">Retry</button></p>
     <p v-if="message" class="group-success" role="status">{{ message }}</p>
+    <p v-if="refreshWarning" class="group-muted" role="status">{{ refreshWarning }} <button type="button" class="btn btn--ghost" :disabled="busy || groupsLoading" @click="retry">Retry refresh</button></p>
     <p v-if="busy && !confirming" class="loading-state" role="status"><LoadingSpinner />Updating your groups and connections…</p>
     <p v-if="groupsLoading" class="loading-state" role="status"><LoadingSpinner />Loading your groups…</p>
+    <template v-for="(state, key) in reads" :key="key">
+      <p v-if="state.error" class="group-read-feedback group-muted" role="status">{{ state.error }} {{ state.loaded ? 'Showing the last loaded details.' : 'Other group sections are still available.' }} <button type="button" class="btn btn--ghost" :disabled="state.loading || busy" @click="retrySource(key)">Retry {{ sources[key].label }}</button></p>
+      <p v-else-if="state.loading && !groupsLoading" class="group-muted" role="status">Loading {{ sources[key].label }}…</p>
+    </template>
 
     <template v-if="mode === 'create'">
       <form class="card group-panel create-form" novalidate @submit.prevent="host">
+        <template v-if="!createdDraftId">
+        <p v-if="uncertainCreation" class="group-read-feedback" role="status">{{ createdDraftNote }} <button type="button" class="btn btn--primary" :disabled="busy" @click="host">Check group creation</button></p>
         <section class="form-section">
           <h2>Name your group</h2>
           <div class="form-grid">
-            <label class="form-wide">Group name<input v-model="hostForm.name" type="text" maxlength="60" required placeholder="e.g. Front Row Crew" :disabled="busy || groupsLoading" :class="fieldState(Boolean(hostForm.name.trim()))" :aria-invalid="attempted && !hostForm.name.trim()"><span v-if="attempted && !hostForm.name.trim()" class="field-message">Enter a name for your group.</span><span v-else class="field-hint">This is what other people see. Up to 60 characters.</span></label>
+            <label class="form-wide">Group name<input v-model="hostForm.name" type="text" maxlength="60" required placeholder="e.g. Front Row Crew" :disabled="creationDisabled" :class="fieldState(Boolean(hostForm.name.trim()))" :aria-invalid="attempted && !hostForm.name.trim()"><span v-if="attempted && !hostForm.name.trim()" class="field-message">Enter a name for your group.</span><span v-else class="field-hint">This is what other people see. Up to 60 characters.</span></label>
             <div class="form-wide group-picture-field">
               <span>Group picture <span class="field-hint">(optional)</span></span>
-              <AvatarPicker :src="hostImage" :name="hostForm.name" :busy="busy || groupsLoading" :size="72" @select="image => hostImage = image" @remove="hostImage = null">
+              <AvatarPicker :src="hostImage" :name="hostForm.name" :busy="creationDisabled" :size="72" @select="image => hostImage = image" @remove="hostImage = null">
                 <template #preview><GroupAvatar :src="hostImage" :name="hostForm.name" :size="72" /></template>
               </AvatarPicker>
             </div>
@@ -279,7 +438,9 @@ async function host() {
           <h2>Concert and group preferences</h2>
           <p class="group-muted">Your group stays private as a draft until you publish it from Manage group. You can invite friends there first. Your saved preferences are added to the group automatically.</p>
           <div class="form-grid">
-            <label class="form-wide">Concert<select v-model="hostConcertId" required :disabled="busy || groupsLoading"><option v-for="c in allConcerts" :key="c.id" :value="c.id">{{ c.artist }}, {{ c.event_date }}</option></select></label>
+            <label class="form-wide">Concert<select v-model="hostConcertId" required :disabled="creationDisabled || !eligibleConcerts.length" :aria-describedby="concertNotice ? 'creation-concert-notice' : reads.concerts.loaded && !eligibleConcerts.length ? 'creation-concert-empty' : undefined"><option value="" disabled>{{ reads.concerts.loading ? 'Loading concerts…' : reads.concerts.error ? 'Concert options unavailable' : eligibleConcerts.length ? 'Choose an upcoming concert' : 'No upcoming concerts available' }}</option><option v-for="c in eligibleConcerts" :key="c.id" :value="c.id">{{ c.artist }}, {{ c.event_date }}</option></select></label>
+            <p v-if="concertNotice" id="creation-concert-notice" class="form-wide group-muted" role="status">{{ concertNotice }}</p>
+            <p v-if="reads.concerts.loaded && !reads.concerts.error && !eligibleConcerts.length" id="creation-concert-empty" class="form-wide group-muted" role="status">No upcoming concerts are available for a new group. Your existing groups are still available in My groups.</p>
             <div v-if="selectedConcert" class="form-wide venue-layout">
               <div class="venue-layout__heading">
                 <div><span class="group-muted">Venue</span><strong>{{ selectedConcert.venue }}</strong></div>
@@ -288,70 +449,80 @@ async function host() {
               </div>
               <p v-if="!selectedConcert.seatmap_url" class="group-muted">{{ selectedConcert.source === 'ticketmaster' ? 'Ticketmaster has not provided a seating plan for this concert.' : 'A seating plan is not available for this concert.' }}</p>
             </div>
-            <label>Group size<input v-model.number="hostForm.capacity" type="number" min="1" step="1" required :disabled="busy || groupsLoading" :class="fieldState(capacityValid)" :aria-invalid="attempted && !capacityValid"><span v-if="attempted && !capacityValid" class="field-message">Enter a number, 1 or more.</span><span v-else class="field-hint">New companion places, excluding you and invited friends.</span></label>
-            <label>Seating preference<select v-model="hostForm.section" :disabled="busy || groupsLoading"><option v-for="(name, id) in SECTION_OPTIONS" :key="id" :value="id">{{ name }}</option></select><span class="field-hint">General categories, not confirmed venue sections.</span></label>
-            <label>Spending budget<select v-model.number="hostForm.spend_band" :disabled="busy || groupsLoading"><option v-for="n in 4" :key="n" :value="n">{{ LABELS.spendBand[n] }}</option></select></label>
-            <label>Arrival<select v-model="hostForm.arrival_plan" :disabled="busy || groupsLoading"><option v-for="(name, id) in ARRIVAL_OPTIONS" :key="id" :value="id">{{ name }}</option></select></label>
+            <label>Group size<input v-model.number="hostForm.capacity" type="number" min="1" step="1" required :disabled="creationDisabled" :class="fieldState(capacityValid)" :aria-invalid="attempted && !capacityValid"><span v-if="attempted && !capacityValid" class="field-message">Enter a number, 1 or more.</span><span v-else class="field-hint">New companion places, excluding you and invited friends.</span></label>
+            <label>Seating preference<select v-model="hostForm.section" :disabled="creationDisabled"><option v-for="(name, id) in SECTION_OPTIONS" :key="id" :value="id">{{ name }}</option></select><span class="field-hint">General categories, not confirmed venue sections.</span></label>
+            <label>Spending budget<select v-model.number="hostForm.spend_band" :disabled="creationDisabled"><option v-for="n in 4" :key="n" :value="n">{{ LABELS.spendBand[n] }}</option></select></label>
+            <label>Arrival<select v-model="hostForm.arrival_plan" :disabled="creationDisabled"><option v-for="(name, id) in ARRIVAL_OPTIONS" :key="id" :value="id">{{ name }}</option></select></label>
           </div>
         </section>
         <section class="form-section">
           <h2>Optional extras</h2>
-          <label>Group notes (visible after publishing)<textarea v-model="hostForm.notes" maxlength="2000" rows="3" :disabled="busy || groupsLoading"></textarea></label>
-          <fieldset><legend>Group activities</legend><label v-for="(name, id) in LABELS.plans" :key="id" class="group-check"><input v-model="hostForm.plans[id]" type="checkbox" :disabled="busy || groupsLoading">{{ name }}</label></fieldset>
+          <label>Group notes (visible after publishing)<textarea v-model="hostForm.notes" maxlength="2000" rows="3" :disabled="creationDisabled"></textarea></label>
+          <fieldset><legend>Group activities</legend><label v-for="(name, id) in LABELS.plans" :key="id" class="group-check"><input v-model="hostForm.plans[id]" type="checkbox" :disabled="creationDisabled">{{ name }}</label></fieldset>
         </section>
-        <p v-if="!groupsLoading && !allConcerts.length" class="group-muted">No concerts are available to create a group for yet.</p>
-        <div class="group-actions"><button class="btn btn--primary" :disabled="busy || groupsLoading || !hostConcertId">{{ busy ? 'Creating…' : 'Create draft group' }}</button><RouterLink :to="viewLink()" class="btn btn--ghost">Back to My groups</RouterLink></div>
+        <div class="group-actions"><button class="btn btn--primary" :disabled="creationDisabled || !selectedConcertEligible">{{ busy ? 'Creating…' : 'Create draft group' }}</button><RouterLink :to="viewLink()" class="btn btn--ghost">Back to My groups</RouterLink></div>
+        </template>
+        <template v-else><h2>Your group is ready to open</h2><p role="status">{{ createdDraftNote }}</p><div class="group-actions"><button type="button" class="btn btn--primary" :disabled="busy" @click="host">Open created group</button><RouterLink :to="viewLink()" class="btn btn--ghost">Back to My groups</RouterLink></div></template>
       </form>
     </template>
 
     <template v-else-if="!groupsLoading">
       <nav v-if="mode === 'dashboard'" class="workspace-overview" aria-label="Group workspace sections">
-        <a href="#owned-heading"><span class="workspace-overview__value">{{ activeGroups.length + joinedGroups.length }}</span><span>Your active groups<small>Chat, plan and manage</small></span></a>
+        <a href="#owned-heading"><span class="workspace-overview__value">{{ activeGroups.length + upcomingJoinedGroups.length }}</span><span>Upcoming &amp; ongoing groups<small>Chat, plan and manage</small></span></a>
+        <a v-if="historicalGroups.length" href="#historical-groups"><span class="workspace-overview__value">{{ historicalGroups.length }}</span><span>{{ historicalTitle }}<small>Conversations and group history</small></span></a>
         <a v-if="admissionQueues.length || historicalJoins.length" href="#join-requests" :class="{'workspace-overview__attention':incomingCount}"><span class="workspace-overview__value">{{ incomingCount }}</span><span>Requests &amp; offers<small>{{ incomingCount ? 'Review in arrival order' : 'View past requests' }}</small></span></a>
         <a v-if="incoming.length || outgoing.length || accepted.length" href="#group-connections"><span class="workspace-overview__value">{{ accepted.length }}</span><span>Group connections<small>{{ incoming.length ? `${incoming.length} invitations need a reply` : 'Invitations and shared chats' }}</small></span></a>
         <RouterLink v-if="meetupAttentionCount || upcomingMeetupCount" to="/meetups" :class="{ 'workspace-overview__attention': meetupAttentionCount }"><span class="workspace-overview__value">{{ meetupAttentionCount || upcomingMeetupCount }}</span><span>Meetup plans<small>{{ meetupAttentionCount ? `${meetupAttentionCount} need your attention` : `${upcomingMeetupCount} upcoming confirmed` }}</small></span></RouterLink>
       </nav>
       <template v-if="mode === 'dashboard' || !sourceGroup">
-        <p v-if="mode === 'connections'" class="group-muted" role="status">{{ route.query.groupId ? 'This group is unavailable, cancelled, or not owned by you. Choose an active group below.' : 'Choose the group you want to connect with other groups.' }}</p>
+        <p v-if="mode === 'connections'" class="group-muted" role="status">{{ route.query.groupId ? 'This group is historical, unavailable, cancelled, or not owned by you. Choose an upcoming or ongoing group below. Existing conversations remain in My groups.' : 'Choose an upcoming or ongoing group to connect with other groups.' }}</p>
         <section class="owned-section" aria-labelledby="owned-heading">
-          <div class="section-heading"><h2 id="owned-heading">{{ mode === 'connections' ? 'Choose one of your groups' : 'Groups you own' }}</h2><span class="group-muted">{{ activeGroups.length }} active</span></div>
+          <div class="section-heading"><h2 id="owned-heading">{{ mode === 'connections' ? 'Choose one of your groups' : 'Groups you own' }}</h2><span v-if="reads.owned.loaded" class="group-muted">{{ activeGroups.length }} upcoming or ongoing</span></div>
           <div v-if="activeGroups.length" class="owned-grid">
             <article v-for="g in activeGroups" :key="g.id" class="card group-panel owned-card">
               <div class="owned-card__top">
                 <GroupAvatar :src="g.imageUrl" :name="groupTitle(g)" :size="52" />
-                <div class="owned-card__title"><h3>{{ groupTitle(g) }}</h3><p v-if="g.name" class="group-muted">{{ g.artist }}</p></div>
+                <div class="owned-card__title"><h3>{{ groupTitle(g) }}</h3></div>
                 <span class="group-state" :class="{ 'group-state--published': g.settings?.published }">{{ g.settings?.published ? 'Published' : 'Draft' }}</span>
               </div>
-              <p class="group-muted">{{ g.eventDate }} · {{ sectionName(g.section) }}</p>
+              <p class="owned-card__concert group-muted"><span v-if="g.name">{{ g.artist }}</span><span>{{ g.eventDate }} · {{ sectionName(g.section) }}</span></p>
               <p>{{ g.memberCount }} {{ g.memberCount === 1 ? 'member' : 'members' }} · {{ g.remainingCapacity }} places remaining</p>
               <p class="group-muted">{{ g.settings?.published ? (g.settings.connect_open ? 'Open to meeting other groups.' : 'Group connections are off. Change this in Manage group.') : 'Invite friends, then publish from Manage group.' }}</p>
               <div class="owned-card__actions">
                 <RouterLink v-if="mode === 'dashboard'" :to="`/groups/${encodeURIComponent(g.id)}/channel`" class="btn" :class="g.settings?.published ? 'btn--primary' : 'btn--ghost'">Open group chat</RouterLink>
                 <RouterLink :to="mode === 'connections' ? viewLink('connections', g) : `/groups/${encodeURIComponent(g.id)}/members`" class="btn" :class="mode === 'connections' || !g.settings?.published ? 'btn--primary' : 'btn--ghost'">{{ mode === 'connections' ? 'Connect this group' : 'Manage group' }}</RouterLink>
-                <button type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: g.id }))">{{ meetupLabel({ partyId: g.id }) }}</button>
+                <button v-if="canOpenMeetup(g, { partyId: g.id })" type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: g.id }))">{{ meetupLabel({ partyId: g.id }) }}</button>
               </div>
             </article>
           </div>
-          <div v-else class="card group-panel empty-state"><h3>You do not own an active group yet</h3><p>Create a draft for your next concert, then invite friends or publish it for new companions.</p><RouterLink :to="viewLink('create')" class="btn btn--primary">Create your first group</RouterLink></div>
+          <div v-else-if="reads.owned.loaded" class="card group-panel empty-state"><h3>No upcoming groups you own</h3><p>{{ historicalGroups.some(g => g.owned) ? 'Your previous groups and conversations are available below. Create a draft for your next concert when you are ready.' : 'Create a draft for your next concert, then invite friends or publish it for new companions.' }}</p><RouterLink :to="viewLink('create')" class="btn btn--primary">Create a group</RouterLink></div>
         </section>
       </template>
 
       <template v-if="mode === 'dashboard'">
-        <section v-if="joinedGroups.length" class="owned-section" aria-labelledby="joined-heading">
-          <div class="section-heading"><h2 id="joined-heading">Groups I joined</h2><span class="group-muted">{{ joinedGroups.length }} active</span></div>
-          <div v-if="joinedGroups.length" class="owned-grid">
-            <article v-for="g in joinedGroups" :key="g.id" class="card group-panel owned-card">
+        <section v-if="upcomingJoinedGroups.length" class="owned-section" aria-labelledby="joined-heading">
+          <div class="section-heading"><h2 id="joined-heading">Groups I joined</h2><span class="group-muted">{{ upcomingJoinedGroups.length }} upcoming or ongoing</span></div>
+          <div class="owned-grid">
+            <article v-for="g in upcomingJoinedGroups" :key="g.id" class="card group-panel owned-card owned-card--joined">
               <div class="owned-card__top"><GroupAvatar :src="g.imageUrl ?? g.group?.imageUrl" :name="groupTitle(g)" :size="52" /><div class="owned-card__title"><h3>{{ groupTitle(g) }}</h3><p v-if="g.name || g.group?.name" class="group-muted">{{ g.artist }}</p></div></div>
+              <p class="owned-card__concert group-muted">{{ g.eventDate }}<span v-if="g.host?.displayName">{{ g.host.displayName }}'s group</span></p>
               <p class="group-muted">{{ membershipSource[g.assignmentOrigin ?? g.source] ?? 'Active group member' }}</p>
-              <p>{{ g.host?.displayName }}'s group · {{ g.remainingCapacity }} places remaining</p>
               <div class="owned-card__actions">
-                <RouterLink :to="{path:'/messages',query:{tab:'groups'}}" class="btn btn--primary">Group messages</RouterLink>
+                <RouterLink :to="`/groups/${encodeURIComponent(g.id)}/channel`" class="btn btn--primary">Group messages</RouterLink>
                 <RouterLink :to="`/groups/${encodeURIComponent(g.id)}/members`" class="btn btn--ghost">View group</RouterLink>
-                <button type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: g.partyId ?? g.id }))">{{ meetupLabel({ partyId: g.partyId ?? g.id }) }}</button>
+                <button v-if="canOpenMeetup(g, { partyId: g.partyId ?? g.id })" type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: g.partyId ?? g.id }))">{{ meetupLabel({ partyId: g.partyId ?? g.id }) }}</button>
               </div>
             </article>
           </div>
         </section>
+        <details v-if="historicalGroups.length" id="historical-groups" class="card group-panel history"><summary>{{ historicalTitle }} ({{ historicalGroups.length }})</summary><div class="history-list">
+          <article v-for="g in historicalGroups" :key="g.id" class="historical-group">
+            <div class="section-heading"><h3>{{ groupTitle(g) }}</h3><span class="group-state">{{ groupEligibility(g).reason === 'concert_finished' ? 'Past concert' : 'Date unavailable' }}</span></div>
+            <p class="group-muted">{{ g.artist }} · {{ g.eventDate || 'Concert date unavailable' }} · {{ g.owned ? 'Group you own' : membershipSource[g.assignmentOrigin ?? g.source] ?? 'Group member' }}</p>
+            <p class="group-muted">{{ groupEligibility(g).reason === 'concert_finished' ? 'This concert day has ended. Your group and conversation remain available.' : 'A valid concert date is needed before starting new coordination. Your existing group remains available.' }}</p>
+            <div class="group-actions"><RouterLink :to="`/groups/${encodeURIComponent(g.id)}/channel`" class="btn btn--primary">Open group chat</RouterLink><RouterLink :to="`/groups/${encodeURIComponent(g.id)}/members`" class="btn btn--ghost">{{ g.owned ? 'Manage group' : 'View group' }}</RouterLink><button v-if="hasMeetup({ partyId: g.partyId ?? g.id })" type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: g.partyId ?? g.id }))">View meetup history</button></div>
+          </article>
+        </div></details>
         <section v-if="admissionQueues.length || historicalJoins.length" id="join-requests" class="card group-panel requests-panel" aria-labelledby="requests-heading">
           <p class="workspace-eyebrow">Host review</p>
           <div class="section-heading"><h2 id="requests-heading">Join requests</h2><span class="group-muted">{{ incomingCount }} in your queues</span></div>
@@ -375,11 +546,12 @@ async function host() {
           <p>{{ sourceGroup.eventDate }} · {{ sectionName(sourceGroup.section) }} · {{ sourceGroup.memberCount }} {{ sourceGroup.memberCount === 1 ? 'member' : 'members' }}</p>
           <p v-if="!canConnect" class="group-muted">Publish this group and enable “Open to meeting other groups” in Manage group before sending invitations.</p>
           <p v-else class="group-muted">Open to meeting other groups at this concert.</p>
-          <div class="group-actions"><RouterLink :to="`/groups/${encodeURIComponent(sourceId)}/members`" class="btn btn--ghost">Manage group</RouterLink><button type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: sourceId }))">{{ meetupLabel({ partyId: sourceId }) }}</button></div>
+          <div class="group-actions"><RouterLink :to="`/groups/${encodeURIComponent(sourceId)}/members`" class="btn btn--ghost">Manage group</RouterLink><button v-if="canOpenMeetup(sourceGroup, { partyId: sourceId })" type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: sourceId }))">{{ meetupLabel({ partyId: sourceId }) }}</button></div>
         </section>
         <template v-if="canConnect">
           <section class="card group-panel"><h2>Find another group</h2><GroupFilters :filters="filters" /></section>
           <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading groups…</p>
+          <p v-else-if="candidateError" class="group-read-feedback" role="status">{{ candidateError }} <button type="button" class="btn btn--ghost" :disabled="busy" @click="loadCandidates">Retry connection groups</button></p>
           <div v-else-if="visible.length" class="group-grid"><GroupListingCard v-for="g in visible" :key="g.id" :group="g"><p v-if="g.invitation">Invitation: {{ g.invitation.status === 'pending' ? 'Awaiting a response' : g.invitation.status === 'accepted' ? 'Groups connected' : 'Declined' }}</p><button v-else class="btn btn--primary" :disabled="busy" @click="act(() => api.inviteGroup(sourceId, g.id))">Invite group to connect</button></GroupListingCard></div>
           <div v-else class="card group-panel empty-state"><h3>No groups match right now</h3><p>Try different filters. Only published groups open to connections at this concert appear here.</p></div>
           <!-- A page button exists only when that page does. -->
@@ -396,7 +568,7 @@ async function host() {
         <h2>{{ mode === 'dashboard' ? 'Group connections and invitations' : 'This group’s connections' }}</h2>
         <div v-if="incoming.length" class="invites">
           <h3 class="invites__title">Received <span class="invites__count tabular">{{ incoming.length }}</span></h3>
-          <article v-for="c in incoming" :key="c.id" class="invite invite--received"><div class="invite__context"><span class="connection-state connection-state--attention">Needs your reply</span><p class="invite__who">{{ describe(c) }}</p></div><div class="invite__actions"><button type="button" class="btn btn--success" :disabled="busy" :aria-label="`Accept the invitation from ${otherParty(c).hostName}`" @click="act(() => api.respondToGroup(c.id, 'accept'))">Accept</button><button type="button" class="btn btn--danger-ghost" :disabled="busy" :aria-label="`Decline the invitation from ${otherParty(c).hostName}`" @click="confirming = { kind: 'decline', connection: c }">Decline</button></div></article>
+          <article v-for="c in incoming" :key="c.id" class="invite invite--received"><div class="invite__context"><span class="connection-state connection-state--attention">{{ connectionEligible(c) ? 'Needs your reply' : 'New connections unavailable' }}</span><p class="invite__who">{{ describe(c) }}</p><p v-if="!connectionEligible(c)" :id="`connection-eligibility-${c.id}`" class="group-muted">This concert is unavailable for new connections. You can decline the invitation; existing conversations remain available.</p></div><div class="invite__actions"><button type="button" class="btn btn--success" :disabled="busy || !connectionEligible(c)" :aria-describedby="!connectionEligible(c) ? `connection-eligibility-${c.id}` : undefined" :aria-label="`Accept the invitation from ${otherParty(c).hostName}`" @click="act(() => api.respondToGroup(c.id, 'accept'))">Accept</button><button type="button" class="btn btn--danger-ghost" :disabled="busy" :aria-label="`Decline the invitation from ${otherParty(c).hostName}`" @click="confirming = { kind: 'decline', connection: c }">Decline</button></div></article>
         </div>
         <div v-if="outgoing.length" class="invites">
           <h3 class="invites__title">Sent <span class="invites__count tabular">{{ outgoing.length }}</span></h3>
@@ -405,7 +577,7 @@ async function host() {
         <div class="connected">
           <h3 class="invites__title">Connected</h3>
           <p v-if="!accepted.length" class="group-muted">No connected groups yet. Publish your group and invite another group to connect.</p>
-          <article v-for="c in accepted" :key="c.id" class="connection"><span class="connection-state connection-state--accepted">Groups connected</span><p class="invite__who">{{ describe(c) }}</p><details v-if="c.partyA.notes || c.partyB.notes" class="connection-notes"><summary>Host notes</summary><p v-if="c.partyA.notes" class="group-notes"><strong>{{ c.partyA.hostName }}:</strong> {{ c.partyA.notes }}</p><p v-if="c.partyB.notes" class="group-notes"><strong>{{ c.partyB.hostName }}:</strong> {{ c.partyB.notes }}</p></details><div class="connection__foot"><span class="connection__since">Connected {{ whenConnected(c.respondedAt) }}</span><RouterLink class="btn btn--primary" :to="`/groups/connections/${encodeURIComponent(c.id)}/channel`">Open shared chat</RouterLink><button type="button" class="btn btn--ghost" @click="router.push(meetupLink({ connectionId: c.id }))">{{ meetupLabel({ connectionId: c.id }) }}</button></div></article>
+          <article v-for="c in accepted" :key="c.id" class="connection"><span class="connection-state connection-state--accepted">Groups connected</span><p class="invite__who">{{ describe(c) }}</p><details v-if="c.partyA.notes || c.partyB.notes" class="connection-notes"><summary>Host notes</summary><p v-if="c.partyA.notes" class="group-notes"><strong>{{ c.partyA.hostName }}:</strong> {{ c.partyA.notes }}</p><p v-if="c.partyB.notes" class="group-notes"><strong>{{ c.partyB.hostName }}:</strong> {{ c.partyB.notes }}</p></details><div class="connection__foot"><span class="connection__since">Connected {{ whenConnected(c.respondedAt) }}</span><RouterLink class="btn btn--primary" :to="`/groups/connections/${encodeURIComponent(c.id)}/channel`">Open shared chat</RouterLink><button v-if="canOpenMeetup(c.partyA, { connectionId: c.id })" type="button" class="btn btn--ghost" @click="router.push(meetupLink({ connectionId: c.id }))">{{ groupEligibility(c.partyA).eligible ? meetupLabel({ connectionId: c.id }) : 'View meetup history' }}</button></div></article>
         </div>
       </section>
     </template>
@@ -454,14 +626,16 @@ async function host() {
   gap: var(--space-4);
 }
 .owned-card {
-  grid-template-rows: auto auto auto 1fr auto;
+  display:flex;
+  flex-direction:column;
   border-top:2px solid color-mix(in srgb,var(--accent-400) 40%,var(--panel-edge));
   background:var(--panel-bg);
   box-shadow:var(--panel-shadow);
 }
 .owned-card__top {
-  align-items: center;
-  flex-wrap: nowrap;
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) auto;
+  align-items:start;
 }
 .owned-card__title {
   display: grid;
@@ -472,19 +646,37 @@ async function host() {
 .owned-card__title p {
   font-size: var(--step--1);
 }
+.owned-card__concert { display:grid; align-content:start; gap:.2rem; }
+/* Shared tracks align variable-length titles and metadata without fixed heights. */
+@supports(grid-template-rows:subgrid) {
+  .owned-card { display:grid; grid-template-rows:subgrid; grid-row:span 5; align-content:stretch; }
+  .owned-card--joined { grid-row:span 4; }
+}
 /* Keep group management and planning actions clear on narrow cards. */
 .owned-card__actions {
-  align-self: end;
+  margin-top:auto;
+  align-self:stretch;
   display: grid;
+  grid-auto-rows:minmax(2.75rem,auto);
   gap: var(--space-2);
 }
 .owned-card__actions .btn {
   width: 100%;
+  min-height:2.75rem;
+  height:100%;
+  padding-inline:.6rem;
+  line-height:1.35;
+  text-wrap:balance;
   justify-content: center;
   text-align: center;
 }
 .owned-card__actions:has(> :nth-child(3)) { grid-template-columns:repeat(2,minmax(0,1fr)); }
 .owned-card__actions:has(> :nth-child(3)) > :first-child { grid-column:1/-1; }
+@media (max-width:620px) {
+  .owned-card__actions:has(> :nth-child(3)) { grid-template-columns:minmax(0,1fr); }
+  .owned-card__top { grid-template-columns:auto minmax(0,1fr); }
+  .owned-card__top > .group-state { grid-column:2; justify-self:start; }
+}
 .group-picture-field {
   display: grid;
   gap: var(--space-2);
@@ -547,10 +739,14 @@ async function host() {
   border-top: var(--border-hairline);
   min-width:0;
 }
-.join-request, .cancelled-group {
+.join-request, .cancelled-group, .historical-group {
   display: grid;
   gap: var(--space-2);
 }
+.historical-group + .historical-group { padding-top:var(--space-4); border-top:var(--border-hairline); }
+.historical-group h3 { min-width:0; overflow-wrap:anywhere; }
+.group-read-feedback { padding:var(--space-3); border-left:2px solid var(--amber-400); background:var(--panel-bg); }
+#historical-groups { scroll-margin-top:calc(var(--header-height) + var(--space-4)); }
 .connections {
   display: grid;
   gap: var(--space-5);

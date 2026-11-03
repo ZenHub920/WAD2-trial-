@@ -7,6 +7,7 @@ import {
 } from "../services/discoveryPreferences.js";
 import { reservedPlacesSql, availableCapacitySql, expireJoinRequests } from "./capacity.js";
 import { groupImageUrl } from "../presentation/groupIdentity.js";
+import { requireConcertCoordination } from './concertEligibility.js';
 export const communityError = (message, status = 409) =>
   Object.assign(new Error(message), { status });
 /**
@@ -134,7 +135,7 @@ export function createMembershipRepo(db, repos) {
     activeGroups(user) {
       return db
         .prepare(
-          `SELECT p.id,p.concert_id AS concertId,c.artist,c.event_date AS eventDate,p.name,p.image_path,m.source FROM group_memberships m
+          `SELECT p.id,p.concert_id AS concertId,c.artist,c.event_date AS eventDate,c.event_timezone AS eventTimezone,c.event_time AS eventTime,p.name,p.image_path,m.source FROM group_memberships m
         JOIN parties p ON p.id=m.party_id JOIN concerts c ON c.id=p.concert_id
         WHERE m.user_id=? AND m.status='active' AND p.status<>'cancelled'
           AND NOT EXISTS(SELECT 1 FROM tickets WHERE source_party_id=p.id) ORDER BY c.event_date,p.id`,
@@ -221,11 +222,15 @@ export function createMembershipRepo(db, repos) {
         WHERE m.party_id=? AND m.status='active' ORDER BY m.joined_at,m.user_id`,
         )
         .all(id);
+      const concert = repos.concerts.findById(p.concert_id);
       return {
         partyId: id,
         hostId: p.host_user_id,
         concertId: p.concert_id,
-        artist: repos.concerts.findById(p.concert_id)?.artist ?? null,
+        artist: concert?.artist ?? null,
+        eventDate: concert?.event_date ?? null,
+        eventTime: concert?.event_time ?? null,
+        eventTimezone: concert?.event_timezone ?? null,
         status: p.status,
         remainingCapacity: p.remaining_capacity,
         name: p.name,
@@ -246,6 +251,7 @@ export function createMembershipRepo(db, repos) {
     publish: db.transaction((user, id, input = {}) => {
       const p = owner(user, id),
         s = settings(id);
+      requireConcertCoordination(db, p.concert_id);
       if (!s || p.status === "cancelled")
         throw communityError("group_unavailable");
       const detail = repos.membership.detail(user, id);

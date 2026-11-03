@@ -15,16 +15,16 @@ onMounted(async () => {
 
 <template>
   <slot name="before" />
-  <aside class="pref-nudge" aria-label="Private matching preferences">
+  <aside v-if="!myPreferences" class="pref-nudge" aria-label="Private matching preferences">
     <template v-if="myPreferences === undefined && !error">
       <p class="loading-state" role="status"><LoadingSpinner />Checking your matching preferences…</p>
     </template>
     <template v-else>
       <div>
-        <strong>{{ myPreferences ? 'Your private matching preferences are saved' : 'Find a better fit, in your own time' }}</strong>
-        <p>{{ error || (myPreferences ? 'Companion and group suggestions use the answers in your profile.' : 'Browse and direct requests work now. Save preferences in Profile before using automatic matching or publishing a group.') }}</p>
+        <strong>Your private matching preferences</strong>
+        <p>{{ error || 'Save your preferences to finish setup. Every group member also needs saved preferences before the group can be published.' }}</p>
       </div>
-      <RouterLink class="btn btn--ghost" to="/profile#preferences">{{ myPreferences ? 'Edit in Profile' : 'Set up preferences' }}</RouterLink>
+      <RouterLink class="btn btn--ghost" to="/profile#preferences">Set up preferences</RouterLink>
     </template>
   </aside>
   <slot :preferences="myPreferences ?? null" />
