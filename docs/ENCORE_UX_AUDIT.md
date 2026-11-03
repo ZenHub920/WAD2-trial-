@@ -381,3 +381,22 @@ client/e2e/meetup-hardening.spec.js
 client/e2e/meetup-creation-retry.spec.js
 docs/ENCORE_UX_AUDIT.md
 ```
+
+### Publication integration after approval — 2026-11-03
+
+The user authorized committing and pushing to `main` after the review above. The hardening work was committed as `758bc9a`. A fresh fetch found two additional teammate commits, `639647d` and `ea5c6f2`, covering welcome/onboarding, admin proof review and UI improvements. These were merged normally as `f154bac`, preserving their new dependency, routes, styles and tests. The header merged automatically with both its Admin link and mobile wrapping intact.
+
+The combined UI exposed one real CSS integration defect: Bootstrap's global `.row > *` rules stretched Kaki chat message-option buttons to **214px** and wrapped them beneath message bubbles. A new browser regression reproduced the failure at 390px. Renaming only the private message-row classes in `KakiChatView.vue` isolates them from Bootstrap without changing chat behavior or the teammate's Bootstrap layouts. The same regression passed for both participants' incoming/outgoing messages at 390px and 1440px, checking touch-target size, alignment, bounds, scrolling and reachable Reply actions. Evidence: `integration-chat-before-390.png` and `final-integration-chat-{sender,receiver}-{390,1440}.png` in the screenshot directory above.
+
+The local dependency refresh encountered a Windows file lock and an npm certificate-trust failure. The installation was repaired using Windows' trusted CA store with TLS verification enabled. Temporary npm peer-metadata changes were discarded; the teammate's committed lockfile is preserved. Dependency caches/backups remain ignored. No project TLS settings or credentials were changed.
+
+Final combined-source verification:
+
+- Backend: **641/641 passed**, zero failures/skips/cancellations.
+- Frontend: **381/381 passed**, 32 files, 87.56 seconds.
+- Production build: **passed**, 4.13 seconds; initial JavaScript 166.91 kB.
+- Entire Chromium suite: **39/39 passed**, zero retries or excluded scenarios, 4.5 minutes. This includes the incoming welcome/admin workflows and the new chat layout regression.
+- Security scan: four configured private values checked only in memory against **356 tracked files** and **105 final build files**; zero matching paths or printed values.
+- Git diff check passed. The publication integration adds only the private chat CSS-class isolation, its browser regression and this audit update beyond the reviewed hardening commit and preserved teammate commits.
+
+These publication results supersede the earlier hardening-only counts. No force push or replacement of teammate history is used.
