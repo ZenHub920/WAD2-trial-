@@ -53,14 +53,28 @@ let slideTimer = null;
 function startSlides() {
   clearInterval(slideTimer);
   slideTimer = setInterval(() => {
-    if (!paused.value && slides.value.length > 1) {
+    if (!paused.value && !dragging.value && slides.value.length > 1) {
+      slideDirection.value = 'next';
       activeSlide.value = (activeSlide.value + 1) % slides.value.length;
     }
   }, SLIDE_MS);
 }
 
+/** Which way the deck is travelling, so the card leaves the side it was pushed. */
+const slideDirection = ref('next');
+
+/** Move by one card and restart the countdown, wrapping at either end. */
+function step(delta) {
+  const count = slides.value.length;
+  if (count < 2) return;
+  slideDirection.value = delta > 0 ? 'next' : 'back';
+  activeSlide.value = (activeSlide.value + delta + count) % count;
+  startSlides();
+}
+
 // Picking a dot restarts the countdown so the chosen slide gets its full time.
 function goToSlide(i) {
+  slideDirection.value = i < activeSlide.value ? 'back' : 'next';
   activeSlide.value = i;
   startSlides();
 }
@@ -75,7 +89,9 @@ onUnmounted(() => clearInterval(slideTimer));
 // variables so the browser does the transform work.
 const tilt = ref({ x: 0, y: 0 });
 function onTilt(event) {
-  if (reduced.value) return;
+  // While a card is being dragged the tilt would fight the drag for the same
+  // transform, so the pointer only steers one of the two at a time.
+  if (reduced.value || dragging.value) return;
   const box = event.currentTarget.getBoundingClientRect();
   tilt.value = {
     x: ((event.clientX - box.left) / box.width - 0.5) * 2,
@@ -84,6 +100,126 @@ function onTilt(event) {
 }
 function resetTilt() {
   tilt.value = { x: 0, y: 0 };
+}
+
+/* --------------------------------------------------------------------------
+ * Drag the featured card to change slide
+ *
+ * Pointer events rather than separate mouse and touch handlers: one code path
+ * covers a cursor, a finger and a stylus, and pointer capture keeps the drag
+ * tracking even when it leaves the card.
+ *
+ * The card follows the pointer one-to-one while held, with its CSS transition
+ * switched off, because a drag that lags behind the cursor reads as broken
+ * rather than smooth. Releasing either commits to the next card or springs
+ * back, and the transition comes back for that part.
+ * ----------------------------------------------------------------------- */
+
+/** How far across the card counts as a committed swipe rather than a nudge. */
+const COMMIT_FRACTION = 0.18;
+/** A short, fast flick commits even when it never travelled that far. */
+const FLICK_VELOCITY = 0.45; // px per ms
+/** Past this much of the card, the drag stiffens instead of tracking one-to-one. */
+const FREE_FRACTION = 0.4;
+/** How much of the pointer's further travel still reaches the card. */
+const RESISTANCE = 0.35;
+
+/**
+ * Follow the pointer, but stiffen once the card is well past the threshold.
+ *
+ * The hero sits beside the headline, so an unrestrained drag slides the card
+ * across the text. Resistance keeps the gesture honest — it still moves, so it
+ * never feels stuck — while the card stays inside its own half of the layout.
+ */
+function withResistance(dx) {
+  const free = cardWidth * FREE_FRACTION;
+  if (Math.abs(dx) <= free) return dx;
+  const beyond = Math.abs(dx) - free;
+  return Math.sign(dx) * (free + beyond * RESISTANCE);
+}
+
+const dragX = ref(0);
+/** The same distance as a fraction of the card, for the unitless tilt it adds. */
+const dragRatio = ref(0);
+const dragging = ref(false);
+
+let pointerId = null;
+let startX = 0;
+let startY = 0;
+let startTime = 0;
+let cardWidth = 1;
+/** null until the gesture has committed to an axis; 'x' is ours, 'y' scrolls. */
+let axis = null;
+/** A drag must not also follow the card's link on release. */
+let swallowClick = false;
+
+function onDragStart(event) {
+  // The dots are buttons inside the same box; a press on one is not a drag.
+  if (slides.value.length < 2 || event.target.closest('.carousel__dots')) return;
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
+
+  pointerId = event.pointerId;
+  startX = event.clientX;
+  startY = event.clientY;
+  startTime = event.timeStamp;
+  cardWidth = event.currentTarget.getBoundingClientRect().width || 1;
+  axis = null;
+  swallowClick = false;
+  dragging.value = true;
+  dragX.value = 0;
+  dragRatio.value = 0;
+}
+
+function onDragMove(event) {
+  if (!dragging.value || event.pointerId !== pointerId) return;
+  const dx = event.clientX - startX;
+  const dy = event.clientY - startY;
+
+  if (!axis) {
+    // Wait for a few pixels before deciding, so a plain click stays a click.
+    if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+    axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+    if (axis === 'y') {
+      // Vertical: hand the gesture back so the page scrolls normally.
+      endDrag(event);
+      return;
+    }
+    event.currentTarget.setPointerCapture?.(pointerId);
+    swallowClick = true;
+  }
+
+  const shown = withResistance(dx);
+  dragX.value = shown;
+  dragRatio.value = shown / cardWidth;
+}
+
+function onDragEnd(event) {
+  if (!dragging.value || event.pointerId !== pointerId) return;
+  const dx = dragX.value;
+  const velocity = dx / Math.max(1, event.timeStamp - startTime);
+  const travelled = Math.abs(dx) > cardWidth * COMMIT_FRACTION;
+  const flicked = Math.abs(velocity) > FLICK_VELOCITY;
+
+  // Dragging left asks for the next card, right for the one before.
+  if (axis === 'x' && (travelled || flicked)) step(dx < 0 ? 1 : -1);
+  endDrag(event);
+}
+
+function endDrag(event) {
+  if (pointerId !== null) event?.currentTarget?.releasePointerCapture?.(pointerId);
+  pointerId = null;
+  axis = null;
+  dragging.value = false;
+  dragX.value = 0;
+  dragRatio.value = 0;
+}
+
+/** Runs before the link's own handler, so a drag never navigates. */
+function onCarouselClick(event) {
+  if (!swallowClick) return;
+  swallowClick = false;
+  event.preventDefault();
+  event.stopPropagation();
 }
 
 const upcoming = computed(() => {
@@ -204,13 +340,28 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
         <div
           v-if="featured"
           class="carousel"
-          :class="{ 'carousel--paused': paused }"
-          :style="{ '--tx': tilt.x, '--ty': tilt.y }"
+          :class="{
+            'carousel--paused': paused,
+            'carousel--dragging': dragging,
+            'carousel--back': slideDirection === 'back',
+          }"
+          :style="{
+            '--tx': tilt.x,
+            '--ty': tilt.y,
+            '--dx': `${dragX}px`,
+            '--drag-turn': dragRatio,
+          }"
           @mouseenter="paused = true"
           @mouseleave="paused = false; resetTilt()"
           @mousemove="onTilt"
           @focusin="paused = true"
           @focusout="paused = false"
+          @pointerdown="onDragStart"
+          @pointermove="onDragMove"
+          @pointerup="onDragEnd"
+          @pointercancel="onDragEnd"
+          @dragstart.prevent
+          @click.capture="onCarouselClick"
         >
           <span class="carousel__layer carousel__layer--back" aria-hidden="true" />
           <span class="carousel__layer carousel__layer--mid" aria-hidden="true" />
@@ -226,6 +377,7 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
                   v-if="hasImage(featured)"
                   :src="featured.hero_image_url"
                   alt=""
+                  draggable="false"
                   @error="markBroken(featured)"
                 />
                 <span v-else class="poster__initial" aria-hidden="true">{{ featured.artist.charAt(0) }}</span>
@@ -549,6 +701,14 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
   position: relative;
   perspective: 1200px;
   animation: rise var(--dur-slower) var(--ease-settle) 300ms both;
+  /* Horizontal gestures are ours to interpret; vertical ones still scroll the
+     page, so the hero never traps a finger trying to get down the homepage. */
+  touch-action: pan-y;
+}
+
+/* Text selection across a card makes a drag look like a botched highlight. */
+.carousel--dragging {
+  user-select: none;
 }
 
 /* Two cards peeking out behind the featured one make it read as a stack. */
@@ -589,11 +749,24 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
   background: var(--ink-800);
   box-shadow: var(--shadow-lg);
   text-decoration: none;
-  transform: rotateY(calc(var(--tx, 0) * 7deg)) rotateX(calc(var(--ty, 0) * -7deg));
+  cursor: grab;
+  transform:
+    translate3d(var(--dx, 0px), 0, 0)
+    rotate(calc(var(--drag-turn, 0) * 4deg))
+    rotateY(calc(var(--tx, 0) * 7deg))
+    rotateX(calc(var(--ty, 0) * -7deg));
   transition:
     transform var(--dur-slow) var(--ease-settle),
     box-shadow var(--dur-base) var(--ease-out);
 }
+
+/* Held: no transition at all, so the card sits exactly under the pointer.
+   A card that eases toward the cursor feels laggy rather than smooth. */
+.carousel--dragging .feature {
+  cursor: grabbing;
+  transition: box-shadow var(--dur-base) var(--ease-out);
+}
+
 
 .carousel:hover .feature {
   box-shadow: 0 30px 70px -20px var(--accent-400);
@@ -707,6 +880,17 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
   opacity: 0;
   transform: translateX(-60px) rotate(-4deg) scale(0.95);
   filter: blur(4px);
+}
+
+/* Going back mirrors the deal: the card leaves the side it was pushed toward
+   and the previous one arrives from the other, so the stack reads as a deck
+   being moved by hand rather than always dealing the same direction. */
+.carousel--back .deal-enter-from {
+  transform: translateX(-60px) rotate(-4deg) scale(0.95);
+}
+
+.carousel--back .deal-leave-to {
+  transform: translateX(60px) rotate(4deg) scale(0.95);
 }
 
 .carousel__dots {
@@ -1055,6 +1239,12 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
   .step:hover,
   .mini:hover {
     transform: none;
+  }
+
+  /* A drag is direct manipulation rather than decoration, so the card still
+     follows the pointer here — it just loses the tilt and the rotation. */
+  .carousel--dragging .feature {
+    transform: translate3d(var(--dx, 0px), 0, 0);
   }
 }
 </style>

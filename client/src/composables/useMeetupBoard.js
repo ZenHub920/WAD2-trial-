@@ -33,7 +33,11 @@ export function useMeetupBoard(props) {
   });
   const position = reactive({ latitude: '', longitude: '', label: "", travelMode: 'transit' });
   const feedback = reactive({}), failures = reactive({});
-  const placeSearchKey = ref(0), confirmAction = ref(null), confirmVersion = ref(null);
+  const placeSearchKey = ref(0), journeySearchKey = ref(0), confirmAction = ref(null), confirmVersion = ref(null);
+  const placeLookup = ref(null), journeyLookup = ref(null), leavePrompt = ref(false);
+  const slotLookups = new Map();
+  let createdAttempt = null;
+  let resolveLeave;
   const creatingAdditional = ref(false);
   const capabilities = computed(() => board.value?.capabilities ?? {});
   const contributionsLocked = computed(() => !capabilities.value.canContribute);
@@ -75,6 +79,72 @@ export function useMeetupBoard(props) {
   const selectionSnapshot = rows => JSON.stringify(Object.entries(rows).filter(([, slot]) => slot.selected)
     .map(([start, slot]) => [Number(start), slot.travelMode, slot.latitude, slot.longitude, slot.label]));
   const availabilityDirty = computed(() => selectionSnapshot(slots.value) !== savedSlots.value);
+  const journeySnapshot = () => JSON.stringify(position);
+  const appliedJourney = ref(journeySnapshot());
+  const journeyDirty = computed(() => journeySnapshot() !== appliedJourney.value
+    && (hasOriginDraft.value || position.travelMode !== JSON.parse(appliedJourney.value).travelMode));
+  const hasUnsavedDrafts = computed(() => Boolean(props.id && currentUser.value && board.value && (
+    availabilityDirty.value || journeyDirty.value || comment.value.trim() || place.label.trim()
+    || String(place.latitude).trim() || String(place.longitude).trim() || !place.sheltered)));
+  // Hash changes only switch stages on the same board. All other ordinary
+  // navigation shares one confirmation, including Back and in-app links.
+  const stopNavigationGuard = router.beforeEach((to, from) => {
+    if (!hasUnsavedDrafts.value || (to.path === from.path
+      && JSON.stringify(normalizeMeetupScope(to.query)) === JSON.stringify(normalizeMeetupScope(from.query)))) return true;
+    if (!resolveLeave) {
+      leavePrompt.value = true;
+      const pending = new Promise(resolve => { resolveLeave = resolve; });
+      leaveDecision = pending;
+    }
+    return leaveDecision;
+  });
+  let leaveDecision;
+  function settleLeave(discard) {
+    const resolve = resolveLeave;
+    resolveLeave = null; leavePrompt.value = false; leaveDecision = undefined;
+    resolve?.(discard);
+  }
+  function beforeUnload(event) {
+    if (!hasUnsavedDrafts.value) return;
+    event.preventDefault(); event.returnValue = '';
+  }
+  const clearNotice = area => { feedback[area] = ''; failures[area] = ''; };
+  watch(() => selectionSnapshot(slots.value), () => { feedback.availability = ''; }, { flush: 'sync' });
+  watch(journeySnapshot, () => { feedback.journey = ''; }, { flush: 'sync' });
+  watch(() => JSON.stringify(place), () => {
+    if (place.label.trim() || place.latitude !== '' || place.longitude !== '' || !place.sheltered) feedback.places = '';
+  });
+  watch(comment, value => { if (value.trim()) feedback.discussion = ''; });
+  const lookupPoint = location => ({ label: location.label, latitude: location.latitude, longitude: location.longitude });
+  function selectLocation(target, lookup, location) {
+    const point = lookupPoint(location);
+    Object.assign(target, point); lookup.value = point;
+  }
+  function invalidateLocation(target, lookup) {
+    if (!lookup.value) return;
+    // Only clear fields still derived from this lookup, never intentional
+    // manual edits or coordinates already applied to availability periods.
+    for (const field of ['label', 'latitude', 'longitude'])
+      if (String(target[field]) === String(lookup.value[field])) target[field] = '';
+    lookup.value = null;
+  }
+  function editLocation(target, lookup, reset, field) {
+    if (!lookup.value) return;
+    if (field === 'label') { target.latitude = ''; target.longitude = ''; }
+    lookup.value = null; reset.value++;
+  }
+  const selectPlace = location => selectLocation(place, placeLookup, location);
+  const selectJourney = location => selectLocation(position, journeyLookup, location);
+  const invalidatePlace = () => invalidateLocation(place, placeLookup);
+  const invalidateJourney = () => invalidateLocation(position, journeyLookup);
+  const editPlace = field => editLocation(place, placeLookup, placeSearchKey, field);
+  const editJourney = field => editLocation(position, journeyLookup, journeySearchKey, field);
+  function editSlotLocation(start, field) {
+    const previous = slotLookups.get(String(start)), slot = slots.value[start];
+    if (!previous) return;
+    if (field === 'label') { slot.latitude = null; slot.longitude = null; }
+    slotLookups.delete(String(start));
+  }
   const liveLabel = computed(() => connectionState.value === 'live' ? 'Live with your group' : 'Keeping your group in sync');
   let alive = true, loadRequest = 0, refreshTimer, pollTimer, stopEvents, refreshQueued = false;
   const context = () => `${props.id ?? ''}:${currentUser.value?.id ?? ''}:${JSON.stringify(scope.value)}`;
@@ -110,6 +180,8 @@ export function useMeetupBoard(props) {
       savedSlots.value = selectionSnapshot(nextSlots);
       if (keepDraft) for (const start of Object.keys(nextSlots)) if (slots.value[start]) nextSlots[start] = slots.value[start];
       slots.value = nextSlots;
+      for (const [start, point] of slotLookups) if (!nextSlots[start]
+        || ['label', 'latitude', 'longitude'].some(field => String(nextSlots[start][field]) !== String(point[field]))) slotLookups.delete(start);
       const firstLoad = !board.value;
       board.value = data;
       if (firstLoad && !plannerSteps.some(step => route.hash === `#meetup-${step}`))
@@ -134,6 +206,7 @@ export function useMeetupBoard(props) {
       loadRequest++;
       error.value = "";
       creationContext.value = null; confirmAction.value = null;
+      createdAttempt = null; slotLookups.clear();
       creatingAdditional.value = false;
       for (const key of Object.keys(feedback)) delete feedback[key];
       for (const key of Object.keys(failures)) delete failures[key];
@@ -144,7 +217,10 @@ export function useMeetupBoard(props) {
       comment.value = ''; travelRecommendations.value = null;
       Object.assign(place, { label: '', latitude: '', longitude: '', sheltered: true });
       Object.assign(position, { latitude: '', longitude: '', label: '', travelMode: 'transit' });
-      placeSearchKey.value++;
+      appliedJourney.value = journeySnapshot();
+      placeLookup.value = null; journeyLookup.value = null;
+      placeSearchKey.value++; journeySearchKey.value++;
+      settleLeave(false);
       travelOptions.shelteredOnly = false;
       weather.value = null;
       rainfall.value = null;
@@ -213,6 +289,7 @@ export function useMeetupBoard(props) {
         || (type === 'meetup-updated' && (!props.id || data.meetupId === props.id))) scheduleRefresh();
     });
     window.addEventListener('focus', scheduleRefresh);
+    window.addEventListener('beforeunload', beforeUnload);
     document.addEventListener('visibilitychange', scheduleRefresh);
     // Reconcile missed events and separate server processes without provider calls.
     pollTimer = setInterval(scheduleRefresh, 15000);
@@ -220,7 +297,9 @@ export function useMeetupBoard(props) {
   onUnmounted(() => {
     alive = false; loadRequest++; stopEvents?.(); clearTimeout(refreshTimer); clearInterval(pollTimer);
     window.removeEventListener('focus', scheduleRefresh);
+    window.removeEventListener('beforeunload', beforeUnload);
     document.removeEventListener('visibilitychange', scheduleRefresh);
+    stopNavigationGuard(); settleLeave(false);
   });
   async function act(fn, { savingAvailability = false, area = 'review', success = '' } = {}) {
     if (busy.value) return;
@@ -232,7 +311,19 @@ export function useMeetupBoard(props) {
       const result = await fn();
       invalidateMeetupSummaries();
       if (!alive || context() !== key) return;
-      await load({ preserveDrafts: !savingAvailability });
+      if (savingAvailability) savedSlots.value = selectionSnapshot(slots.value);
+      // A successful mutation must not be reported as a failed save merely
+      // because its follow-up read was unavailable.
+      try { await load({ preserveDrafts: !savingAvailability }); }
+      catch (refreshError) {
+        if (!alive || context() !== key) return;
+        if ([401, 403, 404].includes(refreshError.status)) {
+          board.value = null; slots.value = {}; savedSlots.value = '[]';
+          error.value = 'Your change was saved, but this meetup is no longer available to you.';
+          return true;
+        }
+        syncNote.value = 'Your change was saved. Group details could not refresh; use Refresh planner to retry.';
+      }
       if (context() !== key) return;
       feedback[area] = typeof success === 'function' ? success(result) : success;
       return true;
@@ -258,16 +349,33 @@ export function useMeetupBoard(props) {
     try { await load({ preserveDrafts: true }); }
     catch { /* Keep the original conflict and the draft available for retry. */ }
   }
-  async function create(input) {
-    await act(async () => {
-      const r = await api.createMeetup({ ...input, ...scope.value });
+  async function create(input, settleAttempt = () => {}) {
+    if (busy.value) return;
+    const key = context(), creationScope = { ...scope.value }, from = route.query.from;
+    let created = false;
+    busy.value = true; clearNotice('creation');
+    try {
+      const r = createdAttempt?.requestId === input.creationRequestId ? { meetup: createdAttempt.meetup }
+        : await api.createMeetup({ ...input, ...creationScope });
+      if (!r?.meetup || typeof r.meetup.id !== 'string' || !r.meetup.id.trim()) throw new Error('invalid_creation_response');
+      created = true;
+      settleAttempt('created');
       invalidateMeetupSummaries();
-      await router.push(meetupRouteForBoard(r.meetup, { from: route.query.from === 'overview' ? 'overview' : 'conversation', stage: 'availability' }));
-    }, { area: 'creation' });
+      if (!alive || context() !== key) return;
+      createdAttempt = { requestId: input.creationRequestId, meetup: r.meetup };
+      const failure = await router.push(meetupRouteForBoard(r.meetup, { from: from === 'overview' ? 'overview' : 'conversation', stage: 'availability' }));
+      if (failure && alive && context() === key) failures.creation = 'Your plan was created. Press Open created plan to open it safely.';
+    } catch (e) {
+      settleAttempt(created ? 'created' : e.status >= 400 && e.status < 500 ? 'rejected' : 'uncertain');
+      if (alive && context() === key) failures.creation = created
+        ? 'Your plan was created. Press Open created plan to open it safely.' : meetupErrorMessage(e.message);
+    } finally { if (alive && context() === key) busy.value = false; }
   }
   async function saveAvailability() {
+    if (busy.value) return;
+    clearNotice('availability');
     const selected = Object.values(slots.value).filter(slot => slot.selected);
-    if (selected.some(slot => (coordinate(slot.latitude) || coordinate(slot.longitude)
+    if (selected.some(slot => (slot.label?.trim() || coordinate(slot.latitude) || coordinate(slot.longitude)
       || (slot.latitude !== null && slot.latitude !== '' && slot.latitude !== undefined)
       || (slot.longitude !== null && slot.longitude !== '' && slot.longitude !== undefined)) && !validCoordinates(slot))) {
       failures.availability = meetupErrorMessage('invalid_availability'); return;
@@ -298,20 +406,29 @@ export function useMeetupBoard(props) {
       failures.journey = 'Select a starting location from the search results, or enter both valid coordinates under Advanced/manual entry.';
       return;
     }
-    for (const slot of Object.values(slots.value)) if (slot.selected) {
+    for (const [start, slot] of Object.entries(slots.value)) if (slot.selected) {
       slot.travelMode = position.travelMode;
-      if (hasOriginDraft.value) Object.assign(slot, { latitude: Number(position.latitude), longitude: Number(position.longitude), label: position.label.trim() });
+      if (hasOriginDraft.value) {
+        Object.assign(slot, { latitude: Number(position.latitude), longitude: Number(position.longitude), label: position.label.trim() });
+        if (journeyLookup.value) slotLookups.set(start, lookupPoint(slot));
+        else slotLookups.delete(start);
+      }
     }
-    feedback.journey = `Journey details applied to ${selectedSlotCount.value} selected ${selectedSlotCount.value === 1 ? 'time' : 'times'}. Not saved yet. Save to share.`;
+    appliedJourney.value = journeySnapshot();
+    feedback.journey = `Journey details applied to ${selectedSlotCount.value} selected ${selectedSlotCount.value === 1 ? 'time' : 'times'}. ${availabilityDirty.value ? 'Not saved yet. Save to share.' : 'These details already match your saved availability.'}`;
   }
   async function addPlace() {
-    failures.places = '';
+    if (busy.value) return;
+    clearNotice('places');
     if (!place.label.trim() || !validCoordinates(place)) { failures.places = meetupErrorMessage('invalid_place'); return; }
     const label = place.label.trim();
     const ok = await act(() => api.proposeMeetupPlace(props.id, { ...place, label, version: board.value.version,
       latitude: Number(place.latitude), longitude: Number(place.longitude) }), { area: 'places',
       success: () => `${label} is saved in suggested places.${hasSavedAvailability.value ? '' : ' Recommendations will appear once participants save their available times.'}` });
-    if (ok) { Object.assign(place, { label: '', latitude: '', longitude: '', sheltered: true }); placeSearchKey.value++; }
+    if (ok) {
+      Object.assign(place, { label: '', latitude: '', longitude: '', sheltered: true });
+      placeLookup.value = null; placeSearchKey.value++;
+    }
   }
   function vote(placeId) {
     return act(() => api.voteMeetupPlace(props.id, placeId, board.value.version), { area: 'places', success: 'Your vote has been saved.' });
@@ -369,7 +486,9 @@ export function useMeetupBoard(props) {
     route, router, currentUser, context, board, boards, error, busy, loading, creationContext,
     scope, hasActiveBoards, showCreation, creatingAdditional, returnRoute, returnLabel,
     weather, rainfall, travelRecommendations, transport, comment, slots, place, position, travelOptions,
-    feedback, failures, placeSearchKey, confirmAction, capabilities, contributionsLocked, selectedOrigins,
+    feedback, failures, placeSearchKey, journeySearchKey, confirmAction, capabilities, contributionsLocked, selectedOrigins,
+    leavePrompt, settleLeave, hasUnsavedDrafts, journeyDirty,
+    selectPlace, selectJourney, invalidatePlace, invalidateJourney, editPlace, editJourney, editSlotLocation,
     selectedSlotCount, bestSavedOverlap, selectedTimes, activeStep, availabilityDirty, refreshing, syncNote,
     liveLabel, statuses, time, validCoordinates, recommendedOptions, hasSavedAvailability, recommendationEmpty,
     refreshPlanner, showStep, navigateSteps, create, saveAvailability, discardAvailability, assignJourney,

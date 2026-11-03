@@ -4,6 +4,7 @@ import { formatDate, formatShortDate } from '../../api.js';
 import { priceParts } from '../../market.js';
 import MarketIcon from './MarketIcon.vue';
 import LoadingSpinner from '../LoadingSpinner.vue';
+import SetlistDisc from './SetlistDisc.vue';
 
 /** One concert, with group activity and fan ticket inventory kept separate. */
 const props = defineProps({
@@ -14,7 +15,13 @@ const props = defineProps({
   fromCents: { type: Number, default: null },
   ticketsLoading: { type: Boolean, default: false },
   activityLoading: { type: Boolean, default: false },
+  /** Setlist summary. The concerts page builds its cards from the provider
+      feed, which carries no setlist, so the page passes it in separately. */
+  setlist: { type: Object, default: null },
 });
+
+/** Either source will do, so the card works wherever it is used. */
+const setlistSummary = computed(() => props.setlist ?? props.concert.setlist ?? null);
 
 /** `$99`, not `$99.00` — the footer has one line to say two things. */
 const from = computed(() => {
@@ -36,6 +43,9 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
       <span v-else class="spot__initial" aria-hidden="true">{{ concert.artist.charAt(0) }}</span>
       <span class="spot__date-badge mono">{{ formatShortDate(concert.event_date) }}</span>
       <span v-if="busy" class="spot__live">Fans looking</span>
+      <!-- In the artwork's corner rather than the card's: the card footer
+           already owns its bottom right with the View concert button. -->
+      <SetlistDisc :concert-id="concert.id" :artist="concert.artist" :summary="setlistSummary" />
     </div>
 
     <div class="spot__body">

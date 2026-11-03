@@ -53,7 +53,7 @@ test('mark read keeps a non-chat notification as history', async ({ browser, req
     await expect(bell(other.page)).toHaveAttribute('aria-label', /1 unread/);
     await bell(other.page).click();
     const popover = other.page.locator('#notification-popover');
-    await expect(popover.getByText('Unread')).toBeVisible();
+    await expect(popover.locator('.notification-popover__meta').filter({ hasText: /· Unread$/ })).toBeVisible();
     await popover.getByRole('button', { name: 'Mark read' }).click();
     await expect(popover.getByRole('button', { name: 'Mark read' })).toHaveCount(0);
     await expect(popover.getByText(/· Read/)).toBeVisible();

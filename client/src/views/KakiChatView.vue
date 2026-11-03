@@ -487,8 +487,8 @@ watch(() => props.id, async () => {
 
         <div
           v-else
-          class="row"
-          :class="{ 'row--mine': mine(row) }"
+          class="chat-message-row"
+          :class="{ 'chat-message-row--mine': mine(row) }"
           @mouseleave="openMenuId === row.id && (openMenuId = null)"
         >
           <div class="bubble" :class="{ 'bubble--mine': mine(row), 'bubble--gone': row.deleted }">
@@ -778,7 +778,7 @@ watch(() => props.id, async () => {
   font-size: var(--step--1);
 }
 
-.row {
+.chat-message-row {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -787,7 +787,7 @@ watch(() => props.id, async () => {
   min-width: 0;
 }
 
-.row--mine {
+.chat-message-row--mine {
   align-self: flex-end;
   flex-direction: row-reverse;
 }
@@ -890,6 +890,8 @@ watch(() => props.id, async () => {
 }
 
 .row__more {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
   opacity: 0;
   border: 0;
   background: none;
@@ -900,7 +902,7 @@ watch(() => props.id, async () => {
   transition: opacity var(--dur-fast) var(--ease-glide);
 }
 
-.row:hover .row__more,
+.chat-message-row:hover .row__more,
 .row__more:focus-visible {
   opacity: 1;
 }
@@ -918,11 +920,12 @@ watch(() => props.id, async () => {
   box-shadow: var(--shadow-lg);
 }
 
-.row--mine .popover {
+.chat-message-row--mine .popover {
   right: 0;
 }
 
 .popover button {
+  min-height: 2.75rem;
   text-align: left;
   padding: var(--space-2) var(--space-3);
   border: 0;
@@ -1088,11 +1091,12 @@ watch(() => props.id, async () => {
 }
 
 .swatch {
+  min-height: 2.75rem;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   border: 2px solid transparent;
   color: var(--text-200);
-  font-size: var(--step--2);
+  font-size: var(--step--1);
   cursor: pointer;
   text-transform: capitalize;
 }
@@ -1198,7 +1202,7 @@ watch(() => props.id, async () => {
 }
 
 @media (max-width: 560px) {
-  .row {
+  .chat-message-row {
     max-width: 88%;
   }
   .bar__who {

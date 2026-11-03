@@ -28,6 +28,31 @@ beforeEach(() => {
 });
 
 describe('nearby meetup and concert transport', () => {
+  it('invalidates a selected venue on query edit and waits for an explicit replacement or concert-venue fallback', async () => {
+    vi.useFakeTimers();
+    api.meetupLocations.mockResolvedValue({ result: { status: 'available', locations: [{ label: 'Venue A', latitude: 1.3, longitude: 103.85 }] } });
+    const wrapper = render();
+    await button(wrapper, 'After the concert').trigger('click');
+    const search = wrapper.getComponent(MeetupLocationSearch);
+    await search.get('input').setValue('Venue A');
+    await button(search, 'Search OneMap').trigger('click'); await flushPromises();
+    await search.get('.meetup-search-result').trigger('click');
+    await button(wrapper, 'Check nearby transport').trigger('click'); await flushPromises();
+    expect(api.meetupTransport).toHaveBeenLastCalledWith('meetup-1', expect.objectContaining({ label: 'Venue A' }));
+    await button(wrapper, 'Before the meetup').trigger('click');
+    await button(wrapper, 'After the concert').trigger('click');
+    expect(search.text()).toContain('Selected: Venue A.');
+    await search.get('input').setValue('Venue B');
+    expect(button(wrapper, 'Check nearby transport').element.disabled).toBe(true);
+    expect(wrapper.text()).not.toContain('Near Singapore Indoor Stadium');
+    expect(wrapper.text()).toContain('Choose a new search result');
+    await vi.advanceTimersByTimeAsync(60000); await flushPromises();
+    expect(api.meetupTransport).toHaveBeenCalledTimes(1);
+    await button(wrapper, "Use the concert's venue again").trigger('click');
+    expect(button(wrapper, 'Check nearby transport').element.disabled).toBe(false);
+    await button(wrapper, 'Check nearby transport').trigger('click'); await flushPromises();
+    expect(api.meetupTransport).toHaveBeenLastCalledWith('meetup-1', { phase: 'post' });
+  });
   it('pauses hidden planner steps and resumes without losing the selected journey', async () => {
     vi.useFakeTimers();
     const wrapper = render();

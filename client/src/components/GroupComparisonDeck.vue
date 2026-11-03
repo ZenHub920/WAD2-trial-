@@ -200,19 +200,19 @@ function cardStyle(slot) {
   <section ref="deckElement" class="comparison-deck" aria-label="Compare groups" :aria-busy="pending || transitioning">
     <Transition name="comparison-stage" mode="out-in" @after-enter="stageEntered">
     <div v-if="instructionsVisible" key="instructions" class="comparison-deck__instructions">
-      <div class="comparison-deck__intro"><div><h3 class="comparison-deck__instructions-title" tabindex="-1">Find your concert crew, two groups at a time.</h3><p>Compare the groups before you decide where to apply.</p></div><span class="comparison-deck__progress">{{ state.groups.length }} compatible {{ state.groups.length === 1 ? 'group' : 'groups' }} on this page</span></div>
+      <div class="comparison-deck__intro"><div><h3 class="comparison-deck__instructions-title" tabindex="-1">Find your concert crew, two groups at a time.</h3><p>Compare first. Nothing is sent until you ask to join.</p></div><span class="comparison-deck__progress">{{ state.groups.length }} compatible {{ state.groups.length === 1 ? 'group' : 'groups' }} on this page</span></div>
       <ol class="comparison-deck__steps">
-        <li><span class="comparison-deck__step-number" aria-hidden="true">1</span><div><h4>Compare</h4><p>Tap the group you prefer, or choose <strong>Prefer this group</strong>. It stays in place while the other card slides away and the next group appears. You can also skip either card by swiping left. Comparing sends no application.</p></div></li>
-        <li><span class="comparison-deck__step-number" aria-hidden="true">2</span><div><h4>Request to join</h4><p>Found a group you want? Swipe its card right or choose <strong>Request to join</strong>. This sends your application to the host for approval. Requests share an arrival-order queue; your application shows whether a place is held or you are waiting.</p></div></li>
+        <li><span class="comparison-deck__step-number" aria-hidden="true">1</span><div><h4>Compare</h4><p>Tap <strong>Prefer this group</strong> on the one you like more, or <strong>swipe left</strong> to skip.</p></div></li>
+        <li><span class="comparison-deck__step-number" aria-hidden="true">2</span><div><h4>Request to join</h4><p><strong>Swipe right</strong> or tap <strong>Request to join</strong>. The host approves it.</p></div></li>
       </ol>
-      <div class="comparison-deck__start"><button type="button" class="btn btn--primary" :disabled="locked || !state.groups.length" @click="instructionsVisible = false">Start comparing</button><p>You can have one pending application per concert. Neither comparing nor applying makes you a confirmed member.</p></div>
+      <div class="comparison-deck__start"><button type="button" class="btn btn--primary" :disabled="locked || !state.groups.length" @click="instructionsVisible = false">Start comparing</button><p>One request per concert at a time.</p></div>
     </div>
     <div v-else key="cards" class="comparison-deck__content">
     <div class="comparison-deck__intro">
       <div><h3>Which group feels more like you?</h3><p>Keep one to compare with the next group. When you find your people, request to join either card.</p></div>
       <div class="comparison-deck__tools"><p class="comparison-deck__progress">{{ state.nextIndex }} of {{ state.groups.length }} groups shown<span v-if="unseenCount"> · {{ unseenCount }} more to compare</span></p><button type="button" class="btn btn--ghost" :disabled="locked" @click="instructionsVisible = true">How this works</button></div>
     </div>
-    <p class="comparison-deck__help">Tap a card or choose <strong>Prefer this group</strong> to replace the other one. This comparison stays on this page and sends no request. Swipe right or use <strong>Request to join</strong> to apply; swipe left to skip. You can have one pending application per concert.</p>
+    <p class="comparison-deck__help"><strong>Prefer this group</strong> to keep one · <strong>Swipe right</strong> to request · <strong>Swipe left</strong> to skip</p>
     <p v-if="!canApply && !submitted" class="comparison-deck__notice">You can compare groups. Set up and activate direct joining, or resolve your current application or offer, before applying.</p>
     <p v-if="submitted" class="comparison-deck__notice" role="status">Request sent to <strong>{{ groupName(submitted) }}</strong>. See Your applications for its queue position, whether a place is held and its deadline.</p>
     <div v-if="visibleCount" class="comparison-deck__pair">

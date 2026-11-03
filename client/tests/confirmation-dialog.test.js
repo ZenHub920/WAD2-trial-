@@ -23,6 +23,11 @@ function press(target, key, shiftKey = false) {
 }
 
 describe('Confirmation keyboard interaction', () => {
+  it('can initially focus the safe cancel action without changing other confirmations', async () => {
+    mount(ConfirmDialog, { attachTo: document.body, props: { open: true, title: 'Leave draft?', initialFocus: 'cancel', cancelLabel: 'Keep editing' } });
+    await nextTick();
+    expect(document.activeElement.textContent.trim()).toBe('Keep editing');
+  });
   it('focuses the existing confirm action and wraps Tab in both directions', async () => {
     const { dialog } = await openDialog();
     const [cancel, confirm] = dialog.querySelectorAll('button');

@@ -52,7 +52,7 @@ let sequence = 0;
 harness.post('/__test/fixture', (req, res, next) => {
   try {
     const suffix = String(++sequence), concertId = `e2e_concert_${suffix}`;
-    const users = Object.fromEntries(['hostA', 'hostB', 'friendA', 'friendB', 'seeker', 'outsider']
+    const users = Object.fromEntries(['hostA', 'hostB', 'friendA', 'friendB', 'seeker', 'outsider', 'admin']
       .map(who => [who, `${who}_${suffix}`]));
     const sessions = {};
     for (const [who, id] of Object.entries(users)) {
@@ -62,6 +62,8 @@ harness.post('/__test/fixture', (req, res, next) => {
       repos.sessions.create(createHash('sha256').update(token).digest('hex'), id, Date.now() + 3600000);
       sessions[who] = token;
     }
+    // The admin account can open the proof-of-purchase review page.
+    db.prepare('UPDATE users SET is_operator = 1 WHERE id = ?').run(users.admin);
     repos.concerts.create({ id: concertId, artist: `Test concert ${suffix}`, venue: 'Singapore Indoor Stadium', city: 'Singapore', event_date: '2030-01-01' });
     const parties = { a: `e2e_a_${suffix}`, b: `e2e_b_${suffix}` };
     for (const [key, host, friend, name] of [['a', 'hostA', 'friendA', 'Supper crew'], ['b', 'hostB', 'friendB', 'Singalong crew']]) {

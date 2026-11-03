@@ -459,13 +459,15 @@ onUnmounted(() => {
   gap: var(--space-3);
 }
 .message-actions button {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
   background: none;
   border: 0;
   color: inherit;
   padding: var(--space-1) 0;
   text-decoration: underline;
   font: inherit;
-  font-size: var(--step--2);
+  font-size: var(--step--1);
   cursor: pointer;
 }
 .composer {
@@ -506,6 +508,8 @@ onUnmounted(() => {
   color: var(--text-300);
 }
 .composer-context button {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
   flex: none;
   border: 0;
   background: none;

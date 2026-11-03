@@ -201,6 +201,10 @@ test('proof review: pending until an operator decides; rejection needs a note; a
   assert.equal((await decide('operator', { decision: 'reject' })).status, 400);
   assert.equal((await decide('operator', { decision: 'reject', note: 'Order number is cut off' })).status, 200);
 
+  const history = (await api('/operator/verifications', { as: 'operator' })).body.recent;
+  assert.equal(history.find((l) => l.id === id).verification.status, 'rejected', 'decisions appear in the admin history');
+  assert.ok(!JSON.stringify(history).includes('base64'), 'the history never carries the proof');
+
   const own = (await api('/me/tickets', { as: 'seller' })).body.listings.find((l) => l.id === id);
   assert.deepEqual([own.verification.status, own.verification.note], ['rejected', 'Order number is cut off']);
 

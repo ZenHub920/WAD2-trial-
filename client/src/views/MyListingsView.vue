@@ -21,6 +21,7 @@ async function loadListings() {
 }
 
 async function removeListing(listing) {
+  if (removing.value) return;
   if (!window.confirm(`Remove your listing for ${listing.concert.artist}?`)) return;
   removing.value = listing.id;
   error.value = '';
@@ -134,7 +135,7 @@ onMounted(loadListings);
             <button
               class="remove-button"
               type="button"
-              :disabled="removing === listing.id"
+              :disabled="Boolean(removing)"
               @click="removeListing(listing)"
             >
               <LoadingSpinner v-if="removing === listing.id" />

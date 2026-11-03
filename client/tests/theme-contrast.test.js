@@ -41,6 +41,15 @@ describe.each([['light', light], ['dark', dark]])('%s shared color contracts', (
     }
   });
 
+  // Gold key figures and green/red status text must stay readable, not just colourful.
+  it('keeps highlight and status text readable on page and card surfaces', () => {
+    for (const text of ['highlight-ink', 'status-positive', 'status-danger']) {
+      for (const surface of ['ink-900', 'ink-800']) {
+        expect(contrast(color(tokens, text), color(tokens, surface)), `--${text} on --${surface}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
   it('distinguishes control edges and focus rings from their adjacent surfaces', () => {
     for (const edge of ['control-edge', 'focus-ring']) {
       for (const surface of ['field-bg', 'ink-800', 'surface-floating']) {
@@ -48,4 +57,13 @@ describe.each([['light', light], ['dark', dark]])('%s shared color contracts', (
       }
     }
   });
+});
+
+// The light theme's tinted message backgrounds are solid, so they can be checked too.
+it('keeps light status and next-step text readable on their tinted backgrounds', () => {
+  expect(contrast(color(light, 'status-positive'), color(light, 'positive-soft'))).toBeGreaterThanOrEqual(4.5);
+  expect(contrast(color(light, 'status-danger'), color(light, 'danger-soft'))).toBeGreaterThanOrEqual(4.5);
+  expect(contrast(color(light, 'text-100'), color(light, 'highlight-soft'))).toBeGreaterThanOrEqual(4.5);
+  // The "Next step" label is dark brown text on a gold pill.
+  expect(contrast('#3b2200', color(light, 'highlight'))).toBeGreaterThanOrEqual(4.5);
 });

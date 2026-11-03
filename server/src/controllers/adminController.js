@@ -1,18 +1,20 @@
 /**
  * Ticket verification for operators (granted with `npm run operator:grant -- <email>`):
- * the proof-of-purchase review queue.
+ * the proof-of-purchase review queue and a short history of recent decisions.
  */
 import { ownerListing } from './ticketController.js';
 
 export function createAdminController(repos) {
   return {
-    /** The review queue, each item with its proof attached. */
+    /** The review queue, each item with its proof attached, plus recent decisions. */
     queue(req, res) {
       res.json({
         listings: repos.tickets.pendingVerification().map((listing) => ({
           ...ownerListing(listing),
           proofData: repos.tickets.proofFor(listing.id),
         })),
+        // Proofs are not attached here: the history only needs the outcome.
+        recent: repos.tickets.recentReviews().map(ownerListing),
       });
     },
 

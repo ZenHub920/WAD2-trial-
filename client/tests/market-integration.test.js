@@ -275,6 +275,53 @@ describe('Integration: MyListingsView + ProofUpload', () => {
     expect(window.confirm).toHaveBeenCalledWith('Remove your listing for Coldplay?');
     expect(wrapper.findAll('article.listing-card')).toHaveLength(0);
   });
+
+  it('serializes removal across listing cards and keeps a failed removal available for retry', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    api.myTickets.mockResolvedValue({ listings: [makeListing(), makeListing({ id: 'ticket_2' })] });
+    let finishFirst, failSecond;
+    api.deleteTicket.mockImplementationOnce(() => new Promise(resolve => { finishFirst = resolve; }));
+    const { wrapper } = await mountPage(MyListingsView, '/my-listings');
+    const removals = wrapper.findAll('.remove-button');
+    // Two rapid clicks on different cards must not race the shared pending state.
+    removals[0].element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    removals[1].element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    expect(api.deleteTicket).toHaveBeenCalledExactlyOnceWith('ticket_1');
+    expect(window.confirm).toHaveBeenCalledTimes(1);
+    expect(wrapper.findAll('.remove-button').every(item => item.element.disabled)).toBe(true);
+    expect(wrapper.findAll('article.listing-card')).toHaveLength(2);
+    finishFirst({});
+    await flushPromises();
+    expect(wrapper.findAll('article.listing-card')).toHaveLength(1);
+    expect(wrapper.get('.remove-button').element.disabled).toBe(false);
+
+    api.deleteTicket.mockImplementationOnce(() => new Promise((resolve, reject) => { failSecond = reject; }));
+    await wrapper.get('.remove-button').trigger('click');
+    expect(api.deleteTicket).toHaveBeenLastCalledWith('ticket_2');
+    expect(wrapper.get('.remove-button').text()).toContain('Removing');
+    failSecond(apiError(503));
+    await flushPromises();
+    expect(wrapper.get('[role="alert"]').text()).toBe('Could not remove this listing. Please try again.');
+    expect(wrapper.findAll('article.listing-card')).toHaveLength(1);
+    expect(wrapper.get('.remove-button').element.disabled).toBe(false);
+    api.deleteTicket.mockResolvedValueOnce({});
+    await wrapper.get('.remove-button').trigger('click');
+    await flushPromises();
+    expect(api.deleteTicket).toHaveBeenCalledTimes(3);
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+    expect(wrapper.findAll('article.listing-card')).toHaveLength(0);
+  });
+
+  it('preserves both listings when native removal confirmation is cancelled', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    api.myTickets.mockResolvedValue({ listings: [makeListing(), makeListing({ id: 'ticket_2' })] });
+    const { wrapper } = await mountPage(MyListingsView, '/my-listings');
+    await wrapper.get('.remove-button').trigger('click');
+    expect(api.deleteTicket).not.toHaveBeenCalled();
+    expect(wrapper.findAll('article.listing-card')).toHaveLength(2);
+    expect(wrapper.findAll('.remove-button').every(item => !item.element.disabled)).toBe(true);
+  });
   // A 401 from the API becomes a clear "sign in" message.
   it('Test5: a signed-out visitor is told to sign in', async () => {
     api.myTickets.mockRejectedValue(apiError(401));

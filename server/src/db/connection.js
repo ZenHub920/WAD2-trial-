@@ -25,6 +25,7 @@ import { migrateConnectionChannels } from './connectionChannelRepository.js';
 import { migrateProviders } from './providerMigrations.js';
 import { migrateAccountSecurity } from './accountSecurityRepository.js';
 import { migrateDelivery } from './deliveryRepository.js';
+import { migrateSetlists } from './setlistRepository.js';
 const here = dirname(fileURLToPath(import.meta.url));
 
 let db = null;
@@ -57,6 +58,7 @@ export function getDb() {
   migrateProviders(db);
   migrateAccountSecurity(db);
   migrateDelivery(db);
+  migrateSetlists(db);
   return db;
 }
 
@@ -259,6 +261,7 @@ export function createTestDb({ hybrid = true } = {}) {
   migrateProviders(testDb);
   migrateAccountSecurity(testDb);
   migrateDelivery(testDb);
+  migrateSetlists(testDb);
   return testDb;
 }
 

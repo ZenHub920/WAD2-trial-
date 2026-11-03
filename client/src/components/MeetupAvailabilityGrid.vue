@@ -10,7 +10,9 @@ const props = defineProps({
 });
 const emit = defineEmits(['update:selected']);
 const root = ref(null), preview = ref(null), focused = ref(null), hovered = ref(null);
+const horizontalOverflow = ref(false), touchPainting = ref(false);
 const helpId = `availability-help-${useId()}`;
+const scrollHelpId = `availability-scroll-${useId()}`;
 const cells = computed(() => [...new Map(props.grid.filter(slot => Number.isFinite(slot.startsAt))
   .map(slot => [slot.startsAt, { ...slot, day: singaporeDayKey(slot.startsAt), time: formatMeetupClock(slot.startsAt) }])).values()]
   .sort((a, b) => a.startsAt - b.startsAt));
@@ -25,7 +27,7 @@ const inspected = computed(() => byStamp.value.get(hovered.value ?? focused.valu
 const count = slot => Math.min(Math.max(0, Number(slot.availableCount) || 0), Math.max(0, props.participantCount));
 const heat = slot => props.participantCount > 0 ? Math.ceil(count(slot) / props.participantCount * 4) : 0;
 const label = slot => `${formatMeetupDay(slot.startsAt)}, ${slot.time}–${formatMeetupClock(slot.startsAt + 1800000)}: ${count(slot)} of ${props.participantCount} available. ${selectedSet.value.has(slot.startsAt) ? 'You are available.' : 'You are unavailable.'}`;
-let gesture = null, suppressPointerClickUntil = 0;
+let gesture = null, holdTimer, suppressPointerClickUntil = 0;
 
 function publish(selection) {
   const next = [...selection].filter(stamp => byStamp.value.has(stamp)).sort((a, b) => a - b);
@@ -34,7 +36,7 @@ function publish(selection) {
 }
 function paint(stamp) {
   const slot = byStamp.value.get(stamp);
-  if (!gesture || !slot || props.disabled) return;
+  if (!gesture || gesture.phase !== 'painting' || !slot || props.disabled) return;
   const previous = byStamp.value.get(gesture.last);
   const targets = previous?.day === slot.day
     ? cells.value.filter(cell => cell.day === slot.day && cell.startsAt >= Math.min(previous.startsAt, stamp) && cell.startsAt <= Math.max(previous.startsAt, stamp))
@@ -46,17 +48,38 @@ function paint(stamp) {
   gesture.last = stamp;
   publish(gesture.selection);
 }
+function claimGesture() {
+  if (!gesture || gesture.phase !== 'pending' || props.disabled) return;
+  clearTimeout(holdTimer);
+  gesture.phase = 'painting';
+  focused.value = gesture.last;
+  root.value?.querySelector(`[data-availability-start="${gesture.last}"]`)?.focus({ preventScroll: true });
+  touchPainting.value = gesture.type === 'touch';
+  try { root.value?.setPointerCapture?.(gesture.id); } catch { /* Synthetic events have no active pointer. */ }
+  paint(gesture.last);
+}
 function start(event, stamp) {
   if (props.disabled || gesture || event.button !== 0 || event.isPrimary === false) return;
-  event.preventDefault();
-  focused.value = stamp;
-  event.currentTarget.focus({ preventScroll: true });
-  gesture = { id: event.pointerId, last: stamp, add: !selectedSet.value.has(stamp), selection: new Set(selectedSet.value) };
-  try { root.value?.setPointerCapture?.(event.pointerId); } catch { /* Synthetic events have no active pointer. */ }
-  paint(stamp);
+  gesture = {
+    id: event.pointerId, type: event.pointerType, phase: 'pending', last: stamp,
+    x: event.clientX ?? 0, y: event.clientY ?? 0,
+    add: !selectedSet.value.has(stamp), selection: new Set(selectedSet.value),
+  };
+  if (event.pointerType === 'touch') {
+    // A normal swipe remains native scrolling; only a deliberate hold claims painting.
+    holdTimer = setTimeout(claimGesture, 300);
+  } else {
+    event.preventDefault();
+    claimGesture();
+  }
 }
 function move(event) {
   if (!gesture || event.pointerId !== gesture.id) return;
+  if (gesture.phase === 'pending' && Math.hypot((event.clientX ?? gesture.x) - gesture.x, (event.clientY ?? gesture.y) - gesture.y) > 8) {
+    clearTimeout(holdTimer);
+    gesture.phase = 'scrolling';
+  }
+  if (gesture.phase !== 'painting') return;
   event.preventDefault();
   const target = document.elementFromPoint?.(event.clientX, event.clientY) ?? event.target;
   const button = target?.closest?.('[data-availability-start]');
@@ -64,11 +87,25 @@ function move(event) {
 }
 function finish(event) {
   if (!gesture || (event?.pointerId !== undefined && event.pointerId !== gesture.id)) return;
+  if (gesture.phase === 'pending' && event?.type === 'pointerup') claimGesture();
+  clearTimeout(holdTimer);
   const pointerId = gesture.id;
   gesture = null;
+  touchPainting.value = false;
   suppressPointerClickUntil = Date.now() + 500;
   if (root.value?.hasPointerCapture?.(pointerId)) root.value.releasePointerCapture(pointerId);
   preview.value = null;
+}
+function allowMultiTouch(event) {
+  if (event.touches.length > 1) finish({ type: 'pointercancel' });
+}
+function preventClaimedTouchScroll(event) {
+  allowMultiTouch(event);
+  // Pointer-event cancellation alone cannot suppress a browser's native pan.
+  if (gesture?.type === 'touch' && gesture.phase === 'painting' && event.cancelable) event.preventDefault();
+}
+function preventPaintingMenu(event) {
+  if (touchPainting.value) event.preventDefault();
 }
 function toggle(event, stamp) {
   if (props.disabled || (event.detail > 0 && Date.now() < suppressPointerClickUntil)) return;
@@ -100,6 +137,26 @@ watch(() => cells.value.map(slot => slot.startsAt).join(','), () => {
   finish();
   if (!byStamp.value.has(focused.value)) focused.value = cells.value[0]?.startsAt ?? null;
 }, { immediate: true });
+watch(root, (element, _, cleanup) => {
+  if (!element) return;
+  let active = true;
+  const measure = () => { if (active) horizontalOverflow.value = element.scrollWidth > element.clientWidth + 1; };
+  const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+  observer?.observe(element);
+  const table = element.querySelector('table');
+  if (table) observer?.observe(table);
+  element.addEventListener('touchmove', preventClaimedTouchScroll, { passive: false });
+  element.addEventListener('touchstart', allowMultiTouch, { passive: true });
+  window.addEventListener('resize', measure);
+  measure();
+  cleanup(() => {
+    active = false;
+    observer?.disconnect();
+    element.removeEventListener('touchmove', preventClaimedTouchScroll);
+    element.removeEventListener('touchstart', allowMultiTouch);
+    window.removeEventListener('resize', measure);
+  });
+}, { flush: 'post' });
 onMounted(() => {
   window.addEventListener('pointerup', finish);
   window.addEventListener('pointercancel', finish);
@@ -116,15 +173,16 @@ onBeforeUnmount(() => {
 <template>
   <div class="availability-grid">
     <div class="availability-grid__intro">
-      <p :id="helpId">Drag to mark when you’re free. Drag from a selected time to erase. <span>All times are Singapore time.</span></p>
+      <p :id="helpId"><span class="availability-grid__mouse-help">Drag to mark when you’re free. Drag from a selected time to erase.</span><span class="availability-grid__touch-help">Tap a time, or hold then drag to paint or erase. Swipe to scroll.</span> <span>All times are Singapore time.</span></p>
       <div class="availability-grid__legend" aria-label="Availability colour scale">
         <span>Fewer available</span><i v-for="level in [0, 1, 2, 3, 4]" :key="level" :data-heat="level" aria-hidden="true" /><span>More available</span>
         <span class="availability-grid__your-key">✓ Your times</span>
       </div>
     </div>
     <p v-if="!cells.length" class="group-muted">No time slots in this planning window.</p>
-    <div v-else ref="root" class="availability-grid__scroll" @pointermove="move" @pointerup="finish" @pointercancel="finish" @mouseleave="hovered = null">
-      <table :aria-describedby="helpId" :style="{ width: `${52 + days.length * 66}px` }" aria-label="Group availability in Singapore time">
+    <p v-if="horizontalOverflow && cells.length" :id="scrollHelpId" class="availability-grid__scroll-hint">Scroll sideways for more days <span aria-hidden="true">→</span></p>
+    <div v-if="cells.length" ref="root" class="availability-grid__scroll" :data-touch-painting="touchPainting" @pointermove="move" @pointerup="finish" @pointercancel="finish" @contextmenu="preventPaintingMenu" @mouseleave="hovered = null">
+      <table :aria-describedby="horizontalOverflow ? `${helpId} ${scrollHelpId}` : helpId" :style="{ width: `${2.5 + days.length * 3.25}rem` }" aria-label="Group availability in Singapore time">
         <thead><tr><th scope="col">Time</th><th v-for="day in days" :key="day.key" scope="col">{{ day.label }}</th></tr></thead>
         <tbody>
           <tr v-for="timeOfDay in times" :key="timeOfDay" :class="{ 'availability-grid__hour': timeOfDay.endsWith(':00') }">
@@ -152,7 +210,7 @@ onBeforeUnmount(() => {
       <strong>{{ count(inspected) }} of {{ participantCount }} available</strong>
       <span>{{ selectedSet.has(inspected.startsAt) ? 'You’re available' : 'You’re unavailable' }}</span>
     </div>
-    <p v-if="cells.length" class="availability-grid__hint">{{ selectedSet.size }} half-hour times selected · Hover, tap or focus a cell to see its details. Arrow keys move; Space selects. Your changes are shared when you save. On touch screens, scroll beside the grid.</p>
+    <p v-if="cells.length" class="availability-grid__hint">{{ selectedSet.size }} half-hour times selected · Hover, tap or focus a cell for details. Arrow keys move; Space selects. Changes are shared after saving.</p>
   </div>
 </template>
 
@@ -173,9 +231,11 @@ onBeforeUnmount(() => {
   color: var(--text-200);
 }
 .availability-grid__intro p span {
-  white-space: nowrap;
   color: var(--text-300);
 }
+.availability-grid__intro .availability-grid__mouse-help,
+.availability-grid__intro .availability-grid__touch-help { color: var(--text-200); }
+.availability-grid__touch-help { display: none; }
 .availability-grid__legend {
   display: flex;
   flex-wrap: wrap;
@@ -216,10 +276,14 @@ onBeforeUnmount(() => {
   overflow: auto;
   border: 1px solid var(--ink-500);
   border-radius: 5px;
-  overscroll-behavior: contain;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
+  touch-action: manipulation;
   background: var(--ink-900);
   box-shadow: inset 0 1px 5px color-mix(in srgb, var(--ink-500) 20%, transparent), var(--shadow-sm);
 }
+.availability-grid__scroll[data-touch-painting='true'] { outline: 2px solid var(--accent-400); outline-offset: 2px; }
+.availability-grid__scroll-hint { margin: 0; color: var(--text-300); font-size: .8rem; }
 table {
   border-spacing: 0;
   table-layout: fixed;
@@ -228,7 +292,7 @@ table {
 th {
   height: 26px;
   padding: 0 3px;
-  font-size: .68rem;
+  font-size: .75rem;
   font-weight: 600;
   color: var(--text-200);
   white-space: nowrap;
@@ -239,18 +303,18 @@ thead th {
   line-height: 1.3;
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 3;
   background: var(--ink-900);
 }
 th:first-child {
-  width: 52px;
+  width: 2.5rem;
   position: sticky;
   left: 0;
-  z-index: 1;
+  z-index: 2;
   background: var(--ink-900);
 }
 thead th:first-child {
-  z-index: 3;
+  z-index: 4;
 }
 td {
   padding: 0;
@@ -266,17 +330,18 @@ td {
 }
 .availability-grid__cell {
   width: 100%;
-  min-height: 25px;
+  min-height: 1.5625rem;
   padding: 0;
   border: 1px solid transparent;
   border-radius: 0;
   color: #fff;
   cursor: crosshair;
   font: inherit;
-  font-size: .65rem;
+  font-size: .8rem;
   font-weight: 600;
   user-select: none;
-  touch-action: none;
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -318,7 +383,7 @@ td {
 }
 .availability-grid__outside {
   display: block;
-  height: 25px;
+  height: 1.5625rem;
   color: var(--text-400);
 }
 .availability-grid__hint {
@@ -339,9 +404,11 @@ td {
 .availability-grid__inspection strong {
   color: var(--text-100);
 }
-@media (max-width: 600px) {
+@media (max-width: 600px), (any-pointer: coarse) {
+  .availability-grid__mouse-help { display: none; }
+  .availability-grid__touch-help { display: inline; }
   .availability-grid__cell, .availability-grid__outside {
-    min-height: 30px;
+    min-height: 2.75rem;
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -183,7 +183,7 @@ const quantity = computed(() => `${props.listing.quantity} ${props.listing.quant
   gap: var(--space-1);
 }
 .tcard__price strong {
-  color: var(--accent-400);
+  color: var(--highlight-ink);
   font-size: var(--step-1);
 }
 .tcard__price small {

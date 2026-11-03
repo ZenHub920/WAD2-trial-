@@ -255,3 +255,148 @@ The reviewed working tree contained 77 changed/new paths, including the carried-
 ```
 
 </details>
+
+## Final Functional and UI/UX Hardening Audit
+
+Verified on **2026-11-03**. This pass starts from GitHub `main` at `277f0b0`, including the five newer teammate commits after the previous audit. Work is isolated on `fix/encore-final-ux-hardening`. The earlier audit above is historical; its test counts and Git snapshot are not the current results.
+
+### Confirmed defects and improvements
+
+| Issue and status | Reproduction and root cause | Correction and source files | Verification |
+| --- | --- | --- | --- |
+| **Confirmed defect fixed: leaving unsaved planner drafts** | Paint a time, type a place/discussion, or change unapplied journey inputs, then follow All plans, a return link, another board or browser Back. Only stage state preservation existed; there was no route/unload guard. | `useMeetupBoard.js` now guards changes of board/scope and external planner routes. `MeetupView.vue` reuses `ConfirmDialog.vue`, initially focusing **Keep editing**. Reload/close use native `beforeunload`. Guards/listeners are removed on unmount, and account changes clear private state. | Component tests cover all four draft types, same-board steps, ignored search/filter changes, cancellation/discard and cleanup. Browser checks exercise internal navigation, Back, another board and actual reload cancellation. |
+| **Confirmed defect fixed: edited creation retry conflicts** | Submit a valid request rejected with a definite 4xx, edit the submitted intention and retry. A lifetime component token was reused for different payloads. | `MeetupCreationForm.vue` fingerprints normalized title, UTC dates and explicit separate-plan intent. Identical retries retain the identifier; edits after a definite rejection receive a new one. A local pending latch prevents double submission before props update. | Focused component cases cover normalized identity, changed title/dates, pending edits and duplicate clicks. Browser regression posts to the real disposable API. |
+| **Confirmed defect fixed: uncertain/created retries** | Lose the response after the API commits, edit inputs and retry; or let a navigation guard cancel opening a successfully created plan. Blindly rotating the token could duplicate a plan. | The form retains the original payload/identifier for **Check previous attempt**. A confirmed attempt offers **Open created plan**. `useMeetupBoard.js` distinguishes API confirmation from navigation, caches a confirmed result in memory and rejects late redirects after scope/session changes. No browser storage or schema changes. | Tests cover network/5xx/malformed responses, a later rejected replay, known-created navigation failure, original-payload replay and changed context. Browser regression deliberately drops a real committed response and checks only one plan exists. |
+| **Confirmed defect fixed: misleading save feedback** | Save successfully, edit again or fail validation; stale success remained visible. A successful mutation followed by a failed read was also reported as a failed save. | `useMeetupBoard.js` clears obsolete notices when meaningful inputs change, distinguishes mutation success from refresh failure and preserves failed drafts. `MeetupView.vue` places a save-state message by Save, keeps Continue secondary and explains that Continue does not save. Places explains that recommendations use saved answers. Reapplying unchanged journey data reports that it already matches saved availability. | Component and browser cases verify persistence, failed saves, disabled pending controls, retained drafts, no stale success and an unavailable follow-up read. |
+| **Confirmed defect fixed: stale selected addresses** | Select A, edit the query to B, or rename a selected lookup result. The selected label/coordinates could survive under a different apparent intention. | `MeetupLocationSearch.vue` invalidates synchronously on query changes, rejects late/detached results and resets silently for intentional manual entry. Parent handlers in `useMeetupBoard.js` and `MeetupView.vue` clear only lookup-derived draft fields; renaming a lookup requires fresh coordinates. In-session applied lookup provenance also covers individual-period overrides. Saved/applied availability is not cleared merely by editing a search. | Search tests cover out-of-order results, old selection, errors, reset, disabled/unmounted state and stale clicks. Parent tests cover manual overrides, applied periods and per-period name edits. Browser checks inspect both the real submitted coordinates and persisted API data. |
+| **Confirmed defect fixed: transport venue mismatch** | Select venue A, switch transport phases and return, then type B. Destroying the selector lost its provenance while the parent retained A. | `MeetupTransportPanel.vue` preserves the selector across phase switches. Query changes clear the override, previous results and automatic refresh; Check waits for a new selection or explicit **Use the concert's venue again**. It cannot silently fall back to the original venue after invalidating A. | Real search child integration tests cover phase switching, query invalidation, paused automatic checks and explicit fallback. |
+| **Improvement completed: mobile availability gestures** | Compact desktop cells and immediate touch painting made native swiping awkward. | `MeetupAvailabilityGrid.vue` retains compact fine-pointer desktop cells, uses at least 44px/rem-scaled mobile/coarse targets, and supports tap or a 300ms hold before drag painting/erasing. Movement before the hold stays native scrolling; a second finger releases painting for pinch zoom. Local touch listeners prevent scrolling only after painting is claimed. Timer/listener cleanup, mouse interpolation, keyboard selection, saved counts and half-hour data remain intact. Actual horizontal overflow reveals a sideways-scroll hint. | Unit cases cover touch tap/pan/hold/erase, multitouch and cleanup. Chromium CDP sends real touch streams at 320/360/390 in both themes, including 200% root text. This is browser emulation, not physical-device Safari verification. |
+| **Confirmed visual defects fixed: enlarged-text clipping and sticky labels** | At 200% text on a 320px screen, screenshot inspection showed Menu outside the visible header and a focused cell drawn over the sticky Time column. Document scroll-width alone missed the clipped header. | `SiteHeader.vue` permits the narrow header to wrap controls. The grid uses separate stacking levels for sticky row/day/corner headings. No global header/bell z-index change. | Browser checks measure actual header-control bounds, day-label text fit and the hit-tested sticky Time heading after native horizontal scrolling. |
+| **Improvement completed: selected, saved and decision hierarchy** | Selected lookup results used error-like rose styling, important meetup statuses/actions were small, and confirmed plans still used a generic proposal heading. | Search selections use the existing brand accent, an explicit Selected label and visible keyboard focus. `MeetupEntryCard.vue`, `MeetupOverview.vue`, `NotificationBell.vue` and `MeetupView.vue` enlarge relevant status/timestamp text. Review distinguishes confirmed/cancelled plans and emphasizes the chosen time/place. | Rendered light/dark screenshots, keyboard checks, contrast checks and the responsive matrix. Existing palettes and transitions remain. |
+| **Improvement completed: chat touch targets** | Several chat message actions, dismiss controls and theme choices were smaller than a comfortable touch target. | Small CSS changes in `ConnectionChannelView.vue`, `GroupChannelView.vue` and `KakiChatView.vue` provide 44px/rem targets without changing chat actions or persistence. | Existing chat, notification, profile and public-vibe tests remain in the complete suites; browser workflows check live messaging and planner entry. |
+| **Confirmed defect fixed: concurrent listing removals** | Remove A, then remove B while A is pending. A single current-ID flag allowed concurrent work and an earlier completion could unlock the later operation. | `MyListingsView.vue` serializes removal and disables removal controls until it settles. Existing native confirmation, cancellation and failed-removal retry behavior remain. | Two additional marketplace integration cases verify rapid cross-card requests, cancellation, failure retention and retry. |
+| **Investigated, no default overlay defect found** | Reopened notification/menu/modal overlays at normal viewport sizes; the original screenshot suspicion was not reproduced as a default header/bell stacking defect. | Existing popover containment, mutually exclusive header disclosures and teleported confirmation remain. Only the independently reproduced enlarged-text header wrap was changed. Native destructive confirmations were retained where replacing them would be cosmetic. | Header overlay/focus tests and real normal-viewport keyboard, Escape, containment and light/dark screenshots. |
+
+### Design and behavior boundaries
+
+- **Drafts:** kept in component memory, never local/session storage. Switching Time → Places → Review does not save or discard. Search queries and comparison filters alone do not trigger a leave warning. Navigation approval does not erase a draft before the router actually commits the navigation.
+- **Locations:** a lookup result is a selection; Apply changes selected availability periods; Save persists those periods. Suggested meeting places persist through Add place. Deliberate manual coordinates remain available if search fails. Lookup provenance for per-period name protection is in-session only: the unchanged API does not store lookup/manual origin metadata. Previously saved origins are explicitly editable under manual per-period controls.
+- **Async feedback:** no success before mutation confirmation, no input reset on failed persistence, and a failed read after persistence is labeled as a refresh problem. The server still enforces stale-version and membership/organizer permissions.
+- **Preserved:** matching/ranking/queue rules, questionnaire fields, meetup scheduling model, approval roles, public API contracts, database schema, authentication, teammate setlist/hero/group-membership changes, current themes and reduced-motion handling.
+- **No new feature libraries, integrations, dashboards or notification categories.** No README or other documentation was deleted. `.agent-local` was not recreated.
+
+### Verification results
+
+| Final check | Actual result |
+| --- | --- |
+| Complete backend suite | **641/641 passed**, 30 suites, zero failed/skipped/cancelled; 236.23 seconds. |
+| Complete frontend suite | **369/369 passed**, 31 files; 100.66 seconds. |
+| Production build | **Passed**, 6.07 seconds. Initial JS remains 166.55 kB; no new dependencies. |
+| Entire Chromium/Playwright suite | **37/37 passed**, zero excluded scenarios, retries remain zero; 5.4 minutes. |
+| New component/integration regressions | **41 additional cases** included in the 369 total; seven existing test files. |
+| New browser regressions | **Four additional scenarios** included in the 37 total: real touch/scaling, navigation/save states, address consistency and creation retries. |
+| Responsive matrix | Seven major page contexts at all six widths in both themes, plus the planner, stage, calendar and overlay checks; mobile native touch and 200% text at 320/360/390. |
+| Screenshot evidence | **50 baseline + 69 final PNGs**, outside the repository. |
+| Git diff hygiene | `git diff --check` passed; changes are substantive, with no wholesale line-ending rewrite. |
+
+All suites above passed on the final production source. Baseline before this pass: **641 server tests**, **328 client tests**, **33 Playwright scenarios**, and the production build passed. New focused regressions and expanded responsive coverage are included in the final suites, rather than counted separately as extra passes.
+
+Testing iterations are retained in ignored logs. The first complete browser attempt had **35 passed / two failed**: the new lost-response scenario still received SSE and correctly resumed the newly created active plan before its retry button was used; an existing notification selector matched both the unread total and notification metadata. The connection-loss fixture now loses both response and stream, while still asserting identical replay payloads and exactly one persisted board. The notification assertion now targets the same unread state in its metadata rather than a substring elsewhere in the popover. Both corrected files passed **5/5 targeted scenarios** before the complete rerun. An earlier touch-test attempt was interrupted because its harness awaited a page load after deliberately dismissing the native reload warning; that wait is bounded and the actual dialog, URL and retained-draft assertions remain. No scenarios were disabled, retries added or persistence assertions removed.
+
+Commands (run from the indicated folder):
+
+```powershell
+# server
+npm.cmd test -- --test-concurrency=1
+# client
+npm.cmd test -- --run --maxWorkers=1
+npm.cmd run build
+npm.cmd run test:e2e
+```
+
+Responsive browser coverage includes 320, 360, 390, 768, 1024 and 1440px in light/dark themes, keyboard/focus/reduced-motion/contrast checks and actual mobile touch streams. Screenshots and browser fixtures use disposable synthetic accounts; external address/transport failures are controlled fixtures. This pass does not claim live production-provider availability or physical-device/OS Web Push verification.
+
+### Screenshot evidence
+
+Artifacts are outside the repository at:
+
+`C:\Users\aungb\.codex\visualizations\2026\10\16\01a1447a-55bd-7021-bcc5-4d2f8338b7d6\encore-final-hardening`
+
+The folder contains `baseline-*` before changes and `final-*` after verification. Representative files:
+
+- `final-hardening-touch-selected-light-320.png` / `final-hardening-touch-selected-dark-390.png`: selected mobile grid.
+- `final-hardening-touch-text200-light-320.png` / `final-hardening-touch-text200-dark-390.png`: larger text and horizontal scrolling.
+- `final-hardening-availability-saving-disabled-dark-390.png`: pending/disabled controls.
+- `final-hardening-availability-failed-dark-390.png`: failed save with draft kept.
+- `final-hardening-unsaved-confirmation-dark-390.png`: leave-warning modal.
+- `final-hardening-availability-saved-dark-390.png`: confirmed saved state.
+- `final-hardening-location-selected-light-390.png` / `final-hardening-location-failed-cleared-light-390.png`: selected result and cleared/error state.
+- `final-hardening-creation-uncertain-390.png`: safe retry after a lost response.
+- `final-planner-*`, `final-planner-places-*`, `final-planner-review-*`, `final-notifications-*`, `final-calendar-*` and the other responsive page captures cover default/empty/dropdown/mobile light/dark states.
+
+### Security and project hygiene
+
+- Only `server/.env.example` is tracked. Populated environment configuration, client build output and test reports are ignored. No environment values were printed or rotated.
+- Final in-memory scan: **4 configured private values**, **354 tracked/nonignored source files** and **101 final build files** checked; **zero private-value matches** in source or public build output. No staged files or credentials. An earlier all-ref check found no committed populated environment-file history.
+- Authentication, authorization, API contracts, dependencies and schema were not changed. Existing unauthorized/removed-member and external-provider fallback regressions remain enabled.
+- **Unable to verify:** the task states that an older uploaded archive contained a populated `server/.env`; the referenced `proj 3.zip` was not available in the workspace, Downloads or attachments for independent inspection. Git ignore rules do not sanitize ZIP archives. If that archive was distributed, its owner should remove the populated file from shared copies and revoke/rotate the exposed private credentials manually. This pass did not perform rotation.
+
+### Git report
+
+This records the review snapshot before publication. The user subsequently authorized committing and pushing to `main`; Git history records publication status.
+
+- Implementation branch: `fix/encore-final-ux-hardening`; base `277f0b0` from freshly fetched `origin/main`. The five newer teammate commits are retained. No merge conflicts occurred.
+- **27 changed/new files:** 15 existing client source files, seven existing component/integration test files, one expanded browser audit, one existing notification browser selector correction, two new browser regression files and this audit document. No server, shared schema, auth/API contract, dependency or README edits.
+- Pre-commit working tree: **25 modified tracked files, two untracked browser test files, zero staged files**. Both new regression files belong in the implementation commit.
+- **At completion of the hardening audit, changes were uncommitted on the dedicated branch and neither local nor GitHub `main` had been written to.** This review restriction was superseded by the user's subsequent publication authorization.
+
+Changed files:
+
+```text
+client/src/components/ConfirmDialog.vue
+client/src/components/MeetupAvailabilityGrid.vue
+client/src/components/MeetupCreationForm.vue
+client/src/components/MeetupEntryCard.vue
+client/src/components/MeetupLocationSearch.vue
+client/src/components/MeetupOverview.vue
+client/src/components/MeetupTransportPanel.vue
+client/src/components/NotificationBell.vue
+client/src/components/SiteHeader.vue
+client/src/composables/useMeetupBoard.js
+client/src/views/ConnectionChannelView.vue
+client/src/views/GroupChannelView.vue
+client/src/views/KakiChatView.vue
+client/src/views/MeetupView.vue
+client/src/views/MyListingsView.vue
+client/tests/availability-grid.test.js
+client/tests/confirmation-dialog.test.js
+client/tests/market-integration.test.js
+client/tests/meetup-form-panels.test.js
+client/tests/meetup-location-search.test.js
+client/tests/meetup-planner.test.js
+client/tests/nearby-transport.test.js
+client/e2e/ux-visual.spec.js
+client/e2e/notification.spec.js
+client/e2e/meetup-hardening.spec.js
+client/e2e/meetup-creation-retry.spec.js
+docs/ENCORE_UX_AUDIT.md
+```
+
+### Publication integration after approval — 2026-11-03
+
+The user authorized committing and pushing to `main` after the review above. The hardening work was committed as `758bc9a`. A fresh fetch found two additional teammate commits, `639647d` and `ea5c6f2`, covering welcome/onboarding, admin proof review and UI improvements. These were merged normally as `f154bac`, preserving their new dependency, routes, styles and tests. The header merged automatically with both its Admin link and mobile wrapping intact.
+
+The combined UI exposed one real CSS integration defect: Bootstrap's global `.row > *` rules stretched Kaki chat message-option buttons to **214px** and wrapped them beneath message bubbles. A new browser regression reproduced the failure at 390px. Renaming only the private message-row classes in `KakiChatView.vue` isolates them from Bootstrap without changing chat behavior or the teammate's Bootstrap layouts. The same regression passed for both participants' incoming/outgoing messages at 390px and 1440px, checking touch-target size, alignment, bounds, scrolling and reachable Reply actions. Evidence: `integration-chat-before-390.png` and `final-integration-chat-{sender,receiver}-{390,1440}.png` in the screenshot directory above.
+
+The local dependency refresh encountered a Windows file lock and an npm certificate-trust failure. The installation was repaired using Windows' trusted CA store with TLS verification enabled. Temporary npm peer-metadata changes were discarded; the teammate's committed lockfile is preserved. Dependency caches/backups remain ignored. No project TLS settings or credentials were changed.
+
+Final combined-source verification:
+
+- Backend: **641/641 passed**, zero failures/skips/cancellations.
+- Frontend: **381/381 passed**, 32 files, 87.56 seconds.
+- Production build: **passed**, 4.13 seconds; initial JavaScript 166.91 kB.
+- Entire Chromium suite: **39/39 passed**, zero retries or excluded scenarios, 4.5 minutes. This includes the incoming welcome/admin workflows and the new chat layout regression.
+- Security scan: four configured private values checked only in memory against **356 tracked files** and **105 final build files**; zero matching paths or printed values.
+- Git diff check passed. The publication integration adds only the private chat CSS-class isolation, its browser regression and this audit update beyond the reviewed hardening commit and preserved teammate commits.
+
+These publication results supersede the earlier hardening-only counts. No force push or replacement of teammate history is used.

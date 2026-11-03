@@ -18,10 +18,12 @@ const props = defineProps({
   /** Styles the confirm button as destructive. */
   danger: { type: Boolean, default: false },
   busy: { type: Boolean, default: false },
+  initialFocus: { type: String, default: 'confirm', validator: value => ['confirm', 'cancel'].includes(value) },
 });
 const emit = defineEmits(['confirm', 'cancel']);
 
 const confirmEl = ref(null);
+const cancelEl = ref(null);
 const dialog = ref(null);
 let returnFocus = null;
 let focusVersion = 0;
@@ -39,7 +41,7 @@ watch(() => props.open, async (open) => {
   if (open) returnFocus = document.activeElement;
   await nextTick();
   if (version !== focusVersion) return;
-  if (open) (props.busy ? dialog.value : confirmEl.value)?.focus();
+  if (open) (props.busy ? dialog.value : props.initialFocus === 'cancel' ? cancelEl.value : confirmEl.value)?.focus();
   else restoreFocus();
 }, { immediate: true });
 watch(() => props.busy, async busy => {
@@ -91,7 +93,7 @@ function onKeydown(event) {
         <h2 class="confirm__title">{{ title }}</h2>
         <p v-if="body" class="confirm__body">{{ body }}</p>
         <div class="confirm__actions">
-          <button type="button" class="btn btn--ghost" :disabled="busy" @click="emit('cancel')">
+          <button ref="cancelEl" type="button" class="btn btn--ghost" :disabled="busy" @click="emit('cancel')">
             {{ cancelLabel }}
           </button>
           <button
