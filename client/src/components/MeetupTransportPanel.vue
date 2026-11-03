@@ -14,13 +14,14 @@ const props = defineProps({
 });
 const headingId = `nearby-transport-${useId()}`;
 const phase = ref('pre'), pending = ref(false), venueOverride = ref(null), venueSearchReset = ref(0);
+const venuePending = ref(false);
 const results = reactive({ pre: null, post: null });
 const errors = reactive({ pre: '', post: '' });
 const automatic = reactive({ pre: false, post: false });
 const result = computed(() => results[phase.value]);
 const error = computed(() => errors[phase.value]);
 const venueName = computed(() => props.concert?.venue || result.value?.venueName || 'the concert venue');
-const canCheck = computed(() => phase.value === 'post' || props.hasMeetingPlace);
+const canCheck = computed(() => phase.value === 'post' ? !venuePending.value : props.hasMeetingPlace);
 const key = () => `${props.meetupId}:${props.planVersion}:${props.concert?.venue ?? ''}`;
 let alive = true, generation = 0, refreshTimer;
 const time = formatMeetupObservationTime;
@@ -63,11 +64,17 @@ function switchPhase(next) {
 function selectVenue(location) {
   if (!Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)) return;
   generation++;
+  venuePending.value = false;
   venueOverride.value = { latitude: location.latitude, longitude: location.longitude, label: location.label };
   results.post = null; automatic.post = false; errors.post = '';
 }
 function useConcertVenue() {
+  venuePending.value = false;
   generation++; venueOverride.value = null; venueSearchReset.value++; results.post = null; automatic.post = false; errors.post = '';
+}
+function invalidateVenue() {
+  generation++; venuePending.value = true; venueOverride.value = null;
+  results.post = null; automatic.post = false; errors.post = '';
 }
 function refreshIfVisible() {
   if (props.active && document.visibilityState === 'visible' && automatic[phase.value] && results[phase.value]?.anchor)
@@ -79,6 +86,7 @@ watch(() => props.active, active => {
 });
 watch([() => props.meetupId, () => props.concert?.venue], () => {
   generation++; phase.value = 'pre'; venueOverride.value = null; venueSearchReset.value++;
+  venuePending.value = false;
   results.pre = null; results.post = null; errors.pre = ''; errors.post = '';
   automatic.pre = false; automatic.post = false;
 });
@@ -105,11 +113,12 @@ onUnmounted(() => { alive = false; generation++; clearInterval(refreshTimer); do
     <p v-if="phase === 'pre'">Look around your proposed meeting place before travelling to meet the group.</p>
     <p v-else>Look around <strong>{{ venueName }}</strong> when deciding how to leave the concert.</p>
     <p v-if="phase === 'pre' && !hasMeetingPlace" class="group-muted">Choose a meeting place first to check nearby transport.</p>
-    <details v-if="phase === 'post'" :open="Boolean(result && !result.anchor)" class="nearby-transport__venue">
+    <details v-show="phase === 'post'" :open="Boolean(result && !result.anchor)" class="nearby-transport__venue">
       <summary>{{ venueOverride ? `Selected venue: ${venueOverride.label}` : 'Check or correct the concert venue' }}</summary>
       <p class="group-muted">Choose the venue itself, rather than your home or meeting place. This selection is only for these transport checks.</p>
-      <MeetupLocationSearch :key="meetupId" :meetup-id="meetupId" :reset-key="venueSearchReset" :manual-fallback="false" label="Find the concert venue" selection-hint="This only selects a location for transport checks. Press Check nearby transport to use it; the concert and meetup are unchanged." @selected="selectVenue" />
-      <button v-if="venueOverride" type="button" class="btn btn--ghost" @click="useConcertVenue">Use the concert's venue again</button>
+      <MeetupLocationSearch :key="meetupId" :meetup-id="meetupId" :reset-key="venueSearchReset" :manual-fallback="false" label="Find the concert venue" selection-hint="This only selects a location for transport checks. Press Check nearby transport to use it; the concert and meetup are unchanged." @selected="selectVenue" @selection-invalidated="invalidateVenue" />
+      <p v-if="venuePending" class="group-muted" role="status">Choose a new search result, or use the concert's venue again before checking transport.</p>
+      <button v-if="venueOverride || venuePending" type="button" class="btn btn--ghost" @click="useConcertVenue">Use the concert's venue again</button>
     </details>
     <p v-if="venueOverride && phase === 'post'" class="group-muted">Using {{ venueOverride.label }}. Press Check nearby transport to refresh this location.</p>
     <div class="group-actions">

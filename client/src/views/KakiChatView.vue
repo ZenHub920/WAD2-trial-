@@ -890,6 +890,8 @@ watch(() => props.id, async () => {
 }
 
 .row__more {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
   opacity: 0;
   border: 0;
   background: none;
@@ -923,6 +925,7 @@ watch(() => props.id, async () => {
 }
 
 .popover button {
+  min-height: 2.75rem;
   text-align: left;
   padding: var(--space-2) var(--space-3);
   border: 0;
@@ -1088,11 +1091,12 @@ watch(() => props.id, async () => {
 }
 
 .swatch {
+  min-height: 2.75rem;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   border: 2px solid transparent;
   color: var(--text-200);
-  font-size: var(--step--2);
+  font-size: var(--step--1);
   cursor: pointer;
   text-transform: capitalize;
 }

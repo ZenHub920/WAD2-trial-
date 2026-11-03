@@ -15,6 +15,8 @@ const {
   scope, hasActiveBoards, showCreation, creatingAdditional, returnRoute, returnLabel,
   weather, rainfall, travelRecommendations, transport, comment, slots, place, position, travelOptions,
   feedback, failures, placeSearchKey, confirmAction, capabilities, contributionsLocked, selectedOrigins,
+  journeySearchKey, leavePrompt, settleLeave, journeyDirty,
+  selectPlace, selectJourney, invalidatePlace, invalidateJourney, editPlace, editJourney, editSlotLocation,
   selectedSlotCount, bestSavedOverlap, selectedTimes, activeStep, availabilityDirty, refreshing, syncNote,
   liveLabel, statuses, time, validCoordinates, recommendedOptions, hasSavedAvailability, recommendationEmpty,
   refreshPlanner, showStep, navigateSteps, create, saveAvailability, discardAvailability, assignJourney,
@@ -86,17 +88,18 @@ const {
           <p class="group-muted">Use an approximate public place, building, MRT station or postal code. Your starting location stays private.</p>
           <fieldset class="meetup-travel-fields" :disabled="busy || contributionsLocked">
             <label>Travel method<select v-model="position.travelMode"><option value="transit">Public transport</option><option value="drive">Car</option></select></label>
-            <MeetupLocationSearch :meetup-id="id" label="Find your approximate starting place" :disabled="busy || contributionsLocked" selection-hint="Selection is not saved. Apply journey to selected times, then save availability and journey." @selected="location => Object.assign(position, location)" />
+            <MeetupLocationSearch :meetup-id="id" :reset-key="journeySearchKey" label="Find your approximate starting place" :disabled="busy || contributionsLocked" selection-hint="To use this selection, apply journey to selected times, then save availability and journey." @selected="selectJourney" @selection-invalidated="invalidateJourney" />
             <details class="meetup-manual-entry"><summary>Advanced/manual entry</summary>
               <div class="group-controls">
-                <label>Location label<input v-model="position.label" maxlength="100" placeholder="e.g. nearby MRT station" /></label>
-                <label>Latitude<input v-model="position.latitude" type="number" min="-90" max="90" step="any" placeholder="No location supplied" /></label>
-                <label>Longitude<input v-model="position.longitude" type="number" min="-180" max="180" step="any" placeholder="No location supplied" /></label>
+                <label>Location label<input v-model="position.label" maxlength="100" placeholder="e.g. nearby MRT station" @input="editJourney('label')" /></label>
+                <label>Latitude<input v-model="position.latitude" type="number" min="-90" max="90" step="any" placeholder="No location supplied" @input="editJourney('latitude')" /></label>
+                <label>Longitude<input v-model="position.longitude" type="number" min="-180" max="180" step="any" placeholder="No location supplied" @input="editJourney('longitude')" /></label>
               </div>
             </details>
             <button type="button" class="btn btn--ghost" :disabled="busy || contributionsLocked || !selectedSlotCount" @click="assignJourney">Apply journey to selected times</button>
             <p v-if="!selectedSlotCount" class="group-muted">Paint or select times in the grid first, then apply your journey.</p>
             <p v-else class="group-muted">Without a new starting location, this updates the travel method and keeps each selected time's existing location.</p>
+            <p v-if="journeyDirty" class="meetup-unsaved" role="status">Journey input has not been applied. Apply it to selected times before saving.</p>
             <p v-if="feedback.journey" class="group-success" role="status">{{ feedback.journey }}</p>
             <p v-if="failures.journey" class="group-error" role="alert">{{ failures.journey }}</p>
             <details class="meetup-slot-overrides"><summary>Different locations or travel methods during the day</summary>
@@ -106,11 +109,11 @@ const {
                   <strong>{{ time(s.startsAt) }}</strong>
                   <div class="group-controls">
                     <label>Travel method<select v-model="slots[s.startsAt].travelMode"><option value="transit">Public transport</option><option value="drive">Car</option></select></label>
-                    <label>Location label<input v-model="slots[s.startsAt].label" maxlength="100" placeholder="Approximate public place" /></label>
+                    <label>Location label<input v-model="slots[s.startsAt].label" maxlength="100" placeholder="Approximate public place" @input="editSlotLocation(s.startsAt, 'label')" /></label>
                   </div>
                   <details><summary>Manual coordinates for this period</summary><div class="group-controls">
-                    <label>Latitude<input v-model="slots[s.startsAt].latitude" type="number" min="-90" max="90" step="any" /></label>
-                    <label>Longitude<input v-model="slots[s.startsAt].longitude" type="number" min="-180" max="180" step="any" /></label>
+                    <label>Latitude<input v-model="slots[s.startsAt].latitude" type="number" min="-90" max="90" step="any" @input="editSlotLocation(s.startsAt, 'latitude')" /></label>
+                    <label>Longitude<input v-model="slots[s.startsAt].longitude" type="number" min="-180" max="180" step="any" @input="editSlotLocation(s.startsAt, 'longitude')" /></label>
                   </div></details>
                 </div>
               </template>
@@ -120,30 +123,33 @@ const {
         <p class="group-muted meetup-journey-summary">{{ selectedOrigins }} of {{ selectedSlotCount }} selected times have a private starting location. {{ availabilityDirty ? 'Draft changes are not saved yet.' : 'Showing your saved availability and journey.' }}</p>
         <p v-if="feedback.availability" class="group-success" role="status">{{ feedback.availability }}</p>
         <p v-if="failures.availability" class="group-error" role="alert">{{ failures.availability }}</p>
+        <p class="meetup-save-state" role="status">{{ busy ? 'An update is in progress.' : failures.availability ? 'Availability was not saved. Your draft is kept.' : availabilityDirty ? 'Unsaved availability. Save to share it with your group.' : 'Showing your saved availability.' }}</p>
         <div class="group-actions meetup-save-bar">
         <button
           class="btn btn--primary"
           :disabled="busy || contributionsLocked"
           @click="saveAvailability"
         >
-          Save availability and journey
+          {{ busy ? 'Updating…' : 'Save availability and journey' }}
         </button>
         <button v-if="availabilityDirty" type="button" class="btn btn--ghost" :disabled="busy" @click="discardAvailability">Discard my changes</button>
         <button type="button" class="btn btn--ghost" @click="showStep('places')">Continue to places <span aria-hidden="true">→</span></button>
         </div>
+        <p class="group-muted meetup-continue-note">Continue changes the step. It does not save your draft.</p>
       </section>
       <div id="meetup-places" v-show="activeStep === 'places'" role="tabpanel" aria-labelledby="meetup-tab-places" class="meetup-workspace meetup-place-workspace">
+      <p v-if="availabilityDirty || journeyDirty" class="meetup-role-note" role="status">Your time and journey draft is kept. Recommendations use saved availability; return to Find a time to apply and save changes.</p>
       <form class="card group-panel meetup-place-editor" @submit.prevent="addPlace">
         <span class="meetup-eyebrow">02 / Places &amp; journeys</span>
         <h2>Suggest a meeting place</h2>
         <p class="group-muted">Search, select a result, then add it to suggested places. Everyone can contribute while planning is open.</p>
         <fieldset class="meetup-travel-fields" :disabled="busy || contributionsLocked">
-          <MeetupLocationSearch :meetup-id="id" :reset-key="placeSearchKey" :disabled="busy || contributionsLocked" selection-hint="Selection is not saved. Press Add place to share this suggestion." @selected="location => Object.assign(place, { label: location.label, latitude: location.latitude, longitude: location.longitude })" />
-          <label>Place name<input v-model="place.label" required maxlength="150" /></label>
+          <MeetupLocationSearch :meetup-id="id" :reset-key="placeSearchKey" :disabled="busy || contributionsLocked" selection-hint="Selection is not saved. Press Add place to share this suggestion." @selected="selectPlace" @selection-invalidated="invalidatePlace" />
+          <label>Place name<input v-model="place.label" required maxlength="150" @input="editPlace('label')" /></label>
           <p v-if="validCoordinates(place)" class="group-muted">Location selected. Add the place to save it for everyone.</p>
           <details class="meetup-manual-entry"><summary>Advanced/manual entry</summary><p class="group-muted">If search is unavailable, enter the public place name above and both coordinates here.</p><div class="group-controls">
-            <label>Latitude<input v-model="place.latitude" type="number" min="-90" max="90" step="any" /></label>
-            <label>Longitude<input v-model="place.longitude" type="number" min="-180" max="180" step="any" /></label>
+            <label>Latitude<input v-model="place.latitude" type="number" min="-90" max="90" step="any" @input="editPlace('latitude')" /></label>
+            <label>Longitude<input v-model="place.longitude" type="number" min="-180" max="180" step="any" @input="editPlace('longitude')" /></label>
           </div></details>
           <label class="group-check"><input v-model="place.sheltered" type="checkbox" />Sheltered place</label>
           <button class="btn btn--primary" :disabled="busy || contributionsLocked">{{ busy ? 'Saving place...' : 'Add place' }}</button>
@@ -193,8 +199,8 @@ const {
       <p v-if="failures.review" class="group-error" role="alert">{{ failures.review }}</p>
       <section v-if="board.selected_place_id" class="card group-panel meetup-current-proposal">
         <span class="meetup-eyebrow">03 / Group decision</span>
-        <h2>Current proposal</h2>
-        <p>
+        <h2>{{ board.status === 'confirmed' ? 'Your confirmed meetup' : board.status === 'cancelled' ? 'Cancelled meetup' : 'Current proposal' }}</h2>
+        <p class="meetup-decision">
           {{
             board.places.find((p) => p.id === board.selected_place_id)?.label
           }}, {{ time(board.selected_start) }}
@@ -243,6 +249,7 @@ const {
       <MeetupDiscussionPanel v-model="comment" :comments="board.comments" :busy="busy" :can-discuss="capabilities.canDiscuss" :notice="feedback.discussion" :error="failures.discussion" @submit="postComment" /></div></template
     >
     <ConfirmDialog :open="Boolean(confirmAction)" :busy="busy" :title="confirmAction === 'reopen' ? 'Reopen planning?' : 'Cancel this meetup?'" :body="confirmAction === 'reopen' ? 'The selected time and place will be cleared. Previous approvals will no longer authorize the plan; all required organizers must approve a new proposal.' : 'This meetup will become read-only. Participants will be notified.'" :confirm-label="confirmAction === 'reopen' ? 'Reopen planning' : 'Cancel meetup'" cancel-label="Keep current plan" :danger="confirmAction === 'cancel'" @cancel="confirmAction = null" @confirm="organizerAction" />
+    <ConfirmDialog :open="leavePrompt" title="Leave with unsaved changes?" body="Your availability, journey, place or discussion draft has not been saved. Leaving this planner discards it. Any update already sent may still complete." confirm-label="Discard changes and leave" cancel-label="Keep editing" initial-focus="cancel" danger @cancel="settleLeave(false)" @confirm="settleLeave(true)" />
   </div>
 </template>
 <style scoped>
@@ -324,7 +331,7 @@ const {
 .meetup-place-row .btn[aria-pressed="true"] { border-color: var(--mint-400); color: var(--mint-400); }
 .meetup-eyebrow {
   color: var(--mint-400);
-  font-size: .69rem;
+  font-size: .8rem;
   font-weight: 600;
   letter-spacing: .12em;
   text-transform: uppercase;
@@ -433,6 +440,9 @@ const {
 .meetup-unsaved {
   color: var(--accent-400);
 }
+.meetup-save-state { font-size: var(--step--1); font-weight: 600; color: var(--text-200); }
+.meetup-continue-note { font-size: var(--step--1); }
+.meetup-decision { font-size: var(--step-1); font-weight: 600; line-height: 1.5; color: var(--text-100); }
 .meetup-availability__summary strong {
   color: var(--text-200);
   font-weight: 500;
@@ -536,7 +546,7 @@ const {
     align-content: start;
     min-height: 5.1rem;
     padding: .65rem .45rem;
-    font-size: .77rem;
+    font-size: .875rem;
   }
   .meetup-steps button > span {
     grid-row: auto;

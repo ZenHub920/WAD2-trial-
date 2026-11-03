@@ -297,7 +297,7 @@ onUnmounted(() => {
 .notification-popover__meta {
   margin-top: var(--space-1);
   color: var(--text-400);
-  font-size: var(--step--2);
+  font-size: var(--step--1);
 }
 .notification-popover__read {
   font-size: var(--step--1);

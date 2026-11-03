@@ -433,10 +433,12 @@ onUnmounted(() => stopListening?.());
   justify-content: flex-end;
 }
 .msg__delete {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
   background: none;
   color: inherit;
   text-decoration: underline;
-  font-size: var(--step--2);
+  font-size: var(--step--1);
 }
 
 .composer {

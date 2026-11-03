@@ -295,7 +295,7 @@ onUnmounted(() => {
 }
 
 @media (max-width: 480px) {
-  .header__inner { gap: var(--space-2); }
+  .header__inner { gap: var(--space-2); flex-wrap: wrap; }
   .brand { font-size: 1.1rem; }
   .header__utilities { gap: var(--space-1); }
   .header__toggle { padding-inline: var(--space-2); font-size: .8rem; }

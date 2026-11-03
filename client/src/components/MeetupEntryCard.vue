@@ -33,14 +33,14 @@ const presentation = computed(() => plan.value ? meetupPresentation(plan.value) 
 .meetup-entry__icon { width:23px; height:23px; stroke:var(--accent-400); stroke-width:1.5; stroke-linecap:round; flex:none; }
 .meetup-entry__copy { flex:1 1 12rem; min-width:0; }
 .meetup-entry__copy strong { display:block; font-size:var(--step--1); color:var(--text-100); overflow-wrap:anywhere; }
-.meetup-entry__copy p { margin:.2rem 0 0; color:var(--text-300); font-size:var(--step--2); overflow-wrap:anywhere; line-height:1.5; }
-.meetup-entry__status { display:block; color:var(--accent-400); font-size:.65rem; letter-spacing:.05em; font-weight:600; margin-bottom:.15rem; }
+.meetup-entry__copy p { margin:.2rem 0 0; color:var(--text-300); font-size:var(--step--1); overflow-wrap:anywhere; line-height:1.5; }
+.meetup-entry__status { display:block; color:var(--accent-400); font-size:.8rem; letter-spacing:.03em; font-weight:600; margin-bottom:.15rem; }
 .meetup-entry--confirmed { border-left-color:var(--mint-400); }
 .meetup-entry--confirmed .meetup-entry__status { color:var(--mint-400); }
 .meetup-entry--cancelled { border-left-color:var(--text-400); }
 .meetup-entry--cancelled .meetup-entry__status { color:var(--text-300); }
 .meetup-entry__actions { display:grid; justify-items:end; gap:.4rem; }
-.meetup-entry__actions .btn { min-height:2.5rem; font-size:var(--step--2); }
-.meetup-entry__more { font-size:var(--step--2); color:var(--text-300); text-underline-offset:3px; }
+.meetup-entry__actions .btn { min-height:2.75rem; font-size:var(--step--1); }
+.meetup-entry__more { display:inline-flex; align-items:center; min-height:2.75rem; font-size:var(--step--1); color:var(--text-300); text-underline-offset:3px; }
 @media(max-width:480px) { .meetup-entry { gap:.6rem; padding:.75rem; } .meetup-entry__copy { flex-basis:calc(100% - 38px); } .meetup-entry__actions { width:100%; justify-items:start; padding-left:2rem; } }
 </style>

@@ -231,14 +231,7 @@ for (const theme of ['light', 'dark']) test(`responsive visual audit: ${theme} l
       kaki: [seeker, '/kaki', 'Find a companion'],
       dashboard: [host, '/groups/connect', 'My groups'],
     };
-    const matrix = [
-      [320, ['concerts', 'groups']],
-      [360, ['messages', 'tickets']],
-      [390, ['my-meetups', 'kaki', 'dashboard', 'concerts']],
-      [768, ['concerts', 'messages', 'groups']],
-      [1024, ['groups', 'tickets']],
-      [1440, ['my-meetups', 'kaki', 'dashboard']],
-    ];
+    const matrix = [320, 360, 390, 768, 1024, 1440].map(width => [width, Object.keys(screens)]);
     for (const [width, names] of matrix) {
       await test.step(`${theme} ${width}px`, async () => {
         const height = width < 600 ? 844 : 1000;

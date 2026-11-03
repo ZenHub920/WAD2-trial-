@@ -34,7 +34,7 @@ const sections = computed(() => [
 .meetup-overview-plan__main { min-width:0; overflow-wrap:anywhere; }
 .meetup-overview-plan h3 { font-size:var(--step-0); margin:.3rem 0; }
 .meetup-overview-plan .meetup-overview-plan__concert, .meetup-overview-plan .meetup-overview-plan__selection { color:var(--text-100); }
-.meetup-overview-plan__status { color:var(--accent-400); font-size:.68rem; font-weight:600; }
+.meetup-overview-plan__status { color:var(--accent-400); font-size:.8rem; font-weight:600; }
 .meetup-overview-plan--confirmed { border-left-color:var(--mint-400); }
 .meetup-overview-plan--confirmed .meetup-overview-plan__status { color:var(--mint-400); }
 .meetup-overview-plan--cancelled { border-left-color:var(--text-400); }

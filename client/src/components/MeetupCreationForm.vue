@@ -13,8 +13,22 @@ const props = defineProps({
 const emit = defineEmits(['submit']);
 const form = reactive({ title: 'Meet before the concert', startsAt: '', endsAt: '' });
 const attempted = ref(false);
-// A failed or retried submission keeps its identity even if the response is lost.
-const creationRequestId = globalThis.crypto?.randomUUID?.() ?? `plan_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+const attempt = ref(null), pending = ref(false);
+let submission = 0;
+const requestId = () => globalThis.crypto?.randomUUID?.() ?? `plan_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+const replayAttempt = computed(() => ['uncertain', 'created'].includes(attempt.value?.outcome));
+const submitting = computed(() => props.busy || pending.value);
+const submitLabel = computed(() => {
+  if (submitting.value) return attempt.value?.outcome === 'created' ? 'Opening created plan…'
+    : replayAttempt.value ? 'Checking previous attempt…' : 'Creating planning board…';
+  return attempt.value?.outcome === 'created' ? 'Open created plan'
+    : replayAttempt.value ? 'Check previous attempt' : 'Create planning board';
+});
+const attemptNotice = computed(() => attempt.value?.outcome === 'created'
+  ? 'Your planning board was created. Open it to continue; this will not create another board. Current field edits are not sent.'
+  : replayAttempt.value
+    ? 'The last request may have created a board. Check that attempt before creating another. The check uses your previous submission; current field edits are not sent.'
+    : '');
 const shiftedInput = (epoch, shift) => Number.isFinite(epoch) ? singaporeInputValue(epoch + shift) : '';
 const validationError = computed(() => {
   if (!attempted.value && (!form.startsAt || !form.endsAt)) return '';
@@ -24,6 +38,7 @@ const validationError = computed(() => {
 // Routine context refreshes must not overwrite an in-progress creation draft.
 // The page keys this form by the authenticated meetup scope as well.
 watch(() => props.context.concert?.id, () => {
+  submission++; attempt.value = null; pending.value = false;
   attempted.value = false;
   Object.assign(form, { title: 'Meet before the concert',
     startsAt: singaporeInputValue(props.context.policy.defaultStartsAt),
@@ -32,16 +47,34 @@ watch(() => props.context.concert?.id, () => {
 
 function submit() {
   attempted.value = true;
-  if (props.busy || !props.context.capabilities.canCreate || !props.context.policy.canSchedule || validationError.value) return;
-  emit('submit', { title: form.title,
-    creationRequestId, ...(props.additionalPlan ? { createAnother: true } : {}),
-    startsAt: new Date(parseSingaporeInput(form.startsAt)).toISOString(),
-    endsAt: new Date(parseSingaporeInput(form.endsAt)).toISOString() });
+  if (submitting.value || !props.context.capabilities.canCreate || !props.context.policy.canSchedule) return;
+  if (!replayAttempt.value) {
+    if (validationError.value || !form.title.trim()) return;
+    const payload = { title: form.title, ...(props.additionalPlan ? { createAnother: true } : {}),
+      startsAt: new Date(parseSingaporeInput(form.startsAt)).toISOString(),
+      endsAt: new Date(parseSingaporeInput(form.endsAt)).toISOString() };
+    // Match the server's normalized fingerprint. Only a settled, definitely
+    // rejected attempt may become a new intention when these details change.
+    const fingerprint = JSON.stringify([payload.title.trim(), payload.startsAt, payload.endsAt, payload.createAnother === true]);
+    if (!attempt.value || attempt.value.fingerprint !== fingerprint)
+      attempt.value = { fingerprint, payload: { ...payload, creationRequestId: requestId() }, outcome: null };
+  }
+  const current = attempt.value, generation = ++submission;
+  pending.value = true;
+  emit('submit', { ...current.payload }, outcome => {
+    if (generation !== submission || !pending.value) return;
+    // A later failed retry cannot prove an earlier lost response created
+    // nothing. Keep replaying that original identity until it is confirmed.
+    if (outcome === 'created') current.outcome = 'created';
+    else if (!['uncertain', 'created'].includes(current.outcome))
+      current.outcome = outcome === 'rejected' ? 'rejected' : 'uncertain';
+    pending.value = false;
+  });
 }
 </script>
 
 <template>
-  <form class="card group-panel" @submit.prevent="submit">
+  <form class="card group-panel" :aria-busy="submitting" @submit.prevent="submit">
     <h2>{{ additionalPlan ? 'Create a separate meetup plan' : 'Create a meetup plan' }}</h2>
     <p v-if="additionalPlan" class="group-muted">An active plan already exists. This creates a separate arrangement; it does not change or reopen the existing plan.</p>
     <div class="meetup-concert-context">
@@ -65,8 +98,11 @@ function submit() {
       :aria-invalid="Boolean(validationError)" aria-describedby="meetup-creation-validation"
       step="1800" required /></label>
     <p id="meetup-creation-validation" :class="{ 'group-error': validationError }" :role="validationError ? 'alert' : 'status'">{{ validationError || (!context.policy.canSchedule ? 'There is no future pre-concert window left for this concert.' : 'Times shown in Singapore time. Start and end must stay within the concert day or preceding travel day.') }}</p>
+    <p v-if="attemptNotice" id="meetup-creation-attempt" class="group-muted" role="status">{{ attemptNotice }}</p>
     <p v-if="error" class="group-error" role="alert">{{ error }}</p>
-    <button class="btn btn--primary" :disabled="busy || Boolean(validationError) || !context.policy.canSchedule">Create planning board</button>
+    <button type="submit" class="btn btn--primary" :formnovalidate="replayAttempt"
+      :aria-describedby="attemptNotice ? 'meetup-creation-attempt' : undefined"
+      :disabled="submitting || (!replayAttempt && Boolean(validationError)) || !context.policy.canSchedule || !context.capabilities.canCreate">{{ submitLabel }}</button>
   </form>
 </template>
 
