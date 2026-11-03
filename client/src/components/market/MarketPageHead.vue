@@ -1,6 +1,6 @@
 <script setup>
 import { useRouter } from 'vue-router';
-import MarketIcon from './MarketIcon.vue';
+import BackArrow from '../BackArrow.vue';
 
 /**
  * Back arrow + centred title, as on each step of the buying flow. Back goes to
@@ -21,9 +21,7 @@ function back() {
 
 <template>
   <header class="mhead">
-    <button class="mhead__back" aria-label="Go back" @click="back">
-      <MarketIcon name="back" :size="26" />
-    </button>
+    <BackArrow @click="back" />
     <h1 class="mhead__title">{{ title }}</h1>
   </header>
 </template>
@@ -34,20 +32,6 @@ function back() {
   grid-template-columns: 44px minmax(0, 1fr) 44px;
   align-items: center;
   margin-bottom: var(--space-5);
-}
-
-.mhead__back {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-md);
-  color: var(--text-100);
-  transition: background var(--dur-fast) var(--ease-out);
-}
-
-.mhead__back:hover {
-  background: var(--ink-750);
 }
 
 .mhead__title {

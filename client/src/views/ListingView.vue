@@ -4,14 +4,14 @@ import { useRouter } from 'vue-router';
 import { api, formatDate } from '../api.js';
 import { SECTION_SUGGESTIONS } from '../market.js';
 import ProofUpload from '../components/market/ProofUpload.vue';
+import ImagePicker from '../components/market/ImagePicker.vue';
+import BackArrow from '../components/BackArrow.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 
 const router = useRouter();
 const creating = ref(false);
 const error = ref('');
 const imagePreview = ref('');
-const imageInput = ref(null);
-const readingImage = ref(false);
 const proof = ref('');
 
 // Discovery also saves provider events locally, so the selected ID can be listed.
@@ -58,24 +58,6 @@ const ERROR_COPY = {
   proof_too_large: () => 'Proof of purchase must be no larger than 2 MB.',
 };
 
-function chooseImage() {
-  imageInput.value?.click();
-}
-
-function previewImage(event) {
-  const [file] = event.target.files;
-  if (!file) return;
-  error.value = '';
-  readingImage.value = true;
-  const reader = new FileReader();
-  reader.onload = () => {
-    imagePreview.value = String(reader.result);
-  };
-  reader.onerror = () => { error.value = 'Could not read the selected image.'; };
-  reader.onloadend = () => { readingImage.value = false; };
-  reader.readAsDataURL(file);
-}
-
 async function submitListing() {
   creating.value = true;
   error.value = '';
@@ -112,7 +94,7 @@ async function submitListing() {
 <template>
   <div class="listing-page">
     <div class="listing-page__shell container">
-      <RouterLink to="/tickets" class="listing-page__back">← Back to tickets</RouterLink>
+      <BackArrow to="/tickets" label="Back to tickets" />
 
       <header class="listing-page__header page-banner">
         <div>
@@ -131,16 +113,7 @@ async function submitListing() {
           <p v-else-if="concertError" class="listing-form__field listing-form__field--wide listing-form__error" role="alert">
             {{ concertError }}
           </p>
-          <label class="listing-form__field listing-form__field--wide">
-            Listing image
-            <button type="button" class="image-picker" @click="chooseImage">
-              <img v-if="imagePreview" :src="imagePreview" alt="Selected ticket image preview" />
-              <span v-else aria-hidden="true">+</span>
-              <small>{{ imagePreview ? 'Change image' : 'Add an image' }}</small>
-            </button>
-            <input ref="imageInput" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden @change="previewImage" />
-            <span v-if="readingImage" class="loading-state"><LoadingSpinner /> Loading image…</span>
-          </label>
+          <ImagePicker v-model="imagePreview" class="listing-form__field--wide" @error="error = $event" />
 
           <label v-if="!addingConcert" class="listing-form__field listing-form__field--wide">
             Ticketmaster concert
@@ -228,11 +201,6 @@ async function submitListing() {
 .listing-page__shell {
   max-width: 820px;
 }
-.listing-page__back {
-  color: var(--text-300);
-  text-decoration: none;
-  font-size: var(--step--1);
-}
 .listing-page__header {
   display: flex;
   align-items: center;
@@ -279,35 +247,6 @@ async function submitListing() {
 }
 .listing-form textarea {
   resize: vertical;
-}
-.image-picker {
-  position: relative;
-  display: grid;
-  place-items: center;
-  min-height: 170px;
-  overflow: hidden;
-  border: var(--border-soft);
-  border-radius: var(--radius-md);
-  background: var(--ink-700);
-  color: var(--accent-400);
-  font-size: 2rem;
-}
-.image-picker img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.image-picker small {
-  position: absolute;
-  right: var(--space-3);
-  bottom: var(--space-3);
-  padding: 3px 8px;
-  border-radius: var(--radius-pill);
-  background: rgb(0 0 0 / 60%);
-  color: white;
-  font-size: var(--step--2);
 }
 .listing-form__error {
   color: var(--rose-400);

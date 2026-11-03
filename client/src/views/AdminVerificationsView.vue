@@ -20,7 +20,6 @@ const error = ref(null);
 const notes = ref({});
 const working = ref('');
 const actionError = ref({});
-const decided = ref('');
 
 async function load() {
   loading.value = true;
@@ -50,7 +49,6 @@ async function decide(listing, decision) {
     listings.value = listings.value.filter((item) => item.id !== listing.id);
     // Show the decision in the history straight away, without a reload.
     recent.value = [result?.listing ?? listing, ...recent.value.filter((item) => item.id !== listing.id)];
-    decided.value = `${listingTitle(listing)} ${decision === 'approve' ? 'approved' : 'rejected'}.`;
   } catch (err) {
     actionError.value = {
       ...actionError.value,
@@ -108,7 +106,6 @@ onMounted(load);
           Recent decisions <span class="admin__count">{{ recent.length }}</span>
         </button>
       </div>
-      <p v-if="decided" class="admin__decided" role="status">{{ decided }}</p>
 
       <section v-show="tab === 'pending'" id="admin-panel-pending" role="tabpanel" aria-labelledby="admin-tab-pending">
         <MarketNotice v-if="!listings.length" title="Nothing to review">
@@ -273,16 +270,6 @@ onMounted(load);
   background: var(--ink-700);
   font-size: var(--step--2);
   text-align: center;
-}
-
-.admin__decided {
-  margin-bottom: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--panel-edge);
-  border-left: 3px solid var(--accent-400);
-  border-radius: var(--radius-sm);
-  background: var(--panel-bg);
-  color: var(--text-200);
 }
 
 .queue,

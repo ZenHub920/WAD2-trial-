@@ -74,7 +74,8 @@ test('seller lists a ticket through the form and sees it on the listing page and
     await expect(seller.page).toHaveURL(/\/tickets\/[^/]+$/);
     await expect(seller.page.getByRole('heading', { name: `${artist}, Cat 3` })).toBeVisible();
     await expect(seller.page.getByLabel('Price $120.50')).toBeVisible();
-    await expect(seller.page.getByText('2 tickets')).toBeVisible();
+    await expect(seller.page.getByRole('definition').filter({ hasText: /^2$/ })).toBeVisible(); // "No. of tickets: 2"
+    await expect(seller.page.getByText('No. of tickets:')).toBeVisible();
     await expect(seller.page.getByText('Unverified ticket')).toBeVisible();
     await expect(seller.page.getByRole('button', { name: 'Edit listing' })).toBeVisible();
 
@@ -174,8 +175,9 @@ test('seller edits the price, then removes the listing so buyers can no longer s
     const listing = await createListing(seller.context, data);
     await seller.page.goto(`/tickets/${listing.id}`);
 
-    // Action: edit the price and save; the page confirms and shows the new price.
+    // Action: edit the price on the edit page and save; the listing confirms and shows the new price.
     await seller.page.getByRole('button', { name: 'Edit listing' }).click();
+    await expect(seller.page).toHaveURL(new RegExp(`/tickets/${listing.id}/edit$`));
     await seller.page.getByLabel('Total listing price (SGD)').fill('99.90');
     await seller.page.getByRole('button', { name: 'Save changes' }).click();
     await expect(seller.page.getByText('Listing updated.')).toBeVisible();
@@ -221,7 +223,8 @@ test('buyer browses the Tickets tab, searches, and opens a listing', async ({ br
     const card = buyer.page.locator('article').filter({ hasText: artist });
     await expect(card).toHaveCount(1);
     await expect(card.getByText('$88.00')).toBeVisible();
-    await expect(card.getByText('1 ticket', { exact: true })).toBeVisible();
+    await expect(card.getByText('No. of tickets:')).toBeVisible();
+    await expect(card.getByRole('definition').filter({ hasText: /^1$/ })).toBeVisible();
 
     // Clicking the card opens the full listing page.
     await card.getByRole('link', { name: artist }).click();
@@ -282,8 +285,8 @@ test('admin approves a proof of purchase and the listing becomes verified', asyn
     const item = admin.page.locator('li.item').filter({ hasText: `Test concert ${data.suffix},` });
     await item.getByRole('button', { name: 'Approve', exact: true }).click();
 
-    // Assert: it moves to Recent decisions and the public listing is verified.
-    await expect(admin.page.getByRole('status').filter({ hasText: 'approved.' })).toBeVisible();
+    // Assert: it leaves the queue, moves to Recent decisions, and the public listing is verified.
+    await expect(item).toHaveCount(0);
     await admin.page.getByRole('tab', { name: /Recent decisions/ }).click();
     await expect(admin.page.locator('#admin-panel-history')).toContainText(`Test concert ${data.suffix}`);
     expect((await api(seller.context, `/tickets/${listing.id}`)).listing.verified).toBe(true);
@@ -291,4 +294,29 @@ test('admin approves a proof of purchase and the listing becomes verified', asyn
     await seller.context.close();
     await admin.context.close();
   }
+});
+
+// Regression: after editing, the listing's back arrow returns to where the seller
+// came from (the Tickets page), never to the edit form they just left.
+test('after saving an edit, the back arrow skips the edit page', async ({ browser, request }) => {
+  const data = await fixture(request);
+  const seller = await person(browser, data, 'hostA');
+  const artist = `Test concert ${data.suffix}`;
+  try {
+    const listing = await createListing(seller.context, data);
+    await seller.page.goto('/tickets');
+    await seller.page.getByLabel('Search').fill(artist);
+    await seller.page.locator('article').filter({ hasText: artist }).getByRole('link', { name: artist }).click();
+    await expect(seller.page).toHaveURL(new RegExp(`/tickets/${listing.id}$`));
+
+    await seller.page.getByRole('button', { name: 'Edit listing' }).click();
+    await expect(seller.page).toHaveURL(new RegExp(`/tickets/${listing.id}/edit$`));
+    await seller.page.getByLabel('Total listing price (SGD)').fill('101');
+    await seller.page.getByRole('button', { name: 'Save changes' }).click();
+    await expect(seller.page.getByText('Listing updated.')).toBeVisible();
+    await expect(seller.page).toHaveURL(new RegExp(`/tickets/${listing.id}$`));
+
+    await seller.page.getByRole('button', { name: 'Go back' }).click();
+    await expect(seller.page).toHaveURL(/\/tickets$/);
+  } finally { await seller.context.close(); }
 });

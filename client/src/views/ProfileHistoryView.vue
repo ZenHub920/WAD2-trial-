@@ -1,6 +1,7 @@
 <script setup>
 /** Profile History — server-backed skipped profiles, likes and mutual matches. */
 import { ref, computed, onMounted } from 'vue';
+import BackArrow from '../components/BackArrow.vue';
 import { RouterLink } from 'vue-router';
 import { clearDecision, loadPool, readDecisions, relativeTime } from '../kaki.js';
 import { formatShortDate } from '../api.js';
@@ -85,7 +86,7 @@ async function undo() {
 <template>
   <div class="hist">
     <header class="hist__head">
-      <RouterLink to="/kaki" class="hist__back" aria-label="Back to Find a companion">←</RouterLink>
+      <BackArrow to="/kaki" label="Back to Find a companion" />
       <h1 class="hist__title">Companion history</h1>
       <span />
     </header>
@@ -200,21 +201,6 @@ async function undo() {
   font-weight: 800;
   color: var(--text-100);
   overflow-wrap: anywhere;
-}
-
-.hist__back {
-  display: grid;
-  place-items: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  border-radius: var(--radius-pill);
-  color: var(--text-100);
-  text-decoration: none;
-  font-size: var(--step-1);
-}
-
-.hist__back:hover {
-  background: var(--ink-700);
 }
 
 .hist__search input {

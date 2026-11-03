@@ -111,6 +111,19 @@ function readSaved() {
   }
 }
 
+// A one-off message for a listing page, such as "Listing updated." after the
+// edit page saves. Handed over in memory so it never lands in the URL or history.
+let listingFlash = null;
+export function flashListing(id, text) {
+  listingFlash = { id, text };
+}
+export function takeListingFlash(id) {
+  if (listingFlash?.id !== id) return '';
+  const { text } = listingFlash;
+  listingFlash = null;
+  return text;
+}
+
 // Module-level so every card on the page shares one source of truth.
 const saved = ref(readSaved());
 

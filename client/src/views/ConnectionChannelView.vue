@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import BackArrow from '../components/BackArrow.vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api.js';
 import MeetupEntryCard from '../components/MeetupEntryCard.vue';
@@ -234,7 +235,7 @@ onUnmounted(() => {
     <p v-if="error" class="notice notice--error" role="alert">{{ error }}</p>
     <template v-if="!loading && channel">
       <header class="channel-head">
-        <RouterLink :to="{ path: '/messages', query: { tab: 'groups' } }" class="channel-back" aria-label="Back to group messages">←</RouterLink>
+        <BackArrow :to="{ path: '/messages', query: { tab: 'groups' } }" label="Back to group messages" />
         <GroupAvatar :name="channel.name" :size="44" />
         <div class="channel-identity"><p class="channel-label">Connected groups</p><h1>{{ channel.name }}</h1><p>{{ channel.concert.artist }} · {{ channel.members.length }} members</p></div>
         <div class="channel-tools"><button type="button" class="btn btn--ghost" :aria-expanded="showMembers" @click="showMembers = !showMembers">Members</button><button type="button" class="btn btn--ghost" :aria-expanded="showSettings" @click="showSettings = !showSettings">Chat options</button></div>
@@ -271,11 +272,6 @@ onUnmounted(() => {
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-3);
-}
-.channel-back {
-  color: var(--text-200);
-  font-size: var(--step-1);
-  text-decoration: none;
 }
 .channel-identity {
   flex: 1 1 14rem;

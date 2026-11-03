@@ -78,7 +78,7 @@ describe('TestSuite: TicketListingCard (component)', () => {
     const wrapper = mountCard();
     expect(wrapper.get('h3').text()).toBe('Coldplay');
     expect(wrapper.text()).toContain('National Stadium');
-    expect(wrapper.findAll('[aria-label="Ticket details"] li').map((li) => li.text())).toEqual(['Cat 2', '2 tickets']);
+    expect(wrapper.findAll('.ticket-facts__row').map((row) => `${row.get('dt').text()} ${row.get('dd').text()}`)).toEqual(['Section: Cat 2', 'No. of tickets: 2']);
     expect(wrapper.text()).toContain('$150.00');
     expect(wrapper.text()).toContain('Sam Seller');
   });
@@ -86,9 +86,9 @@ describe('TestSuite: TicketListingCard (component)', () => {
   it('Test2: links to the listing page', () => {
     expect(mountCard().get('a').attributes('href')).toBe('/tickets/t1');
   });
-  // Singular wording for one ticket.
-  it('Test3: says "1 ticket" for a single ticket', () => {
-    expect(mountCard({ listing: makeListing({ quantity: 1 }) }).text()).toContain('1 ticket');
+  // One ticket reads as a labelled count, not a chip.
+  it('Test3: shows "No. of tickets: 1" for a single ticket', () => {
+    expect(mountCard({ listing: makeListing({ quantity: 1 }) }).get('.ticket-facts').text()).toContain('No. of tickets:1');
   });
   // Verified listings get the badge; others are labelled unverified.
   it('Test4: shows the verified badge only for verified listings', () => {

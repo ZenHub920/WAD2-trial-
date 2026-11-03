@@ -1,9 +1,9 @@
 <script setup>
-import { computed, ref, onUnmounted } from 'vue';
+import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api.js';
 import { currentUser } from '../auth.js';
-import { SECTION_SUGGESTIONS, sectionLabel, useSavedListings, useTicket } from '../market.js';
+import { takeListingFlash, useSavedListings, useTicket } from '../market.js';
 import ListingDetailCard from '../components/market/ListingDetailCard.vue';
 import MarketNotice from '../components/market/MarketNotice.vue';
 import MarketPageHead from '../components/market/MarketPageHead.vue';
@@ -11,7 +11,8 @@ import LoadingSpinner from '../components/LoadingSpinner.vue';
 
 /**
  * One ticket listing, as the full listing card. Buyers can chat with the seller;
- * the seller can edit or remove their own listing. Online checkout is unavailable.
+ * the seller can remove their own listing or open its edit page. Online checkout
+ * is unavailable.
  */
 const props = defineProps({ id: { type: String, required: true } });
 
@@ -76,58 +77,16 @@ async function removeListing() {
   }
 }
 
-// ---- Editing (seller only)
-const editing = ref(false);
-const saving = ref(false);
-const editImage = ref('');
-const readingImage = ref(false);
-const editError = ref('');
-const draft = ref({ price: 0, quantity: 1, section: '', description: '' });
-
-function startEditing() {
-  draft.value = {
-    price: listing.value.priceCents / 100,
-    quantity: listing.value.quantity,
-    section: sectionLabel(listing.value.section),
-    description: listing.value.description ?? '',
-  };
-  editImage.value = '';
-  editError.value = '';
-  editing.value = true;
+// Editing happens on its own page (seller only).
+function editListing() {
+  router.push({ name: 'ticket-edit', params: { id: props.id } });
 }
 
-function previewEditImage(event) {
-  const [file] = event.target.files;
-  if (!file) return;
-  editError.value = '';
-  readingImage.value = true;
-  const reader = new FileReader();
-  reader.onload = () => { editImage.value = String(reader.result); };
-  reader.onerror = () => { editError.value = 'Could not read the selected image.'; };
-  reader.onloadend = () => { readingImage.value = false; };
-  reader.readAsDataURL(file);
-}
-
-async function saveListing() {
-  saving.value = true;
-  editError.value = '';
-  try {
-    const { listing: updated } = await api.updateTicket(listing.value.id, {
-      priceCents: Math.round(Number(draft.value.price) * 100),
-      quantity: Number(draft.value.quantity),
-      section: draft.value.section,
-      description: draft.value.description,
-      ...(editImage.value ? { imageData: editImage.value } : {}),
-    });
-    listing.value = updated;
-    editing.value = false;
-    announce('Listing updated.');
-  } catch {
-    editError.value = 'Could not save this listing. Check the details and try again.';
-  } finally {
-    saving.value = false;
-  }
-}
+// The edit page hands over "Listing updated." when it returns here.
+onMounted(() => {
+  const flash = takeListingFlash(props.id);
+  if (flash) announce(flash);
+});
 </script>
 
 <template>
@@ -150,42 +109,12 @@ async function saveListing() {
         :saved="isSaved(listing.id)"
         :own="isOwnListing"
         :busy="busy"
-        :disabled="editing"
         @toggle-save="toggle"
         @chat="chat"
-        @edit="startEditing"
+        @edit="editListing"
         @remove="removeListing"
         @copy-link="copyLink"
       />
-
-      <form v-if="isOwnListing && editing" class="edit" @submit.prevent="saveListing">
-        <h2>Edit listing</h2>
-        <label>Total listing price (SGD)
-          <input v-model.number="draft.price" type="number" min="0" step="0.01" required />
-        </label>
-        <label>Number of tickets
-          <input v-model.number="draft.quantity" type="number" min="1" max="10" required />
-        </label>
-        <label>Section
-          <input v-model.trim="draft.section" list="edit-section-suggestions" required maxlength="120" />
-          <datalist id="edit-section-suggestions">
-            <option v-for="s in SECTION_SUGGESTIONS" :key="s" :value="s" />
-          </datalist>
-        </label>
-        <label>Description
-          <textarea v-model.trim="draft.description" rows="4" maxlength="2000" />
-        </label>
-        <label>Replace image
-          <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" @change="previewEditImage" />
-        </label>
-        <p v-if="readingImage" class="loading-state"><LoadingSpinner /> Loading image…</p>
-        <img v-if="editImage" class="edit__preview" :src="editImage" alt="New listing image preview" />
-        <p v-if="editError" class="edit__error" role="alert">{{ editError }}</p>
-        <div class="edit__actions">
-          <button class="btn btn--ghost" type="button" :disabled="saving" @click="editing = false">Cancel</button>
-          <button class="btn btn--primary" type="submit" :disabled="saving"><LoadingSpinner v-if="saving" /> {{ saving ? 'Saving…' : 'Save changes' }}</button>
-        </div>
-      </form>
     </template>
 
     <p class="toast" role="status" aria-live="polite">
@@ -200,59 +129,6 @@ async function saveListing() {
   padding-block: var(--space-5) var(--space-8);
 }
 
-
-.edit {
-  display: grid;
-  gap: var(--space-3);
-  margin-top: var(--space-5);
-  padding: var(--space-5);
-  border: var(--border-hairline);
-  border-radius: var(--radius-lg);
-  background: var(--ink-800);
-}
-
-.edit h2 {
-  font-size: var(--step-1);
-}
-
-.edit label {
-  display: grid;
-  min-width: 0;
-  gap: var(--space-2);
-  color: var(--text-300);
-  font-size: var(--step--1);
-}
-
-.edit input,
-.edit textarea {
-  width: 100%;
-  min-width: 0;
-  padding: var(--space-3);
-  border: var(--border-soft);
-  border-radius: var(--radius-md);
-  background: var(--field-bg);
-}
-
-.edit__preview {
-  max-width: 100%;
-  max-height: 180px;
-  object-fit: contain;
-}
-
-.edit__error {
-  color: var(--rose-400);
-  font-size: var(--step--1);
-}
-
-.edit__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-.edit__actions .btn {
-  flex: 1;
-}
 
 .toast {
   position: fixed;

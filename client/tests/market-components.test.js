@@ -145,17 +145,19 @@ describe('TestSuite: ListingDetailCard', () => {
     const wrapper = mountCard();
     expect(wrapper.get('h2').text()).toBe('Coldplay, Cat 3');
     expect(wrapper.get('.dcard__price').attributes('aria-label')).toBe('Price $310');
-    const facts = wrapper.findAll('[aria-label="Ticket details"] li').map(li => li.text());
+    // Each detail is its own labelled line, not a chip.
+    const facts = wrapper.findAll('.ticket-facts__row').map(row => `${row.get('dt').text()} ${row.get('dd').text()}`);
     expect(facts).toHaveLength(4);
-    expect(facts).toContain('National Stadium');
-    expect(facts).toContain('2 tickets');
+    expect(facts).toContain('Section: Cat 3');
+    expect(facts).toContain('Venue: National Stadium');
+    expect(facts).toContain('No. of tickets: 2');
     expect(wrapper.text()).toContain('Seller: Sam Seller');
   });
-  // Edge case: one ticket must say "1 ticket", not "1 tickets".
-  it('Test2: uses the singular "ticket" for a quantity of one', () => {
+  // The count is a plain number after its label, whatever the quantity.
+  it('Test2: shows a single ticket as "No. of tickets: 1"', () => {
     const wrapper = mountCard({ listing: makeListing({ quantity: 1 }) });
-    expect(wrapper.text()).toContain('1 ticket');
-    expect(wrapper.text()).not.toContain('1 tickets');
+    const row = wrapper.findAll('.ticket-facts__row').find(r => r.get('dt').text() === 'No. of tickets:');
+    expect(row.get('dd').text()).toBe('1');
   });
   // A price with cents keeps them on the card.
   it('Test3: shows a price with cents', () => {

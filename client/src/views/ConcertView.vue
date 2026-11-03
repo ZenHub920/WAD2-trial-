@@ -288,7 +288,7 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
 
 <template>
   <div class="container section">
-    <BackLink fallback="/concerts" fallback-label="All concerts" />
+    <BackLink fallback="/concerts" fallback-label="Back to All concerts" />
 
     <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading concert details…</p>
 

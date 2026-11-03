@@ -47,12 +47,12 @@ beforeEach(() => {
 });
 
 describe('WelcomeView', () => {
-  it('explains what preferences are for and shows the questionnaire immediately', async () => {
+  it('shows only the private questionnaire, with no banner or explainer panel', async () => {
     const { wrapper } = await mountPage(WelcomeView, { path: '/welcome' });
-    expect(wrapper.get('h1').text()).toBe('Welcome to Encore, Ari');
-    expect(wrapper.text()).toContain('What are preferences for?');
-    expect(wrapper.text()).toContain('Find a companion');
-    expect(wrapper.text()).toContain('Nobody sees your individual answers');
+    expect(wrapper.get('h1').text()).toBe('Your matching preferences');
+    expect(wrapper.text()).toContain('Private · Only you can see your answers');
+    expect(wrapper.text()).not.toContain('What are preferences for?');
+    expect(wrapper.text()).not.toContain('Welcome to Encore');
     // No extra click: the editor is already on the page.
     expect(wrapper.findComponent(PreferenceEditor).exists()).toBe(true);
   });
@@ -126,6 +126,8 @@ describe('AdminVerificationsView', () => {
 
     expect(api.reviewVerification).toHaveBeenCalledWith('t1', 'approve', '');
     expect(wrapper.text()).toContain('Nothing to review');
+    // No separate "… approved." banner: the queue and history already show the result.
+    expect(wrapper.text()).not.toContain('approved.');
     await wrapper.get('#admin-tab-history').trigger('click');
     expect(wrapper.get('#admin-panel-history').text()).toContain('Approved');
   });

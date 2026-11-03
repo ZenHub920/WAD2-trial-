@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
+import BackArrow from '../components/BackArrow.vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api.js';
 import MeetupEntryCard from '../components/MeetupEntryCard.vue';
@@ -184,7 +185,7 @@ onUnmounted(() => stopListening?.());
     <template v-else-if="channel">
       <header class="channel__head">
         <div class="channel__id">
-          <RouterLink class="channel__back" :to="{ path: '/messages', query: { tab: 'groups' } }" aria-label="Back to messages">←</RouterLink>
+          <BackArrow :to="{ path: '/messages', query: { tab: 'groups' } }" label="Back to messages" />
           <div>
             <h1>{{ channel.concert?.artist }} group</h1>
             <p class="channel__sub">{{ channel.members.length }} in this channel · {{ channel.concert?.venue }}</p>
@@ -307,11 +308,6 @@ onUnmounted(() => stopListening?.());
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
-}
-.channel__back {
-  font-size: var(--step-1);
-  text-decoration: none;
-  color: var(--text-200);
 }
 .channel__head h1 {
   margin: 0;

@@ -23,6 +23,7 @@ const ListingView = () => import('./views/ListingView.vue');
 const WelcomeView = () => import('./views/WelcomeView.vue');
 const MyListingsView = () => import('./views/MyListingsView.vue');
 const TicketDetailView = () => import('./views/TicketDetailView.vue');
+const EditListingView = () => import('./views/EditListingView.vue');
 const TicketMarketplaceView = () => import('./views/TicketMarketplaceView.vue');
 const CheckoutView = () => import('./views/CheckoutView.vue');
 const OrderConfirmationView = () => import('./views/OrderConfirmationView.vue');
@@ -64,6 +65,7 @@ const router = createRouter({
     { path: '/my-listings', name: 'my-listings', component: MyListingsView, meta: { title: 'My listings', requiresAuth: true } },
     { path: '/tickets', name: 'tickets', component: TicketMarketplaceView, meta: { title: 'Tickets' } },
     { path: '/tickets/:id', name: 'ticket-detail', component: TicketDetailView, props: true, meta: { title: 'Ticket details' } },
+    { path: '/tickets/:id/edit', name: 'ticket-edit', component: EditListingView, props: true, meta: { title: 'Edit listing', requiresAuth: true } },
     // Checkout stays unavailable until a real payment provider is configured.
     { path: '/tickets/:id/checkout', name: 'checkout', component: CheckoutView, props: true, meta: { title: 'Checkout' } },
     { path: '/orders/:id', name: 'order', component: OrderConfirmationView, props: true, meta: { title: 'Historical order' } },

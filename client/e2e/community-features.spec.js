@@ -106,9 +106,9 @@ test('private preference setup: registration opens the welcome questionnaire and
     await page.locator('#email').fill(`setup-${data.suffix}@example.test`);
     await page.locator('#password').fill('Example-only-passphrase-2026!');
     await page.getByRole('button', { name: 'Create account', exact: true }).click();
-    // Sign-up opens the welcome page: what preferences are for, then the questionnaire.
+    // Sign-up opens the welcome page, which goes straight to the questionnaire.
     await expect(page).toHaveURL(url => url.pathname === '/welcome');
-    await expect(page.getByRole('heading', { name: 'What are preferences for?', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Your matching preferences', exact: true })).toBeVisible();
     await expect(page.getByText('Private · Only you can see your answers', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: "meet someone I'd go to more concerts with", exact: true }).click();
     const save = page.waitForRequest(req => req.url().includes('/api/me/preferences') && req.method() === 'PUT');

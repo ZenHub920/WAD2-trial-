@@ -4,6 +4,7 @@
  * A swipe advances only after the server has stored its decision.
  */
 import { ref, computed, onMounted, watch } from 'vue';
+import BackArrow from '../components/BackArrow.vue';
 import { RouterLink } from 'vue-router';
 import SwipeDeck from '../components/SwipeDeck.vue';
 import KakiCard from '../components/kaki/KakiCard.vue';
@@ -202,15 +203,12 @@ function backToDeck() {
   <div class="kaki" :class="{ 'kaki--filters': stage === 'filters' }">
     <!-- ------------------------------------------------------------ Head -->
     <header class="kaki__head">
-      <button
+      <BackArrow
         v-if="stage !== 'filters'"
-        class="kaki__back"
-        aria-label="Back"
+        :label="stage === 'matched' ? 'Back to profiles' : 'Back to filters'"
         :disabled="swipePending || ranking"
         @click="stage === 'matched' ? backToDeck() : stage = 'filters'"
-      >
-        ←
-      </button>
+      />
       <div class="kaki__identity"><p class="kaki__eyebrow mono">Kaki finder</p><h1 class="kaki__title">Find a companion</h1></div>
       <div class="kaki__actions">
         <RouterLink
@@ -452,7 +450,6 @@ function backToDeck() {
   overflow-wrap: anywhere;
 }
 
-.kaki__back,
 .kaki__icon-btn {
   display: grid;
   place-items: center;
@@ -468,7 +465,6 @@ function backToDeck() {
   transition: transform var(--dur-fast) var(--ease-settle), background var(--dur-fast) var(--ease-settle), box-shadow var(--dur-fast) var(--ease-settle);
 }
 
-.kaki__back:hover,
 .kaki__icon-btn:hover {
   background: var(--ink-700);
 }
@@ -821,8 +817,8 @@ function backToDeck() {
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-settle), box-shadow var(--dur-fast) var(--ease-settle);
 }
-.btn:active:not(:disabled), .kaki__back:active:not(:disabled), .kaki__icon-btn:active:not(:disabled) { transform: translateY(1px) scale(.98); box-shadow: inset 0 1px 3px color-mix(in srgb, var(--text-100) 14%, transparent); }
-.kaki :where(.btn, .kaki__back, .kaki__icon-btn, summary):focus-visible { outline: 2px solid var(--accent-400); outline-offset: 3px; }
+.btn:active:not(:disabled), .kaki__icon-btn:active:not(:disabled) { transform: translateY(1px) scale(.98); box-shadow: inset 0 1px 3px color-mix(in srgb, var(--text-100) 14%, transparent); }
+.kaki :where(.btn, .kaki__icon-btn, summary):focus-visible { outline: 2px solid var(--accent-400); outline-offset: 3px; }
 
 .btn--primary {
   background: var(--accent-600);
@@ -903,13 +899,13 @@ function backToDeck() {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .btn, .kaki__back, .kaki__icon-btn, .kaki__progress li, .kaki__refine summary svg {
+  .btn, .kaki__icon-btn, .kaki__progress li, .kaki__refine summary svg {
     transition: none;
   }
   .kaki__panel, .kaki__refine-fields { animation: none; }
   .range__track input::-webkit-slider-thumb { transition: none; }
   .range__track input::-moz-range-thumb { transition: none; }
-  .btn:active:not(:disabled), .kaki__back:active:not(:disabled), .kaki__icon-btn:active:not(:disabled) { transform: none; }
+  .btn:active:not(:disabled), .kaki__icon-btn:active:not(:disabled) { transform: none; }
   .range__track input:active::-webkit-slider-thumb { transform: none; }
   .range__track input:active::-moz-range-thumb { transform: none; }
 }

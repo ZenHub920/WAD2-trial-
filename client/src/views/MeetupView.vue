@@ -1,5 +1,6 @@
 <script setup>
 import LoadingSpinner from '../components/LoadingSpinner.vue';
+import BackArrow from '../components/BackArrow.vue';
 import MeetupOverview from '../components/MeetupOverview.vue';
 import MeetupLocationSearch from '../components/MeetupLocationSearch.vue';
 import MeetupAvailabilityGrid from '../components/MeetupAvailabilityGrid.vue';
@@ -25,7 +26,7 @@ const {
 </script>
 <template>
   <div class="container groups-page meetup-page" :class="{ 'meetup-page--board': board }">
-    <RouterLink class="back-link" :to="returnRoute"><span aria-hidden="true">&larr;</span> {{ returnLabel }}</RouterLink>
+    <BackArrow class="back-link" :to="returnRoute" :label="returnLabel" />
     <header class="page-banner">
       <h1>{{ board?.title ?? (Object.keys(scope).length ? "Plan with your conversation" : "My meetups") }}</h1>
       <p>{{ board ? "Find a time together, compare places and agree on the plan." : "Your concert plans, required approvals and next steps in one place." }}</p>
@@ -253,8 +254,6 @@ const {
   </div>
 </template>
 <style scoped>
-.back-link { display:inline-flex; align-items:center; gap:.5rem; width:fit-content; padding:.5rem 0; color:var(--text-300); font-size:var(--step--1); text-decoration:none; }
-.back-link:hover { color:var(--accent-400); }
 .meetup-overview-context { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1rem; color:var(--text-300); padding-block:.5rem 1rem; border-bottom:var(--border-soft); font-size:var(--step--1); }
 .meetup-overview-context strong { color:var(--text-100); }
 .meetup-overview-context a { margin-left:auto; }

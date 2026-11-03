@@ -1,23 +1,21 @@
 <script setup>
-import { computed } from 'vue';
 import { formatShortDate } from '../../api.js';
 import { formatMoney, sectionLabel } from '../../market.js';
 import MarketIcon from './MarketIcon.vue';
 import TicketPoster from './TicketPoster.vue';
 import UserAvatar from './UserAvatar.vue';
 import VerifiedBadge from './VerifiedBadge.vue';
+import TicketFacts from './TicketFacts.vue';
 
 /**
  * One listing in the ticket marketplace grid. The title link covers the whole
  * card, so clicking anywhere opens the listing; the save button sits above it.
  */
-const props = defineProps({
+defineProps({
   listing: { type: Object, required: true },
   saved: { type: Boolean, default: false },
 });
 const emit = defineEmits(['toggle-save']);
-
-const quantity = computed(() => `${props.listing.quantity} ${props.listing.quantity === 1 ? 'ticket' : 'tickets'}`);
 </script>
 
 <template>
@@ -42,10 +40,7 @@ const quantity = computed(() => `${props.listing.quantity} ${props.listing.quant
       </h3>
       <p class="tcard__when">{{ formatShortDate(listing.concert.event_date) }} · {{ listing.concert.venue }}</p>
 
-      <ul class="tcard__chips" aria-label="Ticket details">
-        <li>{{ sectionLabel(listing.section) }}</li>
-        <li>{{ quantity }}</li>
-      </ul>
+      <TicketFacts :facts="[['Section', sectionLabel(listing.section)], ['No. of tickets', listing.quantity]]" />
 
       <VerifiedBadge v-if="listing.verified" class="tcard__badge" />
       <span v-else class="tag tcard__badge">Unverified ticket</span>
@@ -142,19 +137,6 @@ const quantity = computed(() => `${props.listing.quantity} ${props.listing.quant
 .tcard__when {
   color: var(--text-300);
   font-size: var(--step--1);
-}
-.tcard__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  padding: 0;
-  list-style: none;
-  font-size: var(--step--2);
-}
-.tcard__chips li {
-  padding: 3px 8px;
-  border-radius: var(--radius-pill);
-  background: var(--ink-700);
 }
 .tcard__badge {
   align-self: start;

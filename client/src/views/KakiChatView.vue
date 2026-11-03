@@ -18,6 +18,7 @@
  */
 
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
+import BackArrow from '../components/BackArrow.vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api.js';
 import MeetupEntryCard from '../components/MeetupEntryCard.vue';
@@ -384,7 +385,7 @@ watch(() => props.id, async () => {
   <div class="thread" :data-bg="conversation?.background ?? 'default'">
     <!-- ------------------------------------------------------------ header -->
     <header class="bar">
-      <RouterLink to="/messages" class="bar__back" aria-label="Back to messages">←</RouterLink>
+      <BackArrow to="/messages" label="Back to messages" />
 
       <div v-if="conversation" class="bar__who">
         <UserAvatar
@@ -692,13 +693,6 @@ watch(() => props.id, async () => {
   position: sticky;
   top: 0;
   z-index: 5;
-}
-
-.bar__back {
-  font-size: var(--step-1);
-  text-decoration: none;
-  color: var(--text-200);
-  padding: 0 var(--space-1);
 }
 
 .bar__who {

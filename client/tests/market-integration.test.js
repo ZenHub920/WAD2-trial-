@@ -24,6 +24,8 @@ const { default: OrderItem } = await import('../src/components/market/OrderItem.
 const { default: TicketDetailView } = await import('../src/views/TicketDetailView.vue');
 const { default: MyListingsView } = await import('../src/views/MyListingsView.vue');
 const { default: ListingView } = await import('../src/views/ListingView.vue');
+const { default: EditListingView } = await import('../src/views/EditListingView.vue');
+const { flashListing, takeListingFlash } = await import('../src/market.js');
 
 // Test data: a typical active, unverified listing; tests override what they need.
 function makeListing(overrides = {}) {
@@ -54,6 +56,7 @@ async function mountPage(component, path, props = {}) {
       { path: '/list-ticket', component: Blank },
       { path: '/my-listings', component: Blank },
       { path: '/tickets/:id', name: 'ticket-detail', component: Blank },
+      { path: '/tickets/:id/edit', name: 'ticket-edit', component: Blank },
       { path: '/chat/:id', name: 'chat-thread', component: Blank },
     ],
   });
@@ -161,40 +164,22 @@ describe('Integration: TicketDetailView + ListingDetailCard (seller)', () => {
     api.ticket.mockResolvedValue({ listing: makeListing() });
   });
 
-  // Edit flow: open the form, which is prefilled from the listing, then change
-  // the price and quantity and submit. Checks that the dollars typed are sent
-  // as cents, and that the card re-renders with what the server saved.
-  it('Test1: the seller edits the price and the card shows the saved listing', async () => {
-    // The mock "server" echoes back the submitted price and quantity.
-    api.updateTicket.mockImplementation(async (id, body) => ({ listing: makeListing({ priceCents: body.priceCents, quantity: body.quantity }) }));
-    const { wrapper } = await mountPage(TicketDetailView, '/tickets/ticket_1', { id: 'ticket_1' });
+  // Editing has its own page: the button navigates there instead of opening a form.
+  it('Test1: Edit listing opens the separate edit page', async () => {
+    const { wrapper, router } = await mountPage(TicketDetailView, '/tickets/ticket_1', { id: 'ticket_1' });
     expect(button(wrapper, 'Message seller')).toBeUndefined();
     await button(wrapper, 'Edit listing').trigger('click');
-
-    const form = wrapper.get('form.edit');
-    const [price, quantity] = form.findAll('input[type="number"]');
-    expect(price.element.value).toBe('310'); // prefilled from the listing
-    await price.setValue('350.5');
-    await quantity.setValue('1');
-    await form.trigger('submit');
     await flushPromises();
-
-    expect(api.updateTicket).toHaveBeenCalledWith('ticket_1', expect.objectContaining({ priceCents: 35050, quantity: 1, section: 'Cat 3' }));
-    expect(wrapper.find('form.edit').exists()).toBe(false);
-    expect(wrapper.get('.dcard__price').attributes('aria-label')).toBe('Price $350.50');
-    expect(wrapper.text()).toContain('1 ticket');
-    expect(wrapper.get('[role="status"]').text()).toBe('Listing updated.');
+    expect(router.currentRoute.value.fullPath).toBe('/tickets/ticket_1/edit');
+    expect(wrapper.find('form').exists()).toBe(false);
   });
-  // If saving fails, the form stays open with an error and the card keeps
-  // showing the old price (nothing was changed).
-  it('Test2: a failed save keeps the form open with an error', async () => {
-    api.updateTicket.mockRejectedValue(apiError(400, 'invalid_price'));
-    const { wrapper } = await mountPage(TicketDetailView, '/tickets/ticket_1', { id: 'ticket_1' });
-    await button(wrapper, 'Edit listing').trigger('click');
-    await wrapper.get('form.edit').trigger('submit');
-    await flushPromises();
-    expect(wrapper.get('form.edit [role="alert"]').text()).toContain('Could not save this listing');
-    expect(wrapper.get('.dcard__price').attributes('aria-label')).toBe('Price $310');
+  // Coming back from a successful save confirms it once, without touching the URL.
+  it('Test2: returning from the edit page confirms the update', async () => {
+    flashListing('ticket_1', 'Listing updated.');
+    const { wrapper, router } = await mountPage(TicketDetailView, '/tickets/ticket_1', { id: 'ticket_1' });
+    expect(wrapper.get('[role="status"]').text()).toBe('Listing updated.');
+    expect(router.currentRoute.value.fullPath).toBe('/tickets/ticket_1');
+    expect(takeListingFlash('ticket_1')).toBe(''); // shown once, then gone
   });
   // window.confirm() is mocked to return true (the user clicked OK).
   // The listing is deleted and the user is sent to My listings.
@@ -385,5 +370,69 @@ describe('Integration: ListingView (create a listing)', () => {
     await flushPromises();
     expect(wrapper.get('.listing-form__error[role="alert"]').text()).toBe('Enter a valid total listing price.');
     expect(router.currentRoute.value.fullPath).toBe('/list-ticket');
+  });
+});
+
+// The seller's separate edit page: prefilled from the listing, saves as cents,
+// and returns to the listing on success.
+describe('Integration: EditListingView', () => {
+  beforeEach(() => {
+    currentUser.value = { id: 'seller_1', displayName: 'Sam Seller' };
+    api.ticket.mockResolvedValue({ listing: makeListing() });
+  });
+
+  it('Test1: the form is prefilled and saving sends cents, then returns to the listing', async () => {
+    api.updateTicket.mockResolvedValue({ listing: makeListing({ priceCents: 35050, quantity: 1 }) });
+    const { wrapper, router } = await mountPage(EditListingView, '/tickets/ticket_1/edit', { id: 'ticket_1' });
+    expect(wrapper.get('h1').text()).toBe('Edit listing');
+    const [price, quantity] = wrapper.findAll('input[type="number"]');
+    expect(price.element.value).toBe('310'); // prefilled from the listing
+    expect(wrapper.text()).toContain('Add an image'); // no image yet: the picker invites one
+    await price.setValue('350.5');
+    await quantity.setValue('1');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+
+    expect(api.updateTicket).toHaveBeenCalledWith('ticket_1', expect.objectContaining({ priceCents: 35050, quantity: 1, section: 'Cat 3' }));
+    expect(api.updateTicket.mock.calls[0][1]).not.toHaveProperty('imageData'); // image untouched
+    // Opened directly, the edit page swaps itself for the listing and hands over the message.
+    expect(router.currentRoute.value.fullPath).toBe('/tickets/ticket_1');
+    expect(takeListingFlash('ticket_1')).toBe('Listing updated.');
+  });
+
+  // Reached from the listing, leaving steps back instead of pushing, so the
+  // listing's back arrow cannot return to this form.
+  it('Test1b: Cancel steps back to the listing it came from', async () => {
+    const { wrapper, router } = await mountPage(EditListingView, '/tickets/ticket_1/edit', { id: 'ticket_1' });
+    const state = vi.spyOn(window.history, 'state', 'get').mockReturnValue({ back: '/tickets/ticket_1' });
+    const back = vi.spyOn(router, 'back').mockImplementation(() => {});
+    const push = vi.spyOn(router, 'push');
+    await button(wrapper, 'Cancel').trigger('click');
+    expect(back).toHaveBeenCalledOnce();
+    expect(push).not.toHaveBeenCalled();
+    state.mockRestore();
+  });
+
+  it('Test2: a listing with an image shows it, ready to change', async () => {
+    api.ticket.mockResolvedValue({ listing: makeListing({ imageUrl: '/ticket-images/one.png' }) });
+    const { wrapper } = await mountPage(EditListingView, '/tickets/ticket_1/edit', { id: 'ticket_1' });
+    expect(wrapper.get('.image-picker img').attributes('src')).toBe('/ticket-images/one.png');
+    expect(wrapper.text()).toContain('Change image');
+  });
+
+  it('Test3: a failed save stays on the page with an explanation', async () => {
+    api.updateTicket.mockRejectedValue(apiError(400, 'invalid_price'));
+    const { wrapper, router } = await mountPage(EditListingView, '/tickets/ticket_1/edit', { id: 'ticket_1' });
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(wrapper.get('[role="alert"]').text()).toBe('Enter a valid total listing price.');
+    expect(router.currentRoute.value.fullPath).toBe('/tickets/ticket_1/edit');
+  });
+
+  it('Test4: someone other than the seller sees no form', async () => {
+    currentUser.value = { id: 'buyer_1', displayName: 'Bea Buyer' };
+    const { wrapper } = await mountPage(EditListingView, '/tickets/ticket_1/edit', { id: 'ticket_1' });
+    expect(wrapper.find('form').exists()).toBe(false);
+    expect(wrapper.text()).toContain('Only the seller can edit this listing');
   });
 });
