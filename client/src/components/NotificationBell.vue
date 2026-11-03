@@ -60,6 +60,33 @@ async function markRead(id) {
     readingId.value = '';
   }
 }
+function target(item) {
+  if (item.path === '/kaki/chat' || item.path === '/chat') return '/messages';
+  return item.path === '/marketplace' ? '/concerts' : item.path;
+}
+// Reaching a notification's page by any route resolves it, so unread items
+// pointing at the current page are marked read without opening the inbox.
+async function resolveHere(path) {
+  if (!unreadCount.value) return;
+  try {
+    const { notifications } = await api.notifications();
+    const here = notifications.filter((item) => !item.readAt && target(item) === path);
+    if (!here.length) return;
+    await Promise.all(here.map((item) => api.readNotification(item.id)));
+    open.value ? load() : refreshUnread();
+  } catch {
+    // Left unread; the user can still mark it from the inbox.
+  }
+}
+// Following a notification's link resolves it; the request runs alongside
+// navigation so a slow or failed call never holds up the route change.
+function follow(item) {
+  dismiss();
+  if (item.readAt) return;
+  item.readAt = new Date().toISOString();
+  unreadCount.value = Math.max(0, unreadCount.value - 1);
+  api.readNotification(item.id).catch(() => refreshUnread());
+}
 function dismiss() {
   open.value = false;
 }
@@ -91,12 +118,13 @@ watch(open, async (visible) => {
 watch(() => [route.fullPath, route.matched], (_, previous) => {
   if (previous[1].length) dismiss();
 });
+watch(() => route.fullPath, (path) => resolveHere(path));
 watch(notificationRevision, () => open.value ? load() : refreshUnread());
 onMounted(() => {
   navigator.serviceWorker?.addEventListener('message', onPush);
   document.addEventListener('click', outside);
   document.addEventListener('keydown', onKeydown);
-  refreshUnread();
+  refreshUnread().then(() => resolveHere(route.fullPath));
   timer = setInterval(() => open.value ? load() : refreshUnread(), 30000);
 });
 onUnmounted(() => {
@@ -133,7 +161,7 @@ onUnmounted(() => {
       <div v-else-if="!items.length && !error" class="notification-popover__empty"><strong>No notifications yet.</strong><p>Messages, group requests and meetup updates will appear here.</p></div>
       <ul v-if="items.length" class="notification-popover__list">
         <li v-for="item in items" :key="item.id" :class="{ 'notification-popover__unread': !item.readAt }">
-          <RouterLink :to="item.path === '/kaki/chat' || item.path === '/chat' ? '/messages' : item.path === '/marketplace' ? '/concerts' : item.path" @click="dismiss">{{ titles[item.title] ?? item.title }}</RouterLink>
+          <RouterLink :to="target(item)" @click="follow(item)">{{ titles[item.title] ?? item.title }}</RouterLink>
           <p class="notification-popover__meta">{{ formatDateTime(item.createdAt) }} · {{ item.readAt ? 'Read' : 'Unread' }}</p>
           <button v-if="!item.readAt" type="button" class="notification-popover__read" :disabled="Boolean(readingId)" @click="markRead(item.id)">
             <LoadingSpinner v-if="readingId === item.id" /><svg v-else viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> Mark read
