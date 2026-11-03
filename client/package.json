@@ -10,7 +10,8 @@
     "test": "vitest run --config vitest.config.js",
     "test:watch": "vitest --config vitest.config.js",
     "test:e2e": "playwright test",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e:report": "playwright show-report",
+    "demo:matching": "playwright test --config playwright.demo.config.js"
   },
   "dependencies": {
     "vue": "^3.5.13",

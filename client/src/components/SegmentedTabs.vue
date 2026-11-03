@@ -16,27 +16,43 @@ const props = defineProps({
   tabs: { type: Array, required: true },
   ariaLabel: { type: String, default: 'View' },
 });
-defineEmits(['update:modelValue']);
+const emit = defineEmits(['update:modelValue']);
 
 const index = computed(() => Math.max(0, props.tabs.findIndex((t) => t.id === props.modelValue)));
 const bubble = computed(() => ({
-  width: `${100 / props.tabs.length}%`,
+  width: `calc((100% - 8px) / ${Math.max(1, props.tabs.length)})`,
   transform: `translateX(${index.value * 100}%)`,
 }));
+
+function navigate(event, current) {
+  if (!props.tabs.length) return;
+  let next;
+  if (event.key === 'Home') next = 0;
+  else if (event.key === 'End') next = props.tabs.length - 1;
+  else if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+    const direction = getComputedStyle(event.currentTarget.parentElement).direction === 'rtl' ? -1 : 1;
+    next = (current + (event.key === 'ArrowRight' ? direction : -direction) + props.tabs.length) % props.tabs.length;
+  } else return;
+  event.preventDefault();
+  if (next !== current) emit('update:modelValue', props.tabs[next].id);
+  event.currentTarget.parentElement.querySelectorAll('[role="tab"]')[next]?.focus();
+}
 </script>
 
 <template>
   <div class="segs" role="tablist" :aria-label="ariaLabel">
-    <span class="segs__bubble" :style="bubble" aria-hidden="true" />
+    <span v-if="tabs.length" class="segs__bubble" :style="bubble" aria-hidden="true" />
     <button
-      v-for="tab in tabs"
+      v-for="(tab, tabIndex) in tabs"
       :key="tab.id"
       type="button"
       role="tab"
       class="segs__tab"
       :class="{ 'segs__tab--on': tab.id === modelValue }"
       :aria-selected="tab.id === modelValue"
+      :tabindex="tabIndex === index ? 0 : -1"
       @click="$emit('update:modelValue', tab.id)"
+      @keydown="navigate($event, tabIndex)"
     >
       <svg viewBox="0 0 24 24" class="segs__icon" aria-hidden="true">
         <template v-if="tab.icon === 'companion'">
@@ -68,11 +84,12 @@ const bubble = computed(() => ({
   border: var(--border-hairline);
   border-radius: var(--radius-pill);
   background: var(--ink-850);
+  box-shadow: inset 0 1px 3px rgba(47, 25, 95, 0.06);
 }
 
 .segs__bubble {
   position: absolute;
-  inset: 4px auto 4px 0;
+  inset: 4px auto 4px 4px;
   border-radius: var(--radius-pill);
   background: var(--accent-500);
   box-shadow: var(--shadow-sm);
@@ -91,13 +108,17 @@ const bubble = computed(() => ({
   justify-content: center;
   gap: var(--space-2);
   min-width: 0;
+  min-height: 44px;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-pill);
   background: none;
   color: var(--text-300);
   font-size: var(--step--1);
   font-weight: 600;
-  transition: color var(--dur-base) var(--ease-out);
+  transition: color var(--dur-base) var(--ease-out), transform var(--dur-fast) var(--ease-settle);
+}
+.segs__tab:active {
+  transform: translateY(1px);
 }
 
 .segs__tab--on {
@@ -140,23 +161,26 @@ const bubble = computed(() => ({
   background: rgba(255, 255, 255, 0.26);
 }
 
-/* On a narrow screen the icons carry it alone. */
+/* Keep the words on mobile: an unfamiliar icon should not be a guessing game. */
 @media (max-width: 560px) {
   .segs__label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
+    font-size: .75rem;
+    max-width: 100%;
   }
   .segs__tab {
-    padding-inline: var(--space-2);
+    flex-direction: column;
+    gap: 3px;
+    min-height: 54px;
+    padding: 6px 4px;
   }
+  .segs__icon { width: 17px; height: 17px; }
+  .segs__count { position: absolute; top: 3px; right: 3px; min-width: 16px; height: 16px; padding-inline: 3px; font-size: .6rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .segs__bubble {
     transition: none;
   }
+  .segs__tab:active { transform: none; }
 }
 </style>

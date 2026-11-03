@@ -7,34 +7,35 @@ import App from './App.vue';
 import './assets/base.css';
 
 import HomeView from './views/HomeView.vue';
-import ConcertView from './views/ConcertView.vue';
-import AlgorithmView from './views/AlgorithmView.vue';
-import RoundView from './views/RoundView.vue';
-import MethodView from './views/MethodView.vue';
-import LoginView from './views/LoginView.vue';
-import AccountSecurityView from './views/AccountSecurityView.vue';
-import ConcertsView from './views/ConcertsView.vue';
-import ListingView from './views/ListingView.vue';
-import MyListingsView from './views/MyListingsView.vue';
-import TicketDetailView from './views/TicketDetailView.vue';
-import TicketMarketplaceView from './views/TicketMarketplaceView.vue';
-import CheckoutView from './views/CheckoutView.vue';
-import OrderConfirmationView from './views/OrderConfirmationView.vue';
-import ChatThreadView from './views/ChatThreadView.vue';
-import AdminVerificationsView from './views/AdminVerificationsView.vue';
-import KakiFinderView from './views/KakiFinderView.vue';
-import KakiChatListView from './views/KakiChatListView.vue';
-import KakiChatView from './views/KakiChatView.vue';
-import GroupChannelView from './views/GroupChannelView.vue';
-import ConnectionChannelView from './views/ConnectionChannelView.vue';
-import ProfileHistoryView from './views/ProfileHistoryView.vue';
-import ProfileView from './views/ProfileView.vue';
-import NotFoundView from './views/NotFoundView.vue';
-import GroupExplorerView from './views/GroupExplorerView.vue';
-import GroupConnectionsView from './views/GroupConnectionsView.vue';
-import GroupMembershipView from './views/GroupMembershipView.vue';
-import MeetupView from './views/MeetupView.vue';
-import FeedbackView from './views/FeedbackView.vue';
+const ConcertView = () => import('./views/ConcertView.vue');
+const AlgorithmView = () => import('./views/AlgorithmView.vue');
+const RoundView = () => import('./views/RoundView.vue');
+const MethodView = () => import('./views/MethodView.vue');
+const LoginView = () => import('./views/LoginView.vue');
+const AccountSecurityView = () => import('./views/AccountSecurityView.vue');
+const ConcertsView = () => import('./views/ConcertsView.vue');
+const ListingView = () => import('./views/ListingView.vue');
+const MyListingsView = () => import('./views/MyListingsView.vue');
+const TicketDetailView = () => import('./views/TicketDetailView.vue');
+const TicketMarketplaceView = () => import('./views/TicketMarketplaceView.vue');
+const CheckoutView = () => import('./views/CheckoutView.vue');
+const OrderConfirmationView = () => import('./views/OrderConfirmationView.vue');
+const ChatThreadView = () => import('./views/ChatThreadView.vue');
+const AdminVerificationsView = () => import('./views/AdminVerificationsView.vue');
+const KakiFinderView = () => import('./views/KakiFinderView.vue');
+const KakiChatListView = () => import('./views/KakiChatListView.vue');
+const KakiChatView = () => import('./views/KakiChatView.vue');
+const GroupChannelView = () => import('./views/GroupChannelView.vue');
+const ConnectionChannelView = () => import('./views/ConnectionChannelView.vue');
+const ProfileHistoryView = () => import('./views/ProfileHistoryView.vue');
+const ProfileView = () => import('./views/ProfileView.vue');
+const PublicProfileView = () => import('./views/PublicProfileView.vue');
+const NotFoundView = () => import('./views/NotFoundView.vue');
+const GroupExplorerView = () => import('./views/GroupExplorerView.vue');
+const GroupConnectionsView = () => import('./views/GroupConnectionsView.vue');
+const GroupMembershipView = () => import('./views/GroupMembershipView.vue');
+const MeetupView = () => import('./views/MeetupView.vue');
+const FeedbackView = () => import('./views/FeedbackView.vue');
 
 const router = createRouter({
   history: createWebHistory(),
@@ -109,11 +110,12 @@ const router = createRouter({
 
     { path: '/chat/:id', name: 'chat-thread', component: ChatThreadView, props: true, meta: { title: 'Ticket conversation' } },
     { path: '/profile', name: 'profile', component: ProfileView, meta: { title: 'Profile' } },
+    { path: '/people/:id', name: 'public-profile', component: PublicProfileView, props: true, meta: { title: 'Concert vibe', requiresAuth: true } },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView, meta: { title: 'Page not found' } },
   ],
   scrollBehavior(to, from, saved) {
     if (saved) return saved;
-    if (to.hash) return { el: to.hash, behavior: 'smooth', top: 80 };
+    if (to.hash) return { el: to.hash, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', top: 80 };
     return { top: 0 };
   },
 });

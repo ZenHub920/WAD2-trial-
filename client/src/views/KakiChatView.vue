@@ -20,6 +20,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api.js';
+import MeetupEntryCard from '../components/MeetupEntryCard.vue';
 import { fetchChatUpdates } from '../chatPages.js';
 import { onChatEvent, connectionState, refreshUnread } from '../chatLive.js';
 import UserAvatar from '../components/UserAvatar.vue';
@@ -392,12 +393,11 @@ watch(() => props.id, async () => {
           :size="36"
         />
         <div>
-          <h1 class="bar__name">{{ conversation.other.displayName }}</h1>
+          <h1 class="bar__name"><RouterLink :to="`/people/${encodeURIComponent(conversation.other.id)}`" :aria-label="`View ${conversation.other.displayName}'s concert vibe`">{{ conversation.other.displayName }}</RouterLink></h1>
           <p class="bar__sub">{{ conversation.concert.artist }}</p>
         </div>
       </div>
       <div v-else class="bar__who"><h1 class="bar__name">Companion conversation</h1></div>
-      <button v-if="conversation && !closed" type="button" class="btn btn--ghost bar__meetup" @click="router.push({path:'/meetups',query:{kakiConversationId:id}})">Plan meetup</button>
 
       <button
         class="bar__menu"
@@ -453,6 +453,8 @@ watch(() => props.id, async () => {
       </div>
       </Teleport>
     </header>
+
+    <MeetupEntryCard v-if="conversation && !closed && !loading" :scope="{ kakiConversationId: id }" label="Meetup planner for this pair" class="pair-meetup-entry" />
 
     <!-- ------------------------------------------------------------ states -->
     <p v-if="notice" class="notice notice--ok">{{ notice }}</p>
@@ -626,6 +628,7 @@ watch(() => props.id, async () => {
 </template>
 
 <style scoped>
+.pair-meetup-entry { margin-inline:var(--space-4); }
 .thread {
   display: flex;
   flex-direction: column;
@@ -708,10 +711,6 @@ watch(() => props.id, async () => {
 .bar__who > div {
   min-width: 0;
   overflow-wrap: anywhere;
-}
-.bar__meetup {
-  flex-shrink: 0;
-  font-size: var(--step--1);
 }
 
 .avatar {
@@ -805,8 +804,8 @@ watch(() => props.id, async () => {
 }
 
 .bubble--mine {
-  background: linear-gradient(145deg, var(--accent-500), var(--accent-600));
-  color: #fff;
+  background: linear-gradient(145deg, var(--action-start), var(--action-end));
+  color: var(--on-action);
   border-bottom-left-radius: var(--radius-lg);
   border-bottom-right-radius: var(--radius-sm);
 }
@@ -861,6 +860,7 @@ watch(() => props.id, async () => {
 .meta__edited {
   font-style: italic;
 }
+.bubble--mine .meta { opacity:1; color:var(--on-action); }
 
 /* Ticks sit in the bubble's own colour until they turn read, when they take
    a distinct accent — the colour change is what the eye catches, not the
@@ -1016,8 +1016,8 @@ watch(() => props.id, async () => {
   height: 2.75rem;
   border-radius: 50%;
   border: 0;
-  background: var(--accent-500);
-  color: #fff;
+  background: var(--action-start);
+  color: var(--on-action);
   font-size: var(--step-1);
   cursor: pointer;
   transition: transform var(--dur-fast) var(--ease-spring);
@@ -1203,10 +1203,6 @@ watch(() => props.id, async () => {
   }
   .bar__who {
     flex-basis: calc(100% - 7rem);
-  }
-  .bar__meetup {
-    order: 1;
-    margin-left: 2rem;
   }
   .row__more {
     opacity: 1;

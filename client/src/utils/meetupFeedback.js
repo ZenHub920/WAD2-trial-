@@ -1,0 +1,33 @@
+export function meetupErrorMessage(code) {
+  if (!code) return '';
+  return ({
+    invalid_meetup_datetime: 'Enter a real calendar date and time in both fields.',
+    invalid_title: 'Enter a plan title of up to 120 characters.',
+    invalid_meetup_creation_options: 'Please reload the planning page before creating another plan.',
+    meetup_creation_conflict: 'This submission already created a plan with different details. Return to this conversation’s plans to open it, or start a separate plan.',
+    one_meetup_scope_required: 'Open the planner from one group or conversation at a time.',
+    meetup_not_found: 'This meetup is unavailable, or you are no longer a participant.',
+    meetup_end_must_follow_start: 'The availability window must end after it starts.',
+    meetup_half_hour_required: 'Choose times on the hour or half-hour, such as 16:00 or 16:30.',
+    invalid_meetup_window: 'Choose an availability window from 30 minutes to 7 days.',
+    meetup_must_be_future: 'Choose a future meeting time.',
+    concert_date_unavailable: 'The concert needs a valid date before a new meetup can be planned.',
+    meetup_must_end_before_concert: 'End the availability window before the verified concert start time.',
+    meetup_outside_concert_dates: 'Choose the concert day or the preceding travel day.',
+    stale_meetup_version: 'This plan has changed. Your draft is kept; review the refreshed plan and try again.',
+    scope_membership_required: 'Only current members of this group or conversation can access its meetup.',
+    meetup_organizer_required: 'Only the group host or a pair organizer can make this decision.',
+    meetup_approver_required: 'Only a required organizer can approve this plan.',
+    meetup_planning_required: 'Planning is locked. Ask an organizer to reopen it before changing availability, places or votes.',
+    meetup_reopen_required: 'Ask an organizer to reopen planning before changing availability, places or votes.',
+    meetup_not_proposed: 'Planning is already open. Review the latest board before continuing.',
+    meetup_cancelled: 'This meetup has been cancelled and can no longer be changed.',
+    invalid_place: 'Enter a place name and both valid latitude and longitude values, or select a search result.',
+    place_limit_reached: 'This plan already has 50 places. Compare the existing suggestions.',
+    place_not_found: 'This place is no longer available. Refresh the planner and choose another.',
+    invalid_availability: 'Check selected times and enter both valid coordinates for each optional starting location.',
+    overlapping_availability: 'Your availability periods overlap. Refresh the planner and select them again.',
+    invalid_meetup_choice: 'Choose a suggested place and a time within this availability window.',
+    invalid_comment: 'Enter a message of up to 2,000 characters.',
+  })[code] ?? 'Could not update this meetup. Please try again.';
+}

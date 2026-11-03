@@ -177,7 +177,7 @@ for (const change of ['version', 'membership']) {
     const completion = integrations.transport('host', id).then((value) => ({ value }), (error) => ({ error }));
     await started;
     try {
-      if (change === 'version') repos.meetups.vote('friend', id, b);
+      if (change === 'version') repos.meetups.reopen('host', id, previousVersion);
       else {
         repos.membership.leave('friend', 'p1');
         assert.equal(repos.meetups.access('host', id).version, previousVersion, 'membership changes must be detected even without a board revision');

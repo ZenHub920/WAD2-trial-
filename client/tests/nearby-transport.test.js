@@ -28,6 +28,19 @@ beforeEach(() => {
 });
 
 describe('nearby meetup and concert transport', () => {
+  it('pauses hidden planner steps and resumes without losing the selected journey', async () => {
+    vi.useFakeTimers();
+    const wrapper = render();
+    await button(wrapper, 'After the concert').trigger('click');
+    await button(wrapper, 'Check nearby transport').trigger('click'); await flushPromises();
+    await wrapper.setProps({ active: false });
+    await vi.advanceTimersByTimeAsync(120000);
+    expect(api.meetupTransport).toHaveBeenCalledTimes(1);
+    expect(wrapper.attributes('data-transport-phase')).toBe('post');
+    await wrapper.setProps({ active: true }); await flushPromises();
+    expect(api.meetupTransport).toHaveBeenCalledTimes(2);
+    expect(api.meetupTransport).toHaveBeenLastCalledWith('meetup-1', { phase: 'post' });
+  });
   it('keeps the post-concert panel and refresh choice when live board data replaces the same venue object', async () => {
     vi.useFakeTimers();
     const wrapper = render();
@@ -46,7 +59,7 @@ describe('nearby meetup and concert transport', () => {
     await flushPromises();
     expect(api.meetupTransport).not.toHaveBeenCalled();
     expect(button(wrapper, 'Check nearby transport').element.disabled).toBe(true);
-    expect(wrapper.text()).toContain('Propose a meeting place above first');
+    expect(wrapper.text()).toContain('Choose a meeting place first to check nearby transport.');
     await button(wrapper, 'After the concert').trigger('click');
     expect(button(wrapper, 'Check nearby transport').element.disabled).toBe(false);
     expect(api.meetupTransport).not.toHaveBeenCalled();
@@ -66,7 +79,11 @@ describe('nearby meetup and concert transport', () => {
     expect(wrapper.text()).toContain('Limited standing space');
     expect(wrapper.text()).not.toContain('must-not-show-arrival');
     expect(wrapper.text()).toContain('No disruption reported on these nearby lines.');
-    expect(wrapper.text()).toContain('Conditions now, not a prediction');
+    expect(wrapper.text()).toContain('These are live conditions, not predictions for concert day.');
+    const about = wrapper.get('.nearby-transport__about');
+    expect(about.get('summary').text()).toBe('About this transport data');
+    expect(about.attributes('open')).toBeUndefined();
+    expect(about.text()).toContain('Missing reports do not mean an empty station or bus.');
     expect(wrapper.text()).not.toContain('TrainLine');
   });
 
@@ -90,15 +107,33 @@ describe('nearby meetup and concert transport', () => {
     const wrapper = render();
     await button(wrapper, 'After the concert').trigger('click');
     await button(wrapper, 'Check nearby transport').trigger('click'); await flushPromises();
-    expect(wrapper.text()).toContain('Choose the exact concert venue above');
+    expect(wrapper.text()).toContain('Confirm the concert venue to see nearby MRT stations and bus stops.');
     const search = wrapper.getComponent(MeetupLocationSearch);
     await search.get('input').setValue('Indoor Stadium');
     await button(search, 'Search OneMap').trigger('click'); await flushPromises();
     await search.findAll('button').find(candidate => candidate.text().includes('2 Stadium Walk')).trigger('click');
+    expect(search.text()).toContain('Selected: Singapore Indoor Stadium.');
+    expect(search.text()).toContain('the concert and meetup are unchanged');
     expect(api.meetupLocations).toHaveBeenCalledWith('meetup-1', 'Indoor Stadium');
     expect(api.meetupTransport).toHaveBeenCalledTimes(1);
     await button(wrapper, 'Check nearby transport').trigger('click'); await flushPromises();
     expect(api.meetupTransport).toHaveBeenLastCalledWith('meetup-1', { phase: 'post', label: 'Singapore Indoor Stadium', latitude: 1.3028, longitude: 103.8743 });
+    await button(wrapper, "Use the concert's venue again").trigger('click');
+    expect(search.get('input').element.value).toBe('');
+    expect(search.text()).not.toContain('Selected: Singapore Indoor Stadium.');
+  });
+
+  it('shows missing provider configuration without inventing nearby data', async () => {
+    api.meetupTransport.mockResolvedValue({ transport: response('pre', {
+      nearby: { status: 'unavailable', reason: 'onemap_not_configured', stations: [], busStops: [] },
+      trains: { status: 'unavailable', reason: 'lta_not_configured' },
+    }) });
+    const wrapper = render();
+    await button(wrapper, 'Check nearby transport').trigger('click'); await flushPromises();
+    expect(wrapper.text()).toContain('OneMap is not configured.');
+    expect(wrapper.findAll('.nearby-transport__stop')).toHaveLength(0);
+    expect(wrapper.text()).not.toContain('No disruption reported');
+    expect(wrapper.text()).not.toContain('High crowding');
   });
 
   it('ignores a late result after switching journey or changing boards', async () => {

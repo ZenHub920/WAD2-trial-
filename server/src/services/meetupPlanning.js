@@ -1,4 +1,13 @@
-export const SLOT_MS = 30 * 60 * 1000;
+import { MEETUP_SLOT_MS } from '../../../shared/meetupDates.mjs';
+export const SLOT_MS = MEETUP_SLOT_MS;
+export function compareMeetupOptions(a, b, { routeTimes = false } = {}) {
+  return b.availableCount - a.availableCount
+    || (routeTimes
+      ? a.totalTravelMinutes - b.totalTravelMinutes || a.maximumTravelMinutes - b.maximumTravelMinutes
+      : (a.totalDistanceKm ?? Infinity) - (b.totalDistanceKm ?? Infinity)
+        || (a.maximumDistanceKm ?? Infinity) - (b.maximumDistanceKm ?? Infinity))
+    || b.votes - a.votes || a.startsAt - b.startsAt || a.placeId.localeCompare(b.placeId);
+}
 export function distanceKm(a, b) {
   const rad = (d) => (d * Math.PI) / 180,
     dlat = rad(b.latitude - a.latitude),
@@ -53,14 +62,6 @@ export function rankMeetupOptions({
     }
   }
   return options
-    .sort(
-      (a, b) =>
-        b.availableCount - a.availableCount ||
-        (a.totalDistanceKm ?? Infinity) - (b.totalDistanceKm ?? Infinity) ||
-        (a.maximumDistanceKm ?? Infinity) - (b.maximumDistanceKm ?? Infinity) ||
-        b.votes - a.votes ||
-        a.startsAt - b.startsAt ||
-        a.placeId.localeCompare(b.placeId),
-    )
+    .sort(compareMeetupOptions)
     .slice(0, limit);
 }

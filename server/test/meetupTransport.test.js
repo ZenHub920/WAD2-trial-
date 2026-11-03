@@ -171,7 +171,7 @@ test('outsiders are rejected before providers run and membership or version chan
 
   const changedPlan = fixture(t);
   changedPlan.travel.trainAlerts = async () => {
-    changedPlan.repos.meetups.availability('friend', changedPlan.id, []);
+    changedPlan.repos.meetups.reopen('host', changedPlan.id, changedPlan.repos.meetups.access('host', changedPlan.id).version);
     return { status: 'available', serviceStatus: 'normal', affectedSegments: [], messages: [] };
   };
   await assert.rejects(changedPlan.service.transport('host', changedPlan.id, { phase: 'pre' }), /stale_meetup_version/);

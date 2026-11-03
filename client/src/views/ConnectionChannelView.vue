@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api.js';
+import MeetupEntryCard from '../components/MeetupEntryCard.vue';
 import { currentUser } from '../auth.js';
 import { fetchChatUpdates } from '../chatPages.js';
 import { applyConnectionMessageUpdate } from '../connectionChatMessages.js';
@@ -236,8 +237,9 @@ onUnmounted(() => {
         <RouterLink :to="{ path: '/messages', query: { tab: 'groups' } }" class="channel-back" aria-label="Back to group messages">←</RouterLink>
         <GroupAvatar :name="channel.name" :size="44" />
         <div class="channel-identity"><p class="channel-label">Connected groups</p><h1>{{ channel.name }}</h1><p>{{ channel.concert.artist }} · {{ channel.members.length }} members</p></div>
-        <div class="channel-tools"><button type="button" class="btn btn--ghost" :aria-expanded="showMembers" @click="showMembers = !showMembers">Members</button><button type="button" class="btn btn--ghost" :aria-expanded="showSettings" @click="showSettings = !showSettings">Chat options</button><button type="button" class="btn btn--primary" @click="router.push({ path: '/meetups', query: { connectionId: id } })">Plan meetup</button></div>
+        <div class="channel-tools"><button type="button" class="btn btn--ghost" :aria-expanded="showMembers" @click="showMembers = !showMembers">Members</button><button type="button" class="btn btn--ghost" :aria-expanded="showSettings" @click="showSettings = !showSettings">Chat options</button></div>
       </header>
+      <MeetupEntryCard :scope="{ connectionId: id }" label="Meetup planner for both connected groups" />
       <p class="channel-hint">Current members of {{ channel.partyA.name }} and {{ channel.partyB.name }} share this room.</p>
       <section v-if="showMembers" class="card channel-panel" aria-label="Shared chat members"><h2>Shared chat members</h2><ul class="members"><li v-for="person in channel.members" :key="person.id"><UserAvatar :src="person.avatarUrl" :name="person.displayName" :size="32" /><div><strong>{{ person.displayName }}{{ person.isHost ? ' · Host' : '' }}</strong><small>{{ groupFor(person) }}</small></div></li></ul><p class="channel-hint">The member list updates when either group’s membership changes.</p></section>
       <section v-if="showSettings" class="card channel-panel" aria-label="Shared chat options"><h2>Your chat background</h2><p class="channel-hint">This changes the background for you.</p><div class="swatches"><button v-for="name in backgrounds" :key="name" type="button" class="swatch" :data-bg="name" :aria-pressed="background === name" :disabled="Boolean(backgroundPending)" @click="chooseBackground(name)"><LoadingSpinner v-if="backgroundPending === name" />{{ name }}</button></div><RouterLink to="/profile#notifications">Message and meetup notification preferences</RouterLink></section>
@@ -418,9 +420,9 @@ onUnmounted(() => {
   min-width: 0;
 }
 .message--mine .message-body {
-  background: var(--accent-500);
-  border-color: var(--accent-500);
-  color: #fff;
+  background: var(--action-start);
+  border-color: var(--action-start);
+  color: var(--on-action);
 }
 .message-name {
   color: var(--accent-400);
@@ -440,7 +442,7 @@ onUnmounted(() => {
   font-size: var(--step--2);
 }
 .message--mine .message-meta {
-  color: rgba(255,255,255,.8);
+  color: var(--on-action);
 }
 .message-quote {
   margin: 0 0 var(--space-1);

@@ -40,6 +40,27 @@ test('blocking after enqueue suppresses both the group popup and its authenticat
   assert.equal(sendCalls.length,0);
 });
 
+test('meetup stage push links recheck membership and reject unrecognized or forged destinations', async()=>{
+  const start=Math.ceil((clock+1800000)/1800000)*1800000;
+  db.prepare(`INSERT INTO meetups(id,creator_id,party_id,title,starts_at,ends_at)
+    VALUES('stage-plan','host','p1','Before show',?,?)`).run(start,start+1800000);
+  const {id:subscriptionId}=service.subscribe('member',subscription());
+  for(const [index,hash] of ['', '#meetup-availability', '#meetup-places', '#meetup-review'].entries()) {
+    const id=`stage-${index}`,path=`/meetups/stage-plan${hash}`;
+    notification({id,category:'meetup',path});
+    assert.equal(service.notification('member',id,subscriptionId).path,path);
+  }
+  for(const [index,path] of ['/groups','/meetups/missing#meetup-review','/meetups/stage-plan#unrecognized','/meetups/stage-plan?return=https://example.org'].entries()) {
+    const id=`invalid-stage-${index}`;
+    notification({id,category:'meetup',path});
+    assert.equal(service.notification('member',id,subscriptionId),null);
+  }
+  repos.membership.leave('member','p1');
+  assert.equal(service.notification('member','stage-3',subscriptionId),null);
+  await service.runOnce();
+  assert.equal(sendCalls.length,0);
+});
+
 test('subscriptions validate push provider URLs and key shapes before storing any network target',()=>{
   assert.ok(validatePushSubscription(subscription()));
   for(const endpoint of ['http://fcm.googleapis.com/p','https://127.0.0.1/p','https://fcm.googleapis.com.attacker.test/p',

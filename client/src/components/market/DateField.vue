@@ -402,8 +402,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
   align-items: center;
   gap: 2px;
   min-height: 44px;
-  padding: var(--space-2) var(--space-3);
-  border: var(--border-soft);
+  padding: var(--space-1) var(--space-2);
+  border: var(--control-border);
   border-radius: var(--radius-md);
   background: var(--field-bg);
   color: var(--text-400);
@@ -414,7 +414,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
 }
 
 .datefield:focus-within {
-  border-color: var(--accent-500);
+  border-color: var(--focus-ring);
   box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
@@ -469,8 +469,9 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
 .datefield__toggle {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
+  flex: none;
   margin-left: auto;
   border-radius: var(--radius-sm);
   color: var(--accent-400);
@@ -485,7 +486,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
 .datefield__toggle:hover,
 .datefield--open .datefield__toggle {
   background: var(--accent-glow);
-  color: var(--accent-500);
+  color: var(--accent-400);
 }
 
 /* ---------------------------------------------------------------- Calendar */
@@ -498,17 +499,15 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
   width: 300px;
   max-width: calc(100vw - 2 * var(--gutter));
   padding: var(--space-4);
-  border: var(--border-hairline);
+  border: 1px solid var(--floating-edge);
   border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--ink-800) 94%, transparent);
-  backdrop-filter: blur(18px) saturate(150%);
-  -webkit-backdrop-filter: blur(18px) saturate(150%);
-  box-shadow: 0 24px 50px -20px rgba(47, 25, 95, 0.45);
+  background: var(--surface-floating);
+  box-shadow: var(--floating-shadow);
   transform-origin: top right;
 }
 
 .cal-enter-active {
-  transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-spring-soft);
+  transition: opacity 180ms var(--ease-settle), transform var(--dur-panel) var(--ease-settle);
 }
 .cal-leave-active {
   transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
@@ -516,7 +515,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
 .cal-enter-from,
 .cal-leave-to {
   opacity: 0;
-  transform: translateY(-6px) scale(0.96);
+  transform: translateY(-6px) scale(0.99);
 }
 
 .cal__head {
@@ -535,8 +534,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
 .cal__nav {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   color: var(--text-200);
   font-size: 1.3rem;
@@ -546,7 +545,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
 
 .cal__nav:hover {
   background: var(--accent-glow);
-  color: var(--accent-500);
+  color: var(--accent-400);
 }
 
 .cal__grid {
@@ -556,7 +555,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
 
 .cal__row {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 2px;
 }
 
@@ -570,7 +569,10 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
 
 .cal__day {
   position: relative;
+  width: 100%;
   aspect-ratio: 1;
+  min-height: 36px;
+  min-width: 0;
   border-radius: 50%;
   color: var(--text-200);
   font-size: var(--step--1);
@@ -578,22 +580,22 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
   transition:
     background var(--dur-fast) var(--ease-out),
     color var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-spring);
+    transform var(--dur-press) var(--ease-settle);
 }
 
 .cal__day:hover {
   background: var(--accent-glow);
-  color: var(--accent-500);
-  transform: scale(1.08);
+  color: var(--accent-400);
+  transform: translateY(-1px);
 }
+.cal__day:active { transform: translateY(1px) scale(.97); }
 .cal__day--outside {
   color: var(--text-400);
-  opacity: 0.5;
 }
 
 .cal__day--today {
   font-weight: 800;
-  color: var(--accent-500);
+  color: var(--accent-400);
   box-shadow: inset 0 0 0 1.5px var(--accent-400);
 }
 
@@ -611,8 +613,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
 
 .cal__day--selected,
 .cal__day--selected:hover {
-  background: linear-gradient(135deg, var(--accent-500), var(--mint-400));
-  color: #fff;
+  background: linear-gradient(135deg, var(--action-start), var(--action-end));
+  color: var(--on-action);
   font-weight: 800;
   box-shadow: 0 6px 14px -6px var(--accent-400);
 }
@@ -632,6 +634,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
 }
 
 .cal__link {
+  min-height: 44px;
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-sm);
   color: var(--accent-400);
@@ -656,6 +659,17 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
   height: 6px;
   border-radius: 50%;
   background: var(--mint-400);
+}
+
+@media (max-width: 480px) {
+  /* A narrow date field can be inset inside a search panel; viewport width
+     alone does not prevent its right-aligned calendar crossing the left edge. */
+  .cal { width: min(300px, 100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cal-enter-active, .cal-leave-active { transition: none; }
+  .cal-enter-from, .cal-leave-to, .cal__day:hover, .cal__day:active { transform: none; }
 }
 
 </style>

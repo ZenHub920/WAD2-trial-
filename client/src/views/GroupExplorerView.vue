@@ -2,6 +2,8 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, LABELS, SECTION_OPTIONS, ARRIVAL_OPTIONS } from '../api.js';
+import { useMeetupSummaries } from '../composables/useMeetupSummaries.js';
+import { meetupDestination, meetupActionForScope } from '../utils/meetupSummaries.js';
 import { currentUser, sessionReady } from '../auth.js';
 import GroupFilters from '../components/GroupFilters.vue';
 import GroupListingCard from '../components/GroupListingCard.vue';
@@ -15,6 +17,9 @@ import GroupNavigation from '../components/GroupNavigation.vue';
 import '../assets/groups.css';
 
 const route = useRoute(), router = useRouter();
+const { plans: meetupPlans } = useMeetupSummaries();
+const meetupLink = scope => meetupDestination(meetupPlans.value, scope);
+const meetupLabel = scope => meetupActionForScope(meetupPlans.value, scope);
 const concerts = ref([]), groups = ref([]), saved = ref([]), seeker = ref(null);
 const concertId = ref(typeof route.query.concertId === 'string' ? route.query.concertId : '');
 const concertsLoading = ref(true), loading = ref(false), busy = ref(false);
@@ -36,6 +41,7 @@ const pendingDirect = computed(() => ownRequests.value.filter(request => request
 const pendingLegacy = computed(() => ownRequests.value.filter(request => request.status === 'pending' && request.matchingRoundId));
 const activeProposals = computed(() => proposals.value.filter(proposal => proposal.status === 'proposed'));
 const modeIsActive = computed(() => Boolean(seeker.value && persistedMode.value === displayedMode.value));
+const selectedConcert = computed(() => concerts.value.find(concert => concert.id === concertId.value));
 const pendingLimit = computed(() => seeker.value?.maxPendingDirectApplications ?? 1);
 const canApply = computed(() => !busy.value && !loading.value && displayedMode.value === 'direct' && seeker.value?.status === 'open' && persistedMode.value === 'direct' && !currentGroup.value && !activeProposals.value.length && !pendingLegacy.value.length && pendingDirect.value.length < pendingLimit.value);
 const canPrefer = computed(() => seeker.value?.status === 'open' && !currentGroup.value && !activeProposals.value.length);
@@ -65,7 +71,7 @@ function failureMessage(err) {
     already_in_concert_group: 'You already have a group for this show. You can find it at the top of the page.',
     already_group_member: 'You’re already in this group.',
     previously_declined: 'This group passed earlier, so try a different one.',
-    save_discovery_preferences_first: 'We need your preferences to find you a match. Save them above first, or browse groups yourself instead.',
+    save_discovery_preferences_first: 'Save your private preferences in Profile to find a match, or browse and choose a group yourself.',
     join_request_already_exists: 'You’ve already asked to join this group.',
     group_changed_withdraw_and_resubmit: 'This group changed after you asked. Cancel your request, take another look and ask again.',
     preferences_changed_withdraw_and_resubmit: 'Your preferences changed after you asked. Cancel and ask again so the host sees your latest answers.',
@@ -171,6 +177,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
     <GroupPreferencesGate summary @saved="load">
     <template #before><GroupNavigation /></template>
 
+    <div class="discovery-context">
     <div class="groups-concert-picker">
       <label>Which concert are you going to?
         <select v-model="concertId" :disabled="busy">
@@ -178,6 +185,8 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
           <option v-for="concert in concerts" :key="concert.id" :value="concert.id">{{ concert.artist }}, {{ concert.event_date }}</option>
         </select>
       </label>
+    </div>
+    <p class="discovery-context__note"><span class="discovery-context__dot" aria-hidden="true" />One concert. Your choice of company.<span>Browse first. Joining always needs the host’s approval.</span></p>
     </div>
 
     <p v-if="error" class="group-error" role="alert">{{ error }} <button type="button" class="btn btn--ghost" :disabled="busy || loading" @click="load">Try again</button></p>
@@ -199,7 +208,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
         <p class="group-muted">{{ originLabels[currentGroup.assignmentOrigin] ?? 'You’re in' }} · {{ currentGroup.remainingCapacity }} {{ currentGroup.remainingCapacity === 1 ? 'spot' : 'spots' }} still open. You can be in one group per concert.</p>
         <div class="group-actions">
           <RouterLink :to="`/groups/${encodeURIComponent(currentGroup.partyId ?? currentGroup.id)}/members`" class="btn btn--primary">See your group</RouterLink>
-          <button type="button" class="btn btn--ghost" @click="router.push({path:'/meetups',query:{partyId:currentGroup.partyId ?? currentGroup.id}})">Plan meetup</button>
+          <button type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: currentGroup.partyId ?? currentGroup.id }))">{{ meetupLabel({ partyId: currentGroup.partyId ?? currentGroup.id }) }}</button>
         </div>
       </section>
 
@@ -229,10 +238,10 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
       </section>
 
       <section class="group-panel group-panel--bare" aria-labelledby="joining-mode-heading">
-        <h2 id="joining-mode-heading">How do you want to find a group?</h2>
+        <div class="discovery-section-heading"><span class="discovery-step mono" aria-hidden="true">01</span><div><p class="group-kicker mono">Your way in</p><h2 id="joining-mode-heading">How do you want to find a group?</h2></div></div>
         <div class="joining-modes" role="group" aria-label="Ways to find a group">
           <article v-for="option in modeOptions" :key="option.mode" class="joining-mode" :class="{ 'joining-mode--selected': displayedMode === option.mode }">
-            <p class="group-kicker mono">{{ option.kicker }}</p>
+            <div class="joining-mode__eyebrow"><p class="group-kicker mono">{{ option.kicker }}</p><span v-if="displayedMode === option.mode" class="joining-mode__selected">{{ modeIsActive ? 'Active method' : 'Viewing' }}</span></div>
             <h3>{{ option.title }}</h3>
             <p>{{ option.description }}</p>
             <button type="button" class="btn" :class="displayedMode === option.mode ? 'btn--primary' : 'btn--ghost'" :aria-pressed="displayedMode === option.mode" :disabled="busy" @click="displayedMode = option.mode; applicationFor = ''">{{ option.action }}</button>
@@ -277,13 +286,14 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
       </section>
       <section v-if="activeProposals.length" aria-label="Your match"><MatchProposalCard v-for="proposal in activeProposals" :key="proposal.id" :proposal="proposal" @updated="load" /></section>
 
-      <section class="card group-panel">
-        <h2>Narrow it down</h2>
+      <section class="card group-panel discovery-search" aria-labelledby="discovery-search-heading">
+        <div class="discovery-section-heading"><span class="discovery-step mono" aria-hidden="true">02</span><div><p class="group-kicker mono">{{ selectedConcert?.artist || 'This concert' }}</p><h2 id="discovery-search-heading">Narrow it down</h2></div></div>
+        <p class="group-muted discovery-search__hint">Start with a name or keyword. Open Filters for seating, arrival, activities and more.</p>
         <fieldset :disabled="busy" class="group-fieldset"><GroupFilters :filters="filters" preferences /></fieldset>
       </section>
 
       <div class="results-heading">
-        <p>{{ total }} {{ total === 1 ? 'group' : 'groups' }} going<span v-if="displayedMode === 'direct' && pendingDirect.length"> · you’ve asked {{ pendingDirect.length }} of {{ pendingLimit }}</span></p>
+        <div class="results-heading__context"><p class="group-kicker mono">{{ modeLabels[displayedMode] }}</p><h2>{{ total }} {{ total === 1 ? 'group' : 'groups' }} going</h2><p class="results-heading__hint">{{ displayedMode === 'direct' ? 'Compare the groups. Ask to join when one feels right.' : 'Mark the groups you like. A proposal still needs both approvals.' }}<span v-if="displayedMode === 'direct' && pendingDirect.length"> · you’ve asked {{ pendingDirect.length }} of {{ pendingLimit }}</span></p></div>
         <div v-if="displayedMode === 'direct'" class="results-layout" role="group" aria-label="How to show groups">
           <button type="button" class="btn" :class="directLayout === 'compare' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="directLayout === 'compare'" :disabled="busy" @click="directLayout = 'compare'; applicationFor = ''">Side by side</button>
           <button type="button" class="btn" :class="directLayout === 'list' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="directLayout === 'list'" :disabled="busy" @click="directLayout = 'list'">See all</button>
@@ -298,7 +308,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
             <button type="button" class="btn btn--ghost" :disabled="busy || !canApply || pendingFor(group.id) || declinedFor(group.id) || !canQueueFor(group) || group.status === 'cancelled'" @click="applicationFor = applicationFor === group.id ? '' : group.id; applicationNote = ''">{{ pendingFor(group.id) ? 'Request sent' : declinedFor(group.id) ? 'Not this time' : !canQueueFor(group) ? 'Group is full' : group.remainingCapacity < 1 ? 'Join the waitlist' : 'Ask to join' }}</button>
             <form v-if="applicationFor === group.id" class="application-form" @submit.prevent="join(group.id)">
               <label>Say hi to the host (optional)<textarea v-model="applicationNote" maxlength="500" rows="3" :disabled="busy" placeholder="e.g. First time seeing them live, keen to grab dinner before!" /></label>
-              <small class="group-muted">{{ applicationNote.length }}/500 · The host will see your public profile and preferences. Requests expire 48 hours after submission, even while waiting in line.</small>
+              <small class="group-muted">{{ applicationNote.length }}/500 · The host will see your public profile and match reasons. Your questionnaire answers stay private. Requests expire 48 hours after submission, even while waiting in line.</small>
               <div class="group-actions">
                 <button class="btn btn--primary" :disabled="busy || !canApply || !canQueueFor(group)">Send request</button>
                 <button type="button" class="btn btn--ghost" :disabled="busy" @click="applicationFor = ''">Cancel</button>
@@ -390,6 +400,69 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
   max-width: 560px;
   width: 100%;
 }
+.discovery-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-lg);
+  background: var(--panel-bg);
+  box-shadow: var(--panel-shadow);
+}
+.discovery-context__note {
+  position: relative;
+  flex: 0 1 24rem;
+  padding-left: var(--space-4);
+  color: var(--text-200);
+  font-size: var(--step--1);
+  font-weight: 700;
+}
+.discovery-context__note span:last-child {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--text-300);
+  font-weight: 400;
+}
+.discovery-context__dot {
+  position: absolute;
+  top: .55em;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-400);
+  box-shadow: 0 0 0 4px var(--accent-glow);
+}
+.discovery-section-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.discovery-section-heading > div {
+  display: grid;
+  gap: var(--space-1);
+}
+.discovery-step {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-sm);
+  background: var(--ink-850);
+  color: var(--accent-400);
+  font-size: var(--step--1);
+  box-shadow: inset 0 1px 0 var(--panel-highlight);
+}
+.discovery-search {
+  border-color: color-mix(in srgb, var(--accent-400) 32%, var(--panel-edge));
+}
+.discovery-search__hint {
+  font-size: var(--step--1);
+}
 .groups-concert-picker label {
   font-size: var(--step-0);
   font-weight: 600;
@@ -434,18 +507,37 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
   align-content: start;
   justify-items: start;
   gap: var(--space-2);
+  position: relative;
   padding: var(--space-5);
   border: var(--border-soft);
   border-radius: var(--radius-lg, var(--radius-md));
-  background: var(--ink-800);
-  transition: border-color var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
+  background: var(--panel-bg);
+  box-shadow: var(--panel-shadow);
+  transition: border-color var(--dur-base) var(--ease-settle), box-shadow var(--dur-base) var(--ease-settle), transform var(--dur-base) var(--ease-settle);
 }
 .joining-mode:hover {
   transform: translateY(-2px);
+  box-shadow: inset 0 1px 0 var(--panel-highlight), var(--shadow-md);
 }
 .joining-mode--selected {
   border-color: var(--accent-400);
-  box-shadow: 0 0 0 1px var(--accent-400) inset;
+  background: linear-gradient(120deg, var(--accent-glow), transparent 65%), var(--panel-bg);
+  box-shadow: inset 3px 0 0 var(--accent-400), var(--panel-shadow);
+}
+.joining-mode__eyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+}
+.joining-mode__selected {
+  padding: .2rem .55rem;
+  border: 1px solid color-mix(in srgb, var(--accent-400) 40%, transparent);
+  border-radius: var(--radius-pill);
+  color: var(--accent-400);
+  font-size: var(--step--2);
+  font-weight: 700;
 }
 .joining-mode h3 {
   font-family: var(--font-display);
@@ -483,6 +575,9 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
   display: grid;
   gap: var(--space-3);
   width: 100%;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--panel-edge);
+  animation: discovery-reveal var(--dur-base) var(--ease-settle) both;
 }
 .application-row {
   display: flex;
@@ -535,23 +630,44 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
   justify-content: space-between;
   flex-wrap: wrap;
   gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-block: 1px solid var(--panel-edge);
 }
-.results-heading p {
-  color: var(--text-100);
-  font-weight: 600;
+.results-heading__context {
+  display: grid;
+  gap: var(--space-1);
+}
+.results-heading__hint {
+  color: var(--text-300);
+  font-size: var(--step--1);
 }
 .results-layout {
   display: inline-flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+  padding: var(--space-1);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-md);
+  background: var(--ink-850);
+  box-shadow: inset 0 1px 3px color-mix(in srgb, var(--text-100) 6%, transparent);
+}
+@keyframes discovery-reveal {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 @media (prefers-reduced-motion: reduce) {
   .joining-mode, .joining-mode:hover {
     transition: none;
     transform: none;
   }
+  .application-form { animation: none; }
 }
 @media (max-width: 600px) {
+  .discovery-context {
+    display: grid;
+    gap: var(--space-3);
+    padding: var(--space-4);
+  }
   .joining-modes {
     grid-template-columns: minmax(0, 1fr);
   }

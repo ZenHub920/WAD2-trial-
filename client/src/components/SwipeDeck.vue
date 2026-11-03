@@ -26,7 +26,7 @@
  * entirely rather than merely shortened.
  */
 
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onBeforeUnmount } from 'vue';
 import { useReducedMotion } from '../composables/useReducedMotion.js';
 import LoadingSpinner from './LoadingSpinner.vue';
 
@@ -63,6 +63,8 @@ const leaving = ref(null); // { direction } while a committed card flies out
 const history = ref([]); // for undo
 const announcement = ref('');
 const pending = ref(false);
+let alive = true, departureTimer, settleDeparture = () => {};
+onBeforeUnmount(() => { alive = false; clearTimeout(departureTimer); settleDeparture(); });
 
 /** Distance past which a release commits, in px. */
 const COMMIT_DISTANCE = 110;
@@ -107,7 +109,7 @@ function topCardStyle() {
       opacity: 0,
       transition: prefersReduced.value
         ? 'none'
-        : 'transform 420ms var(--ease-snap), opacity 320ms linear',
+        : 'transform 200ms var(--ease-snap), opacity 180ms linear',
     };
   }
 
@@ -151,7 +153,7 @@ function stackStyle(offset) {
 // --------------------------------------------------------------- gestures
 
 function onPointerDown(event) {
-  if (leaving.value || pending.value || !current.value) return;
+  if (event.button !== 0 || event.isPrimary === false || drag.value.active || leaving.value || pending.value || !current.value) return;
   // Let interactive children (the open button) handle their own clicks.
   if (event.target.closest('[data-no-drag]')) return;
 
@@ -231,18 +233,20 @@ function commit(direction) {
   pending.value = true;
   emit('pending-change', true);
 
-  if (prefersReduced.value) {
-    void finish(item, direction);
-    return;
-  }
-
-  leaving.value = { direction };
-  window.setTimeout(() => { void finish(item, direction); }, 300);
+  // Start persistence immediately; motion must never postpone the request.
+  const departure = prefersReduced.value ? Promise.resolve() : new Promise(resolve => {
+    leaving.value = { direction };
+    settleDeparture = resolve;
+    departureTimer = window.setTimeout(resolve, 200);
+  });
+  void finish(item, direction, departure);
 }
 
-async function finish(item, direction) {
+async function finish(item, direction, departure) {
   try {
     if (props.commitItem) await props.commitItem(item, direction);
+    await departure;
+    if (!alive) return;
     history.value.push({ item, direction, at: index.value });
     index.value += 1;
     const verb = direction === 'right' ? props.yesPast : props.noPast;
@@ -250,9 +254,13 @@ async function finish(item, direction) {
     emit(direction === 'right' ? 'shortlist' : 'pass', item);
     if (index.value >= props.items.length) emit('exhausted');
   } catch (error) {
+    if (!alive) return;
     announcement.value = `Could not save decision for ${labelFor(item)}. Try again.`;
     emit('commit-error', error);
   } finally {
+    clearTimeout(departureTimer);
+    settleDeparture();
+    if (!alive) return;
     pending.value = false;
     emit('pending-change', false);
     leaving.value = null;
@@ -357,6 +365,7 @@ defineExpose({ undo, remaining });
           }"
           :style="offset === 0 ? { ...topCardStyle(), zIndex: 110 } : stackStyle(offset)"
           :aria-hidden="offset !== 0"
+          :inert="offset !== 0"
           @pointerdown="offset === 0 && onPointerDown($event)"
           @pointermove="offset === 0 && onPointerMove($event)"
           @pointerup="offset === 0 && onPointerUp($event)"
@@ -426,6 +435,7 @@ defineExpose({ undo, remaining });
         @click="commit('left')"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        <span>{{ noLabel }}</span>
       </button>
       <button
         class="circle circle--undo"
@@ -437,6 +447,7 @@ defineExpose({ undo, remaining });
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M3 10h11a5 5 0 010 10H9M3 10l5-5M3 10l5 5" />
         </svg>
+        <span>Undo</span>
       </button>
       <button
         class="circle circle--yes"
@@ -446,6 +457,7 @@ defineExpose({ undo, remaining });
         @click="commit('right')"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" /></svg>
+        <span>{{ yesLabel }}</span>
       </button>
     </div>
     <p v-if="pending" class="loading-state" role="status"><LoadingSpinner />Saving decision…</p>
@@ -498,7 +510,7 @@ defineExpose({ undo, remaining });
 .deck__stage {
   position: relative;
   /* The top card sets the height so longer profile text is not clipped. */
-  min-height: 33rem;
+  min-height: 29rem;
   border-radius: var(--radius-xl);
   outline: none;
 }
@@ -531,7 +543,7 @@ defineExpose({ undo, remaining });
   cursor: grab;
   position: relative;
   inset: auto;
-  min-height: 33rem;
+  min-height: 29rem;
   box-shadow: var(--shadow-lg);
 }
 
@@ -672,10 +684,12 @@ defineExpose({ undo, remaining });
 .circle {
   display: grid;
   place-items: center;
+  align-content: center;
+  gap: 2px;
   width: 3.5rem;
   height: 3.5rem;
   border-radius: 50%;
-  border: 1px solid var(--ink-600);
+  border: var(--control-border, var(--border-soft));
   background: var(--ink-800);
   color: var(--text-200);
   cursor: pointer;
@@ -685,6 +699,7 @@ defineExpose({ undo, remaining });
     border-color var(--dur-fast) var(--ease-glide),
     box-shadow var(--dur-base) var(--ease-glide);
 }
+.circle > span { font-size: .65rem; line-height: 1; font-weight: 700; }
 
 .circle svg {
   width: 1.5rem;
@@ -708,11 +723,11 @@ defineExpose({ undo, remaining });
 }
 
 .circle:hover:not(:disabled) {
-  transform: translateY(-2px) scale(1.06);
+  transform: translateY(-1px);
 }
 
 .circle:active:not(:disabled) {
-  transform: translateY(0) scale(0.94);
+  transform: translateY(1px) scale(0.98);
 }
 
 .circle--no:hover:not(:disabled) {
@@ -733,7 +748,7 @@ defineExpose({ undo, remaining });
 }
 
 .circle:focus-visible {
-  outline: 2px solid var(--accent-500);
+  outline: 2px solid var(--focus-ring, var(--accent-400));
   outline-offset: 3px;
 }
 
@@ -766,13 +781,12 @@ defineExpose({ undo, remaining });
 }
 
 @media (max-width: 560px) {
-  /* Only slightly shorter than desktop. Cutting this down to fit more of the
-     page on screen crops the radar, and a clipped chart reads as a bug. */
+  /* Content can still grow; the minimum leaves room for explicit actions. */
   .deck__stage {
-    min-height: 31rem;
+    min-height: 28rem;
   }
   .deck__card--top {
-    min-height: 31rem;
+    min-height: 28rem;
   }
 
   .deck__card {

@@ -208,20 +208,50 @@ export function validateAnswers(input) {
   output.dealbreakers = validateDealbreakers(input.dealbreakers, output.avoid);
   return output;
 }
-export function aggregateAnswers(answers) {
+export function aggregateAnswers(answers, { memberCount = answers.length } = {}) {
   const normalized = answers.map(withoutRetired);
+  const total = Math.max(answers.length, memberCount);
+  const answered = normalized.filter((a) =>
+    ["about", "wants", "avoid", "quiz"].some((intent) => Array.isArray(a[intent]) && a[intent].length),
+  ).length;
   const profile = {
     about: {},
     wants: {},
     avoid: {},
-    respondents: answers.length,
+    respondents: answered,
+    coverage: { answered, total, ratio: total ? answered / total : 0, complete: total > 0 && answered === total },
+    representativeWants: [],
   };
-  for (const a of normalized)
-    for (const intent of ["about", "wants", "avoid"])
-      for (const item of a[intent] ?? []) {
-        profile[intent][item.key] =
-          (profile[intent][item.key] ?? 0) + 1 / answers.length;
+  const votes = new Map();
+  const labels = new Map();
+  for (const a of normalized) {
+    // A duplicated or stale saved key must never count as multiple members.
+    for (const intent of ["about", "wants", "avoid"]) {
+      const seen = new Set();
+      for (const item of Array.isArray(a[intent]) ? a[intent] : []) {
+        const key = item?.key;
+        if (typeof key !== "string" || !key || seen.has(key)) continue;
+        seen.add(key);
+        if (intent === "wants") {
+          votes.set(key, (votes.get(key) ?? 0) + 1);
+          const label = CONCEPTS.find((c) => c.id === key)?.label ?? (key.startsWith("custom:") ? key.slice(7) : key);
+          labels.set(key, label);
+        } else profile[intent][key] = (profile[intent][key] ?? 0) + 1 / total;
       }
+    }
+  }
+  for (const [key, count] of votes) {
+    // Every active member gets one vote. Silence is never a group vote.
+    profile.wants[key] = count / total;
+    if (count > total / 2) profile.representativeWants.push({
+      key, label: labels.get(key), support: count / total,
+      weight: profile.wants[key],
+    });
+  }
+  profile.representativeWants.sort((a, b) =>
+    b.weight - a.weight || b.support - a.support || a.key.localeCompare(b.key),
+  );
+  profile.representativeWants = profile.representativeWants.slice(0, 3);
   const traits = averageTraits(normalized.map((a) => a.traits));
   if (Object.keys(traits).length) profile.traits = traits;
   // A group is only as accepting as its least accepting member, so one
@@ -233,6 +263,12 @@ export function aggregateAnswers(answers) {
   return profile;
 }
 export const individualProfile = (answers) => aggregateAnswers([answers]);
+
+/** Public group cards describe consensus, never the members' answer sheets. */
+export const groupPreferenceSummary = ({ coverage, representativeWants }) => ({
+  coverage,
+  representativeWants,
+});
 
 /**
  * How much of a comparison the concept lists carry once a quiz exists.

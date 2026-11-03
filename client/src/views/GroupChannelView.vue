@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api.js';
+import MeetupEntryCard from '../components/MeetupEntryCard.vue';
 import { fetchChatUpdates } from '../chatPages.js';
 import { onChatEvent, refreshUnread } from '../chatLive.js';
 import { currentUser } from '../auth.js';
@@ -190,13 +191,14 @@ onUnmounted(() => stopListening?.());
           </div>
         </div>
         <div class="channel__tools">
-          <button type="button" class="btn btn--primary" @click="router.push({ path: '/meetups', query: { partyId: id } })">Plan meetup</button>
           <button type="button" class="btn btn--ghost" :aria-expanded="showMembers" @click="showMembers = !showMembers">
             Members
           </button>
           <button v-if="!isHost" type="button" class="btn btn--ghost" @click="confirmingLeave = true">Leave</button>
         </div>
       </header>
+
+      <MeetupEntryCard :scope="{ partyId: id }" label="Meetup planner for this group" />
 
       <p v-if="actionError" class="notice notice--error" role="alert">{{ actionError }}</p>
 
@@ -205,7 +207,7 @@ onUnmounted(() => stopListening?.());
         <ul class="members__list">
           <li v-for="person in channel.members" :key="person.id">
             <UserAvatar :src="person.avatarUrl" :name="person.displayName" :size="32" />
-            <span>{{ person.displayName }}</span>
+            <RouterLink :to="`/people/${encodeURIComponent(person.id)}`" :aria-label="`View ${person.displayName}'s concert vibe`">{{ person.displayName }}</RouterLink>
             <span v-if="person.isHost" class="members__tag">Host</span>
           </li>
         </ul>
@@ -401,9 +403,9 @@ onUnmounted(() => stopListening?.());
   min-width: 0;
 }
 .msg--mine .msg__body {
-  background: var(--accent-500);
-  border-color: var(--accent-500);
-  color: #fff;
+  background: var(--action-start);
+  border-color: var(--action-start);
+  color: var(--on-action);
 }
 .msg__who {
   font-size: var(--step--2);
@@ -427,7 +429,7 @@ onUnmounted(() => stopListening?.());
   color: var(--text-400);
 }
 .msg--mine .msg__time {
-  color: rgba(255, 255, 255, .75);
+  color: var(--on-action);
   justify-content: flex-end;
 }
 .msg__delete {

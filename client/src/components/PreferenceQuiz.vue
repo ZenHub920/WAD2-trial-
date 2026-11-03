@@ -127,7 +127,8 @@ defineExpose({ answers });
   padding: var(--space-4);
   border: var(--border-soft);
   border-radius: var(--radius-md);
-  background: var(--ink-850);
+  background: linear-gradient(160deg, var(--panel-bg), var(--ink-900));
+  box-shadow: var(--panel-shadow);
 }
 .quiz__head {
   display: flex;
@@ -147,9 +148,14 @@ defineExpose({ answers });
 .quiz__count {
   margin: 0;
   flex: none;
-  color: var(--text-300);
   font-size: var(--step--1);
   font-variant-numeric: tabular-nums;
+  padding:var(--space-1) var(--space-3);
+  border:var(--border-hairline);
+  border-radius:var(--radius-pill);
+  background:var(--ink-800);
+  color:var(--accent-400);
+  font-family:var(--font-mono);
 }
 .quiz__error {
   color: var(--text-200);
@@ -169,7 +175,7 @@ defineExpose({ answers });
    against the card it sits on, or the deck looks three cards long. */
 .quiz__pip {
   width: 100%;
-  height: 4px;
+  height: 5px;
   border-radius: var(--radius-pill);
   background: var(--ink-600);
   transition: background-color var(--dur-fast);
@@ -179,6 +185,7 @@ defineExpose({ answers });
 }
 .quiz__pip--here {
   background: var(--accent-400);
+  box-shadow:0 0 0 2px var(--focus-halo);
 }
 
 .quiz__card {
@@ -191,6 +198,7 @@ defineExpose({ answers });
   line-height: 1.35;
   font-weight: 600;
   color: var(--text-100);
+  max-width:34ch;
 }
 .quiz__hint {
   margin: 0;
@@ -202,27 +210,36 @@ defineExpose({ answers });
   gap: var(--space-2);
 }
 .quiz__option {
+  position:relative;
   text-align: left;
   min-height: 52px;
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-3) 3.2rem var(--space-3) var(--space-4);
   border: var(--border-soft);
   border-radius: var(--radius-sm);
   background: var(--ink-800);
   color: var(--text-200);
   font: inherit;
   cursor: pointer;
-  transition: background-color var(--dur-fast), border-color var(--dur-fast), transform var(--dur-fast);
+  box-shadow:inset 0 1px 0 var(--panel-highlight),var(--shadow-sm);
+  transition: background-color var(--dur-fast), border-color var(--dur-fast), transform var(--dur-fast) var(--ease-settle),box-shadow var(--dur-fast);
 }
+.quiz__option::before { content:''; position:absolute; right:var(--space-4); top:50%; transform:translateY(-50%); width:19px; height:19px; border:1px solid var(--ink-500); border-radius:50%; background:var(--ink-900); transition:border-color var(--dur-fast),background-color var(--dur-fast); }
 .quiz__option:hover:not(:disabled) {
   border-color: var(--mint-400);
   transform: translateX(2px);
+  box-shadow:var(--panel-shadow),var(--shadow-md);
 }
+.quiz__option:active:not(:disabled) { transform:translateX(1px) translateY(1px); box-shadow:inset 0 2px 5px color-mix(in oklab,var(--accent-600) 12%,transparent); }
+.quiz__option:focus-visible { outline:2px solid var(--accent-400); outline-offset:3px; }
 .quiz__option[aria-pressed='true'] {
   border-color: var(--mint-500);
   background: var(--mint-500);
   color: #fff;
   font-weight: 600;
+  box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 20%,transparent),0 2px 10px color-mix(in oklab,var(--mint-500) 18%,transparent);
 }
+.quiz__option[aria-pressed='true']::before { border-color:currentColor; background:transparent; }
+.quiz__option[aria-pressed='true']::after { content:''; position:absolute; right:calc(var(--space-4) + 7px); top:calc(50% - 5px); width:5px; height:9px; border:solid currentColor; border-width:0 2px 2px 0; transform:rotate(45deg); }
 :root[data-theme='dark'] .quiz__option[aria-pressed='true'] {
   color: #08070c;
 }
@@ -268,14 +285,17 @@ defineExpose({ answers });
   .quiz-card-enter-from, .quiz-card-leave-to {
     transform: none;
   }
-  .quiz__option:hover:not(:disabled) {
+  .quiz__option:hover:not(:disabled), .quiz__option:active:not(:disabled) {
     transform: none;
   }
+  .quiz__option,.quiz__option::before,.quiz__pip { transition:none; }
 }
 @media (max-width: 600px) {
   .quiz__head {
-    flex-direction: column;
+    gap:var(--space-2);
   }
+  .quiz__head > div { min-width:0; }
+  .quiz__count { padding-inline:var(--space-2); white-space:nowrap; }
   .quiz__foot {
     flex-wrap: wrap;
   }

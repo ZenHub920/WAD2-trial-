@@ -1,9 +1,9 @@
 /**
  * The signed-in user's own group preferences, shared by every group page.
  *
- * Group features stay locked until these exist. Kept in one place so moving
- * between Browse groups, My groups and Manage group does not reload them or
- * flash the locked state.
+ * Profile owns the editor. Group pages read this shared cache without asking
+ * again. Browsing/direct requests stay available; automatic matching and group
+ * publishing retain their existing server-side preference requirements.
  */
 import { computed, ref, watch } from 'vue';
 import { api } from './api.js';

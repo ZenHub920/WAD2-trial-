@@ -35,7 +35,7 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
       <img v-if="image" :src="image" alt="" loading="lazy" @error="broken = true" />
       <span v-else class="spot__initial" aria-hidden="true">{{ concert.artist.charAt(0) }}</span>
       <span class="spot__date-badge mono">{{ formatShortDate(concert.event_date) }}</span>
-      <span v-if="busy" class="spot__live">Active</span>
+      <span v-if="busy" class="spot__live">Fans looking</span>
     </div>
 
     <div class="spot__body">
@@ -54,6 +54,7 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
       </p>
 
       <div class="spot__activity">
+        <p class="spot__section-label">Find your company</p>
         <p v-if="activityLoading"><LoadingSpinner /> Loading group activity…</p>
         <template v-else>
           <p :class="{ 'spot__stat--on': openSlots }">{{ openSlots === null ? 'Group spots unavailable' : openSlots === 0 ? 'No open spots in groups' : `${openSlots} open ${openSlots === 1 ? 'spot' : 'spots'} in groups` }}</p>
@@ -61,15 +62,8 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
         </template>
       </div>
 
-      <a
-        v-if="concert.official_url"
-        :href="concert.official_url"
-        class="spot__official"
-        target="_blank"
-        rel="noopener noreferrer"
-      >Buy on Ticketmaster ↗</a>
-
-      <footer class="spot__foot">
+      <div class="spot__tickets">
+        <p class="spot__section-label">Tickets</p>
         <span v-if="ticketsLoading" class="spot__resale"><LoadingSpinner /> Loading tickets…</span>
         <span v-else-if="ticketCount" class="spot__resale">
           <MarketIcon name="ticket" :size="15" />
@@ -77,6 +71,17 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
         </span>
         <span v-else-if="ticketCount === 0" class="spot__resale spot__resale--none">No fan-listed tickets</span>
         <span v-else class="spot__resale spot__resale--none">Fan-listed tickets unavailable</span>
+        <a
+          v-if="concert.official_url"
+          :href="concert.official_url"
+          class="spot__official"
+          target="_blank"
+          rel="noopener noreferrer"
+        >Buy on Ticketmaster ↗</a>
+      </div>
+
+      <footer class="spot__foot">
+        <span class="spot__next">Details, groups & tickets</span>
         <RouterLink :to="`/concerts/${concert.id}`" class="spot__see">
           View concert
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
@@ -95,10 +100,10 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
   min-width: 0;
   overflow: hidden;
   overflow-wrap: anywhere;
-  border: var(--border-hairline);
+  border: 1px solid var(--panel-edge);
   border-radius: var(--radius-lg);
-  background: var(--ink-800);
-  box-shadow: var(--shadow-sm);
+  background: var(--panel-bg);
+  box-shadow: var(--panel-shadow);
   transition:
     transform var(--dur-base) var(--ease-out),
     box-shadow var(--dur-base) var(--ease-out),
@@ -107,9 +112,9 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
 
 .spot:hover,
 .spot:focus-within {
-  transform: translateY(-6px);
-  border-color: var(--accent-400);
-  box-shadow: 0 24px 44px -22px var(--accent-400);
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--accent-400) 65%, var(--panel-edge));
+  box-shadow: inset 0 1px 0 var(--panel-highlight), var(--shadow-md), 0 0 0 1px var(--accent-glow);
 }
 
 /* ---------------------------------------------------------------- Poster -- */
@@ -133,7 +138,7 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
 }
 
 .spot:hover .spot__poster img {
-  transform: scale(1.08);
+  transform: scale(1.035);
 }
 
 .spot__initial {
@@ -158,8 +163,11 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
 
 .spot__date-badge {
   left: var(--space-3);
-  background: rgba(255, 255, 255, 0.92);
-  color: var(--accent-600);
+  border: 1px solid var(--panel-edge);
+  background: color-mix(in srgb, var(--ink-800) 94%, transparent);
+  color: var(--text-100);
+  box-shadow: inset 0 1px 0 var(--panel-highlight), var(--shadow-sm);
+  backdrop-filter: blur(8px);
 }
 
 .spot__live {
@@ -178,16 +186,7 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
   height: 7px;
   border-radius: 50%;
   background: #e69ddb;
-  animation: ping 1.8s var(--ease-out) infinite;
-}
-
-@keyframes ping {
-  0% {
-    box-shadow: 0 0 0 0 rgba(230, 157, 219, 0.7);
-  }
-  100% {
-    box-shadow: 0 0 0 8px transparent;
-  }
+  box-shadow: 0 0 0 3px rgba(230, 157, 219, .15);
 }
 
 /* ------------------------------------------------------------------ Body -- */
@@ -216,6 +215,10 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
 }
 .spot__link:focus-visible {
   outline: none;
+}
+.spot:has(.spot__link:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
 }
 
 /* The card's hit area. Sits under the footer button, which is raised. */
@@ -254,16 +257,32 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
   display: grid;
   gap: var(--space-1);
   margin-block: var(--space-2);
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--ink-750);
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid color-mix(in srgb, var(--accent-400) 45%, var(--panel-edge));
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: linear-gradient(90deg, var(--accent-glow), transparent);
   color: var(--text-400);
   font-size: var(--step--1);
 }
 
 .spot__stat--on {
-  color: var(--accent-500);
+  color: var(--accent-400);
   font-weight: 700;
+}
+.spot__section-label {
+  margin: 0 0 var(--space-1);
+  color: var(--text-300);
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.spot__tickets {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
 }
 
 .spot__official {
@@ -273,6 +292,12 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
   color: var(--accent-400);
   font-size: var(--step--1);
   font-weight: 600;
+  text-underline-offset: 3px;
+}
+.spot__official:focus-visible,
+.spot__see:focus-visible {
+  outline: 2px solid var(--accent-400);
+  outline-offset: 3px;
 }
 
 .spot__foot {
@@ -290,8 +315,6 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  /* Matches the button's height so footers line up across the row. */
-  min-height: 34px;
   min-width: 0;
   color: var(--text-200);
   font-size: var(--step--2);
@@ -300,6 +323,10 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
 
 .spot__resale--none {
   color: var(--text-400);
+}
+.spot__next {
+  color: var(--text-400);
+  font-size: var(--step--2);
 }
 
 .spot__see {
@@ -311,14 +338,16 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
   gap: var(--space-1);
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-pill);
-  background: var(--accent-500);
-  color: #fff;
+  min-height: 44px;
+  background: var(--action-start);
+  color: var(--on-action);
   font-size: var(--step--2);
   font-weight: 700;
   text-decoration: none;
   transition:
     background var(--dur-fast) var(--ease-out),
-    box-shadow var(--dur-base) var(--ease-out);
+    box-shadow var(--dur-base) var(--ease-out),
+    transform var(--dur-fast) var(--ease-settle);
 }
 
 .spot__see svg {
@@ -328,12 +357,17 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
 }
 
 .spot__see:hover {
-  background: var(--accent-400);
+  background: var(--action-hover);
+  color: var(--on-action);
   box-shadow: 0 8px 20px -8px var(--accent-400);
 }
 
 .spot:hover .spot__see svg {
   transform: translateX(3px);
+}
+.spot__see:active {
+  transform: translateY(1px) scale(.98);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, .15);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -341,5 +375,8 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
   .spot:focus-within {
     transform: none;
   }
+  .spot, .spot__poster img, .spot__see, .spot__see svg { transition: none; }
+  .spot:hover .spot__poster img, .spot:hover .spot__see svg { transform: none; }
+  .spot__see:active { transform: none; }
 }
 </style>

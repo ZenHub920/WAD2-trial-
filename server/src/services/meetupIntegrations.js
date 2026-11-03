@@ -1,5 +1,5 @@
 import { communityError } from '../db/membershipRepository.js';
-import { rankMeetupOptions, SLOT_MS } from './meetupPlanning.js';
+import { compareMeetupOptions, rankMeetupOptions, SLOT_MS } from './meetupPlanning.js';
 import { createSingaporeTravel } from './singaporeTravel.js';
 import { createMeetupWeather } from './meetupWeather.js';
 import { singaporeCoordinates } from './providerCache.js';
@@ -71,7 +71,7 @@ export function createMeetupIntegrations({ db, repos, fetchImpl = globalThis.fet
       // Compare travel durations only when the entire shortlist has a complete matrix.
       // Partial provider availability must never make an unknown journey look shorter.
       const routeRanking = options.length > 0 && options.every((o) => o.basis === 'route_times' && o.missingLocationCount === 0);
-      options.sort((a, b) => b.availableCount - a.availableCount || (routeRanking ? a.totalTravelMinutes - b.totalTravelMinutes || a.maximumTravelMinutes - b.maximumTravelMinutes : (a.totalDistanceKm ?? Infinity) - (b.totalDistanceKm ?? Infinity) || (a.maximumDistanceKm ?? Infinity) - (b.maximumDistanceKm ?? Infinity)) || b.votes - a.votes || a.startsAt - b.startsAt || a.placeId.localeCompare(b.placeId));
+      options.sort((a, b) => compareMeetupOptions(a, b, { routeTimes: routeRanking }));
       return { status: 'available', version: input.version, rankingBasis: routeRanking ? 'route_times' : 'straight_line_distance', options, shortlistedPlaces: placeIds.length, routesRequested: jobIndex, message: routeRanking ? 'Ranked by attendance, combined journey time, then the longest journey, using each person’s saved car or public-transport method. Transit schedules use a fixed departure one hour before the meeting for comparison; driving estimates do not predict future traffic. Confirm the actual journey nearer the day.' : 'Ranked by attendance and straight-line distance. Complete fresh routes were unavailable for every shortlisted option; any route times shown are supplementary estimates. Add more places to compare alternatives.' };
     },
     async transport(user, id, options = {}) {

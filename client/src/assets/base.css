@@ -37,29 +37,29 @@ html {
    "backwards" fill leaves no transform behind once it has played, so sticky
    bars and v-reveal elements behave normally afterwards. */
 .main--animated :is(.container, .container--wide) > :not(.reveal, .page-banner) {
-  animation: page-rise var(--dur-slower) var(--ease-settle) backwards;
+  animation: page-rise var(--dur-slow) var(--ease-settle) backwards;
 }
 
 .main--animated :is(.container, .container--wide) > :nth-child(2) {
-  animation-delay: 60ms;
+  animation-delay: var(--stagger);
 }
 .main--animated :is(.container, .container--wide) > :nth-child(3) {
-  animation-delay: 120ms;
+  animation-delay: calc(var(--stagger) * 2);
 }
 .main--animated :is(.container, .container--wide) > :nth-child(4) {
-  animation-delay: 180ms;
+  animation-delay: calc(var(--stagger) * 3);
 }
 .main--animated :is(.container, .container--wide) > :nth-child(5) {
-  animation-delay: 240ms;
+  animation-delay: calc(var(--stagger) * 4);
 }
 .main--animated :is(.container, .container--wide) > :nth-child(n + 6) {
-  animation-delay: 300ms;
+  animation-delay: calc(var(--stagger) * 5);
 }
 
 @keyframes page-rise {
   from {
     opacity: 0;
-    transform: translateY(18px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
@@ -83,13 +83,14 @@ html {
   }
 }
 
-/* Section titles get a short gradient underline, like the home page accents. */
-.main--animated :is(h2):not(.sr-only, .page-banner h2) {
+/* Reserve accent rules for explicit section anchors, rather than decorating
+   every heading inside a working panel. Home owns its separate opening motion. */
+.main--animated :is(.section-head, .section-heading) > h2 {
   position: relative;
   padding-bottom: 0.35em;
 }
 
-.main--animated :is(h2):not(.sr-only, .page-banner h2)::after {
+.main--animated :is(.section-head, .section-heading) > h2::after {
   content: '';
   position: absolute;
   left: 0;
@@ -188,10 +189,10 @@ input[type='checkbox'] {
   margin: 0;
   padding: 0;
   vertical-align: middle;
-  border: 1.5px solid var(--ink-500);
+  border: 1.5px solid var(--control-edge);
   border-radius: 5px;
   background: var(--ink-800);
-  color: #fff;
+  color: var(--on-action);
   cursor: pointer;
   transition: background-color var(--dur-fast), border-color var(--dur-fast);
 }
@@ -206,8 +207,8 @@ input[type='checkbox']::before {
 }
 input[type='checkbox']:checked,
 input[type='checkbox']:indeterminate {
-  background: var(--accent-500);
-  border-color: var(--accent-500);
+  background: var(--action-start);
+  border-color: var(--action-start);
 }
 input[type='checkbox']:checked::before {
   opacity: 1;
@@ -232,7 +233,7 @@ select {
   width: 100%;
   min-height: 44px;
   padding: var(--space-3) 2.75rem var(--space-3) var(--space-3);
-  border: var(--border-soft);
+  border: var(--control-border);
   border-radius: var(--radius-md);
   background-color: var(--field-bg);
   color: var(--text-100);
@@ -257,6 +258,7 @@ select:hover:not(:disabled) {
 }
 select:focus-visible {
   border-color: var(--accent-400);
+  box-shadow: 0 0 0 4px var(--focus-halo);
 }
 select:disabled {
   opacity: 0.55;
@@ -346,7 +348,7 @@ code, pre, .mono {
    --------------------------------------------------------------------------- */
 
 :focus-visible {
-  outline: 2px solid var(--accent-400);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
   border-radius: var(--radius-sm);
 }
@@ -357,8 +359,8 @@ code, pre, .mono {
   left: var(--space-2);
   z-index: 200;
   padding: var(--space-2) var(--space-4);
-  background: var(--accent-500);
-  color: #fff;
+  background: var(--action-start);
+  color: var(--on-action);
   border-radius: var(--radius-md);
   transform: translateY(-200%);
   transition: transform var(--dur-base) var(--ease-out);
@@ -412,16 +414,14 @@ code, pre, .mono {
   color: var(--text-300);
 }
 
-/* Cards are frosted glass, so the page's drifting colour glows through them. */
+/* Panels carry a restrained edge and elevation; text stays on a legible surface. */
 .card {
-  background: color-mix(in srgb, var(--ink-800) 78%, transparent);
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  background: var(--panel-bg);
   min-width: 0;
-  border: var(--border-hairline);
+  border: 1px solid var(--panel-edge);
   border-radius: var(--radius-lg);
   padding: var(--space-5);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--panel-shadow);
   transition:
     border-color var(--dur-base) var(--ease-out),
     background var(--dur-base) var(--ease-out),
@@ -429,11 +429,15 @@ code, pre, .mono {
     transform var(--dur-base) var(--ease-out);
 }
 
-/* Clickable cards lift and pick up a purple glow, matching the home page. */
-.card--interactive:hover {
+.main--animated .card:focus-within {
+  border-color: color-mix(in srgb, var(--accent-400) 48%, var(--panel-edge));
+}
+
+/* Only interactive cards respond; static working panels keep their footing. */
+.card--interactive:is(:hover, :focus-visible) {
   border-color: var(--accent-400);
-  box-shadow: 0 22px 44px -24px var(--accent-400);
-  transform: translateY(-4px);
+  box-shadow: inset 0 1px 0 var(--panel-highlight), var(--shadow-md);
+  transform: translateY(-2px);
 }
 
 .btn {
@@ -460,77 +464,76 @@ code, pre, .mono {
     box-shadow var(--dur-base) var(--ease-out);
 }
 
-.btn:active {
-  transform: translateY(1px);
-}
-
 /* Primary buttons carry a gradient that slides on hover, plus a soft glow. */
 .btn--primary {
-  background: linear-gradient(120deg, var(--accent-500), var(--accent-400) 55%, var(--mint-400));
+  background: linear-gradient(120deg, var(--action-start), var(--action-end));
   background-size: 180% 100%;
   background-position: 0 0;
-  color: #fff;
-  box-shadow: 0 8px 22px -10px var(--accent-400);
+  color: var(--on-action);
+  box-shadow: inset 0 1px 0 #ffffff28, inset 0 -1px 0 #00000024,
+    0 8px 22px -10px var(--accent-400);
   transition:
-    background-position var(--dur-slow) var(--ease-out),
+    background-position var(--dur-panel) var(--ease-out),
     color var(--dur-fast) var(--ease-out),
-    transform var(--dur-base) var(--ease-spring),
+    transform var(--dur-fast) var(--ease-settle),
     box-shadow var(--dur-base) var(--ease-out);
 }
 
 .btn--primary:hover:not(:disabled) {
   background-position: 100% 0;
-  color: #fff;
-  box-shadow: 0 12px 28px -10px var(--accent-400);
+  color: var(--on-action);
+  box-shadow: inset 0 1px 0 #ffffff28, inset 0 -1px 0 #00000024,
+    0 12px 28px -10px var(--accent-400);
   transform: translateY(-1px);
 }
 
 .btn--ghost {
-  background: transparent;
+  background: color-mix(in srgb, var(--panel-bg) 35%, transparent);
   color: var(--text-200);
-  border: var(--border-soft);
+  border: var(--control-border);
+  box-shadow: inset 0 1px 0 var(--panel-highlight);
 }
 
 .btn--ghost:hover:not(:disabled) {
   background: var(--accent-glow);
   border-color: var(--accent-400);
-  color: var(--accent-500);
+  color: var(--accent-400);
 }
 
-/* Intent colours. Green says yes, red changes or removes something.
+/* Intent colours. A positive action confirms; red changes or removes something.
    --danger is for actions that end something for other people too (cancel a
    group, cancel a meetup); --danger-ghost for lighter ones (decline,
    withdraw, leave, remove). A "Cancel" that only closes a form stays ghost. */
 .btn--success {
-  background: var(--mint-500);
-  color: #fff;
+  background: var(--success-fill);
+  color: var(--on-action);
 }
 
 .btn--success:hover:not(:disabled) {
-  background: var(--mint-400);
-  color: #fff;
+  background: var(--success-hover);
+  color: var(--on-action);
 }
 
 .btn--danger {
-  background: var(--rose-500);
-  color: #fff;
+  background: var(--danger-fill);
+  color: var(--on-action);
 }
 
 .btn--danger:hover:not(:disabled) {
-  background: var(--rose-400);
-  color: #fff;
+  background: var(--danger-hover);
+  color: var(--on-action);
 }
 
 .btn--danger-ghost {
   background: transparent;
-  color: var(--rose-500);
+  color: var(--status-danger);
   border: 1px solid color-mix(in oklab, var(--rose-400) 55%, transparent);
 }
 
 .btn--danger-ghost:hover:not(:disabled) {
   background: color-mix(in oklab, var(--rose-400) 10%, transparent);
   border-color: var(--rose-400);
-  color: var(--rose-500);
+  color: var(--status-danger);
 }
 
 :root[data-theme='dark'] .btn--danger-ghost,
@@ -561,6 +564,21 @@ code, pre, .mono {
   background: rgba(255, 255, 255, 0.12);
   border-color: #fff;
   color: #fff;
+}
+
+/* Press wins over hover so a primary action feels pressed while held. Keep
+   this local to buttons: swipe cards and home-page transforms own their motion. */
+.btn:active:not(:disabled) {
+  transform: translateY(1px) scale(0.985);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.12);
+  transition-duration: var(--dur-press);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn:active:not(:disabled), .btn--primary:hover:not(:disabled),
+  .btn--light:hover:not(:disabled), .card--interactive:is(:hover, :focus-visible) {
+    transform: none;
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -657,10 +675,15 @@ code, pre, .mono {
 }
 
 .btn:disabled {
-  opacity: 0.45;
+  opacity: 1;
+  background: var(--ink-700);
+  color: var(--text-400);
+  border: 1px solid var(--ink-500);
+  box-shadow: none;
   cursor: not-allowed;
   transform: none;
 }
+.btn[aria-busy='true'] { cursor: progress; }
 
 /* A horizontal bar for a 0–1 proportion. Shared, because both the stacked
    listing and the swipe card show reliability and they must agree. */
@@ -692,13 +715,15 @@ code, pre, .mono {
   font-size: var(--step--2);
   font-weight: 500;
   color: var(--text-300);
-  white-space: nowrap;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .tag--accent {
   background: color-mix(in oklab, var(--accent-500) 16%, transparent);
   border-color: color-mix(in oklab, var(--accent-500) 32%, transparent);
-  color: var(--accent-400);
+  color: var(--accent-500);
 }
 
 :root[data-theme='dark'] .tag--accent {
@@ -708,25 +733,25 @@ code, pre, .mono {
 .tag--mint {
   background: color-mix(in oklab, var(--mint-400) 15%, transparent);
   border-color: color-mix(in oklab, var(--mint-400) 30%, transparent);
-  color: var(--mint-400);
+  color: var(--status-positive);
 }
 
 .tag--rose {
   background: color-mix(in oklab, var(--rose-400) 15%, transparent);
   border-color: color-mix(in oklab, var(--rose-400) 30%, transparent);
-  color: var(--rose-400);
+  color: var(--status-danger);
 }
 
 .tag--cyan {
   background: color-mix(in oklab, var(--cyan-400) 15%, transparent);
   border-color: color-mix(in oklab, var(--cyan-400) 30%, transparent);
-  color: var(--cyan-400);
+  color: var(--status-info);
 }
 
 .tag--amber {
   background: color-mix(in oklab, var(--amber-400) 15%, transparent);
   border-color: color-mix(in oklab, var(--amber-400) 30%, transparent);
-  color: var(--amber-400);
+  color: var(--status-warning);
 }
 
 /* A hairline rule that fades at both ends — used between major sections. */

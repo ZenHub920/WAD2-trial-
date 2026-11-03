@@ -266,7 +266,7 @@ test("host approval creates membership once and notification APIs remain recipie
   );
 });
 test("meetup HTTP flow keeps locations private, rejects stale revisions and supports discussion", async () => {
-  const r = await api("/meetups", "friend", "POST", {
+  const r = await api("/meetups", "host", "POST", {
     partyId: party,
     title: "Meet at MRT",
     startsAt: "2030-12-01T10:00:00+08:00",
@@ -299,7 +299,7 @@ test("meetup HTTP flow keeps locations private, rejects stale revisions and supp
   const detail = (await api(`/meetups/${meetup}`, "host")).body.meetup;
   assert.equal(detail.availability.length, 0);
   assert.equal(detail.grid[0].availableCount, 1);
-  const plan = await api(`/meetups/${meetup}/propose`, "friend", "POST", {
+  const plan = await api(`/meetups/${meetup}/propose`, "host", "POST", {
     version: detail.version,
     placeId: p.body.place.id,
     startsAt: "2030-12-01T10:00:00+08:00",
@@ -411,7 +411,7 @@ test("meetup HTTP validation returns client errors and weather rechecks current 
   assert.equal(availability.status, 400);
   assert.equal(availability.body.error, "invalid_availability");
   assert.equal((await api(`/meetups/${meetup}/vote`, "friend", "PUT", {})).status, 404);
-  const proposal = await api(`/meetups/${meetup}/propose`, "friend", "POST", {
+  const proposal = await api(`/meetups/${meetup}/propose`, "host", "POST", {
     version: before.version, startsAt: "2030-12-01T10:00:00+08:00",
   });
   assert.equal(proposal.status, 400);

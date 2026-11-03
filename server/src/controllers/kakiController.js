@@ -53,7 +53,13 @@ export function createKakiController(repos) {
         req.user.id,
         (userId) => repos.users.groupAnswers(userId),
       );
-      res.json({ ...result, people: result.people.map(publicPerson) });
+      res.json({
+        ...result,
+        // The solver keeps the precise veto internally. A public deck must
+        // not disclose which private answer made another person decline it.
+        vetoed: result.vetoed.map(({ id, userId }) => ({ id, userId, reason: 'preferences_incompatible' })),
+        people: result.people.map(publicPerson),
+      });
     },
     decisions(req, res) {
       const people = repos.kaki.people(req.user.id);

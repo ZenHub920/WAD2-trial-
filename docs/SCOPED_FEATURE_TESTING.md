@@ -1,5 +1,37 @@
 # Scoped refactoring and feature testing
 
+## Navigation and group workspaces — 3 November 2026
+
+Concert browsing now distinguishes concert details, official purchases and fan inventory, with removable search/date cues and short list transitions. Group workspaces prioritise chat/planning and show clearer request/invitation states. Secondary host settings remain mounted inside native disclosures, reopen on invalid saves and clear only the local validation message after correction. Existing preference fields, routes, pricing, matching, approvals and backend sources are unchanged.
+
+New regression files are `client/tests/confirmation-dialog.test.js`, `navigation-disclosure.test.js` and `group-membership-workspace.test.js`. Their nine cases cover modal focus containment/restoration and busy guards; arrow/Home/End tab navigation; preserved filter values and inert hidden controls; menu focus after Escape/resize; and group validation feedback without clearing API errors. Additional browser previews exercise normal-motion concert filtering, mobile labels, host disclosures, public member links and actual confirmation focus. The group-name label remains stable while its error is supplied separately to assistive technology.
+
+Verification passed **173 Vue tests, all 20 checked-in Chromium workflows and three local visual/interaction previews**, plus the production build. The group preview initially caught the changing accessible name after a validation error; the field label/error association was fixed and that workflow reran successfully. The six affected dialog/group component cases and production build also passed again after the final accessibility fixes. The existing bundle-size warning remains. The preview uses synthetic accounts and controlled external discovery data; no live purchase, real provider credential or production data is involved. Backend sources were unchanged in this UI pass.
+
+## UI, public profiles and private preferences — 2 November 2026
+
+The planner now uses compact half-hour cells and three mounted steps: time, places and review. Optional journeys, weather and parking are disclosed when needed; switching steps preserves drafts and pauses hidden transport polling. A visible **Plan meetup** action beneath each pair, group and connected-group chat header opens the corresponding planner; existing group dashboard actions remain. Public `/people/:id` profiles show public identity details and the existing six self-rated concert interests, never questionnaire answers. Mutual blocks and suspended accounts produce the same unavailable response.
+
+Registration offers a skippable private questionnaire setup in Profile. Existing users edit the same questionnaire there; its fields, options and server question deck are unchanged. Other members cannot read raw answers or dealbreakers. Group concept preferences use equal member votes divided by all active members, with top-three strict-majority labels and answer coverage. Existing quiz scoring is retained: numeric traits average answered dimensions, and categorical traits use the existing plurality and tie rules. Direct discovery, automatic rounds and group connections share this aggregate; individual hard vetoes remain effective.
+
+New regression checks cover public-field allowlists, blocks, private application snapshots, cross-path whole-group ranking, unchanged signup/questionnaire payloads, saved questionnaire progress, compact-grid details, step/draft persistence and hidden transport refresh. The real-browser suite now also demonstrates Kaki mutual likes and registration through private setup.
+
+### Reproducible multi-user demo
+
+From `client`, run `pnpm.cmd demo:matching` after installing dependencies and Chromium as below. To watch the browsers, use `pnpm.cmd exec playwright test --config playwright.demo.config.js --headed`. This records four asserted workflows: Kaki mutual likes, direct seeker joining, an automatic round with both approvals, and connected groups opening their shared room.
+
+Each actor has an isolated browser context and synthetic session, so switching roles never overwrites another actor's login. Clips are stored by actor under ignored `client/test-results/matching-demo`; the report is under `client/playwright-report/matching-demo`. These are raw actor clips for an edited, narrated presentation, not a single polished film. Label roles when combining clips and show the request, receiving decision and persisted outcome in each chapter.
+
+The standalone harness seeds an in-memory database and triggers a real matching round through a local-only test endpoint. It never loads production credentials or real accounts. Provider responses are controlled fixtures; these recordings do not demonstrate live third-party API or OS notification delivery. Never deploy the test harness or use it as production account setup.
+
+Current verification: **382 backend tests, 164 Vue tests and 13 checked-in Chromium workflows passed**, plus a separate real-browser multi-day painting/visual-preview check and the production build. The teammate's newly pulled profile tests are included. Its slider locator now explicitly selects the slider, because the new accessible chart also describes Singalong. Save/reload assertions remain intact. The build retains the existing non-fatal bundle-size warning.
+
+The four recording workflows also passed with normal motion enabled and produced ten non-empty actor clips. Light/dark planner and public-profile captures were reviewed. A configured-private-value scan found no matches in pending files, build output or reachable history. These checks remain bounded to the data and environments described below.
+
+A subsequent presentation pass strengthens discovery context, expands optional Kaki section/age filters on demand, distinguishes public profile controls from private matching answers, and clarifies inbox/unread actions. Native sliders and buttons have pressed/focused feedback; non-home entrances are shorter and accent rules are reserved for section anchors. Home opening transitions, questionnaire wording/fields, API calls, ranking and approvals are unchanged. Existing browser workflows were rerun, including notification read/open actions after preserving the panel's stable accessible name. Fresh synthetic-account snippets cover the chat entry, planner steps/grid, public profile, private questionnaire, inbox and discovery, with a 390-pixel filter layout checked for overflow. Reduced-motion mode disables the added movement and press scaling.
+
+The results below retain the earlier 30 October baseline.
+
 ## Scope and result
 
 Work dated **30 October 2026** covers seeker-to-group joining (direct and automatic), group connections, chats, meeting planning and notifications. Other feature suites were excluded. Login sessions are test setup, not an account-feature test campaign.

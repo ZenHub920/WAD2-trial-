@@ -1,19 +1,7 @@
 /**
- * Design tokens — encore.
- *
- * Everything visual in the app resolves to a value defined here. Components never
- * hard-code a colour, a radius or a spacing step, which is what keeps the interface
- * reading as one system rather than a pile of screens.
- *
- * The palette keeps the encore prototype's lavender and indigo, with
- * slightly deeper surfaces and a restrained purple accent for primary actions.
- * Because every screen already reads from these names, restyling the product is a
- * change of VALUES here rather than a sweep through the views.
- *
- * Token NAMES are deliberately unchanged from the previous palette. `--ink-*` no
- * longer means "dark" — it means "surface, in page-to-card order" — and keeping
- * the names is what lets the existing concerts, rounds and method screens adopt
- * the new look without being touched.
+ * Encore's shared color, type, spacing and motion tokens.
+ * The existing --ink-* names describe page, card and well layers in both themes.
+ * Semantic tokens separate readable action fills from decorative accent hues.
  */
 
 :root {
@@ -48,15 +36,15 @@
 
   /* Data hues for the algorithm views. Darkened from the originals so they
      still pass contrast on a white card rather than glowing on black. */
-  --cyan-400: #0e7fa4;   /* algorithm: proposals, links in data views */
+  --cyan-400: #096c8b;   /* algorithm: proposals, links in data views */
   --cyan-500: #0b6c8c;
-  --amber-400: #a9690a;  /* algorithm: evictions, warnings */
+  --amber-400: #8d5708;  /* algorithm: evictions, warnings */
   --amber-500: #8c5607;
   /* "Mint" is the positive/selected hue. It was green; it is now an orchid
      plum that sits beside the purple accent instead of fighting it. */
   --mint-400: #9c3d8f;   /* algorithm: accepted, stable */
   --mint-500: #82307a;
-  --rose-400: #cf3b57;   /* algorithm: rejected, blocking pairs */
+  --rose-400: #ad2442;   /* algorithm: rejected, blocking pairs */
   --rose-500: #b02a44;
 
   /* ---- Typography --------------------------------------------------------
@@ -109,6 +97,37 @@
   --shadow-lg: 0 24px 64px -20px rgba(47, 25, 95, 0.22);
   --shadow-accent: 0 2px 6px rgba(47, 25, 95, 0.12);
 
+  /* Separate decorative accent hues from action fills: a bright dark-theme
+     accent works as text, but cannot also carry a readable white label. */
+  --action-start: #4f378b;
+  --action-end: #713c92;
+  --action-hover: #5b3d91;
+  --on-action: #ffffff;
+  --success-fill: #82307a;
+  --success-hover: #95378a;
+  --danger-fill: #b02a44;
+  --danger-hover: #bc2f4a;
+  --status-positive: var(--mint-500);
+  --status-warning: var(--amber-500);
+  --status-danger: var(--rose-500);
+  --status-info: var(--cyan-500);
+
+  /* Page / working panel / floating panel. Working panels stay opaque and
+     cheap to render; only the header and explicit overlays need backdrop blur. */
+  --surface-base: var(--ink-900);
+  --surface-interactive: var(--ink-800);
+  --surface-floating: #ffffff;
+  --panel-bg: var(--surface-interactive);
+  --panel-edge: var(--ink-600);
+  --panel-highlight: rgba(255, 255, 255, 0.7);
+  --panel-shadow: inset 0 1px 0 var(--panel-highlight), var(--shadow-sm);
+  --floating-edge: #b3a7c2;
+  --floating-shadow: inset 0 1px 0 var(--panel-highlight), 0 18px 45px -18px rgba(47, 25, 95, 0.28), var(--shadow-sm);
+  --control-edge: #8d819d;
+  --control-border: 1px solid var(--control-edge);
+  --focus-ring: #5b3d91;
+  --focus-halo: color-mix(in srgb, var(--accent-400) 14%, transparent);
+
   /* ---- Motion ------------------------------------------------------------
    * Curves are named for what they communicate, not for their shape, so a
    * component asks for "settle" rather than guessing at a bezier.
@@ -130,6 +149,8 @@
   --ease-glide: cubic-bezier(0.4, 0, 0.2, 1);
 
   --dur-fast: 140ms;
+  --dur-press: 100ms;
+  --dur-panel: 220ms;
   --dur-base: 240ms;
   --dur-slow: 420ms;
   --dur-slower: 640ms;
@@ -160,13 +181,7 @@
   --app-width: clamp(430px, 44vw, 700px);
 }
 
-/**
- * Dark theme.
- *
- * The original encore stage palette, kept intact and moved behind an explicit
- * opt-in. Nothing in the app depends on it any more, but the toggle still works
- * and the algorithm views were tuned against these hues.
- */
+/* Dark surfaces retain the purple identity with distinct working/floating layers. */
 :root[data-theme='dark'] {
   --ink-900: #08070c;
   --ink-850: #0d0c13;
@@ -179,8 +194,8 @@
 
   --text-100: #f5f3ff;
   --text-200: #d7d4e4;
-  --text-300: #a09cbe;
-  --text-400: #6f6c8f;
+  --text-300: #b0a9c3;
+  --text-400: #948ca7;
 
   --accent-300: #efc3f5;
   --accent-400: #a685e8;
@@ -197,9 +212,26 @@
   --rose-400: #ff7a7a;
   --rose-500: #ef4444;
 
+  --action-start: #7150b6;
+  --action-end: #884489;
+  --action-hover: #6543a8;
+  --status-positive: var(--mint-400);
+  --status-warning: var(--amber-400);
+  --status-danger: var(--rose-400);
+  --status-info: var(--cyan-400);
+
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 8px 24px -8px rgba(0, 0, 0, 0.7);
   --shadow-lg: 0 24px 64px -16px rgba(0, 0, 0, 0.85);
+
+  --panel-edge: color-mix(in srgb, var(--accent-400) 18%, var(--ink-600));
+  --panel-highlight: rgba(210, 194, 246, 0.07);
+  --panel-shadow: inset 0 1px 0 var(--panel-highlight), 0 6px 20px -15px rgba(139, 99, 214, 0.38), var(--shadow-sm);
+  --surface-floating: #1c1927;
+  --floating-edge: #5b4e70;
+  --floating-shadow: inset 0 1px 0 var(--panel-highlight), 0 18px 45px -16px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(166, 133, 232, 0.06);
+  --control-edge: #746a88;
+  --focus-ring: #c7a7ff;
 
   --glass-tint: rgba(13, 12, 19, 0.72);
 }

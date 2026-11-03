@@ -33,6 +33,17 @@ export function createUserRepo(db) {
       return mapUser(db.prepare('SELECT * FROM users WHERE id = ?').get(id));
     },
 
+    /** Profile links honour the same mutual block boundary as discovery. */
+    visibleProfile(viewerId, targetId) {
+      return mapUser(db.prepare(`SELECT u.* FROM users u
+        LEFT JOIN account_security s ON s.user_id = u.id
+        WHERE u.id = ? AND s.suspended_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM blocks b
+            WHERE (b.blocker_user_id = ? AND b.blocked_user_id = u.id)
+               OR (b.blocker_user_id = u.id AND b.blocked_user_id = ?))`)
+        .get(targetId, viewerId, viewerId));
+    },
+
     findByEmail(email) {
       return db.prepare('SELECT * FROM users WHERE lower(email) = lower(?)').get(email);
     },

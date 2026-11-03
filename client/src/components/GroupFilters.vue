@@ -16,6 +16,11 @@ const active = computed(() => [
 const category = ref('section');
 // Filters stay out of the way until asked for.
 const open = ref(false);
+const toggle = ref(null);
+function closeFilters() {
+  open.value = false;
+  toggle.value?.focus();
+}
 const uid = `group-search-${Math.random().toString(36).slice(2, 8)}`;
 const categories = computed(() => [
   { key: 'section', label: 'Seating', options: SECTION_OPTIONS },
@@ -42,13 +47,14 @@ function clear() {
     <div class="group-search__field">
       <svg class="group-search__icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-4.2-4.2" /></svg>
       <input :id="`${uid}-query`" v-model="filters.query" type="search" placeholder="Search by group name, artist, host or keyword">
-      <button type="button" class="group-search__toggle" :class="{ 'group-search__toggle--open': open }" :aria-expanded="open" :aria-controls="`${uid}-panel`" @click="open = !open">
+      <button ref="toggle" type="button" class="group-search__toggle" :class="{ 'group-search__toggle--open': open }" :aria-expanded="open" :aria-controls="`${uid}-panel`" @click="open = !open">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z" /></svg>
         <span>Filters</span>
         <span v-if="active.length - (filters.query ? 1 : 0) > 0" class="group-search__count">{{ active.length - (filters.query ? 1 : 0) }}</span>
       </button>
     </div>
-    <div v-show="open" :id="`${uid}-panel`" class="group-search__panel">
+    <div :id="`${uid}-panel`" class="group-search__disclosure" :class="{ 'group-search__disclosure--open': open }" :inert="!open ? '' : undefined" :aria-hidden="!open" @keydown.esc.prevent.stop="closeFilters">
+      <div class="group-search__reveal"><div class="group-search__panel">
       <label>Sort by
         <select v-model="filters.sort"><option value="compatibility">Best compatibility</option><option value="capacity">Most places available</option><option value="host">Host name A–Z</option></select>
       </label>
@@ -65,6 +71,7 @@ function clear() {
           <option v-for="(name, id) in selected.options" :key="id" :value="id">{{ name }}</option>
         </select>
       </label>
+      </div></div>
     </div>
     <div v-if="active.length" class="group-search__active" aria-label="Active filters">
       <span class="group-search__hint">Filtering by</span>
@@ -85,6 +92,7 @@ function clear() {
   display: flex;
   align-items: center;
   min-width: 0;
+  gap: var(--space-2);
 }
 .group-search__icon {
   position: absolute;
@@ -102,15 +110,14 @@ function clear() {
   min-width: 0;
   min-height: 48px;
   padding-left: calc(var(--space-3) + 26px) !important;
-  padding-right: 7.5rem !important;
+  padding-right: var(--space-3) !important;
 }
 .group-search__toggle {
-  position: absolute;
-  right: 6px;
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: var(--space-2);
-  height: 36px;
+  min-height: 48px;
   padding: 0 var(--space-3);
   border: var(--border-soft);
   border-radius: var(--radius-sm);
@@ -120,6 +127,8 @@ function clear() {
   font-size: var(--step--1);
   font-weight: 600;
   cursor: pointer;
+  box-shadow: inset 0 1px 0 var(--panel-highlight), var(--shadow-sm);
+  transition: background-color var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast), transform var(--dur-fast) var(--ease-settle), box-shadow var(--dur-fast);
 }
 .group-search__toggle svg {
   width: 16px;
@@ -132,7 +141,9 @@ function clear() {
 .group-search__toggle:hover, .group-search__toggle--open {
   border-color: var(--accent-400);
   color: var(--accent-400);
+  background: var(--ink-750);
 }
+.group-search__toggle:active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0, 0, 0, .1); }
 .group-search__count {
   display: inline-grid;
   place-items: center;
@@ -144,15 +155,25 @@ function clear() {
   color: #fff;
   font-size: var(--step--2);
 }
+.group-search__disclosure {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  margin-top: calc(-1 * var(--space-3));
+  transition: grid-template-rows 240ms var(--ease-settle), margin-top 240ms var(--ease-settle), opacity 160ms var(--ease-out);
+}
+.group-search__disclosure--open { grid-template-rows: 1fr; opacity: 1; margin-top: 0; }
+.group-search__reveal { min-height: 0; overflow: hidden; }
 .group-search__panel {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
   gap: var(--space-3);
   align-items: start;
   padding: var(--space-4);
-  border: var(--border-soft);
+  border: 1px solid var(--panel-edge);
   border-radius: var(--radius-md);
   background: var(--ink-850);
+  box-shadow: inset 0 1px 0 var(--panel-highlight);
 }
 .group-search__hint {
   color: var(--text-400);
@@ -176,7 +197,10 @@ function clear() {
   font: inherit;
   font-size: var(--step--1);
   cursor: pointer;
+  transition: background-color var(--dur-fast), box-shadow var(--dur-fast), transform var(--dur-fast) var(--ease-settle);
 }
+.group-search__chip:hover { background: var(--accent-glow); }
+.group-search__chip:active { transform: translateY(1px); box-shadow: inset 0 2px 3px rgba(0, 0, 0, .08); }
 .group-search__clear {
   border: 0;
   background: none;
@@ -187,11 +211,11 @@ function clear() {
   cursor: pointer;
 }
 @media (max-width: 480px) {
-  .group-search__toggle span:not(.group-search__count) {
-    display: none;
-  }
-  .group-search__field input {
-    padding-right: 4.5rem !important;
-  }
+  .group-search__toggle { padding-inline: var(--space-2); }
+  .group-search__toggle svg { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .group-search__disclosure { transition: none; }
+  .group-search__toggle:active, .group-search__chip:active { transform: none; }
 }
 </style>

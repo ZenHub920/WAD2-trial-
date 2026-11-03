@@ -263,11 +263,16 @@ const windowInput = {
   startsAt: "2030-01-01T10:00:00+08:00",
   endsAt: "2030-01-01T12:00:00+08:00",
 };
+function createFutureMeetup(user, input = windowInput) {
+  // These community fixtures otherwise use a past concert for feedback tests.
+  db.prepare("UPDATE concerts SET event_date='2030-01-01' WHERE id='c1'").run();
+  return repos.meetups.create(user, input);
+}
 test("meetup availability and private locations produce real-place recommendations with versioned approval", () => {
   repos.membership.configure("h1", "p1", { expectedFriends: 1 });
   const link = repos.membership.invite("h1", "p1");
   repos.membership.acceptInvite("friend", link.token);
-  const { id } = repos.meetups.create("h1", windowInput);
+  const { id } = createFutureMeetup("h1");
   repos.meetups.availability("h1", id, [
     {
       startsAt: windowInput.startsAt,
@@ -295,7 +300,10 @@ test("meetup availability and private locations produce real-place recommendatio
   assert.equal(detail.availability.length, 1);
   assert.ok(detail.availability.every((a) => a.user_id === "h1"));
   assert.throws(() => repos.meetups.detail("outsider", id), /not_found/);
-  const proposed = repos.meetups.propose("friend", id, {
+  assert.throws(() => repos.meetups.propose("friend", id, {
+    version: detail.version, placeId: place.id, startsAt: windowInput.startsAt,
+  }), /organizer_required/);
+  const proposed = repos.meetups.propose("h1", id, {
     version: detail.version,
     placeId: place.id,
     startsAt: windowInput.startsAt,
@@ -310,6 +318,9 @@ test("meetup availability and private locations produce real-place recommendatio
   );
   repos.meetups.comment("friend", id, "Can we meet by the lift?");
   assert.equal(repos.meetups.detail("h1", id).comments.length, 1);
+  assert.throws(() => repos.meetups.vote("friend", id, place.id), /reopen_required/);
+  assert.equal(repos.meetups.detail('h1', id).status, 'confirmed');
+  repos.meetups.reopen('h1', id, proposed.version);
   repos.meetups.vote("friend", id, place.id);
   assert.throws(
     () => repos.meetups.approve("h1", id, proposed.version),
@@ -326,7 +337,7 @@ test("connected groups require both hosts to approve and never expose locations 
   }
   const c = repos.groups.invite("h1", "p1", "p2");
   repos.groups.respond("h2", c.id, "accept");
-  const { id } = repos.meetups.create("h1", {
+  const { id } = createFutureMeetup("h1", {
     ...windowInput,
     partyId: undefined,
     connectionId: c.id,
@@ -574,7 +585,7 @@ test("legacy duplicate groups remain intact and can be explicitly reconciled by 
   assert.deepEqual(db.pragma("foreign_key_check"), []);
 });
 test("meetup inputs reject malformed windows and missing choices without changing revisions", () => {
-  const { id } = repos.meetups.create("h1", windowInput);
+  const { id } = createFutureMeetup("h1");
   const version = repos.meetups.detail("h1", id).version;
   assert.throws(() => repos.meetups.availability("h1", id, [null]), /invalid_availability/);
   assert.throws(() => repos.meetups.vote("h1", id), /place_not_found/);
@@ -584,12 +595,12 @@ test("meetup inputs reject malformed windows and missing choices without changin
   assert.equal(repos.meetups.detail("h1", id).version, version);
 });
 
-test("seven-day meetup boards accept every heatmap slot and reject entries beyond the board bound", () => {
+test("legacy seven-day meetup boards remain readable and accept every bounded heatmap slot", () => {
   const startsAt = Date.parse(windowInput.startsAt);
   const endsAt = startsAt + 7 * 86400000;
-  const { id } = repos.meetups.create("h1", {
-    ...windowInput, endsAt: new Date(endsAt).toISOString(),
-  });
+  const { id } = createFutureMeetup("h1");
+  // Existing wider boards are not retroactively destroyed by the new concert-day policy.
+  db.prepare('UPDATE meetups SET ends_at=? WHERE id=?').run(endsAt, id);
   const windows = Array.from({ length: 336 }, (_, index) => ({
     startsAt: new Date(startsAt + index * SLOT_MS).toISOString(),
     endsAt: new Date(startsAt + (index + 1) * SLOT_MS).toISOString(),
@@ -614,7 +625,7 @@ test("departed members stop contributing meetup votes and cancelled connections 
   }
   const connection = repos.groups.invite("h1", "p1", "p2");
   repos.groups.respond("h2", connection.id, "accept");
-  const { id } = repos.meetups.create("h1", {
+  const { id } = createFutureMeetup("h1", {
     ...windowInput, partyId: undefined, connectionId: connection.id,
   });
   const place = repos.meetups.place("h1", id, {
@@ -646,7 +657,7 @@ test("unknown meetup travel distances remain unknown and do not beat measured tr
 test("meetup and chat notifications roll back with their event writes", () => {
   repos.membership.configure("h1", "p1", { expectedFriends: 1 });
   repos.membership.acceptInvite("friend", repos.membership.invite("h1", "p1").token);
-  const { id } = repos.meetups.create("h1", windowInput);
+  const { id } = createFutureMeetup("h1");
   const before = repos.notifications.list("friend");
   const version = repos.meetups.detail("h1", id).version;
   assert.throws(db.transaction(() => {
@@ -725,7 +736,7 @@ test("feedback failure rolls back the rating, reliability cache and receipt noti
   assert.equal(repos.notifications.unread("friend"), 0);
 });
 test("ticket inventory parties cannot create or retain attendance meetup boards", () => {
-  const { id } = repos.meetups.create("h1", windowInput);
+  const { id } = createFutureMeetup("h1");
   db.prepare(`INSERT INTO tickets(id,seller_user_id,concert_id,price_cents,quantity,section,source_party_id)
     VALUES('ticket','h1','c1',1000,1,'ga_standing','p1')`).run();
   assert.throws(() => repos.meetups.create("h1", windowInput), /scope_membership_required/);
@@ -791,8 +802,9 @@ test("explicit departed memberships cannot regain planning or feedback through l
   db.prepare(`UPDATE group_memberships SET joined_at='2019-12-01 00:00:00',
     left_at='2019-12-31 00:00:00',status='left' WHERE party_id=? AND user_id='seeker'`).run(party.id);
   db.prepare("UPDATE parties SET created_at='2019-12-01 00:00:00' WHERE id=?").run(party.id);
-  const { id } = repos.meetups.create(party.host_user_id, { ...windowInput, partyId: party.id });
+  const { id } = createFutureMeetup(party.host_user_id, { ...windowInput, partyId: party.id });
   assert.throws(() => repos.meetups.detail("seeker", id), /not_found/);
+  db.prepare("UPDATE concerts SET event_date='2020-01-01' WHERE id='c1'").run();
   assert.throws(() => repos.feedback.submit(party.host_user_id, {
     partyId: party.id, ratedUserId: "seeker", showedUp: true, rating: 5,
   }), /participants_required/);

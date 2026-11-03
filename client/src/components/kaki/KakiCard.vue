@@ -38,6 +38,7 @@ const interests = computed(() => {
 
     <div class="kaki-card__body">
       <h3 class="kaki-card__name">{{ person.user.displayName }}</h3>
+      <RouterLink class="kaki-card__profile" :to="`/people/${encodeURIComponent(person.user.id)}`" @pointerdown.stop @click.stop @keydown.stop>View concert vibe →</RouterLink>
 
       <p class="kaki-card__meta">
         {{ person.user.ageBand }}, {{ person.user.homeRegion.replace('_', ' ') }}
@@ -73,16 +74,15 @@ const interests = computed(() => {
   overflow: hidden;
 
   background: var(--ink-800);
-  border: var(--border-hairline);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-md);
 }
 
 .kaki-card__portrait {
   display: grid;
   place-items: center;
   /* A consistent portrait area keeps the profile details easy to scan. */
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 16 / 7;
+  min-height: 150px;
   flex-shrink: 0;
 }
 
@@ -112,6 +112,7 @@ const interests = computed(() => {
   color: var(--text-200);
   text-transform: capitalize;
 }
+.kaki-card__profile { align-self:flex-start; display:inline-flex; align-items:center; min-height:44px; font-size:var(--step--1); color:var(--accent-400); }
 
 .kaki-card__verified {
   margin-left: var(--space-2);
@@ -124,7 +125,7 @@ const interests = computed(() => {
   margin: var(--space-2) 0 0;
   font-size: var(--step-0);
   font-weight: 700;
-  color: var(--accent-500);
+  color: var(--accent-400);
 }
 
 .kaki-card__date {
@@ -162,7 +163,7 @@ const interests = computed(() => {
   border-radius: var(--radius-pill);
   font-size: var(--step--2);
   font-weight: 600;
-  color: var(--accent-500);
+  color: var(--accent-400);
   background: var(--ink-850);
 }
 </style>

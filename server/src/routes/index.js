@@ -112,6 +112,7 @@ export function createRoutes({
 
   router.get('/me/profile', requireUser, profile.get);
   router.patch('/me/profile', requireUser, profile.update);
+  router.get('/users/:id/profile', requireUser, profile.publicGet);
   router.get('/me/concerts', requireUser, participation.mine);
   router.get('/concerts/:id/participation', requireUser, participation.get);
   router.post('/concerts/:id/participation', requireUser, participation.join);
