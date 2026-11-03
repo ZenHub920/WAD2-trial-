@@ -80,7 +80,7 @@ async function submit() {
     setCurrentUser(response.user);
     success.value = registering ? 'Your account is ready. Next: a few optional preferences.' : `Welcome back, ${response.user.displayName}.`;
     const destination = registering
-      ? { path: '/profile', query: { setup: '1', next: redirect.value }, hash: '#preferences' }
+      ? { path: '/welcome', query: { next: redirect.value } }
       : redirect.value;
     navigationTimer = setTimeout(() => router.push(destination), 500);
   } catch (err) {

@@ -26,7 +26,7 @@ describe('direct comparison with real listing cards', () => {
     const groups = [group('a', 'Alpha'), group('b', 'Beta'), group('c', 'Gamma')];
     const wrapper = mount(GroupComparisonDeck, { props: { groups, sessionKey: 'concert-1', canApply: true, applyGroup } });
     await flushPromises();
-    expect(wrapper.text()).toContain('Comparing sends no application.');
+    expect(wrapper.text()).toContain('Nothing is sent until you ask to join.');
     expect(wrapper.findAll('article')).toHaveLength(0);
     await button(wrapper, 'Start comparing').trigger('click');
     expect(wrapper.findAll('article').map(card => card.find('h3').text())).toEqual(['Alpha', 'Beta']);

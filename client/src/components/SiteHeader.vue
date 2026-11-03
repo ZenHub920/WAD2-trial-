@@ -88,10 +88,10 @@ onUnmounted(() => {
             Messages
             <span v-if="unreadTotal > 0" class="nav__badge" :aria-label="`${unreadTotal} unread ${unreadTotal === 1 ? 'chat' : 'chats'}`">{{ unreadTotal > 99 ? '99+' : unreadTotal }}</span>
           </RouterLink>
+          <RouterLink v-if="currentUser?.isOperator" to="/admin/verifications">Admin</RouterLink>
         </div>
         <div class="nav__account">
           <template v-if="currentUser">
-            <RouterLink v-if="currentUser.isOperator" to="/operator/verifications">Ticket review</RouterLink>
             <RouterLink to="/profile" class="nav__profile">
               <UserAvatar :src="currentUser.avatarUrl" :name="currentUser.displayName" :size="30" />
               <span>Profile</span>

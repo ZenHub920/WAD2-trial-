@@ -85,11 +85,31 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* Status messages: their own hue plus an icon, so meaning never rests on colour alone. */
+.group-error,
+.group-success {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-weight: 650;
+}
 .group-error {
+  background: var(--danger-soft);
   color: var(--status-danger);
 }
 .group-success {
+  background: var(--positive-soft);
   color: var(--status-positive);
+}
+.group-error::before,
+.group-success::before {
+  margin-right: var(--space-2);
+  font-weight: 800;
+}
+.group-error::before {
+  content: '!';
+}
+.group-success::before {
+  content: '✓';
 }
 .group-muted {
   color: var(--text-300);

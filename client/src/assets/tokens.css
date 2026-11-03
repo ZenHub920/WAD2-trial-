@@ -103,14 +103,26 @@
   --action-end: #713c92;
   --action-hover: #5b3d91;
   --on-action: #ffffff;
-  --success-fill: #82307a;
-  --success-hover: #95378a;
+  --success-fill: #1f7a4d;
+  --success-hover: #17633d;
   --danger-fill: #b02a44;
   --danger-hover: #bc2f4a;
-  --status-positive: var(--mint-500);
+  /* Status hues are distinct from the purple brand, so success, warnings and
+     errors read at a glance instead of blending into the rest of the page. */
+  --status-positive: #1b7543;
   --status-warning: var(--amber-500);
   --status-danger: var(--rose-500);
   --status-info: var(--cyan-500);
+  --positive-soft: #e2f4e9;
+  --danger-soft: #fbe5e9;
+
+  /* ---- Colour: highlight -------------------------------------------------
+   * Gold is the complement of Encore's purple. It is kept for the few things
+   * a person should notice first: the next step, key numbers and prices.
+   * --highlight is a fill/border; --highlight-ink is readable text. */
+  --highlight: #f2a93b;
+  --highlight-soft: #fdf0d9;
+  --highlight-ink: #8a4a00;
 
   /* Page / working panel / floating panel. Working panels stay opaque and
      cheap to render; only the header and explicit overlays need backdrop blur. */
@@ -215,10 +227,15 @@
   --action-start: #7150b6;
   --action-end: #884489;
   --action-hover: #6543a8;
-  --status-positive: var(--mint-400);
+  --status-positive: #6fdc9c;
   --status-warning: var(--amber-400);
   --status-danger: var(--rose-400);
   --status-info: var(--cyan-400);
+  --positive-soft: rgba(111, 220, 156, 0.14);
+  --danger-soft: rgba(255, 122, 122, 0.14);
+  --highlight: #ffbf55;
+  --highlight-soft: rgba(255, 191, 85, 0.14);
+  --highlight-ink: #ffcf70;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 8px 24px -8px rgba(0, 0, 0, 0.7);
