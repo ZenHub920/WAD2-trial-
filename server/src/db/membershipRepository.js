@@ -333,8 +333,10 @@ export function createMembershipRepo(db, repos) {
       db.prepare(
         "UPDATE group_memberships SET status='left',left_at=datetime('now') WHERE party_id=? AND user_id=?",
       ).run(id, user);
+      // A departure frees a place, so the group stays listed; the version bump
+      // still asks pending applicants to re-confirm against the new roster.
       db.prepare(
-        "UPDATE group_settings SET published=0,version=version+1 WHERE party_id=?",
+        "UPDATE group_settings SET version=version+1 WHERE party_id=?",
       ).run(id);
       db.prepare(
         `UPDATE match_proposals SET status='cancelled' WHERE party_id=? AND seeker_request_id IN
