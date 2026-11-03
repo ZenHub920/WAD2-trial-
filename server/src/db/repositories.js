@@ -18,6 +18,7 @@ import { createFeedbackRepo } from './feedbackRepository.js';
 import { createKakiChatRepo } from './kakiChatRepository.js';
 import { createGroupChannelRepo } from './groupChannelRepository.js';
 import { createConnectionChannelRepo } from './connectionChannelRepository.js';
+import { createSetlistRepo } from './setlistRepository.js';
 
 // Keep named imports from this original entry point compatible.
 export {
@@ -62,5 +63,7 @@ export function createRepositories(db) {
   // here rather than in the literal above.
   repos.groupChannels = createGroupChannelRepo(db, repos);
   repos.connectionChannels = createConnectionChannelRepo(db, repos);
+  // Operator-curated setlists. Needs `repos` to check the concert exists.
+  repos.setlists = createSetlistRepo(db, repos);
   return repos;
 }

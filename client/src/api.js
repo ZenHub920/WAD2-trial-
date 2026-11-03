@@ -234,6 +234,11 @@ export const api = {
   health: () => request('/health'),
 
   concerts: () => request('/concerts'),
+  concertSetlist: (id) => request(`/concerts/${encodeURIComponent(id)}/setlist`),
+  saveConcertSetlist: (id, data) => request(`/concerts/${encodeURIComponent(id)}/setlist`, {
+    method: 'PUT', body: JSON.stringify(data),
+  }),
+  clearConcertSetlist: (id) => request(`/concerts/${encodeURIComponent(id)}/setlist`, { method: 'DELETE' }),
   externalConcerts: (keyword = '') => request(`/concerts/external${keyword ? `?keyword=${encodeURIComponent(keyword)}` : ''}`),
   concert: (id) => request(`/concerts/${id}`),
 

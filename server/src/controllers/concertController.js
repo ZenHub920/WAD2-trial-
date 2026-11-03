@@ -7,7 +7,13 @@ export function createConcertController(repos) {
   return {
     list(req, res) {
       repos.proposals.expire();
-      res.json({ concerts: repos.concerts.listWithCounts() });
+      const concerts = repos.concerts.listWithCounts();
+      // Carried on the list so a page of cards knows which concerts have a
+      // setlist without asking once per card.
+      const setlists = repos.setlists.summaries(concerts.map((concert) => concert.id));
+      res.json({
+        concerts: concerts.map((concert) => ({ ...concert, setlist: setlists[concert.id] ?? null })),
+      });
     },
 
     create(req, res) {

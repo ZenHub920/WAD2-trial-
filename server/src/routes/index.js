@@ -5,6 +5,7 @@ import { registerCommunityRoutes } from './community.js';
 
 import { registerEnhancementRoutes } from './enhancements.js';
 import { createConcertController } from '../controllers/concertController.js';
+import { createSetlistController } from '../controllers/setlistController.js';
 import { createMatchController } from '../controllers/matchController.js';
 import { createUserController } from '../controllers/userController.js';
 import { createTicketController } from '../controllers/ticketController.js';
@@ -38,6 +39,7 @@ export function createRoutes({
 })  {
   const router = Router();
   const concerts = createConcertController(repos);
+  const setlists = createSetlistController(repos);
   const matches = createMatchController({ repos, matching });
   const users = createUserController(repos, sessions, avatars);
   const tickets = createTicketController(repos, images);
@@ -207,6 +209,11 @@ export function createRoutes({
   router.get('/concerts', concerts.list);
   router.post('/concerts', concerts.create);
   router.get('/concerts/:id', concerts.detail);
+  // Reading a setlist is public; entering one is an operator job, because the
+  // running order is curated rather than collected.
+  router.get('/concerts/:id/setlist', setlists.get);
+  router.put('/concerts/:id/setlist', requireOperator, setlists.replace);
+  router.delete('/concerts/:id/setlist', requireOperator, setlists.clear);
   router.get('/concerts/:id/parties', concerts.parties);
   router.post('/concerts/:id/parties', requireUser, concerts.createParty);
   router.get('/concerts/:id/requests', concerts.requests);
