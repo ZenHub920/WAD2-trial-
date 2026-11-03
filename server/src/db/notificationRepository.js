@@ -69,7 +69,10 @@ export function migrateNotifications(db) {
       "group",
       "SELECT NEW.user_id recipient",
       "'Your group join request was updated'",
-      "'/groups'",
+      // Accepted lands on the group itself; anything else reopens browsing for
+      // that concert, since a bare /groups has no concert picked.
+      `CASE WHEN NEW.status='accepted' THEN '/groups/'||NEW.party_id||'/members'
+        ELSE '/groups?concertId='||(SELECT concert_id FROM parties WHERE id=NEW.party_id) END`,
       "'join-response:'||NEW.id||':'||NEW.status",
       "NEW.status<>OLD.status AND NEW.status<>'pending'",
     );
@@ -132,6 +135,14 @@ export function migrateNotifications(db) {
     );
     // Existing installations notified only the seeker. Both decision makers
     // now receive the same offer, without rewriting any delivered notification.
+    // Join responses once all linked to a bare /groups; point them at the group.
+    db.exec(`UPDATE notifications SET resource_path=(
+        SELECT CASE WHEN j.status='accepted' THEN '/groups/'||j.party_id||'/members'
+          ELSE '/groups?concertId='||p.concert_id END
+        FROM group_join_requests j JOIN parties p ON p.id=j.party_id
+        WHERE notifications.event_key LIKE 'join-response:'||j.id||':%')
+      WHERE event_key LIKE 'join-response:%' AND resource_path='/groups'
+        AND EXISTS(SELECT 1 FROM group_join_requests j WHERE notifications.event_key LIKE 'join-response:'||j.id||':%')`);
     db.exec("DROP TRIGGER IF EXISTS notify_match_offer");
     trigger(
       "notify_match_offer",
