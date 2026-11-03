@@ -94,6 +94,13 @@ export function createTicketRepo(db) {
         ORDER BY t.created_at ASC`).all().map(mapTicket);
     },
 
+    /** The latest operator decisions, newest first, for the admin history. */
+    recentReviews(limit = 20) {
+      return db.prepare(`${joined} WHERE t.reviewed_at IS NOT NULL AND t.status <> 'deleted'
+        AND t.verification_status IN ('approved', 'rejected')
+        ORDER BY t.reviewed_at DESC LIMIT ?`).all(limit).map(mapTicket);
+    },
+
     proofFor(id) {
       return db.prepare('SELECT proof_data FROM tickets WHERE id = ?').get(id)?.proof_data ?? null;
     },

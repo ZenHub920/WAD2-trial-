@@ -93,7 +93,7 @@ test('Kaki finder: two people like each other, view a public vibe and open their
   } finally { await a.context.close(); await b.context.close(); }
 });
 
-test('private preference setup: registration keeps the same fields and saves private answers in Profile', async ({ browser, request }) => {
+test('private preference setup: registration opens the welcome questionnaire and answers show in Profile', async ({ browser, request }) => {
   const data = await fixture(request);
   const viewer = await person(browser, data, 'hostA');
   const context = await browser.newContext({ reducedMotion: 'reduce' });
@@ -106,12 +106,16 @@ test('private preference setup: registration keeps the same fields and saves pri
     await page.locator('#email').fill(`setup-${data.suffix}@example.test`);
     await page.locator('#password').fill('Example-only-passphrase-2026!');
     await page.getByRole('button', { name: 'Create account', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Make it feel like you', exact: true })).toBeVisible();
+    // Sign-up opens the welcome page: what preferences are for, then the questionnaire.
+    await expect(page).toHaveURL(url => url.pathname === '/welcome');
+    await expect(page.getByRole('heading', { name: 'What are preferences for?', exact: true })).toBeVisible();
     await expect(page.getByText('Private · Only you can see your answers', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: "meet someone I'd go to more concerts with", exact: true }).click();
     const save = page.waitForRequest(req => req.url().includes('/api/me/preferences') && req.method() === 'PUT');
-    await page.getByRole('button', { name: 'Save and continue', exact: true }).click();
+    await page.getByRole('button', { name: 'Save preferences', exact: true }).click();
     expect(Object.keys((await save).postDataJSON()).sort()).toEqual(['about', 'avoid', 'dealbreakers', 'quiz', 'wants']);
+    await expect(page.getByText('You can change your preferences anytime on your Profile page.')).toBeVisible();
+    await page.getByRole('link', { name: 'Continue', exact: true }).click();
     // Group discovery can immediately add its selected concert to the query.
     await expect(page).toHaveURL(url => url.pathname === '/groups');
     const own = (await api(context, '/me/profile')).profile;

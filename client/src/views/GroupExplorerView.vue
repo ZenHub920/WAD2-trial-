@@ -47,8 +47,8 @@ const canApply = computed(() => !busy.value && !loading.value && displayedMode.v
 const canPrefer = computed(() => seeker.value?.status === 'open' && !currentGroup.value && !activeProposals.value.length);
 const modeLabels = { direct: 'Browse and choose', algorithm: 'Match me with a group' };
 const modeOptions = [
-  { mode: 'direct', kicker: 'Pick yourself', title: 'Browse and choose', description: 'Look through the groups going to this show and ask to join the one you like.', action: 'Browse groups' },
-  { mode: 'algorithm', kicker: 'Let us help', title: 'Match me with a group', description: 'Mark groups you like to help us find a match. You may also be offered another eligible group.', action: 'Find my match' },
+  { mode: 'direct', kicker: 'Pick yourself', title: 'Browse and choose', description: 'See every group and ask to join the one you like.', action: 'Browse groups' },
+  { mode: 'algorithm', kicker: 'Let us help', title: 'Match me with a group', description: 'Like a few groups and we’ll match you with a good fit.', action: 'Find my match' },
 ];
 const originLabels = { direct: 'The host said yes to your request', algorithm: 'You were matched with this group', host: 'You’re the host', friend: 'A friend invited you' };
 const joinStatus = { pending: 'Waiting for the host', accepted: 'You’re in', rejected: 'Not this time', declined: 'Not this time', withdrawn: 'You cancelled this', expired: 'Timed out', superseded: 'Closed', cancelled: 'Ended' };
@@ -171,7 +171,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
     <header class="groups-hero">
       <p class="groups-hero__eyebrow mono">Groups</p>
       <h1>Find your people for the show</h1>
-      <p class="groups-hero__lede">Join a group of fans going to the same concert, so you can meet up, grab food and head in together. Joining a group doesn’t include a ticket.</p>
+      <p class="groups-hero__lede">Meet up, eat and walk in with fans going to the same show. <strong>Groups don’t include tickets.</strong></p>
     </header>
 
     <GroupPreferencesGate summary @saved="load">
@@ -186,7 +186,6 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
         </select>
       </label>
     </div>
-    <p class="discovery-context__note"><span class="discovery-context__dot" aria-hidden="true" />One concert. Your choice of company.<span>Browse first. Joining always needs the host’s approval.</span></p>
     </div>
 
     <p v-if="error" class="group-error" role="alert">{{ error }} <button type="button" class="btn btn--ghost" :disabled="busy || loading" @click="load">Try again</button></p>
@@ -212,13 +211,14 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
         </div>
       </section>
 
-      <section v-else-if="!seeker" class="card group-panel">
+      <section v-else-if="!seeker" class="card group-panel next-step">
         <div class="group-setup__heading">
           <div>
+            <p class="next-step__label">Next step</p>
             <h2>First, tell us your plans</h2>
-            <p class="group-muted">Hosts can see your answers when you ask to join.</p>
+            <p class="group-muted">Three quick questions. Hosts see them when you ask to join.</p>
           </div>
-          <button type="button" class="btn btn--primary" :disabled="busy" :aria-expanded="setupOpen" @click="setupOpen = !setupOpen">{{ setupOpen ? 'Not now' : 'Get started' }}</button>
+          <button type="button" class="btn" :class="setupOpen ? 'btn--ghost' : 'btn--primary'" :disabled="busy" :aria-expanded="setupOpen" @click="setupOpen = !setupOpen">{{ setupOpen ? 'Not now' : 'Get started' }}</button>
         </div>
         <form v-if="setupOpen" class="group-panel" @submit.prevent="enroll()"><fieldset :disabled="busy" class="group-fieldset">
           <div class="group-controls">
@@ -231,7 +231,8 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
         </fieldset></form>
       </section>
 
-      <section v-else-if="seeker.status === 'withdrawn'" class="card group-panel">
+      <section v-else-if="seeker.status === 'withdrawn'" class="card group-panel next-step">
+        <p class="next-step__label">Next step</p>
         <h2>You stepped away from this show</h2>
         <p class="group-muted">Changed your mind? Pick up where you left off.</p>
         <button type="button" class="btn btn--primary" :disabled="busy" @click="enroll(true)">I’m looking again</button>
@@ -288,12 +289,12 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
 
       <section class="card group-panel discovery-search" aria-labelledby="discovery-search-heading">
         <div class="discovery-section-heading"><span class="discovery-step mono" aria-hidden="true">02</span><div><p class="group-kicker mono">{{ selectedConcert?.artist || 'This concert' }}</p><h2 id="discovery-search-heading">Narrow it down</h2></div></div>
-        <p class="group-muted discovery-search__hint">Start with a name or keyword. Open Filters for seating, arrival, activities and more.</p>
+        <p class="group-muted discovery-search__hint">Search by name, or use <strong>Filters</strong> for seating and arrival.</p>
         <fieldset :disabled="busy" class="group-fieldset"><GroupFilters :filters="filters" preferences /></fieldset>
       </section>
 
       <div class="results-heading">
-        <div class="results-heading__context"><p class="group-kicker mono">{{ modeLabels[displayedMode] }}</p><h2>{{ total }} {{ total === 1 ? 'group' : 'groups' }} going</h2><p class="results-heading__hint">{{ displayedMode === 'direct' ? 'Compare the groups. Ask to join when one feels right.' : 'Mark the groups you like. A proposal still needs both approvals.' }}<span v-if="displayedMode === 'direct' && pendingDirect.length"> · you’ve asked {{ pendingDirect.length }} of {{ pendingLimit }}</span></p></div>
+        <div class="results-heading__context"><p class="group-kicker mono">{{ modeLabels[displayedMode] }}</p><h2><span class="key-figure">{{ total }}</span> {{ total === 1 ? 'group' : 'groups' }} going</h2><p class="results-heading__hint">{{ displayedMode === 'direct' ? 'Compare the groups. Ask to join when one feels right.' : 'Mark the groups you like. A proposal still needs both approvals.' }}<span v-if="displayedMode === 'direct' && pendingDirect.length"> · you’ve asked {{ pendingDirect.length }} of {{ pendingLimit }}</span></p></div>
         <div v-if="displayedMode === 'direct'" class="results-layout" role="group" aria-label="How to show groups">
           <button type="button" class="btn" :class="directLayout === 'compare' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="directLayout === 'compare'" :disabled="busy" @click="directLayout = 'compare'; applicationFor = ''">Side by side</button>
           <button type="button" class="btn" :class="directLayout === 'list' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="directLayout === 'list'" :disabled="busy" @click="directLayout = 'list'">See all</button>
@@ -410,30 +411,6 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
   border-radius: var(--radius-lg);
   background: var(--panel-bg);
   box-shadow: var(--panel-shadow);
-}
-.discovery-context__note {
-  position: relative;
-  flex: 0 1 24rem;
-  padding-left: var(--space-4);
-  color: var(--text-200);
-  font-size: var(--step--1);
-  font-weight: 700;
-}
-.discovery-context__note span:last-child {
-  display: block;
-  margin-top: var(--space-1);
-  color: var(--text-300);
-  font-weight: 400;
-}
-.discovery-context__dot {
-  position: absolute;
-  top: .55em;
-  left: 0;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent-400);
-  box-shadow: 0 0 0 4px var(--accent-glow);
 }
 .discovery-section-heading {
   display: flex;
@@ -570,6 +547,13 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
   min-width: 0;
   display: grid;
   gap: var(--space-4);
+  /* One column: the global .groups-page fieldset rule spreads children into
+     auto-fit columns (for checkbox lists), which stretched the Save button to
+     the height of the questions beside it. */
+  grid-template-columns: minmax(0, 1fr);
+}
+.group-fieldset > .btn {
+  justify-self: start;
 }
 .application-form {
   display: grid;

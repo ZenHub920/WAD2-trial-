@@ -311,7 +311,7 @@ function backToDeck() {
       </details>
 
       <div class="kaki__filter-footer">
-        <p class="kaki__count" aria-live="polite"><strong>{{ previewCount }}</strong> {{ previewCount === 1 ? 'person matches' : 'people match' }} these filters<span v-if="!people.length">. Join a concert from <RouterLink to="/concerts">Concerts</RouterLink> to find eligible companions.</span></p>
+        <p class="kaki__count" aria-live="polite"><strong class="key-figure">{{ previewCount }}</strong> {{ previewCount === 1 ? 'person matches' : 'people match' }} these filters<span v-if="!people.length">. Join a concert from <RouterLink to="/concerts">Concerts</RouterLink> to find eligible companions.</span></p>
 
       <div class="kaki__buttons">
         <button class="btn btn--ghost" @click="resetFilters">Reset</button>

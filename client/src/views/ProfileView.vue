@@ -278,15 +278,15 @@ async function save() {
 
       <!-- The site's one questionnaire. Groups and companion ranking both
            read these answers, which is why it is here and not in either. -->
-      <section id="preferences" class="profile__card profile__card--private" aria-labelledby="profile-preferences">
+      <section id="preferences" class="profile__card profile__card--private" :class="{ 'next-step': !settingUp && myPreferences === null }" aria-labelledby="profile-preferences">
         <div class="profile__preference-heading">
           <div><p class="profile__private-label">Private · Only you can see your answers</p><h2 id="profile-preferences">{{ settingUp ? 'A few answers. A better fit.' : 'Your matching preferences' }}</h2></div>
           <button v-if="!settingUp && myPreferences" type="button" class="btn btn--ghost" :aria-expanded="prefEditing" @click="prefEditing = !prefEditing">{{ prefEditing ? 'Close editor' : 'Edit private preferences' }}</button>
         </div>
-        <p class="profile__hint">
-          Answer once for Kaki Finder and group recommendations. Your group combines every member's answers;
-          nobody sees your individual checklist. You can edit these here anytime. Browsing and direct group requests work without completing this step.
-        </p>
+        <ul class="profile__points">
+          <li><strong>Used for</strong> companion suggestions and group recommendations.</li>
+          <li><strong>Private:</strong> others only see how well you match, never your answers.</li>
+        </ul>
         <p v-if="prefNotice" class="profile__success" role="status">{{ prefNotice }}</p>
         <p v-if="prefError" class="profile__error" role="alert">{{ prefError }}</p>
         <!-- Mounted only once the saved answers are in hand. The editor reads
@@ -386,6 +386,7 @@ async function save() {
 }
 .profile__preference-heading { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:var(--space-3); }
 .profile__private-label { margin:0 0 var(--space-2); color:var(--accent-400); font:600 0.68rem var(--font-mono); text-transform:uppercase; letter-spacing:.08em; }
+.profile__points { display:grid; gap:var(--space-1); margin:var(--space-2) 0 var(--space-3); padding-left:1.2em; color:var(--text-300); font-size:var(--step--1); }
 .profile__setup-footer { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:var(--space-3); padding-top:var(--space-4); margin-top:var(--space-4); border-top:var(--border-soft); }
 .profile__setup-footer p { max-width:54ch; }
 .profile__form {

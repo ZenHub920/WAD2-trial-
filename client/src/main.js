@@ -4,6 +4,11 @@ import { createRouter, createWebHistory } from 'vue-router';
 import { currentUser, sessionReady } from './auth.js';
 
 import App from './App.vue';
+// Bootstrap's responsive grid and utility classes only. Its component styles
+// (.btn, .card, .nav, ...) are left out because Encore has its own design system.
+// Loaded before base.css so Encore's own .container rule wins.
+import 'bootstrap/dist/css/bootstrap-grid.min.css';
+import 'bootstrap/dist/css/bootstrap-utilities.min.css';
 import './assets/base.css';
 
 import HomeView from './views/HomeView.vue';
@@ -15,6 +20,7 @@ const LoginView = () => import('./views/LoginView.vue');
 const AccountSecurityView = () => import('./views/AccountSecurityView.vue');
 const ConcertsView = () => import('./views/ConcertsView.vue');
 const ListingView = () => import('./views/ListingView.vue');
+const WelcomeView = () => import('./views/WelcomeView.vue');
 const MyListingsView = () => import('./views/MyListingsView.vue');
 const TicketDetailView = () => import('./views/TicketDetailView.vue');
 const TicketMarketplaceView = () => import('./views/TicketMarketplaceView.vue');
@@ -62,11 +68,14 @@ const router = createRouter({
     { path: '/tickets/:id/checkout', name: 'checkout', component: CheckoutView, props: true, meta: { title: 'Checkout' } },
     { path: '/orders/:id', name: 'order', component: OrderConfirmationView, props: true, meta: { title: 'Historical order' } },
     {
-      path: '/operator/verifications',
+      path: '/admin/verifications',
       name: 'operator-verifications',
+      alias: '/operator/verifications',
       component: AdminVerificationsView,
-      meta: { title: 'Ticket verification' },
+      meta: { title: 'Admin: proof of purchase', requiresAuth: true },
     },
+    // First stop after creating an account: explain and collect matching preferences.
+    { path: '/welcome', name: 'welcome', component: WelcomeView, meta: { title: 'Welcome', requiresAuth: true } },
 
     { path: '/kaki', name: 'kaki', component: KakiFinderView, meta: { title: 'Find a companion', requiresAuth: true } },
     { path: '/groups', name: 'groups', component: GroupExplorerView, meta: { title: 'Groups', requiresAuth: true } },

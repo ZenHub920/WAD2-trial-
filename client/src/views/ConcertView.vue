@@ -318,15 +318,15 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
           <dl v-else class="counts">
             <div>
               <dt>Groups</dt>
-              <dd class="tabular">{{ parties.length }}</dd>
+              <dd class="tabular key-figure">{{ parties.length }}</dd>
             </div>
             <div>
               <dt>Group places</dt>
-              <dd class="tabular">{{ totalPlaces }}</dd>
+              <dd class="tabular key-figure">{{ totalPlaces }}</dd>
             </div>
             <div>
               <dt>Active group finders</dt>
-              <dd class="tabular">{{ requests.length }}</dd>
+              <dd class="tabular key-figure">{{ requests.length }}</dd>
             </div>
           </dl>
           <p class="group-muted">Group places are not tickets. Open group requests are considered in matching rounds.</p>
@@ -383,6 +383,34 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
           </p>
         </aside>
       </header>
+
+      <!-- The three things people come here to do, side by side, so the next
+           step is visible before any of the detail below. -->
+      <nav class="choices row g-3" aria-label="What would you like to do?">
+        <h2 class="choices__title col-12">What would you like to do?</h2>
+        <div class="col-12 col-md-4">
+          <a href="#concert-groups" class="choice">
+            <span class="choice__icon" aria-hidden="true">👥</span>
+            <strong>Go with a group</strong>
+            <span>Meet up and walk in together</span>
+          </a>
+        </div>
+        <div class="col-12 col-md-4">
+          <a href="#kaki-join-title" class="choice">
+            <span class="choice__icon" aria-hidden="true">🤝</span>
+            <strong>Meet a companion</strong>
+            <span>One fan to go with</span>
+          </a>
+        </div>
+        <div class="col-12 col-md-4">
+          <a href="#concert-tickets-title" class="choice">
+            <span class="choice__icon" aria-hidden="true">🎟️</span>
+            <strong>Get tickets</strong>
+            <span>{{ tickets.length ? `${tickets.length} ${tickets.length === 1 ? 'listing' : 'listings'} from fans` : 'Buy or sell a spare' }}</span>
+          </a>
+        </div>
+      </nav>
+
       <section class="my-result card" aria-labelledby="my-result-title">
         <header class="my-result__head">
           <div>
@@ -402,7 +430,7 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
         </div>
         <div v-else-if="!myProposals.length" class="my-result__empty">
           <h3>No group offer yet</h3>
-          <p>Join automatic matching to be considered in the next matching round. An offer becomes a confirmed place after both you and the host approve.</p>
+          <p>Join matching and we’ll offer you a group. It’s confirmed once <strong>you and the host</strong> both approve.</p>
           <RouterLink :to="{ path: '/groups', query: { concertId: id, mode: 'algorithm' } }" class="btn btn--primary">Find my group</RouterLink>
         </div>
         <template v-else>
@@ -421,22 +449,7 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
         </template>
       </section>
 
-      <!-- A short summary only; the full listings live on the Tickets page. -->
-      <section class="card ticket-summary" aria-labelledby="concert-tickets-title">
-        <div class="ticket-summary__text">
-          <h2 id="concert-tickets-title">Tickets for sale</h2>
-          <p v-if="ticketsLoading" class="loading-state" role="status"><LoadingSpinner />Checking fan-listed tickets…</p>
-          <p v-else-if="ticketsError" role="alert" class="group-error">{{ ticketsError }}</p>
-          <p v-else-if="!tickets.length">No tickets are listed for this concert yet.</p>
-          <p v-else>
-            {{ ticketCount }} {{ ticketCount === 1 ? 'ticket' : 'tickets' }} across {{ tickets.length }} {{ tickets.length === 1 ? 'listing' : 'listings' }}, from {{ formatMoney(ticketFromCents) }}.
-          </p>
-        </div>
-        <button v-if="ticketsError" class="btn btn--ghost" type="button" @click="loadTickets">Try again</button>
-        <RouterLink v-else-if="tickets.length" :to="{ name: 'tickets', query: { concert: id } }" class="btn btn--primary">View tickets</RouterLink>
-        <RouterLink v-else-if="!ticketsLoading" to="/list-ticket" class="btn btn--ghost">List a ticket</RouterLink>
-      </section>
-      <section class="card group-panel companion-options">
+      <section id="concert-groups" class="card group-panel companion-options">
         <h2>Go with a group</h2>
         <p>Already have a ticket? Join an existing group or create your own. Group places do not include concert tickets.</p>
         <p v-if="!currentUser">
@@ -466,7 +479,7 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
           <button class="btn btn--ghost" type="button" @click="participationRetry++">Retry loading participation</button>
         </div>
         <form v-else class="kaki-join__form" @submit.prevent="saveParticipation">
-          <p v-if="participation" class="kaki-join__joined">You are in the companion finder for this concert.</p>
+          <p v-if="participation" class="kaki-join__joined group-success">You are in the companion finder for this concert.</p>
           <div class="kaki-join__fields">
             <label>
               Preferred section
@@ -493,6 +506,21 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
             <button v-if="participation" type="button" class="btn btn--danger-ghost" :disabled="participationBusy" @click="leaveParticipation">Leave companion finder</button>
           </div>
         </form>
+      </section>
+      <!-- A short summary only; the full listings live on the Tickets page. -->
+      <section class="card ticket-summary" aria-labelledby="concert-tickets-title">
+        <div class="ticket-summary__text">
+          <h2 id="concert-tickets-title">Tickets for sale</h2>
+          <p v-if="ticketsLoading" class="loading-state" role="status"><LoadingSpinner />Checking fan-listed tickets…</p>
+          <p v-else-if="ticketsError" role="alert" class="group-error">{{ ticketsError }}</p>
+          <p v-else-if="!tickets.length">No tickets are listed for this concert yet.</p>
+          <p v-else>
+            {{ ticketCount }} {{ ticketCount === 1 ? 'ticket' : 'tickets' }} across {{ tickets.length }} {{ tickets.length === 1 ? 'listing' : 'listings' }}, from {{ formatMoney(ticketFromCents) }}.
+          </p>
+        </div>
+        <button v-if="ticketsError" class="btn btn--ghost" type="button" @click="loadTickets">Try again</button>
+        <RouterLink v-else-if="tickets.length" :to="{ name: 'tickets', query: { concert: id } }" class="btn btn--primary">View tickets</RouterLink>
+        <RouterLink v-else-if="!ticketsLoading" to="/list-ticket" class="btn btn--ghost">List a ticket</RouterLink>
       </section>
 
     </template>
@@ -584,7 +612,7 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
   gap: var(--space-4);
 }
 .kaki-join__joined {
-  color: var(--mint-400);
+  width: fit-content;
 }
 .kaki-join__fields {
   display: grid;
@@ -751,6 +779,48 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
   font-weight: 600;
 }
 
+.choices {
+  margin-block: var(--space-2) var(--space-6);
+}
+.choices__title {
+  font-size: var(--step-1);
+}
+.choice {
+  display: grid;
+  gap: var(--space-1);
+  height: 100%;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--panel-edge);
+  border-top: 4px solid var(--highlight);
+  border-radius: var(--radius-lg);
+  background: var(--panel-bg);
+  box-shadow: var(--panel-shadow);
+  color: var(--text-300);
+  text-decoration: none;
+  transition: transform var(--dur-fast) var(--ease-settle), box-shadow var(--dur-fast) var(--ease-settle);
+}
+.choice:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.choice strong {
+  color: var(--text-100);
+  font-size: var(--step-1);
+}
+.choice strong::after {
+  content: ' →';
+  color: var(--highlight-ink);
+}
+.choice__icon {
+  font-size: 1.5rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  .choice,
+  .choice:hover {
+    transition: none;
+    transform: none;
+  }
+}
 .counts {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -779,7 +849,7 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
   font-family: var(--font-display);
   font-size: var(--step-2);
   font-weight: 700;
-  color: var(--text-100);
+  color: var(--highlight-ink);
   line-height: 1.1;
 }
 

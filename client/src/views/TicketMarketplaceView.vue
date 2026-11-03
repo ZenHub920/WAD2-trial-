@@ -112,16 +112,16 @@ function clearFilters() {
         </nav>
       </header>
 
-      <section class="market-filters" aria-label="Filter tickets">
-        <div class="market-filters__context"><MarketIcon name="filters" :size="18" /><div><strong>Find the right ticket</strong><span>Choose a show, compare the total price, then message the seller.</span></div></div>
-        <label class="market-filters__search">
+      <section class="market-filters row g-3 align-items-end" aria-label="Filter tickets">
+        <div class="market-filters__context col-12"><MarketIcon name="filters" :size="18" /><div><strong>Find the right ticket</strong><span>Choose a show, compare the total price, then message the seller.</span></div></div>
+        <label class="market-filters__search col-12 col-lg-6">
           <span>Search</span>
           <span class="market-filters__input">
             <MarketIcon name="search" :size="18" />
             <input v-model="search" type="search" placeholder="Artist, venue, section or seller" />
           </span>
         </label>
-        <label>
+        <label class="col-12 col-sm-6 col-lg-3">
           <span id="market-concert-label">Concert</span>
           <select v-model="concertId" aria-labelledby="market-concert-label">
             <option value="">All concerts</option>
@@ -131,7 +131,7 @@ function clearFilters() {
             </option>
           </select>
         </label>
-        <label>
+        <label class="col-12 col-sm-6 col-lg-3">
           <span id="market-sort-label">Sort by</span>
           <select v-model="sort" aria-labelledby="market-sort-label">
             <option value="soonest">Concert date: soonest</option>
@@ -140,7 +140,7 @@ function clearFilters() {
             <option value="newest">Newest listings</option>
           </select>
         </label>
-        <div class="market-filters__checks">
+        <div class="market-filters__checks col-12">
           <label><input v-model="verifiedOnly" type="checkbox" /> Verified tickets only</label>
           <label><input v-model="savedOnly" type="checkbox" /> Saved listings only</label>
         </div>
@@ -167,14 +167,15 @@ function clearFilters() {
           <RouterLink to="/list-ticket">List a ticket</RouterLink>
         </MarketNotice>
 
-        <div v-else class="market-grid">
-          <TicketListingCard
-            v-for="listing in results"
-            :key="listing.id"
-            :listing="listing"
-            :saved="isSaved(listing.id)"
-            @toggle-save="toggleSaved"
-          />
+        <div v-else class="row row-cols-1 row-cols-sm-2 row-cols-xl-3 g-4">
+          <div v-for="listing in results" :key="listing.id" class="col d-flex">
+            <TicketListingCard
+              class="flex-fill"
+              :listing="listing"
+              :saved="isSaved(listing.id)"
+              @toggle-save="toggleSaved"
+            />
+          </div>
         </div>
       </section>
 
@@ -205,18 +206,16 @@ function clearFilters() {
   gap: var(--space-2);
 }
 .market-filters {
-  display: grid;
-  grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr));
-  gap: var(--space-4);
-  align-items: end;
-  margin-bottom: var(--space-6);
-  padding: var(--space-5);
+  /* Layout comes from Bootstrap's row/col classes; this is just the panel. */
+  margin: 0 0 var(--space-6);
+  /* Less on top: Bootstrap's row already adds a gutter above the first line. */
+  padding: var(--space-1) var(--space-5) var(--space-5);
   border: var(--border-soft);
   border-radius: var(--radius-lg);
   background: var(--surface-interactive, var(--ink-800));
   box-shadow: inset 0 1px 0 var(--panel-highlight), var(--shadow-sm);
 }
-.market-filters__context { grid-column: 1 / -1; display: flex; align-items: center; gap: var(--space-3); padding-bottom: var(--space-3); border-bottom: 1px solid var(--panel-edge); }
+.market-filters__context { display: flex; align-items: center; gap: var(--space-3); padding-bottom: var(--space-3); border-bottom: 1px solid var(--panel-edge); }
 .market-filters__context > svg { color: var(--accent-400); flex: none; }
 .market-filters__context > div { display: grid; gap: var(--space-1); }
 .market-filters__context strong { color: var(--text-100); font-size: var(--step--1); }
@@ -257,7 +256,6 @@ function clearFilters() {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-5);
-  grid-column: 1 / -1;
 }
 .market-filters__checks label {
   display: inline-flex;
@@ -281,11 +279,6 @@ function clearFilters() {
 .market-results .btn {
   margin-left: auto;
 }
-.market-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
-  gap: var(--space-5);
-}
 .market-page__retry {
   margin-top: var(--space-3);
 }
@@ -293,10 +286,5 @@ function clearFilters() {
   margin-top: var(--space-6);
   color: var(--text-400);
   font-size: var(--step--1);
-}
-@media (max-width: 760px) {
-  .market-filters {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

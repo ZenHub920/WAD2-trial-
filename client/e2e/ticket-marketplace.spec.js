@@ -261,3 +261,34 @@ test('concert page summary links to the Tickets page filtered to that concert', 
     await expect(buyer.page.locator('article').getByText('Cat 4')).toBeVisible();
   } finally { await seller.context.close(); await buyer.context.close(); }
 });
+
+// Workflow: a seller uploads proof of purchase, an admin approves it on the admin
+// page, and the listing then shows the Verified badge to everyone.
+test('admin approves a proof of purchase and the listing becomes verified', async ({ browser, request }) => {
+  const data = await fixture(request);
+  const seller = await person(browser, data, 'hostA');
+  const admin = await person(browser, data, 'admin');
+  try {
+    // Setup: a listing with a proof (a tiny PNG) waiting for review.
+    const listing = await createListing(seller.context, data, { proofData: 'data:image/png;base64,iVBORw0KGgo=' });
+
+    // Ordinary members get the admins-only notice instead of the queue.
+    await seller.page.goto('/admin/verifications');
+    await expect(seller.page.getByText('Admins only')).toBeVisible();
+
+    // Action: the admin finds this listing in Pending and approves it.
+    await admin.page.goto('/admin/verifications');
+    await expect(admin.page.getByRole('heading', { name: 'Proof of purchase', exact: true })).toBeVisible();
+    const item = admin.page.locator('li.item').filter({ hasText: `Test concert ${data.suffix},` });
+    await item.getByRole('button', { name: 'Approve', exact: true }).click();
+
+    // Assert: it moves to Recent decisions and the public listing is verified.
+    await expect(admin.page.getByRole('status').filter({ hasText: 'approved.' })).toBeVisible();
+    await admin.page.getByRole('tab', { name: /Recent decisions/ }).click();
+    await expect(admin.page.locator('#admin-panel-history')).toContainText(`Test concert ${data.suffix}`);
+    expect((await api(seller.context, `/tickets/${listing.id}`)).listing.verified).toBe(true);
+  } finally {
+    await seller.context.close();
+    await admin.context.close();
+  }
+});

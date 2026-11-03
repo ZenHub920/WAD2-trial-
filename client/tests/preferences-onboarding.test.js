@@ -99,7 +99,7 @@ describe('private questionnaire placement', () => {
 });
 
 describe('registration handoff', () => {
-  it('creates the account with existing fields, then offers optional private setup', async () => {
+  it('creates the account with existing fields, then opens the welcome questionnaire', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     api.register.mockResolvedValue({ user: { id: 'new-person', displayName: 'New Ari' } });
     const { wrapper, router } = await mountPage(LoginView, { path: '/login?redirect=%2Fgroups' });
@@ -112,8 +112,8 @@ describe('registration handoff', () => {
     expect(api.register).toHaveBeenCalledWith({ display_name: 'New Ari', email: 'new@example.test', password: 'example-password' });
     expect(setCurrentUser).toHaveBeenCalledWith({ id: 'new-person', displayName: 'New Ari' });
     await vi.advanceTimersByTimeAsync(500); await flushPromises();
-    expect(router.currentRoute.value.path).toBe('/profile');
-    expect(router.currentRoute.value.query).toEqual({ setup: '1', next: '/groups' });
-    expect(router.currentRoute.value.hash).toBe('#preferences');
+    // New accounts go straight to the welcome questionnaire, keeping where they were headed.
+    expect(router.currentRoute.value.path).toBe('/welcome');
+    expect(router.currentRoute.value.query).toEqual({ next: '/groups' });
   });
 });
