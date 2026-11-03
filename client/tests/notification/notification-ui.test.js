@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises } from '@vue/test-utils';
-import ProfileNotifications from '../src/components/ProfileNotifications.vue';
-import NotificationBell from '../src/components/NotificationBell.vue';
-import { api } from '../src/api.js';
-import { browserPushStatus, enableBrowserPush } from '../src/browserPush.js';
-import { button, field, mountPage } from './helpers.js';
-vi.mock('../src/api.js', async original => ({ ...await original(), api: {
+import ProfileNotifications from '../../src/components/ProfileNotifications.vue';
+import NotificationBell from '../../src/components/NotificationBell.vue';
+import { api } from '../../src/api.js';
+import { browserPushStatus, enableBrowserPush } from '../../src/browserPush.js';
+import { button, field, mountPage } from '../helpers.js';
+vi.mock('../../src/api.js', async original => ({ ...await original(), api: {
   notificationSettings: vi.fn(), saveNotificationSettings: vi.fn(), notifications: vi.fn(), unreadNotifications: vi.fn(), readNotification: vi.fn(),
 } }));
-vi.mock('../src/browserPush.js', () => ({ browserPushStatus: vi.fn(), enableBrowserPush: vi.fn(), disableBrowserPush: vi.fn() }));
+vi.mock('../../src/browserPush.js', () => ({ browserPushStatus: vi.fn(), enableBrowserPush: vi.fn(), disableBrowserPush: vi.fn() }));
 beforeEach(() => {
   vi.resetAllMocks();
   api.notificationSettings.mockResolvedValue({ preferences: { chat: true, group: true, match: true, meetup: true, feedback: true } });

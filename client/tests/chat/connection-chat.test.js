@@ -1,16 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises } from '@vue/test-utils';
-import ConnectionChannelView from '../src/views/ConnectionChannelView.vue';
-import { api } from '../src/api.js';
-import { button, mountPage } from './helpers.js';
-vi.mock('../src/api.js', async original => ({ ...await original(), api: {
+import ConnectionChannelView from '../../src/views/ConnectionChannelView.vue';
+import { api } from '../../src/api.js';
+import { button, mountPage } from '../helpers.js';
+vi.mock('../../src/api.js', async original => ({ ...await original(), api: {
   connectionChannel: vi.fn(), readConnectionChannel: vi.fn(), sendConnectionChannelMessage: vi.fn(),
 } }));
-vi.mock('../src/auth.js', async () => {
+vi.mock('../../src/auth.js', async () => {
   const { ref } = await import('vue');
   return { currentUser: ref({ id: 'user-1', name: 'Alex' }) };
 });
-vi.mock('../src/chatLive.js', async () => {
+vi.mock('../../src/chatLive.js', async () => {
   const { ref } = await import('vue');
   return { connectionState: ref('live'), onChatEvent: vi.fn(() => () => {}), refreshUnread: vi.fn() };
 });
