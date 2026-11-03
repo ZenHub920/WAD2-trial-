@@ -110,6 +110,13 @@ test('private preference setup: registration opens the welcome questionnaire and
     await expect(page).toHaveURL(url => url.pathname === '/welcome');
     await expect(page.getByRole('heading', { name: 'Your matching preferences', exact: true })).toBeVisible();
     await expect(page.getByText('Private · Only you can see your answers', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Skip for now' })).toHaveCount(0);
+    // Until preferences are saved, every other page leads back here, remembering where they were going.
+    await page.getByRole('link', { name: 'Tickets', exact: true }).first().click();
+    await expect(page).toHaveURL(url => url.pathname === '/welcome' && url.searchParams.get('next') === '/tickets');
+    await page.goto('/groups');
+    await expect(page).toHaveURL(url => url.pathname === '/welcome' && url.searchParams.get('next') === '/groups');
+    await expect(page.getByRole('heading', { name: 'Your matching preferences', exact: true })).toBeVisible();
     await page.getByRole('button', { name: "meet someone I'd go to more concerts with", exact: true }).click();
     const save = page.waitForRequest(req => req.url().includes('/api/me/preferences') && req.method() === 'PUT');
     await page.getByRole('button', { name: 'Save preferences', exact: true }).click();

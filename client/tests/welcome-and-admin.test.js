@@ -72,19 +72,28 @@ describe('WelcomeView', () => {
     expect(links.find((a) => a.text() === 'Profile page').attributes('href')).toBe('/profile#preferences');
   });
 
-  it('skipping saves nothing but still points to Profile', async () => {
+  it('cannot be skipped: there is no skip button and it says saving is required', async () => {
     const { wrapper } = await mountPage(WelcomeView, { path: '/welcome' });
-    await button(wrapper, 'Skip for now').trigger('click');
-    expect(saveMyPreferences).not.toHaveBeenCalled();
-    expect(wrapper.text()).toContain('you can do this later');
-    expect(wrapper.text()).toContain('You can change your preferences anytime on your Profile page');
-    // Without ?next= the member carries on to the concert list.
+    expect(wrapper.findAll('button').some((b) => b.text() === 'Skip for now')).toBe(false);
+    expect(wrapper.get('.welcome__required').text()).toContain('Save your preferences to start using Encore');
+  });
+
+  async function saveOne(wrapper) {
+    const editor = wrapper.findComponent(PreferenceEditor);
+    await button(editor, 'Loud and lively').trigger('click');
+    await editor.get('form').trigger('submit');
+    await flushPromises();
+  }
+
+  it('continues to the concert list when there is no ?next=', async () => {
+    const { wrapper } = await mountPage(WelcomeView, { path: '/welcome' });
+    await saveOne(wrapper);
     expect(wrapper.findAll('a').find((a) => a.text() === 'Continue').attributes('href')).toBe('/concerts');
   });
 
   it('ignores a ?next= that points to another website', async () => {
     const { wrapper } = await mountPage(WelcomeView, { path: '/welcome?next=%2F%2Fevil.example' });
-    await button(wrapper, 'Skip for now').trigger('click');
+    await saveOne(wrapper);
     expect(wrapper.findAll('a').find((a) => a.text() === 'Continue').attributes('href')).toBe('/concerts');
   });
 

@@ -1,7 +1,7 @@
-import { createApp, watch } from 'vue';
+import { createApp } from 'vue';
 import { createRouter, createWebHistory } from 'vue-router';
 
-import { currentUser, sessionReady } from './auth.js';
+import { guardRoute } from './routeGuards.js';
 
 import App from './App.vue';
 // Bootstrap's responsive grid and utility classes only. Its component styles
@@ -131,21 +131,8 @@ const router = createRouter({
   },
 });
 
-// Restore the session before deciding whether a protected page can open.
-router.beforeEach(async (to) => {
-  if (!to.meta?.requiresAuth) return true;
-  if (!sessionReady.value) {
-    await new Promise((resolve) => {
-      const stop = watch(sessionReady, (ready) => {
-        if (!ready) return;
-        stop();
-        resolve();
-      }, { immediate: true });
-    });
-  }
-  if (currentUser.value) return true;
-  return { path: '/login', query: { redirect: to.fullPath } };
-});
+// Sign-in for protected pages, then saved preferences before anything else.
+router.beforeEach(guardRoute);
 
 router.afterEach((to) => {
   const title = to.name === 'group-connections'

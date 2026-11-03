@@ -6,8 +6,9 @@ import LoadingSpinner from '../components/LoadingSpinner.vue';
 import { myPreferences, loadMyPreferences, saveMyPreferences } from '../groupPreferences.js';
 
 /**
- * First stop after creating an account. Shows the questionnaire straight away,
- * then reminds the new member that Profile is where they can change it later.
+ * First stop after creating an account. Saving preferences is required before
+ * the rest of Encore opens (see routeGuards.js), so there is no skip. Afterwards
+ * it reminds the new member that Profile is where they can change them later.
  */
 const route = useRoute();
 const router = useRouter();
@@ -22,7 +23,7 @@ const next = computed(() => {
 const loading = ref(true);
 const saving = ref(false);
 const error = ref('');
-// 'editing' → questionnaire; 'saved' or 'skipped' → the closing note.
+// 'editing' → questionnaire; 'saved' → the closing note.
 const step = ref('editing');
 
 onMounted(async () => {
@@ -55,6 +56,7 @@ async function save(answers) {
     <section v-if="step === 'editing'" class="welcome__panel welcome__form" aria-labelledby="welcome-form">
       <p class="welcome__private">Private · Only you can see your answers</p>
       <h1 id="welcome-form">Your matching preferences</h1>
+      <p class="welcome__required">Save your preferences to start using Encore. Pick at least one thing; you can change them anytime.</p>
       <p v-if="error" class="welcome__error" role="alert">{{ error }}</p>
       <p v-if="loading" class="loading-state" role="status"><LoadingSpinner /> Loading the questionnaire…</p>
       <PreferenceEditor
@@ -66,16 +68,11 @@ async function save(answers) {
         submit-label="Save preferences"
         @save="save"
       />
-      <div class="welcome__skip d-flex flex-wrap align-items-center justify-content-between gap-3">
-        <p>Not sure yet? You can browse concerts and join groups without answering.</p>
-        <button type="button" class="btn btn--ghost" :disabled="saving" @click="step = 'skipped'">Skip for now</button>
-      </div>
     </section>
 
     <section v-else class="welcome__panel welcome__done" role="status" aria-labelledby="welcome-done">
-      <h1 id="welcome-done">{{ step === 'saved' ? 'Your preferences are saved' : 'No problem, you can do this later' }}</h1>
-      <p v-if="step === 'saved'">Companion suggestions and group recommendations will now use your answers.</p>
-      <p v-else>Companion matching works best once you've added a few preferences.</p>
+      <h1 id="welcome-done">Your preferences are saved</h1>
+      <p>Companion suggestions and group recommendations will now use your answers.</p>
       <p class="welcome__reminder">
         You can change your preferences anytime on your
         <RouterLink :to="{ path: '/profile', hash: '#preferences' }">Profile page</RouterLink>.
@@ -112,8 +109,8 @@ async function save(answers) {
   font-size: var(--step-2);
 }
 
-.welcome__skip p {
-  color: var(--text-400);
+.welcome__required {
+  color: var(--text-300);
   font-size: var(--step--1);
 }
 
@@ -125,6 +122,10 @@ async function save(answers) {
 }
 
 .welcome__panel > h1 + * {
+  margin-top: var(--space-2);
+}
+
+.welcome__required + * {
   margin-top: var(--space-4);
 }
 
@@ -132,15 +133,6 @@ async function save(answers) {
   color: var(--rose-400);
 }
 
-.welcome__skip {
-  margin-top: var(--space-5);
-  padding-top: var(--space-4);
-  border-top: var(--border-soft);
-}
-
-.welcome__skip p {
-  max-width: 48ch;
-}
 
 .welcome__done {
   max-width: 640px;

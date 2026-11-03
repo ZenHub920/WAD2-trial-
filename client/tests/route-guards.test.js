@@ -1,0 +1,75 @@
+/**
+ * Unit tests for the router gate: sign-in for protected pages, then saved
+ * preferences before a signed-in member can open anything else.
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { nextTick } from 'vue';
+import { guardRoute } from '../src/routeGuards.js';
+import { currentUser, sessionReady } from '../src/auth.js';
+import { loadMyPreferences } from '../src/groupPreferences.js';
+
+vi.mock('../src/auth.js', async () => {
+  const { ref } = await import('vue');
+  return { currentUser: ref(null), sessionReady: ref(true) };
+});
+vi.mock('../src/groupPreferences.js', () => ({ loadMyPreferences: vi.fn() }));
+
+const route = (name, fullPath, meta = {}) => ({ name, fullPath, meta });
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  currentUser.value = null;
+  sessionReady.value = true;
+});
+
+describe('guardRoute', () => {
+  it('lets signed-out visitors open public pages', async () => {
+    expect(await guardRoute(route('concerts', '/concerts'))).toBe(true);
+    expect(loadMyPreferences).not.toHaveBeenCalled();
+  });
+
+  it('sends signed-out visitors on protected pages to sign in', async () => {
+    expect(await guardRoute(route('kaki', '/kaki', { requiresAuth: true })))
+      .toEqual({ path: '/login', query: { redirect: '/kaki' } });
+  });
+
+  it('sends a signed-in member without preferences to /welcome, remembering where they were going', async () => {
+    currentUser.value = { id: 'me' };
+    loadMyPreferences.mockResolvedValue(null);
+    expect(await guardRoute(route('concert', '/concerts/c1')))
+      .toEqual({ name: 'welcome', query: { next: '/concerts/c1' } });
+  });
+
+  it('still opens the welcome, sign-in and account security pages before preferences are saved', async () => {
+    currentUser.value = { id: 'me' };
+    loadMyPreferences.mockResolvedValue(null);
+    for (const name of ['welcome', 'login', 'account-security']) {
+      expect(await guardRoute(route(name, `/${name}`))).toBe(true);
+    }
+    expect(loadMyPreferences).not.toHaveBeenCalled();
+  });
+
+  it('lets a member with saved preferences through', async () => {
+    currentUser.value = { id: 'me' };
+    loadMyPreferences.mockResolvedValue({ concepts: ['singalong'] });
+    expect(await guardRoute(route('groups', '/groups', { requiresAuth: true }))).toBe(true);
+  });
+
+  it('does not lock members out when the preference check fails', async () => {
+    currentUser.value = { id: 'me' };
+    loadMyPreferences.mockRejectedValue(new Error('offline'));
+    expect(await guardRoute(route('groups', '/groups'))).toBe(true);
+  });
+
+  it('waits for the session check before deciding', async () => {
+    sessionReady.value = false;
+    let result;
+    guardRoute(route('kaki', '/kaki', { requiresAuth: true })).then((r) => { result = r; });
+    await nextTick();
+    expect(result).toBeUndefined();
+    currentUser.value = { id: 'me' };
+    loadMyPreferences.mockResolvedValue({ concepts: ['singalong'] });
+    sessionReady.value = true;
+    await vi.waitFor(() => expect(result).toBe(true));
+  });
+});
