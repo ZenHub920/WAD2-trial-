@@ -80,6 +80,19 @@ const prefEditing = ref(false);
 const showPreferenceEditor = computed(() => settingUp.value || !myPreferences.value || prefEditing.value);
 const continueAfterSetup = () => router.replace(setupNext.value);
 
+// The server says which rule an answer broke; repeating that beats "try again",
+// which cannot succeed until the answer changes.
+const savePreferencesMessages = {
+  choose_at_least_one_preference: 'Answer at least one sentence or choose one preference before saving.',
+  invalid_preference_text: 'Each preference must be 1–100 characters. Shorten any long entries and save again.',
+  invalid_preferences: 'Each section can hold at most 30 preferences. Remove a few and save again.',
+  too_many_dealbreakers: 'You can mark at most 3 dealbreakers.',
+  dealbreaker_not_in_avoid: 'A dealbreaker must also be listed under "What I prefer to avoid".',
+  unknown_concept: 'One of your choices is no longer offered. Reload the page and pick again.',
+  unknown_quiz_card: 'The sentences changed since this page loaded. Reload the page and answer again.',
+  unknown_quiz_option: 'The sentences changed since this page loaded. Reload the page and answer again.',
+};
+
 async function savePreferences(answers) {
   prefSaving.value = true;
   prefError.value = '';
@@ -89,8 +102,8 @@ async function savePreferences(answers) {
     prefNotice.value = 'Saved. Groups and companion matching now use these.';
     prefEditing.value = false;
     if (settingUp.value) await continueAfterSetup();
-  } catch {
-    prefError.value = 'Could not save your answers. Please try again.';
+  } catch (e) {
+    prefError.value = savePreferencesMessages[e?.message] ?? 'Could not save your answers. Please try again.';
   } finally {
     prefSaving.value = false;
   }

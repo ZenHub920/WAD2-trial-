@@ -23,7 +23,7 @@ const meetupLabel = scope => meetupActionForScope(meetupPlans.value, scope);
 const concerts = ref([]), groups = ref([]), saved = ref([]), seeker = ref(null);
 const concertId = ref(typeof route.query.concertId === 'string' ? route.query.concertId : '');
 const concertsLoading = ref(true), loading = ref(false), busy = ref(false);
-const setupOpen = ref(false), error = ref(''), message = ref('');
+const error = ref(''), message = ref('');
 const offset = ref(0), total = ref(0), joins = ref([]), memberships = ref([]), proposals = ref([]);
 const matching = ref({ optedIn: false, state: 'idle', request: null, proposal: null });
 const displayedMode = ref('direct'), applicationFor = ref(''), applicationNote = ref('');
@@ -117,7 +117,7 @@ async function load() {
   } finally { if (isCurrent(key) && current === generation) loading.value = false; }
 }
 watch(concertId, id => {
-  setupOpen.value = false; applicationFor.value = ''; applicationNote.value = ''; offset.value = 0; message.value = '';
+  applicationFor.value = ''; applicationNote.value = ''; offset.value = 0; message.value = '';
   clearTimeout(filterTimer); router.replace({ query: { ...route.query, concertId: id || undefined } }); load();
 });
 watch(() => Object.values(filters), () => {
@@ -216,18 +216,17 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
           <div>
             <p class="next-step__label">Next step</p>
             <h2>First, tell us your plans</h2>
-            <p class="group-muted">Three quick questions. Hosts see them when you ask to join.</p>
+            <p class="group-muted">Answer these to see the groups going. Hosts can see your answers when you ask to join.</p>
           </div>
-          <button type="button" class="btn" :class="setupOpen ? 'btn--ghost' : 'btn--primary'" :disabled="busy" :aria-expanded="setupOpen" @click="setupOpen = !setupOpen">{{ setupOpen ? 'Not now' : 'Get started' }}</button>
         </div>
-        <form v-if="setupOpen" class="group-panel" @submit.prevent="enroll()"><fieldset :disabled="busy" class="group-fieldset">
-          <div class="group-controls">
+        <form class="group-panel" @submit.prevent="enroll()"><fieldset :disabled="busy" class="group-fieldset group-setup__form">
+          <div class="group-controls group-setup__questions">
             <label>Where do you want to be?<select v-model="form.section_pref"><option v-for="(name, id) in SECTION_OPTIONS" :key="id" :value="id">{{ name }}</option></select></label>
             <label>How much do you want to spend?<select v-model.number="form.spend_band_max"><option v-for="n in 4" :key="n" :value="n">{{ LABELS.spendBand[n] }}</option></select></label>
             <label>When do you want to get there?<select v-model="form.arrival_pref"><option v-for="(name, id) in ARRIVAL_OPTIONS" :key="id" :value="id">{{ name }}</option></select></label>
           </div>
           <details><summary>Anything you’d like to do together? (optional)</summary><fieldset><legend>Things to do</legend><label v-for="(name, id) in LABELS.plans" :key="id" class="group-check"><input v-model="form.plans_wanted[id]" type="checkbox">{{ name }}</label></fieldset></details>
-          <button class="btn btn--primary">Save my answers</button>
+          <div class="group-setup__actions"><button class="btn btn--primary group-setup__save">Save my answers</button></div>
         </fieldset></form>
       </section>
 
@@ -238,6 +237,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
         <button type="button" class="btn btn--primary" :disabled="busy" @click="enroll(true)">I’m looking again</button>
       </section>
 
+      <template v-if="seeker || currentGroup">
       <section class="group-panel group-panel--bare" aria-labelledby="joining-mode-heading">
         <div class="discovery-section-heading"><span class="discovery-step mono" aria-hidden="true">01</span><div><p class="group-kicker mono">Your way in</p><h2 id="joining-mode-heading">How do you want to find a group?</h2></div></div>
         <div class="joining-modes" role="group" aria-label="Ways to find a group">
@@ -368,6 +368,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
           <button type="button" class="btn btn--danger-ghost" :disabled="busy" @click="preference(preferenceGroup.partyId, true)">Unlike</button>
         </div>
       </details>
+      </template>
     </template>
     <p v-else-if="!concertsLoading && !concerts.length" class="group-empty">No concerts yet. Check back soon!</p>
     </GroupPreferencesGate>
@@ -539,6 +540,37 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
   padding-left: var(--space-5);
   color: var(--text-300);
   max-width: 70ch;
+}
+.group-setup__form {
+  grid-template-columns: minmax(0, 1fr);
+}
+.group-setup__questions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: end;
+}
+.group-setup__questions select {
+  width: 100%;
+}
+@media (max-width: 720px) {
+  .group-setup__questions { grid-template-columns: minmax(0, 1fr); }
+}
+.group-setup__actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--panel-edge);
+}
+.group-setup__save {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 11rem;
+  height: auto;
+  padding: var(--space-3) var(--space-5);
+  border-radius: 999px;
+  align-self: center;
 }
 .group-fieldset {
   padding: 0;

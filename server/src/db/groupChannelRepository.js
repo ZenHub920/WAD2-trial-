@@ -6,16 +6,15 @@
  * and a seller around one listing. This one is a room, and its membership is
  * granted rather than earned:
  *
- *   1. Being ACCEPTED into the group (an active group_memberships row) makes
- *      someone eligible. It does not put them in the channel.
- *   2. The host adds whom they choose from those eligible. Nobody else can
+ *   1. Being ACCEPTED into the group (an active group_memberships row) puts
+ *      someone in the channel automatically, via a trigger.
+ *   2. A member sees the channel from that moment, and may leave it at any
+ *      time without leaving the group itself.
+ *   3. The host can add back an accepted member who left. Nobody else can
  *      add anyone, and nobody can add themselves.
- *   3. An added member sees the channel from that moment, and may leave it at
- *      any time without leaving the group itself.
  *
- * Keeping the two memberships separate is the point of the feature: a group
- * can hold people who are not in its chat, and leaving the chat is not the
- * same decision as leaving the concert plan.
+ * The two memberships stay separate: leaving the chat is not the same
+ * decision as leaving the concert plan.
  *
  * There is no channels table. The channel IS the party, so membership and
  * messages key on party_id directly and a channel cannot drift out of step
@@ -51,6 +50,23 @@ export function migrateGroupChannels(db) {
     -- matters, and rowid order inside a party comes free from the table order.
     CREATE INDEX IF NOT EXISTS idx_group_channel_msgs
       ON group_channel_messages(party_id);
+    -- Acceptance into the group puts the member in its chat, reading from
+    -- the latest message so the backlog does not arrive as unread.
+    CREATE TRIGGER IF NOT EXISTS admit_group_channel_member
+      AFTER INSERT ON group_memberships WHEN NEW.status = 'active'
+      BEGIN
+        INSERT OR IGNORE INTO group_channel_members (party_id, user_id, last_read_seq)
+        VALUES (NEW.party_id, NEW.user_id,
+          COALESCE((SELECT MAX(rowid) FROM group_channel_messages WHERE party_id = NEW.party_id), 0));
+      END;
+    CREATE TRIGGER IF NOT EXISTS readmit_group_channel_member
+      AFTER UPDATE OF status ON group_memberships
+      WHEN NEW.status = 'active' AND OLD.status <> 'active'
+      BEGIN
+        INSERT OR IGNORE INTO group_channel_members (party_id, user_id, last_read_seq)
+        VALUES (NEW.party_id, NEW.user_id,
+          COALESCE((SELECT MAX(rowid) FROM group_channel_messages WHERE party_id = NEW.party_id), 0));
+      END;
     CREATE TRIGGER IF NOT EXISTS revoke_group_channel_member
       AFTER UPDATE OF status ON group_memberships WHEN NEW.status <> 'active'
       BEGIN
@@ -82,7 +98,7 @@ export function createGroupChannelRepo(db, repos) {
   const party = (partyId) =>
     db.prepare('SELECT id, host_user_id, concert_id, status FROM parties WHERE id = ?').get(partyId) ?? null;
 
-  /** Accepted into the group — eligibility, not channel membership. */
+  /** Accepted into the group: the condition for being in the channel. */
   const inGroup = db.prepare(`
     SELECT 1 FROM group_memberships
     WHERE party_id = ? AND user_id = ? AND status = 'active'
@@ -248,7 +264,7 @@ export function createGroupChannelRepo(db, repos) {
       requireHost(partyId, hostId);
       if (typeof memberId !== 'string' || !memberId) throw fail('user_required', 400);
       if (!inGroup.get(partyId, memberId)) throw fail('not_a_group_member', 409);
-      if (channelMember.get(partyId, memberId)) throw fail('already_in_channel', 409);
+      // Acceptance usually admitted them already; adding again is a no-op.
       addMember.run(partyId, memberId, hostId, partyId);
       return { added: memberId, members: memberRows.all(partyId).map(shapeMember) };
     }),

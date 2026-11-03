@@ -1,6 +1,6 @@
 /**
- * Group channels: the host chooses who is in the room, from the people the
- * group already accepted, and a member may leave it without leaving the group.
+ * Group channels: accepted members join the room automatically, may leave it
+ * without leaving the group, and only the host can add an accepted member back.
  */
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -34,13 +34,15 @@ beforeEach(async () => {
     section: 'ga_standing', spend_band: 2, arrival_plan: 'mid', plans: {},
     vibe: { singalong: 3, photography: 3, dancing: 3, quiet: 3, queue_early: 3, merch: 3 },
   });
-  // Accepted into the GROUP — eligibility only, not the channel. 'friend' is
+  // Accepted into the GROUP, which also admits them to the channel. 'friend' is
   // the invite path; 'join' would need a confirmed seat claim to exist first,
   // which is the matching flow and not what this file is about.
   for (const who of ['member', 'other']) {
     db.prepare(`INSERT INTO group_memberships (party_id, user_id, concert_id, source, status)
                 VALUES ('p1', ?, 'c1', 'friend', 'active')`).run(cookies[`${who}Id`]);
   }
+  // 'other' stays in the group but has left the chat.
+  db.prepare("DELETE FROM group_channel_members WHERE party_id='p1' AND user_id=?").run(cookies.otherId);
 });
 afterEach(async () => {
   await new Promise((resolve) => server.close(resolve));
@@ -57,48 +59,56 @@ async function call(path, who, method = 'GET', body) {
   return { status: res.status, body: parsed, cookie: res.headers.get('set-cookie')?.split(';')[0] };
 }
 
-test('the host is in their own room and accepted members are not, until added', async () => {
+test('accepting someone into the group puts them in its room', async () => {
   const mine = await call('/me/group-channels', 'host');
   assert.equal(mine.status, 200);
   assert.equal(mine.body.channels.length, 1, 'the host sees their room without being added');
   assert.equal(mine.body.channels[0].partyId, 'p1');
 
-  // Accepted into the group, but the room is not theirs to see yet.
-  assert.deepEqual((await call('/me/group-channels', 'member')).body.channels, []);
-  assert.equal((await call('/group-channels/p1', 'member')).status, 404,
+  await call('/group-channels/p1/messages', 'host', 'POST', { body: 'Before you joined' });
+  db.prepare(`INSERT INTO group_memberships (party_id, user_id, concert_id, source, status)
+              VALUES ('p1', ?, 'c1', 'friend', 'active')`).run(cookies.strangerId);
+  const joined = await call('/group-channels/p1', 'stranger');
+  assert.equal(joined.status, 200, 'accepted, so in the room with no host step');
+  assert.equal((await call('/group-channels/unread', 'stranger')).body.total, 0,
+    'earlier messages are not counted as unread');
+  assert.equal((await call('/me/group-channels', 'member')).body.channels.length, 1);
+});
+
+test('people outside the room get 404', async () => {
+  assert.equal((await call('/group-channels/p1', 'other')).status, 404,
     'a non-member gets 404, not 403, so party ids cannot be probed');
   assert.equal((await call('/group-channels/p1', 'stranger')).status, 404);
 });
 
-test('only the host adds, and only people the group already accepted', async () => {
+test('only the host adds back, and only people the group already accepted', async () => {
   // Candidates are exactly the accepted members who are not in the room.
   const candidates = await call('/group-channels/p1/candidates', 'host');
   assert.equal(candidates.status, 200);
-  assert.deepEqual(candidates.body.candidates.map((c) => c.displayName).sort(), ['member', 'other']);
+  assert.deepEqual(candidates.body.candidates.map((c) => c.displayName), ['other']);
 
   assert.equal((await call('/group-channels/p1/candidates', 'member')).status, 403);
   assert.equal((await call('/group-channels/p1/members', 'member', 'POST', { userId: cookies.otherId })).status, 403,
     'a member cannot add anybody');
-  assert.equal((await call('/group-channels/p1/members', 'member', 'POST', { userId: cookies.memberId })).status, 403,
+  assert.equal((await call('/group-channels/p1/members', 'other', 'POST', { userId: cookies.otherId })).status, 403,
     'nobody adds themselves');
   assert.equal((await call('/group-channels/p1/members', 'host', 'POST', { userId: cookies.strangerId })).status, 409,
     'somebody the group never accepted cannot be added');
 
-  const added = await call('/group-channels/p1/members', 'host', 'POST', { userId: cookies.memberId });
+  const added = await call('/group-channels/p1/members', 'host', 'POST', { userId: cookies.otherId });
   assert.equal(added.status, 200);
-  assert.deepEqual(added.body.members.map((m) => m.displayName), ['host', 'member']);
-  assert.equal((await call('/group-channels/p1/members', 'host', 'POST', { userId: cookies.memberId })).status, 409,
-    'adding twice is refused');
+  assert.deepEqual(added.body.members.map((m) => m.displayName).sort(), ['host', 'member', 'other']);
+  assert.equal((await call('/group-channels/p1/members', 'host', 'POST', { userId: cookies.otherId })).status, 200,
+    'adding twice is a no-op');
 
   // Added, so now they see it.
-  assert.equal((await call('/me/group-channels', 'member')).body.channels.length, 1);
-  assert.equal((await call('/group-channels/p1', 'member')).status, 200);
+  assert.equal((await call('/me/group-channels', 'other')).body.channels.length, 1);
+  assert.equal((await call('/group-channels/p1', 'other')).status, 200);
   // And they drop off the candidate list.
-  assert.deepEqual((await call('/group-channels/p1/candidates', 'host')).body.candidates.map((c) => c.displayName), ['other']);
+  assert.deepEqual((await call('/group-channels/p1/candidates', 'host')).body.candidates, []);
 });
 
 test('members talk, and only members read or write', async () => {
-  await call('/group-channels/p1/members', 'host', 'POST', { userId: cookies.memberId });
 
   assert.equal((await call('/group-channels/p1/messages', 'other', 'POST', { body: 'let me in' })).status, 404,
     'someone outside the room cannot write into it');
@@ -126,7 +136,6 @@ test('members talk, and only members read or write', async () => {
 });
 
 test('unread counts rooms, not messages, and opening clears it', async () => {
-  await call('/group-channels/p1/members', 'host', 'POST', { userId: cookies.memberId });
   for (const body of ['one', 'two', 'three']) {
     await call('/group-channels/p1/messages', 'host', 'POST', { body });
   }
@@ -142,7 +151,6 @@ test('unread counts rooms, not messages, and opening clears it', async () => {
 });
 
 test('leaving the channel is not leaving the group, and the host cannot leave', async () => {
-  await call('/group-channels/p1/members', 'host', 'POST', { userId: cookies.memberId });
   assert.equal((await call('/group-channels/p1/members/me', 'host', 'DELETE')).status, 409,
     'the host would strand their own room');
 
@@ -161,7 +169,6 @@ test('leaving the channel is not leaving the group, and the host cannot leave', 
 });
 
 test('a group message notifies the room once, named, and not the sender', async () => {
-  await call('/group-channels/p1/members', 'host', 'POST', { userId: cookies.memberId });
   for (const body of ['first', 'second']) {
     await call('/group-channels/p1/messages', 'host', 'POST', { body });
   }
@@ -178,8 +185,7 @@ test('a group message notifies the room once, named, and not the sender', async 
     .filter((n) => n.path === '/groups/p1/channel').length, 0);
 });
 
-test('leaving the group revokes channel access and requires a new host grant after rejoining', async () => {
-  await call('/group-channels/p1/members', 'host', 'POST', { userId: cookies.memberId });
+test('leaving the group revokes channel access and rejoining restores it', async () => {
   await call('/group-channels/p1/messages', 'host', 'POST', { body: 'Before leaving' });
   db.prepare("UPDATE group_memberships SET status='left' WHERE party_id='p1' AND user_id=?")
     .run(cookies.memberId);
@@ -192,14 +198,12 @@ test('leaving the group revokes channel access and requires a new host grant aft
 
   db.prepare("UPDATE group_memberships SET status='active' WHERE party_id='p1' AND user_id=?")
     .run(cookies.memberId);
-  assert.equal((await call('/group-channels/p1', 'member')).status, 404);
-  assert.equal((await call('/group-channels/p1/members', 'host', 'POST', { userId: cookies.memberId })).status, 200);
+  assert.equal((await call('/group-channels/p1', 'member')).status, 200);
   db.prepare("DELETE FROM group_memberships WHERE party_id='p1' AND user_id=?").run(cookies.memberId);
   assert.equal((await call('/group-channels/p1', 'member')).status, 404);
 });
 
 test('cancelling a group removes its channel and prevents the host from reopening it', async () => {
-  await call('/group-channels/p1/members', 'host', 'POST', { userId: cookies.memberId });
   await call('/group-channels/p1/messages', 'host', 'POST', { body: 'Old plan' });
   db.prepare("UPDATE parties SET status='cancelled' WHERE id='p1'").run();
   for (const who of ['host', 'member']) {
@@ -214,7 +218,6 @@ test('cancelling a group removes its channel and prevents the host from reopenin
 });
 
 test('channel migration clears legacy grants without removing eligible members or history', async () => {
-  await call('/group-channels/p1/members', 'host', 'POST', { userId: cookies.memberId });
   await call('/group-channels/p1/messages', 'host', 'POST', { body: 'Keep history' });
   db.prepare("INSERT INTO group_channel_members(party_id,user_id) VALUES('p1',?)").run(cookies.strangerId);
   migrateGroupChannels(db);
@@ -224,7 +227,6 @@ test('channel migration clears legacy grants without removing eligible members o
 });
 
 test('replying in a channel clears the sender notification and rearms the next message', async () => {
-  await call('/group-channels/p1/members', 'host', 'POST', { userId: cookies.memberId });
   await call('/group-channels/p1/messages', 'host', 'POST', { body: 'Question' });
   assert.equal(repos.notifications.unread(cookies.memberId), 1);
   await call('/group-channels/p1/messages', 'member', 'POST', { body: 'Answer' });

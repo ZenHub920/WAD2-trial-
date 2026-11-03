@@ -63,7 +63,7 @@ test('accepting a connection exposes one shared room automatically to both hosts
     assert.equal((await call('/me/connection-channels', who)).body.channels.length, 1);
   }
   assert.equal((await call(path(), 'outsider')).status, 404);
-  assert.equal((await call('/me/group-channels', 'friendA')).body.channels.length, 0, 'shared connection chat must not change the host-managed single-group room');
+  assert.deepEqual((await call('/me/group-channels', 'friendA')).body.channels.map((c) => c.partyId), ['pA'], 'the shared connection chat sits beside, not instead of, their own group room');
   assert.equal(repos.membership.active(ids.friendA, 'c1').party_id, 'pA');
   assert.equal(repos.membership.active(ids.friendB, 'c1').party_id, 'pB');
   const board = repos.meetups.create(ids.hostA, { connectionId, title: 'Meet both groups', startsAt: '2030-01-01T10:00:00+08:00', endsAt: '2030-01-01T11:00:00+08:00' });

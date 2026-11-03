@@ -9,6 +9,8 @@ import MatchProposalCard from '../components/MatchProposalCard.vue';
 import { useCountUp } from '../composables/useCountUp.js';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import BackLink from '../components/BackLink.vue';
+import SetlistReel from '../components/market/SetlistReel.vue';
+import SetlistEditor from '../components/market/SetlistEditor.vue';
 
 const props = defineProps({ id: { type: String, required: true } });
 const router = useRouter();
@@ -26,6 +28,7 @@ const error = ref(null);
 const runError = ref('');
 const runNotice = ref('');
 const matchingError = ref('');
+const setlist = ref(null);
 const participation = ref(null);
 const participationLoading = ref(false);
 const participationBusy = ref(false);
@@ -177,6 +180,11 @@ async function load() {
   matchingError.value = '';
   parties.value = [];
   requests.value = [];
+  // Its own request, deliberately: a setlist is an extra, so a failure here
+  // must never take the concert page down with it.
+  api.concertSetlist(props.id)
+    .then((result) => { setlist.value = result.setlist; })
+    .catch(() => { setlist.value = null; });
   try {
     const [detail, matching] = await Promise.all([
       api.concert(props.id),
@@ -384,32 +392,14 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
         </aside>
       </header>
 
-      <!-- The three things people come here to do, side by side, so the next
-           step is visible before any of the detail below. -->
-      <nav class="choices row g-3" aria-label="What would you like to do?">
-        <h2 class="choices__title col-12">What would you like to do?</h2>
-        <div class="col-12 col-md-4">
-          <a href="#concert-groups" class="choice">
-            <span class="choice__icon" aria-hidden="true">👥</span>
-            <strong>Go with a group</strong>
-            <span>Meet up and walk in together</span>
-          </a>
-        </div>
-        <div class="col-12 col-md-4">
-          <a href="#kaki-join-title" class="choice">
-            <span class="choice__icon" aria-hidden="true">🤝</span>
-            <strong>Meet a companion</strong>
-            <span>One fan to go with</span>
-          </a>
-        </div>
-        <div class="col-12 col-md-4">
-          <a href="#concert-tickets-title" class="choice">
-            <span class="choice__icon" aria-hidden="true">🎟️</span>
-            <strong>Get tickets</strong>
-            <span>{{ tickets.length ? `${tickets.length} ${tickets.length === 1 ? 'listing' : 'listings'} from fans` : 'Buy or sell a spare' }}</span>
-          </a>
-        </div>
-      </nav>
+      <!-- Directly under group matching, as the running order for this show. -->
+      <SetlistReel :artist="concert.concert.artist" :setlist="setlist" />
+      <SetlistEditor
+        v-if="sessionReady && currentUser?.isOperator"
+        :concert-id="id"
+        :setlist="setlist"
+        @saved="setlist = $event"
+      />
 
       <section class="my-result card" aria-labelledby="my-result-title">
         <header class="my-result__head">
