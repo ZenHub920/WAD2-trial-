@@ -17,7 +17,7 @@ const {
   weather, rainfall, travelRecommendations, transport, comment, slots, place, position, travelOptions,
   feedback, failures, placeSearchKey, confirmAction, capabilities, contributionsLocked, selectedOrigins,
   journeySearchKey, leavePrompt, settleLeave, journeyDirty,
-  selectPlace, selectJourney, invalidatePlace, invalidateJourney, editPlace, editJourney, editSlotLocation,
+  selectPlace, selectJourney, invalidatePlace, invalidateJourney, editPlace, editJourney,
   selectedSlotCount, bestSavedOverlap, selectedTimes, activeStep, availabilityDirty, refreshing, syncNote,
   liveLabel, statuses, time, validCoordinates, recommendedOptions, hasSavedAvailability, recommendationEmpty,
   refreshPlanner, showStep, navigateSteps, create, saveAvailability, discardAvailability, assignJourney,
@@ -102,22 +102,6 @@ const {
             <p v-if="journeyDirty" class="meetup-unsaved" role="status">Journey input has not been applied. Apply it to selected times before saving.</p>
             <p v-if="feedback.journey" class="group-success" role="status">{{ feedback.journey }}</p>
             <p v-if="failures.journey" class="group-error" role="alert">{{ failures.journey }}</p>
-            <details class="meetup-slot-overrides"><summary>Different locations or travel methods during the day</summary>
-              <p class="group-muted">Fine-tune individual selected periods. These changes also need saving.</p>
-              <template v-for="s in board.grid" :key="s.startsAt">
-                <div v-if="slots[s.startsAt].selected" class="meetup-slot-override">
-                  <strong>{{ time(s.startsAt) }}</strong>
-                  <div class="group-controls">
-                    <label>Travel method<select v-model="slots[s.startsAt].travelMode"><option value="transit">Public transport</option><option value="drive">Car</option></select></label>
-                    <label>Location label<input v-model="slots[s.startsAt].label" maxlength="100" placeholder="Approximate public place" @input="editSlotLocation(s.startsAt, 'label')" /></label>
-                  </div>
-                  <details><summary>Manual coordinates for this period</summary><div class="group-controls">
-                    <label>Latitude<input v-model="slots[s.startsAt].latitude" type="number" min="-90" max="90" step="any" @input="editSlotLocation(s.startsAt, 'latitude')" /></label>
-                    <label>Longitude<input v-model="slots[s.startsAt].longitude" type="number" min="-180" max="180" step="any" @input="editSlotLocation(s.startsAt, 'longitude')" /></label>
-                  </div></details>
-                </div>
-              </template>
-            </details>
           </fieldset>
         </details>
         <p class="group-muted meetup-journey-summary">{{ selectedOrigins }} of {{ selectedSlotCount }} selected times have a private starting location. {{ availabilityDirty ? 'Draft changes are not saved yet.' : 'Showing your saved availability and journey.' }}</p>
@@ -306,10 +290,8 @@ const {
 .meetup-cancel { color: var(--text-300); }
 .meetup-journey .meetup-travel-fields { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 1rem; }
 .meetup-journey .meetup-travel-fields > button { justify-self: start; }
-.meetup-manual-entry, .meetup-slot-overrides { border-top: 1px solid var(--panel-edge); padding-top: .8rem; }
-.meetup-manual-entry > summary, .meetup-slot-overrides > summary { color: var(--text-300); font-size: var(--step--1); }
-.meetup-slot-override { display: grid; gap: .85rem; padding-block: 1rem; border-bottom: 1px solid var(--panel-edge); }
-.meetup-slot-override > strong { font-size: var(--step--1); color: var(--text-200); }
+.meetup-manual-entry { border-top: 1px solid var(--panel-edge); padding-top: .8rem; }
+.meetup-manual-entry > summary { color: var(--text-300); font-size: var(--step--1); }
 .meetup-place-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-top: 1rem; }
 .meetup-place-row h3 { margin-bottom: .35rem; }
 .meetup-place-row .btn { flex-shrink: 0; }

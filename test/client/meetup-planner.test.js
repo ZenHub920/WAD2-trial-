@@ -252,7 +252,7 @@ describe('meeting planner with real OneMap search child', () => {
       endsAt: new Date(start + 1800000).toISOString(), travelMode: 'drive' }], 1);
   });
 
-  it('rejects incomplete manual origins and preserves valid per-period overrides', async () => {
+  it('rejects incomplete manual origins and saves a complete manual journey', async () => {
     const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
     await field(wrapper, 'Location label').setValue('My approximate station');
     await field(wrapper, 'Latitude').setValue('1.3');
@@ -261,18 +261,9 @@ describe('meeting planner with real OneMap search child', () => {
     expect(api.meetupAvailability).not.toHaveBeenCalled();
     await field(wrapper, 'Longitude').setValue('103.85');
     await button(wrapper, 'Apply journey to selected times').trigger('click');
-    const override = wrapper.get('.meetup-slot-override');
-    await field(override, 'Travel method').setValue('drive');
-    await field(override, 'Location label').setValue('Later public station');
-    await field(override, 'Latitude').setValue('91');
-    await button(wrapper, 'Save availability and journey').trigger('click'); await flushPromises();
-    expect(wrapper.get('#meetup-availability > [role="alert"]').text()).toContain('both valid coordinates');
-    expect(api.meetupAvailability).not.toHaveBeenCalled();
-    await field(override, 'Latitude').setValue('1.32');
-    await field(override, 'Longitude').setValue('103.88');
     await button(wrapper, 'Save availability and journey').trigger('click'); await flushPromises();
     expect(api.meetupAvailability).toHaveBeenCalledWith('meetup-1', [expect.objectContaining({
-      travelMode: 'drive', label: 'Later public station', latitude: 1.32, longitude: 103.88,
+      label: 'My approximate station', latitude: 1.3, longitude: 103.85,
     })], 1);
   });
 
@@ -684,23 +675,6 @@ describe('planner draft, selection and persistence hardening', () => {
     const actions = document.querySelectorAll('.confirm__actions button');
     actions[discard ? 1 : 0].click(); await flushPromises();
   };
-  it('does not relabel lookup coordinates through a single-period override', async () => {
-    api.meetupLocations.mockResolvedValue({ result: { status: 'available', locations: [{ label: 'Lookup A', latitude: 1.31, longitude: 103.86 }] } });
-    const { wrapper } = await view();
-    const search = wrapper.findAllComponents(MeetupLocationSearch)[0];
-    await search.get('input').setValue('A station'); await button(search, 'Search OneMap').trigger('click'); await flushPromises();
-    await search.get('.meetup-search-result').trigger('click');
-    await button(wrapper, 'Apply journey to selected times').trigger('click');
-    const period = wrapper.get('.meetup-slot-override');
-    await field(period, 'Location label').setValue('Different station B');
-    expect(field(period, 'Latitude').element.value).toBe('');
-    await button(wrapper, 'Save availability and journey').trigger('click'); await flushPromises();
-    expect(api.meetupAvailability).not.toHaveBeenCalled();
-    expect(wrapper.get('#meetup-availability > [role="alert"]').text()).toContain('both valid coordinates');
-    await field(period, 'Latitude').setValue('1.32'); await field(period, 'Longitude').setValue('103.87');
-    await button(wrapper, 'Save availability and journey').trigger('click'); await flushPromises();
-    expect(api.meetupAvailability).toHaveBeenCalledWith('meetup-1', [expect.objectContaining({ label: 'Different station B', latitude: 1.32, longitude: 103.87 })], 1);
-  });
   it('opens a known created board without another POST when a route guard initially cancels navigation', async () => {
     const { wrapper, router } = await mountPage(MeetupView, { path: '/meetups?partyId=party-1' });
     const stop = router.beforeEach(to => to.path !== '/meetups/new-meetup');

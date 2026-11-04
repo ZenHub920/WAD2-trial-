@@ -155,12 +155,6 @@ export function useMeetupBoard(props) {
   const invalidateJourney = () => invalidateLocation(position, journeyLookup);
   const editPlace = field => editLocation(place, placeLookup, placeSearchKey, field);
   const editJourney = field => editLocation(position, journeyLookup, journeySearchKey, field);
-  function editSlotLocation(start, field) {
-    const previous = slotLookups.get(String(start)), slot = slots.value[start];
-    if (!previous) return;
-    if (field === 'label') { slot.latitude = null; slot.longitude = null; }
-    slotLookups.delete(String(start));
-  }
   const liveLabel = computed(() => connectionState.value === 'live' ? 'Live with your group' : 'Keeping your group in sync');
   let alive = true, loadRequest = 0, refreshTimer, pollTimer, stopEvents, refreshQueued = false;
   const context = () => `${props.id ?? ''}:${currentUser.value?.id ?? ''}:${JSON.stringify(scope.value)}`;
@@ -505,7 +499,7 @@ export function useMeetupBoard(props) {
     weather, rainfall, travelRecommendations, transport, comment, slots, place, position, travelOptions,
     feedback, failures, placeSearchKey, journeySearchKey, confirmAction, capabilities, contributionsLocked, selectedOrigins,
     leavePrompt, settleLeave, hasUnsavedDrafts, journeyDirty,
-    selectPlace, selectJourney, invalidatePlace, invalidateJourney, editPlace, editJourney, editSlotLocation,
+    selectPlace, selectJourney, invalidatePlace, invalidateJourney, editPlace, editJourney,
     selectedSlotCount, bestSavedOverlap, selectedTimes, activeStep, availabilityDirty, refreshing, syncNote,
     liveLabel, statuses, time, validCoordinates, recommendedOptions, hasSavedAvailability, recommendationEmpty,
     refreshPlanner, showStep, navigateSteps, create, saveAvailability, discardAvailability, assignJourney,
