@@ -489,6 +489,10 @@ const {
   min-width: 0;
   width: 100%;
 }
+/* Add place sits equally between the Sheltered tick box and the card's bottom edge. */
+.meetup-place-editor .meetup-travel-fields { margin-bottom: 0; }
+.meetup-place-editor .meetup-travel-fields > .group-check { margin-bottom: 0; }
+.meetup-place-editor .meetup-travel-fields > button { display: block; margin-top: var(--space-5); }
 .meetup-travel-fields legend {
   font-weight: 600;
   padding-bottom: var(--space-3);
