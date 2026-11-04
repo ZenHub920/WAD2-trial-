@@ -97,7 +97,6 @@ function clearFilters() {
       <header class="market-page__head page-banner">
         <div>
           <h1>Tickets</h1>
-          <p>Tickets other fans can no longer use. Message a seller to arrange the transfer.</p>
         </div>
         <nav class="market-page__tools" aria-label="Ticket tools">
           <RouterLink to="/my-listings" class="btn btn--outline-light">My listings</RouterLink>
@@ -182,7 +181,7 @@ function clearFilters() {
 }
 .market-page__head {
   display: flex;
-  align-items: end;
+  align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: var(--space-5);

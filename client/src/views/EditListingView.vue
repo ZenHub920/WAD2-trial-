@@ -3,7 +3,8 @@ import { computed, onUnmounted, ref, watch } from 'vue';
 import { isNavigationFailure, useRouter } from 'vue-router';
 import { api, formatDate } from '../api.js';
 import { currentUser } from '../auth.js';
-import { SECTION_SUGGESTIONS, flashListing, listingTitle, sectionLabel, useTicket } from '../market.js';
+import { flashListing, listingTitle, sectionLabel, sectionOptions, useTicket } from '../market.js';
+import SearchSelect from '../components/SearchSelect.vue';
 import ImagePicker from '../components/market/ImagePicker.vue';
 import BackArrow from '../components/BackArrow.vue';
 import MarketNotice from '../components/market/MarketNotice.vue';
@@ -23,6 +24,8 @@ const isOwnListing = computed(() =>
 );
 
 const draft = ref({ price: 0, quantity: 1, section: '', description: '' });
+// The fixed section list, plus this listing's own section if it predates the list.
+const sectionChoices = computed(() => sectionOptions(listing.value ? sectionLabel(listing.value.section) : ''));
 const newImage = ref('');
 const saving = ref(false);
 const saveError = ref('');
@@ -48,9 +51,9 @@ watch(listing, (current) => {
 
 const ERROR_COPY = {
   invalid_price: 'Enter a valid total listing price.',
-  invalid_quantity: 'Enter a valid number of tickets.',
-  invalid_section: 'Enter the section printed on the ticket (up to 120 characters).',
-  invalid_description: 'Keep the description within 2,000 characters.',
+  invalid_quantity: 'Choose between 1 and 10 tickets.',
+  invalid_section: 'Choose a section from the list.',
+  invalid_description: 'Add a description (up to 2,000 characters).',
   invalid_image: 'Choose a supported ticket image within the upload size limit.',
 };
 
@@ -74,7 +77,9 @@ async function save() {
   const current = () => alive && version === scopeVersion && id === props.id && userId === currentUser.value?.id;
   const changes = {
     priceCents: Math.round(Number(draft.value.price) * 100),
-    quantity: Number(draft.value.quantity), section: draft.value.section,
+    quantity: Number(draft.value.quantity),
+    // Preserve legacy sections when the seller is only changing other fields.
+    ...(draft.value.section !== sectionLabel(listing.value.section) ? { section: draft.value.section } : {}),
     description: draft.value.description,
     ...(newImage.value ? { imageData: newImage.value } : {}),
   };
@@ -141,14 +146,11 @@ async function save() {
           </label>
           <label class="edit-form__field edit-form__wide">
             Section
-            <input v-model.trim="draft.section" list="edit-section-suggestions" required maxlength="120" />
-            <datalist id="edit-section-suggestions">
-              <option v-for="s in SECTION_SUGGESTIONS" :key="s" :value="s" />
-            </datalist>
+            <SearchSelect v-model="draft.section" :options="sectionChoices" required placeholder="Choose a section" empty-text="No section matches. Choose one from the list." />
           </label>
           <label class="edit-form__field edit-form__wide">
             Description
-            <textarea v-model.trim="draft.description" rows="4" maxlength="2000" placeholder="Describe the ticket, section and any transfer arrangements." />
+            <textarea v-model.trim="draft.description" rows="4" required maxlength="2000" placeholder="Describe the ticket, section and any transfer arrangements." />
           </label>
 
           <p v-if="saveError" class="edit-form__error edit-form__wide" role="alert">{{ saveError }}</p>
@@ -197,12 +199,16 @@ async function save() {
 }
 .edit-form__field {
   display: grid;
+  /* Stack from the top, so a neighbour's error message does not push this box down. */
+  align-content: start;
   min-width: 0;
   gap: var(--space-2);
   color: var(--text-300);
   font-size: var(--step--1);
 }
+/* :deep reaches the box inside SearchSelect, so it matches the other fields. */
 .edit-form input,
+.edit-form :deep(.suggest > input),
 .edit-form textarea {
   width: 100%;
   min-width: 0;

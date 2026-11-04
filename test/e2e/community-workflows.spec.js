@@ -147,7 +147,6 @@ test('automatic matching: joining pool produces an offer; both approvals are req
   const hosts = {};
   try {
     await seeker.page.goto(`/groups?concertId=${data.concertId}&mode=algorithm`);
-    await seeker.page.getByRole('button', { name: 'Find my match', exact: true }).click();
     expect((await api(seeker.context, `/me/concerts/${data.concertId}/matching`)).matching.optedIn).toBe(false);
     await seeker.page.getByRole('button', { name: 'Switch and join the match list', exact: true }).click();
     await expect(seeker.page.getByRole('button', { name: 'Leave the match list', exact: true })).toBeVisible();

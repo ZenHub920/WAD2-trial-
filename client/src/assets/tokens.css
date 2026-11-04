@@ -115,6 +115,10 @@
   --status-info: var(--cyan-500);
   --positive-soft: #e2f4e9;
   --danger-soft: #fbe5e9;
+  /* At-a-glance signals (e.g. group activity on concert cards): a cool jade and a
+     berry that sit with the violet palette, unlike the plainer status colours. */
+  --signal-good: #24705a;
+  --signal-bad: #b3325f;
 
   /* ---- Colour: highlight -------------------------------------------------
    * Gold is the complement of Encore's purple. It is kept for the few things
@@ -233,6 +237,8 @@
   --status-info: var(--cyan-400);
   --positive-soft: rgba(111, 220, 156, 0.14);
   --danger-soft: rgba(255, 122, 122, 0.14);
+  --signal-good: #72d9b8;
+  --signal-bad: #ff8db2;
   --highlight: #ffbf55;
   --highlight-soft: rgba(255, 191, 85, 0.14);
   --highlight-ink: #ffcf70;

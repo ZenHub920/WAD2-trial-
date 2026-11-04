@@ -29,15 +29,15 @@ beforeEach(() => {
 });
 
 describe('group discovery historical and mutation feedback consistency', () => {
-  it('switches the displayed pathway without changing the saved joining method or enrolling', async () => {
+  it('only views another pathway when a pending request prevents changing the active method', async () => {
+    api.groupJoinRequests.mockResolvedValue({ requests: [pending] });
     const { wrapper } = await mountPage(GroupExplorerView, { path: '/groups?concertId=concert-1' });
-    expect(wrapper.text()).toContain('You’re using: Browse and choose');
     await button(wrapper, 'Find my match').trigger('click'); await flushPromises();
-    expect(wrapper.text()).toContain('You’re only viewing Automatic matching. Your active method is still Browse and choose.');
-    expect(button(wrapper, 'Switch and join the match list').exists()).toBe(true);
+    expect(wrapper.get('.joining-mode--selected .joining-mode__selected').text()).toBe('Viewing');
+    expect(wrapper.text()).toContain('To switch, first cancel your request');
     expect(api.setJoiningMode).not.toHaveBeenCalled(); expect(api.findMyGroup).not.toHaveBeenCalled();
     await button(wrapper, 'Browse groups').trigger('click'); await flushPromises();
-    expect(wrapper.text()).toContain('You’re using: Browse and choose');
+    expect(wrapper.get('.joining-mode--selected .joining-mode__selected').text()).toBe('Active method');
   });
   it('makes switching from browsing one explicit enrollment action and requires no second join click', async () => {
     api.setJoiningMode.mockImplementation(async () => {
@@ -46,13 +46,13 @@ describe('group discovery historical and mutation feedback consistency', () => {
       return { request: { status: 'open', joining_mode: 'algorithm' } };
     });
     const { wrapper } = await mountPage(GroupExplorerView, { path: '/groups?concertId=concert-1' });
-    await button(wrapper, 'Find my match').trigger('click'); await flushPromises();
-    expect(wrapper.text()).toContain('enrolls you immediately');
+    expect(wrapper.text()).toContain('Switching from browsing joins the match list');
     expect(api.setJoiningMode).not.toHaveBeenCalled();
     await button(wrapper, 'Switch and join the match list').trigger('click'); await flushPromises();
     expect(api.setJoiningMode).toHaveBeenCalledExactlyOnceWith('concert-1', 'algorithm');
     expect(api.findMyGroup).not.toHaveBeenCalled();
-    expect(wrapper.text()).toContain('You’re on the match list. Matching rounds are run by an operator');
+    expect(wrapper.text()).toContain('You’re on the match list. Keep marking groups you like');
+    expect(wrapper.get('.joining-mode--selected .joining-mode__selected').text()).toBe('Active method');
     expect(button(wrapper, 'Leave the match list').exists()).toBe(true);
     expect(wrapper.findAll('button').some(item => item.text() === 'Join the match list')).toBe(false);
   });
@@ -60,11 +60,10 @@ describe('group discovery historical and mutation feedback consistency', () => {
   it('shows the confirmed enrollment when the switch succeeds but its following read fails', async () => {
     api.setJoiningMode.mockResolvedValue({ request: { status: 'open', joining_mode: 'algorithm' } });
     const { wrapper } = await mountPage(GroupExplorerView, { path: '/groups?concertId=concert-1' });
-    await button(wrapper, 'Find my match').trigger('click');
     api.discoverGroups.mockRejectedValueOnce(new Error('refresh unavailable'));
     await button(wrapper, 'Switch and join the match list').trigger('click'); await flushPromises();
     expect(wrapper.text()).toContain('Your change was saved.');
-    expect(wrapper.text()).toContain('You’re using: Automatic matching');
+    expect(wrapper.get('.joining-mode--selected .joining-mode__selected').text()).toBe('Active method');
     expect(button(wrapper, 'Leave the match list').exists()).toBe(true);
     expect(wrapper.findAll('button').some(item => item.text() === 'Join the match list')).toBe(false);
     expect(api.setJoiningMode).toHaveBeenCalledTimes(1);

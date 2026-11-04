@@ -91,8 +91,7 @@ function copyLink() {
     <h2 :id="`listing-${listing.id}-title`" class="dcard__title">{{ listingTitle(listing) }}</h2>
 
     <div class="dcard__row">
-      <VerifiedBadge v-if="listing.verified" />
-      <span v-else class="tag">Unverified ticket</span>
+      <VerifiedBadge :verified="Boolean(listing.verified)" />
       <span v-if="!available" class="tag tag--rose">{{ listing.status === 'sold' ? 'Sold' : 'Listing removed' }}</span>
 
       <div class="dcard__quick">

@@ -87,15 +87,18 @@ const { canCoordinate, isFinished, canPlanMeetup, refreshEligibility } = useConc
 const pendingLimit = computed(() => seeker.value?.maxPendingDirectApplications ?? 1);
 const canApply = computed(() => canCoordinate.value && !busy.value && !loading.value && displayedMode.value === 'direct' && seeker.value?.status === 'open' && persistedMode.value === 'direct' && !currentGroup.value && !activeProposals.value.length && !pendingLegacy.value.length && pendingDirect.value.length < pendingLimit.value);
 const canPrefer = computed(() => canCoordinate.value && seeker.value?.status === 'open' && !currentGroup.value && !activeProposals.value.length);
-const modeLabels = { direct: 'Browse and choose', algorithm: 'Automatic matching' };
 const modeOptions = [
   { mode: 'direct', kicker: 'Pick yourself', title: 'Browse and choose', description: 'See every group and ask to join the one you like.', action: 'Browse groups' },
-  { mode: 'algorithm', kicker: 'Let us help', title: 'Match me with a group', description: 'Save groups you like, then join the match list for a compatible offer.', action: 'Find my match' },
+  { mode: 'algorithm', kicker: 'Let us help', title: 'Match me with a group', description: 'Switching from browsing joins the match list. You and the host approve any offer.', action: 'Find my match' },
 ];
+const modeAction = option => canSwitchMode.value && persistedMode.value !== option.mode
+  ? option.mode === 'algorithm' ? 'Switch and join the match list' : 'Switch to browsing' : option.action;
 function chooseMode(mode) {
   if (busy.value || !['direct', 'algorithm'].includes(mode)) return;
   displayedMode.value = mode;
   applicationFor.value = ''; void settleConfirm(false);
+  // Preserve the immediate method switch on an eligible card selection.
+  if (canSwitchMode.value && persistedMode.value !== mode) void activateMode();
 }
 const originLabels = { direct: 'The host said yes to your request', algorithm: 'You were matched with this group', host: 'You’re the host', friend: 'A friend invited you' };
 const joinStatus = { pending: 'Waiting for the host', accepted: 'You’re in', rejected: 'Not this time', declined: 'Not this time', withdrawn: 'You cancelled this', expired: 'Timed out', superseded: 'Closed', cancelled: 'Ended' };
@@ -216,7 +219,7 @@ async function activateMode() {
     // This existing endpoint switches the joining method and explicitly opts
     // an open seeker into matching. A saved result must survive a failed read.
     matching.value = { ...matching.value, optedIn: target === 'algorithm', state: target === 'algorithm' ? 'queued' : 'idle' };
-  }, target === 'direct' ? 'Browse the groups below and ask to join one at a time.' : 'You’re on the match list. Matching rounds are run by an operator; any offer still needs your approval and the host’s approval.');
+  }, '');
 }
 async function join(id, note = applicationNote.value.trim()) {
   const key = context(), showId = concertId.value, userId = currentUser.value?.id;
@@ -328,49 +331,28 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
 
       <template v-if="seeker || currentGroup">
       <section class="card group-panel joining-section" aria-labelledby="joining-mode-heading">
-        <div class="discovery-section-heading"><span class="discovery-step mono" aria-hidden="true">01</span><div><p class="group-kicker mono">Your way in</p><h2 id="joining-mode-heading">How do you want to find a group?</h2></div></div>
+        <h2 id="joining-mode-heading">How do you want to find a group?</h2>
         <div class="joining-modes" role="group" aria-label="Ways to find a group">
           <article v-for="option in modeOptions" :key="option.mode" class="joining-mode" :class="{ 'joining-mode--selected': displayedMode === option.mode }">
             <div class="joining-mode__eyebrow"><p class="group-kicker mono">{{ option.kicker }}</p><span v-if="displayedMode === option.mode" class="joining-mode__selected">{{ modeIsActive ? 'Active method' : 'Viewing' }}</span></div>
             <h3>{{ option.title }}</h3>
             <p>{{ option.description }}</p>
-            <button type="button" class="btn" :class="displayedMode === option.mode ? 'btn--primary' : 'btn--ghost'" :aria-pressed="displayedMode === option.mode" :disabled="busy" @click="chooseMode(option.mode)">{{ option.action }}</button>
+            <button type="button" class="btn" :class="displayedMode === option.mode ? 'btn--primary' : 'btn--ghost'" :aria-pressed="displayedMode === option.mode" :disabled="busy" @click="chooseMode(option.mode)">{{ modeAction(option) }}</button>
           </article>
         </div>
-        <p v-if="seeker && modeIsActive" class="group-muted">You’re using: <strong>{{ modeLabels[persistedMode] }}</strong></p>
-        <p v-else-if="seeker" class="group-muted">You’re only viewing <strong>{{ modeLabels[displayedMode] }}</strong>. Your active method is still <strong>{{ modeLabels[persistedMode] }}</strong>.</p>
-        <button v-if="canSwitchMode && !modeIsActive && displayedMode === 'direct'" type="button" class="btn btn--primary" :disabled="busy" @click="activateMode">Switch to browsing</button>
         <p v-if="seeker && !modeIsActive && !canSwitchMode" class="group-status" role="status">{{ currentGroup ? 'You already have a group for this show, so the way you join can’t change.' : pendingDirect.length ? `To switch, first cancel your request to ${requestGroupName(pendingDirect[0])} under Your requests.` : activeProposals.length || pendingLegacy.length ? 'Finish or cancel your current match before switching.' : 'You can’t switch methods for this show right now.' }}</p>
-        <p v-else-if="!modeIsActive && (seeker?.status === 'open' || pendingDirect.length || activeProposals.length || pendingLegacy.length)" class="group-muted">Just looking? That’s fine. Nothing changes until you switch, and open requests stay as they are.</p>
         <p v-if="pendingDirect.length" class="group-status" role="status">
           {{ pendingDirect[0].seatReserved ? 'We’re saving you a spot.' : `You’re number ${pendingDirect[0].queuePosition ?? '?'} in line.` }}
           Your request expires {{ dateLabel(pendingDirect[0].expiresAt) }}, even if you are still waiting.
         </p>
-        <details class="group-howto">
-          <summary>How does this work?</summary>
-          <ul v-if="displayedMode === 'direct'">
-            <li>You can ask one group at a time per concert.</li>
-            <li>Requests are answered in the order they arrive. If there’s room, we save you a spot while the host decides.</li>
-            <li>Your request expires 48 hours after you send it, including time spent waiting in line. Holding a spot does not extend the deadline.</li>
-          </ul>
-          <ul v-else>
-            <li>Viewing groups and saving likes do not enroll you. Switching from browsing with “Switch and join the match list” enrolls you immediately.</li>
-            <li>If automatic matching is already your active method but you are not listed, use “Join the match list”. Matching rounds are run by an operator.</li>
-            <li>Both your preferences and the groups’ preferences affect the match. You may be offered a group you didn’t mark.</li>
-            <li>A match joins the same queue as group requests. Once it reaches the front and has a held spot, both you and the host must approve it.</li>
-            <li>Match requests expire 48 hours after creation, including time spent waiting in line.</li>
-          </ul>
-        </details>
 
       <section v-if="displayedMode === 'algorithm' && seeker && !currentGroup" class="card group-panel automatic-matching" aria-labelledby="automatic-matching-heading">
         <h2 id="automatic-matching-heading">Your match</h2>
         <p v-if="activeProposals.length">Your match is in the group queue below. Check whether a spot is held and whether it is ready for both approvals.</p>
         <p v-else-if="pendingLegacy.length">You have an earlier match waiting for the host. You can check on it or cancel it under Your requests.</p>
         <p v-else-if="matching.optedIn || matching.state === 'queued'" role="status">You’re on the match list. Keep marking groups you like, and check back soon.</p>
-        <p v-else-if="!modeIsActive">You’re only viewing matching. Saving likes does not enroll you. “Switch and join the match list” changes your active method and enrolls you immediately.</p>
         <p v-else>You’re not on the match list yet.</p>
         <div class="group-actions">
-          <button v-if="canSwitchMode && !modeIsActive" type="button" class="btn btn--primary" :disabled="busy" @click="activateMode">Switch and join the match list</button>
           <button v-if="canCoordinate && !matching.optedIn && !activeProposals.length && !pendingLegacy.length && modeIsActive && seeker.status === 'open'" type="button" class="btn btn--primary" :disabled="busy" @click="joinPool">Join the match list</button>
           <button v-if="matching.optedIn" type="button" class="btn btn--danger-ghost" :disabled="busy || activeProposals.length > 0 || pendingLegacy.length > 0" @click="leavePool">Leave the match list</button>
           <button type="button" class="btn btn--ghost" :disabled="busy" @click="load">Check for updates</button>
