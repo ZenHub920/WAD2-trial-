@@ -1,26 +1,14 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRouter } from 'vue-router';
 import { api } from '../api.js';
 import { onChatEvent, refreshUnread } from '../chatLive.js';
 import { currentUser } from '../auth.js';
-import { formatMoney, formatRelative } from '../market.js';
+import { formatMoney } from '../market.js';
 import UserAvatar from '../components/UserAvatar.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
-import SegmentedTabs from '../components/SegmentedTabs.vue';
 
-const route = useRoute();
 const router = useRouter();
-
-/**
- * One inbox, three kinds of conversation. The tab lives in the URL so a link
- * to "my group channels" is a link, and so leaving a channel can send you back
- * to the tab you came from.
- */
-const TABS = ['companion', 'tickets', 'groups'];
-const tab = ref(TABS.includes(route.query.tab) ? route.query.tab : 'companion');
-watch(tab, (next) => router.replace({ query: { ...route.query, tab: next } }));
-watch(() => route.query.tab, (next) => { if (TABS.includes(next) && next !== tab.value) tab.value = next; });
 
 const channels = ref([]);
 const channelsLoading = ref(true);
@@ -39,16 +27,49 @@ const blockedLoading = ref(false);
 const openingMatch = ref(null);
 const unblockingId = ref(null);
 
-const companionUnread = computed(() => conversations.value.filter((c) => c.unread > 0).length);
-const groupUnread = computed(() => channels.value.filter((c) => c.unread > 0).length);
 const channelLink = channel => channel.connectionId
   ? `/groups/connections/${encodeURIComponent(channel.connectionId)}/channel`
   : `/groups/${encodeURIComponent(channel.partyId)}/channel`;
-const tabs = computed(() => [
-  { id: 'companion', label: 'Companions', icon: 'companion', count: companionUnread.value },
-  { id: 'tickets', label: 'Tickets', icon: 'ticket' },
-  { id: 'groups', label: 'Groups', icon: 'group', count: groupUnread.value },
-]);
+
+// Server times come as ISO strings or SQLite "YYYY-MM-DD HH:MM:SS" (UTC).
+function stamp(value) {
+  if (!value) return 0;
+  const text = String(value);
+  const time = Date.parse(text.includes('T') ? text : `${text.replace(' ', 'T')}Z`);
+  return Number.isNaN(time) ? 0 : time;
+}
+
+/**
+ * One inbox: companion, ticket and group chats in a single list, newest first,
+ * each tagged with its kind so nobody has to remember where a chat lives.
+ */
+const threads = computed(() => [
+  ...conversations.value.map((c) => ({
+    key: `companion:${c.id}`, kind: 'Companion', to: `/kaki/chat/${c.id}`,
+    title: c.other.displayName, person: c.other, unread: c.unread ?? 0,
+    preview: preview(c), muted: !c.lastMessage || c.lastMessage.deleted,
+    context: c.concert.artist, at: c.lastMessage?.createdAt ?? c.createdAt,
+  })),
+  ...ticketConversations.value.map((c) => ({
+    key: `ticket:${c.id}`, kind: 'Ticket', to: `/chat/${encodeURIComponent(c.id)}`,
+    title: c.other.displayName, person: c.other, unread: c.unread ?? 0,
+    preview: c.lastMessage?.body ?? 'No messages yet', muted: !c.lastMessage,
+    context: `${c.role === 'buyer' ? 'Enquiry' : 'Your listing'}: ${c.listing.title} · ${formatMoney(c.listing.priceCents)}`,
+    at: c.lastMessage?.createdAt ?? c.createdAt,
+  })),
+  ...channels.value.map((channel) => ({
+    key: channel.connectionId ? `connection:${channel.connectionId}` : `group:${channel.partyId}`,
+    kind: channel.connectionId ? 'Connected groups' : 'Group', to: channelLink(channel),
+    title: channel.name, initial: (channel.concert.artist || '?').slice(0, 1), unread: channel.unread ?? 0,
+    preview: channel.lastMessage?.deleted ? 'Message deleted' : channel.lastMessage?.body ?? 'No messages yet',
+    muted: !channel.lastMessage || channel.lastMessage.deleted,
+    context: `${channel.memberCount} ${channel.memberCount === 1 ? 'member' : 'members'}`,
+    at: channel.lastMessage?.createdAt,
+  })),
+].sort((a, b) => stamp(b.at) - stamp(a.at) || a.title.localeCompare(b.title)));
+
+const anyLoading = computed(() => loading.value || ticketLoading.value || channelsLoading.value);
+const signedOut = computed(() => [error.value, ticketError.value, channelsError.value].some((e) => e?.status === 401));
 
 const unstarted = computed(() => {
   const talking = new Set(conversations.value.map((c) => `${c.concert.id}:${c.other.id}`));
@@ -181,143 +202,81 @@ watch(() => currentUser.value?.id, userId => {
 <template>
   <div class="container section inbox">
     <header class="head">
-      <div class="head__title"><p class="inbox__eyebrow">Your conversations</p><h1>Messages</h1><p class="head__hint">Pick a space, then carry on where you left off.</p></div>
-      <div class="head__actions"><RouterLink to="/meetups" class="btn btn--ghost">My meetups</RouterLink><SegmentedTabs v-model="tab" :tabs="tabs" aria-label="Message type" /></div>
+      <div class="head__title"><h1>Messages</h1></div>
+      <div class="head__actions"><RouterLink to="/meetups" class="btn btn--ghost">My meetups</RouterLink></div>
     </header>
 
     <p v-if="actionError" class="notice notice--error" role="alert">{{ actionError }}</p>
 
-    <section v-show="tab === 'companion'" class="inbox__section" aria-labelledby="companion-messages">
-      <div class="section-head">
-        <div><h2 id="companion-messages">Companion messages</h2><p class="section-head__hint">One-to-one conversations with your mutual matches.</p></div>
-        <button v-if="blocked.length" class="btn btn--ghost" type="button" :aria-expanded="showBlocked" @click="showBlocked = !showBlocked">
-          Blocked people ({{ blocked.length }})
-        </button>
-      </div>
+    <div v-if="signedOut" class="notice notice--error" role="alert">
+      <p>Sign in to see your messages.</p>
+      <RouterLink :to="{ name: 'login', query: { redirect: '/messages' } }">Sign in</RouterLink>
+    </div>
+    <template v-else>
+      <!-- A source that fails says so; chats from the others still show below. -->
+      <div v-if="error" class="notice notice--error" role="alert"><p>Could not load companion messages.</p><button class="btn btn--ghost" type="button" @click="load()">Retry</button></div>
+      <div v-if="ticketError" class="notice notice--error" role="alert"><p>Could not load ticket messages.</p><button class="btn btn--ghost" type="button" @click="loadTickets">Retry</button></div>
+      <div v-if="channelsError" class="notice notice--error" role="alert"><p>{{ channels.length ? 'Some group chats could not be refreshed.' : 'Could not load group chats.' }}</p><button class="btn btn--ghost" type="button" @click="loadChannels()">Retry</button></div>
 
-      <div v-if="showBlocked" class="blocked">
-        <h3>Blocked people</h3>
-        <p class="hint">Blocking hides companion conversations and stops messages. Unblocking restores your chat history.</p>
-        <p v-if="blockedLoading" class="loading-state" role="status"><LoadingSpinner />Loading blocked people…</p>
-        <ul class="blocked__list">
-          <li v-for="entry in blocked" :key="entry.id">
-            <span>{{ entry.displayName }}</span>
-            <button type="button" class="btn btn--ghost" :disabled="unblockingId !== null" @click="unblock(entry)">
-              <LoadingSpinner v-if="unblockingId === entry.id" />
-              Unblock
+      <div v-if="unstarted.length" class="fresh">
+        <h3>Mutual matches · ready to message</h3>
+        <ul class="fresh__row">
+          <li v-for="match in unstarted" :key="`${match.concertId}-${match.user.id}`">
+            <button type="button" class="fresh__item" :disabled="openingMatch !== null" @click="openWith(match)">
+              <UserAvatar :src="match.user.avatarUrl" :name="match.user.displayName" :size="48" ring />
+              <span class="fresh__text">
+                <strong>{{ match.user.displayName }}</strong>
+                <span>Start a conversation</span>
+                <LoadingSpinner v-if="openingMatch === `${match.concertId}:${match.user.id}`" />
+              </span>
             </button>
           </li>
         </ul>
       </div>
 
-      <p v-if="loading" class="empty loading-state" role="status"><LoadingSpinner />Loading companion messages…</p>
-      <div v-else-if="error" class="notice notice--error" role="alert">
-        <p>{{ error.status === 401 ? 'Sign in to see your companion messages.' : 'Could not load companion messages.' }}</p>
-        <RouterLink v-if="error.status === 401" :to="{ name: 'login', query: { redirect: '/messages' } }">Sign in</RouterLink>
-        <button v-else class="btn btn--ghost" type="button" @click="load()">Retry</button>
-      </div>
-      <template v-else>
-        <div v-if="unstarted.length" class="fresh">
-          <h3>Mutual matches · ready to message</h3>
-          <ul class="fresh__row">
-            <li v-for="match in unstarted" :key="`${match.concertId}-${match.user.id}`">
-              <button type="button" class="fresh__item" :disabled="openingMatch !== null" @click="openWith(match)">
-                <UserAvatar :src="match.user.avatarUrl" :name="match.user.displayName" :size="48" ring />
-                <span class="fresh__text">
-                  <strong>{{ match.user.displayName }}</strong>
-                  <span>Start a conversation</span>
-                  <LoadingSpinner v-if="openingMatch === `${match.concertId}:${match.user.id}`" />
-                </span>
+      <ul v-if="threads.length" class="threads" aria-label="Conversations">
+        <li v-for="thread in threads" :key="thread.key">
+          <RouterLink :to="thread.to" class="thread" :class="{ 'thread--unread': thread.unread > 0 }">
+            <UserAvatar v-if="thread.person" :src="thread.person.avatarUrl" :name="thread.person.displayName" :size="44" />
+            <span v-else class="thread__group" aria-hidden="true">{{ thread.initial }}</span>
+            <span class="thread__text">
+              <span class="thread__top">
+                <strong class="thread__name">{{ thread.title }}</strong>
+                <span class="thread__time">{{ when(thread.at) }}</span>
+              </span>
+              <span class="thread__preview" :class="{ 'thread__preview--muted': thread.muted }">{{ thread.preview }}</span>
+              <span class="thread__context"><span class="thread__kind">{{ thread.kind }}</span>{{ thread.context }}</span>
+            </span>
+            <span v-if="thread.unread > 0" class="thread__unread" :aria-label="`${thread.unread} unread messages`">{{ thread.unread > 9 ? '9+' : thread.unread }}</span>
+            <span class="thread__arrow" aria-hidden="true">&rsaquo;</span>
+          </RouterLink>
+        </li>
+      </ul>
+      <p v-else-if="anyLoading" class="empty loading-state" role="status"><LoadingSpinner />Loading messages…</p>
+      <p v-else-if="!unstarted.length" class="empty">
+        No messages yet. <RouterLink to="/kaki">Find a companion</RouterLink>, join a <RouterLink to="/groups">group</RouterLink> or message a seller from <RouterLink to="/tickets">Tickets</RouterLink>.
+      </p>
+
+      <div v-if="blocked.length" class="inbox__blocked">
+        <button class="btn btn--ghost" type="button" :aria-expanded="showBlocked" @click="showBlocked = !showBlocked">
+          Blocked people ({{ blocked.length }})
+        </button>
+        <div v-if="showBlocked" class="blocked">
+          <h3>Blocked people</h3>
+          <p class="hint">Unblocking restores your chat history.</p>
+          <p v-if="blockedLoading" class="loading-state" role="status"><LoadingSpinner />Loading blocked people…</p>
+          <ul class="blocked__list">
+            <li v-for="entry in blocked" :key="entry.id">
+              <span>{{ entry.displayName }}</span>
+              <button type="button" class="btn btn--ghost" :disabled="unblockingId !== null" @click="unblock(entry)">
+                <LoadingSpinner v-if="unblockingId === entry.id" />
+                Unblock
               </button>
             </li>
           </ul>
         </div>
-
-        <ul v-if="conversations.length" class="threads">
-          <li v-for="c in conversations" :key="c.id">
-            <RouterLink :to="`/kaki/chat/${c.id}`" class="thread" :class="{ 'thread--unread': c.unread > 0 }">
-              <UserAvatar :src="c.other.avatarUrl" :name="c.other.displayName" :size="44" />
-              <span class="thread__text">
-                <span class="thread__top">
-                  <strong class="thread__name">{{ c.other.displayName }}</strong>
-                  <span class="thread__time">{{ when(c.lastMessage?.createdAt ?? c.createdAt) }}</span>
-                </span>
-                <span class="thread__preview" :class="{ 'thread__preview--muted': !c.lastMessage || c.lastMessage.deleted }">{{ preview(c) }}</span>
-                <span class="thread__context">{{ c.concert.artist }}</span>
-              </span>
-              <span v-if="c.unread > 0" class="thread__unread" :aria-label="`${c.unread} unread messages`">{{ c.unread > 9 ? '9+' : c.unread }}</span>
-              <span class="thread__arrow" aria-hidden="true">&rsaquo;</span>
-            </RouterLink>
-          </li>
-        </ul>
-        <p v-else-if="!unstarted.length" class="empty">
-          No companion conversations yet. <RouterLink to="/kaki">Find a companion</RouterLink> to get started.
-        </p>
-      </template>
-    </section>
-
-    <section v-show="tab === 'tickets'" class="inbox__section" aria-labelledby="ticket-messages">
-      <div class="section-head"><div><h2 id="ticket-messages">Ticket messages</h2><p class="section-head__hint">Keep seller enquiries and listing details together.</p></div></div>
-      <p v-if="ticketLoading" class="empty loading-state" role="status"><LoadingSpinner />Loading ticket messages…</p>
-      <div v-else-if="ticketError" class="notice notice--error" role="alert">
-        <p>{{ ticketError.status === 401 ? 'Sign in to see your ticket messages.' : 'Could not load ticket messages.' }}</p>
-        <RouterLink v-if="ticketError.status === 401" :to="{ name: 'login', query: { redirect: '/messages' } }">Sign in</RouterLink>
-        <button v-else class="btn btn--ghost" type="button" @click="loadTickets">Retry</button>
       </div>
-      <ul v-else-if="ticketConversations.length" class="threads">
-        <li v-for="c in ticketConversations" :key="c.id">
-          <RouterLink :to="{ name: 'chat-thread', params: { id: c.id } }" class="thread">
-            <UserAvatar :src="c.other.avatarUrl" :name="c.other.displayName" :size="44" />
-            <span class="thread__text">
-              <span class="thread__top">
-                <strong class="thread__name">{{ c.other.displayName }}</strong>
-                <time v-if="c.lastMessage" class="thread__time" :datetime="c.lastMessage.createdAt">{{ formatRelative(c.lastMessage.createdAt) }}</time>
-              </span>
-              <span class="thread__preview">{{ c.lastMessage?.body ?? 'No messages yet' }}</span>
-              <span class="thread__context">{{ c.role === 'buyer' ? 'Ticket enquiry' : 'Your listing' }}: {{ c.listing.title }} · {{ formatMoney(c.listing.priceCents) }} listing total</span>
-            </span>
-            <span class="thread__arrow" aria-hidden="true">&rsaquo;</span>
-          </RouterLink>
-        </li>
-      </ul>
-      <p v-else class="empty">No ticket conversations yet. Message a seller from a listing in <RouterLink to="/concerts">Concerts</RouterLink>.</p>
-    </section>
-
-    <!-- Single-group channels and accepted connections share the Groups inbox. -->
-    <section v-show="tab === 'groups'" class="inbox__section" aria-labelledby="group-messages">
-      <div class="section-head"><div><h2 id="group-messages">Group messages</h2><p class="section-head__hint">Your concert groups and shared rooms for connected groups.</p></div></div>
-      <p v-if="channelsLoading" class="empty loading-state" role="status"><LoadingSpinner />Loading group channels…</p>
-      <div v-if="!channelsLoading && channelsError" class="notice notice--error" role="alert">
-        <p>{{ channelsError.status === 401 ? 'Sign in to see your group channels.' : channels.length ? 'Some group chats could not be refreshed. You can still open the chats shown below.' : 'Could not load group channels.' }}</p>
-        <RouterLink v-if="channelsError.status === 401" :to="{ name: 'login', query: { redirect: '/messages' } }">Sign in</RouterLink>
-        <button v-else class="btn btn--ghost" type="button" @click="loadChannels">Retry</button>
-      </div>
-      <ul v-if="!channelsLoading && channels.length" class="threads">
-        <li v-for="channel in channels" :key="channel.connectionId ? `connection:${channel.connectionId}` : `group:${channel.partyId}`">
-          <RouterLink :to="channelLink(channel)" class="thread" :class="{ 'thread--unread': channel.unread > 0 }">
-            <span class="thread__group" aria-hidden="true">{{ (channel.concert.artist || '?').slice(0, 1) }}</span>
-            <span class="thread__text">
-              <span class="thread__top">
-                <strong class="thread__name">{{ channel.name }}</strong>
-                <span class="thread__time">{{ when(channel.lastMessage?.createdAt) }}</span>
-              </span>
-              <span class="thread__preview" :class="{ 'thread__preview--muted': !channel.lastMessage }">
-                {{ channel.lastMessage?.deleted ? 'Message deleted' : channel.lastMessage?.body ?? 'No messages yet' }}
-              </span>
-              <span class="thread__context">
-                {{ channel.connectionId ? 'Connected groups · ' : '' }}{{ channel.memberCount }} {{ channel.memberCount === 1 ? 'member' : 'members' }}{{ channel.isHost ? ' · you host a group' : '' }}
-              </span>
-            </span>
-            <span v-if="channel.unread > 0" class="thread__unread" :aria-label="`${channel.unread} unread messages`">{{ channel.unread > 9 ? '9+' : channel.unread }}</span>
-            <span class="thread__arrow" aria-hidden="true">&rsaquo;</span>
-          </RouterLink>
-        </li>
-      </ul>
-      <p v-if="!channelsLoading && !channelsError && !channels.length" class="empty">
-        No group chats yet. Your host can add you to your group's channel. Accepted group connections also open a shared chat for both groups.
-        <RouterLink to="/groups">Find a group</RouterLink> to get started.
-      </p>
-    </section>
+    </template>
   </div>
 </template>
 
@@ -337,7 +296,7 @@ watch(() => currentUser.value?.id, userId => {
 .head .inbox__eyebrow {
   margin: 0 0 var(--space-2);
   color: var(--accent-400);
-  font-size: .7rem;
+  font-size: .8rem;
   font-weight: 650;
   letter-spacing: .1em;
   text-transform: uppercase;
@@ -459,6 +418,8 @@ watch(() => currentUser.value?.id, userId => {
   transition: background-color var(--dur-fast), border-color var(--dur-fast), box-shadow var(--dur-fast);
 }
 .threads > li:last-child .thread { border-bottom: 0; }
+.thread__kind { margin-right: var(--space-2); padding: 0 var(--space-2); border-radius: var(--radius-pill); background: var(--ink-750); color: var(--accent-400); font-weight: 650; }
+.inbox__blocked { display: grid; justify-items: start; gap: var(--space-3); margin-top: var(--space-5); }
 .thread--unread { border-left-color: var(--accent-400); background: color-mix(in srgb, var(--accent-400) 5%, var(--ink-800)); }
 .thread:hover {
   background: var(--ink-850);

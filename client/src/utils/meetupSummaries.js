@@ -25,9 +25,9 @@ export function meetupPresentation(plan) {
   if (plan.status === 'cancelled') return { label: 'Cancelled', action: 'View cancelled plan', detail: 'This plan is read-only. It is not an active meetup.', stage: 'review' };
   if (plan.status === 'confirmed') return { label: isMeetupHistorical(plan) ? 'Past · Confirmed' : 'Confirmed', action: 'View meetup details', detail: 'The agreed time and place are confirmed.', stage: 'review' };
   if (plan.status === 'proposed') return { label: isMeetupHistorical(plan) ? 'Past · Proposed' : 'Awaiting approval', action: plan.capabilities?.canApprove && !isMeetupHistorical(plan) ? 'Review and approve' : 'View proposed meetup',
-    detail: `${plan.approvalCount ?? 0} of ${plan.requiredApprovalCount ?? 0} required approvals${plan.hasApproved ? ' · Your approval is saved' : ''}.`, stage: 'review' };
+    detail: `${plan.approvalCount ?? 0} of ${plan.requiredApprovalCount ?? 0} approvals${plan.hasApproved ? ' · Your approval is saved' : ''}`, stage: 'review' };
   return { label: isMeetupHistorical(plan) ? 'Past · Planning' : 'Planning in progress', action: plan.hasAvailability ? 'View planning board' : 'Share availability',
-    detail: `${plan.availabilityParticipantCount ?? 0} of ${plan.participantCount ?? 0} participants shared availability.`, stage: plan.hasAvailability ? 'places' : 'availability' };
+    detail: `${plan.availabilityParticipantCount ?? 0} of ${plan.participantCount ?? 0} shared their times`, stage: plan.hasAvailability ? 'places' : 'availability' };
 }
 
 export function meetupSelectedDetails(plan) {

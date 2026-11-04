@@ -155,7 +155,7 @@ describe('extracted meetup discussion panel', () => {
     const timestamp = wrapper.get('time');
     expect(Date.parse(timestamp.attributes('datetime'))).toBe(Date.parse('2030-01-01T04:00:00Z'));
     expect(timestamp.text()).toContain('12:00');
-    expect(wrapper.text()).toContain("Messages don't change the confirmed plan.");
+    expect(wrapper.text()).toContain('Ask questions or suggest changes.');
     await wrapper.get('textarea').setValue('My edited request');
     expect(wrapper.emitted('update:modelValue')).toEqual([['My edited request']]);
     await wrapper.get('form').trigger('submit');
@@ -172,7 +172,7 @@ describe('extracted meetup discussion panel', () => {
     expect(wrapper.get('textarea').element.value).toBe('Keep my draft');
     await wrapper.setProps({ canDiscuss: true, error: '', notice: 'Your message was posted.', modelValue: '' });
     expect(wrapper.get('[role="status"]').text()).toBe('Your message was posted.');
-    expect(wrapper.text()).toContain('No discussion yet.');
+    expect(wrapper.text()).toContain('No messages yet.');
     expect(button(wrapper, 'Post').element.disabled).toBe(true);
     expect(wrapper.emitted('update:modelValue')).toBeUndefined();
   });

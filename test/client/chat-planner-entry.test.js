@@ -60,7 +60,7 @@ describe('planner entry in its chat context', () => {
   it.each(rooms)('opens authorized $name creation from its scoped status card', async ({ view, id, key, label }) => {
     const { wrapper, router } = await mountPage(view, { props: { id } });
     const entry = wrapper.get(`[aria-label="${label}"]`);
-    expect(entry.text()).toContain('Bring everyone together');
+    expect(entry.text()).toContain('No meetup yet');
     const action = entry.get('a.btn');
     expect(action.text()).toBe('Create meetup plan');
     expect(action.attributes('href')).toBe(`/meetups?${key}=${id}`);

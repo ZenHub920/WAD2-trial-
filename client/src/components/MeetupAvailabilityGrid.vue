@@ -210,7 +210,7 @@ onBeforeUnmount(() => {
       <strong>{{ count(inspected) }} of {{ participantCount }} available</strong>
       <span>{{ selectedSet.has(inspected.startsAt) ? 'You’re available' : 'You’re unavailable' }}</span>
     </div>
-    <p v-if="cells.length" class="availability-grid__hint">{{ selectedSet.size }} half-hour times selected · Hover, tap or focus a cell for details. Arrow keys move; Space selects. Changes are shared after saving.</p>
+    <p v-if="cells.length" class="availability-grid__hint">Arrow keys move; Space selects.</p>
   </div>
 </template>
 
@@ -242,7 +242,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: .35rem;
   color: var(--text-300);
-  font-size: .8rem;
+  font-size: .875rem;
 }
 .availability-grid__legend i {
   width: .8rem;
@@ -284,7 +284,7 @@ onBeforeUnmount(() => {
   box-shadow: inset 0 1px 5px color-mix(in srgb, var(--ink-500) 20%, transparent), var(--shadow-sm);
 }
 .availability-grid__scroll[data-touch-painting='true'] { outline: 2px solid var(--accent-400); outline-offset: 2px; }
-.availability-grid__scroll-hint { margin: 0; color: var(--text-300); font-size: .8rem; }
+.availability-grid__scroll-hint { margin: 0; color: var(--text-300); font-size: .875rem; }
 table {
   width: 100%;
   border-spacing: 0;
@@ -294,7 +294,7 @@ table {
 th {
   height: 26px;
   padding: 0 3px;
-  font-size: .75rem;
+  font-size: .85rem;
   font-weight: 600;
   color: var(--text-200);
   white-space: nowrap;
@@ -339,7 +339,7 @@ td {
   color: #fff;
   cursor: crosshair;
   font: inherit;
-  font-size: .8rem;
+  font-size: .85rem;
   font-weight: 600;
   user-select: none;
   touch-action: manipulation;
@@ -391,7 +391,7 @@ td {
 .availability-grid__hint {
   margin: 0;
   color: var(--text-300);
-  font-size: .8rem;
+  font-size: .875rem;
   line-height: 1.5;
 }
 .availability-grid__inspection {
@@ -400,7 +400,7 @@ td {
   align-items: baseline;
   gap: .3rem 1rem;
   color: var(--text-300);
-  font-size: .78rem;
+  font-size: .875rem;
   min-height: 1.6rem;
 }
 .availability-grid__inspection strong {

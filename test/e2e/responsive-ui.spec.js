@@ -245,7 +245,7 @@ for (const theme of ['light', 'dark']) test(`responsive visual audit: ${theme} l
         if (width === 320) {
           await renderedContrast(host.page);
           expect(await host.page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true);
-          const save = host.page.getByRole('button', { name: 'Save availability and journey', exact: true });
+          const save = host.page.getByRole('button', { name: 'Save my times', exact: true });
           await save.hover();
           expect(await save.evaluate(element => getComputedStyle(element).transform)).toBe('none');
           const transition = await save.evaluate(element => getComputedStyle(element).transitionDuration.split(',').map(value => parseFloat(value)));

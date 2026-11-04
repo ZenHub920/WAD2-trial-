@@ -49,23 +49,22 @@ async function createListing(context, data, overrides = {}) {
 test('seller lists a ticket through the form and sees it on the listing page and My listings', async ({ browser, request }) => {
   const data = await fixture(request);
   const seller = await person(browser, data, 'hostA');
-  const artist = `Marketplace E2E ${data.suffix}`;
+  const artist = `Test concert ${data.suffix}`;
   try {
     // Setup: open the form and wait for the concert list to finish loading.
-    // If Ticketmaster concerts are offered, switch to typing the concert by hand.
+    // Only listed (Ticketmaster) concerts can be chosen; there is no manual entry.
     await seller.page.goto('/list-ticket');
     await expect(seller.page.getByRole('heading', { name: 'List a ticket' })).toBeVisible();
     await expect(seller.page.getByText('Loading Ticketmaster concerts…')).toHaveCount(0);
-    const addConcert = seller.page.getByRole('button', { name: 'Concert not listed? Add it' });
-    if (await addConcert.isVisible()) await addConcert.click();
+    await expect(seller.page.getByRole('button', { name: 'Concert not listed? Add it' })).toHaveCount(0);
 
     // Actions: fill every field by its visible label, like a user, then publish.
-    await seller.page.getByLabel('Concert title').fill(artist);
-    await seller.page.getByLabel('Venue').fill('Singapore Indoor Stadium');
-    await seller.page.getByLabel('Event date').fill('2030-01-01');
+    await seller.page.getByLabel('Ticketmaster concert').fill(artist);
+    await seller.page.getByLabel('Ticketmaster concert').press('Enter');
     await seller.page.getByLabel('Total listing price (SGD)').fill('120.50');
     await seller.page.getByLabel('Number of tickets').fill('2');
     await seller.page.getByLabel('Section').fill('Cat 3');
+    await seller.page.getByLabel('Section').press('Enter');
     await seller.page.getByLabel('Description').fill('Row 12, seats together.');
     await seller.page.getByRole('button', { name: 'Publish listing' }).click();
 
@@ -94,16 +93,15 @@ test('publishing without a price is blocked and creates no listing', async ({ br
   const data = await fixture(request);
   const seller = await person(browser, data, 'hostA');
   try {
-    // Setup: open the form in manual concert mode (same as the test above).
+    // Setup: open the form (same as the test above).
     await seller.page.goto('/list-ticket');
     await expect(seller.page.getByText('Loading Ticketmaster concerts…')).toHaveCount(0);
-    const addConcert = seller.page.getByRole('button', { name: 'Concert not listed? Add it' });
-    if (await addConcert.isVisible()) await addConcert.click();
     // Actions: fill everything except the price.
-    await seller.page.getByLabel('Concert title').fill(`Missing price ${data.suffix}`);
-    await seller.page.getByLabel('Venue').fill('Singapore Indoor Stadium');
-    await seller.page.getByLabel('Event date').fill('2030-01-01');
+    await seller.page.getByLabel('Ticketmaster concert').fill(`Test concert ${data.suffix}`);
+    await seller.page.getByLabel('Ticketmaster concert').press('Enter');
     await seller.page.getByLabel('Section').fill('Cat 3');
+    await seller.page.getByLabel('Section').press('Enter');
+    await seller.page.getByLabel('Description').fill('Standing, e-ticket transfer.');
     // Leave the required price empty: the browser blocks submission.
     await seller.page.getByRole('button', { name: 'Publish listing' }).click();
     // Assert: still on the form, the price field reports "value missing",

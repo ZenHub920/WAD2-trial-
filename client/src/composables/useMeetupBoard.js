@@ -91,8 +91,8 @@ export function useMeetupBoard(props) {
     && board.value.requiredApprovers[0] === currentUser.value?.id && capabilities.value.isOrganizer);
   const proposalLabel = computed(() => isSoleApprover.value ? 'Confirm this time & place' : 'Propose this time & place');
   const proposalGuidance = computed(() => isSoleApprover.value
-    ? 'You are this group’s only required organizer. Confirming records your approval and fixes the time and place.'
-    : 'Submitting creates a proposal. Both organizers must explicitly approve this version before it is confirmed.');
+    ? 'Confirming fixes the time and place.'
+    : 'Both organizers then need to approve it.');
   const approvalGuidance = computed(() => {
     const plan = board.value;
     if (!plan) return '';
@@ -291,8 +291,25 @@ export function useMeetupBoard(props) {
       void refreshPlanner();
     }, 150);
   }
+  // Each step opens once the one before it is done: saved times, then a place vote.
+  // Locked or decided plans (and people who cannot contribute) can read every step.
+  function stepUnlocked(step) {
+    const plan = board.value;
+    if (!plan || contributionsLocked.value || plan.selected_place_id) return true;
+    const timesSaved = savedSlots.value !== '[]';
+    if (step === 'places') return timesSaved;
+    if (step === 'review') return timesSaved && Boolean(plan.currentVotePlaceId);
+    return true;
+  }
+  // A link or refresh can land on a step that is not open yet; fall back to the furthest open one.
+  watch(() => !stepUnlocked(activeStep.value), (locked) => {
+    if (!locked) return;
+    const step = [...plannerSteps].reverse().find(stepUnlocked);
+    activeStep.value = step;
+    if (props.id && route.hash) void router.replace({ path: route.path, query: route.query, hash: `#meetup-${step}` });
+  });
   function showStep(step) {
-    if (!plannerSteps.includes(step)) return;
+    if (!plannerSteps.includes(step) || !stepUnlocked(step)) return;
     activeStep.value = step;
     if (props.id && route.hash !== `#meetup-${step}`)
       void router.replace({ path: route.path, query: route.query, hash: `#meetup-${step}` });
@@ -518,7 +535,7 @@ export function useMeetupBoard(props) {
     selectedSlotCount, bestSavedOverlap, selectedTimes, activeStep, availabilityDirty, refreshing, syncNote,
     liveLabel, statuses, time, validCoordinates, recommendedOptions, hasSavedAvailability, recommendationEmpty,
     placeChoices, pickedPlace, pickedOption, pickedStartsAt, pickPlace,
-    refreshPlanner, showStep, navigateSteps, create, saveAvailability, discardAvailability, assignJourney,
+    refreshPlanner, showStep, stepUnlocked, navigateSteps, create, saveAvailability, discardAvailability, assignJourney,
     addPlace, vote, propose, approve, requestOrganizerAction, organizerAction, postComment, getWeather, getTravelSuggestions, getParking,
    };
 

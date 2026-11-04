@@ -87,7 +87,6 @@ const { canCoordinate, isFinished, canPlanMeetup, refreshEligibility } = useConc
 const pendingLimit = computed(() => seeker.value?.maxPendingDirectApplications ?? 1);
 const canApply = computed(() => canCoordinate.value && !busy.value && !loading.value && displayedMode.value === 'direct' && seeker.value?.status === 'open' && persistedMode.value === 'direct' && !currentGroup.value && !activeProposals.value.length && !pendingLegacy.value.length && pendingDirect.value.length < pendingLimit.value);
 const canPrefer = computed(() => canCoordinate.value && seeker.value?.status === 'open' && !currentGroup.value && !activeProposals.value.length);
-const modeLabels = { direct: 'Browse and choose', algorithm: 'Match me with a group' };
 const modeOptions = [
   { mode: 'direct', kicker: 'Pick yourself', title: 'Browse and choose', description: 'See every group and ask to join the one you like.', action: 'Browse groups' },
   { mode: 'algorithm', kicker: 'Let us help', title: 'Match me with a group', description: 'Like a few groups and we’ll match you with a good fit.', action: 'Find my match' },
@@ -200,7 +199,14 @@ async function act(operation, success) {
 }
 async function enroll(reopen = false) { if (!reopen) rememberPlan(); await act(() => reopen ? api.reopenSeekerRequest(concertId.value) : api.createRequest(concertId.value, { ...form, joining_mode: displayedMode.value }), 'Your answers are saved. Choose how you’d like to find a group.'); }
 const canSwitchMode = computed(() => canCoordinate.value && seeker.value?.status === 'open' && !currentGroup.value);
-async function activateMode() { const target = displayedMode.value; await act(() => api.setJoiningMode(concertId.value, target), target === 'direct' ? 'Browse the groups below and ask to join one at a time.' : 'Mark groups you like and join the match list.'); }
+// No banner: the highlighted card already shows which method is now active.
+async function activateMode() { const target = displayedMode.value; await act(() => api.setJoiningMode(concertId.value, target), ''); }
+// Choosing a method on its card switches to it straight away when the member can;
+// otherwise the card just shows that method and the status line says why.
+function chooseMode(mode) {
+  displayedMode.value = mode; applicationFor.value = '';
+  if (canSwitchMode.value && persistedMode.value !== mode) void activateMode();
+}
 async function join(id, note = applicationNote.value.trim()) {
   const key = context(), showId = concertId.value, userId = currentUser.value?.id;
   const group = groups.value.find(item => item.id === id);
@@ -235,7 +241,6 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
     <header class="groups-hero">
       <p class="groups-hero__eyebrow mono">Groups</p>
       <h1>Find your people for the show</h1>
-      <p class="groups-hero__lede">Meet up, eat and walk in with fans going to the same show. <strong>Groups don’t include tickets.</strong></p>
     </header>
 
     <GroupPreferencesGate summary @saved="load">
@@ -312,48 +317,28 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
 
       <template v-if="seeker || currentGroup">
       <section class="card group-panel joining-section" aria-labelledby="joining-mode-heading">
-        <div class="discovery-section-heading"><span class="discovery-step mono" aria-hidden="true">01</span><div><p class="group-kicker mono">Your way in</p><h2 id="joining-mode-heading">How do you want to find a group?</h2></div></div>
+        <h2 id="joining-mode-heading">How do you want to find a group?</h2>
         <div class="joining-modes" role="group" aria-label="Ways to find a group">
           <article v-for="option in modeOptions" :key="option.mode" class="joining-mode" :class="{ 'joining-mode--selected': displayedMode === option.mode }">
             <div class="joining-mode__eyebrow"><p class="group-kicker mono">{{ option.kicker }}</p><span v-if="displayedMode === option.mode" class="joining-mode__selected">{{ modeIsActive ? 'Active method' : 'Viewing' }}</span></div>
             <h3>{{ option.title }}</h3>
             <p>{{ option.description }}</p>
-            <button type="button" class="btn" :class="displayedMode === option.mode ? 'btn--primary' : 'btn--ghost'" :aria-pressed="displayedMode === option.mode" :disabled="busy" @click="displayedMode = option.mode; applicationFor = ''">{{ option.action }}</button>
+            <button type="button" class="btn" :class="displayedMode === option.mode ? 'btn--primary' : 'btn--ghost'" :aria-pressed="displayedMode === option.mode" :disabled="busy" @click="chooseMode(option.mode)">{{ option.action }}</button>
           </article>
         </div>
-        <p v-if="seeker && modeIsActive" class="group-muted">You’re using: <strong>{{ modeLabels[persistedMode] }}</strong></p>
-        <p v-else-if="seeker" class="group-muted">You’re only viewing <strong>{{ modeLabels[displayedMode] }}</strong>. Your active method is still <strong>{{ modeLabels[persistedMode] }}</strong>.</p>
-        <button v-if="canSwitchMode && !modeIsActive && displayedMode === 'direct'" type="button" class="btn btn--primary" :disabled="busy" @click="activateMode">Switch to browsing</button>
         <p v-if="seeker && !modeIsActive && !canSwitchMode" class="group-status" role="status">{{ currentGroup ? 'You already have a group for this show, so the way you join can’t change.' : pendingDirect.length ? `To switch, first cancel your request to ${requestGroupName(pendingDirect[0])} under Your requests.` : activeProposals.length || pendingLegacy.length ? 'Finish or cancel your current match before switching.' : 'You can’t switch methods for this show right now.' }}</p>
-        <p v-else-if="!modeIsActive && (seeker?.status === 'open' || pendingDirect.length || activeProposals.length || pendingLegacy.length)" class="group-muted">Just looking? That’s fine. Nothing changes until you switch, and open requests stay as they are.</p>
         <p v-if="pendingDirect.length" class="group-status" role="status">
           {{ pendingDirect[0].seatReserved ? 'We’re saving you a spot.' : `You’re number ${pendingDirect[0].queuePosition ?? '?'} in line.` }}
           Your request expires {{ dateLabel(pendingDirect[0].expiresAt) }}, even if you are still waiting.
         </p>
-        <details class="group-howto">
-          <summary>How does this work?</summary>
-          <ul v-if="displayedMode === 'direct'">
-            <li>You can ask one group at a time per concert.</li>
-            <li>Requests are answered in the order they arrive. If there’s room, we save you a spot while the host decides.</li>
-            <li>Your request expires 48 hours after you send it, including time spent waiting in line. Holding a spot does not extend the deadline.</li>
-          </ul>
-          <ul v-else>
-            <li>Mark the groups you like, then join the match list. Matching rounds are run by an operator.</li>
-            <li>Both your preferences and the groups’ preferences affect the match. You may be offered a group you didn’t mark.</li>
-            <li>A match joins the same queue as group requests. Once it reaches the front and has a held spot, both you and the host must approve it.</li>
-            <li>Match requests expire 48 hours after creation, including time spent waiting in line.</li>
-          </ul>
-        </details>
 
       <section v-if="displayedMode === 'algorithm' && seeker && !currentGroup" class="card group-panel automatic-matching" aria-labelledby="automatic-matching-heading">
         <h2 id="automatic-matching-heading">Your match</h2>
         <p v-if="activeProposals.length">Your match is in the group queue below. Check whether a spot is held and whether it is ready for both approvals.</p>
         <p v-else-if="pendingLegacy.length">You have an earlier match waiting for the host. You can check on it or cancel it under Your requests.</p>
         <p v-else-if="matching.optedIn || matching.state === 'queued'" role="status">You’re on the match list. Keep marking groups you like, and check back soon.</p>
-        <p v-else-if="!modeIsActive">You’re viewing matching. Switch to it to mark groups you like and join the match list.</p>
         <p v-else>You’re not on the match list yet.</p>
         <div class="group-actions">
-          <button v-if="canSwitchMode && !modeIsActive" type="button" class="btn btn--primary" :disabled="busy" @click="activateMode">Switch to matching</button>
           <button v-if="canCoordinate && !matching.optedIn && !activeProposals.length && !pendingLegacy.length && modeIsActive && seeker.status === 'open'" type="button" class="btn btn--primary" :disabled="busy" @click="joinPool">Join the match list</button>
           <button v-if="matching.optedIn" type="button" class="btn btn--danger-ghost" :disabled="busy || activeProposals.length > 0 || pendingLegacy.length > 0" @click="leavePool">Leave the match list</button>
           <button type="button" class="btn btn--ghost" :disabled="busy" @click="load">Check for updates</button>
@@ -365,13 +350,13 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
       </section>
 
       <section class="card group-panel discovery-search" aria-labelledby="discovery-search-heading">
-        <div class="discovery-section-heading"><span class="discovery-step mono" aria-hidden="true">02</span><div><p class="group-kicker mono">{{ selectedConcert?.artist || 'This concert' }}</p><h2 id="discovery-search-heading">Narrow it down</h2></div></div>
+        <h2 id="discovery-search-heading">Narrow it down</h2>
         <p class="group-muted discovery-search__hint">Search by name, or use <strong>Filters</strong> for seating and arrival.</p>
         <fieldset :disabled="busy" class="group-fieldset"><GroupFilters :filters="filters" preferences /></fieldset>
       </section>
 
       <div class="results-heading">
-        <div class="results-heading__context"><p class="group-kicker mono">{{ modeLabels[displayedMode] }}</p><h2><span class="key-figure">{{ total }}</span> {{ total === 1 ? 'group' : 'groups' }} going</h2><p class="results-heading__hint">{{ displayedMode === 'direct' ? 'Compare the groups. Ask to join when one feels right.' : 'Mark the groups you like. A proposal still needs both approvals.' }}<span v-if="displayedMode === 'direct' && pendingDirect.length"> · you’ve asked {{ pendingDirect.length }} of {{ pendingLimit }}</span></p></div>
+        <div class="results-heading__context"><h2><span class="key-figure">{{ total }}</span> {{ total === 1 ? 'group' : 'groups' }} going</h2><p v-if="displayedMode === 'direct' && pendingDirect.length" class="results-heading__hint">You’ve asked {{ pendingDirect.length }} of {{ pendingLimit }}</p></div>
         <div v-if="displayedMode === 'direct'" class="results-layout" role="group" aria-label="How to show groups">
           <button type="button" class="btn" :class="directLayout === 'compare' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="directLayout === 'compare'" :disabled="busy" @click="directLayout = 'compare'; applicationFor = ''">Side by side</button>
           <button type="button" class="btn" :class="directLayout === 'list' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="directLayout === 'list'" :disabled="busy" @click="directLayout = 'list'">See all</button>
@@ -495,12 +480,6 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
   text-transform: uppercase;
   color: var(--accent-400);
 }
-.groups-hero__lede {
-  max-width: 60ch;
-  color: var(--text-300);
-  font-size: var(--step-0);
-  line-height: 1.6;
-}
 .groups-concert-picker {
   max-width: 560px;
   width: 100%;
@@ -515,28 +494,6 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
   border-radius: var(--radius-lg);
   background: var(--panel-bg);
   box-shadow: var(--panel-shadow);
-}
-.discovery-section-heading {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-.discovery-section-heading > div {
-  display: grid;
-  gap: var(--space-1);
-}
-.discovery-step {
-  display: grid;
-  place-items: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  flex: none;
-  border: 1px solid var(--panel-edge);
-  border-radius: var(--radius-sm);
-  background: var(--ink-850);
-  color: var(--accent-400);
-  font-size: var(--step--1);
-  box-shadow: inset 0 1px 0 var(--panel-highlight);
 }
 .discovery-search {
   border-color: color-mix(in srgb, var(--accent-400) 32%, var(--panel-edge));
@@ -636,13 +593,6 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-sm);
   background: var(--ink-750);
-}
-.group-howto ul {
-  display: grid;
-  gap: var(--space-2);
-  padding-left: var(--space-5);
-  color: var(--text-300);
-  max-width: 70ch;
 }
 .group-setup__form {
   grid-template-columns: minmax(0, 1fr);

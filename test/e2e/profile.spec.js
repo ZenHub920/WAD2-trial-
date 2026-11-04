@@ -61,10 +61,10 @@ test('a signed-in fan edits their profile, saves it, and the change survives a r
     await page.getByLabel('Home region').selectOption('west');
     await page.getByLabel('Chinese').check();
     await page.getByRole('slider', { name: 'Singalong', exact: true }).press('ArrowRight');
-    await page.getByRole('button', { name: 'Save profile' }).click();
 
-    // Assert: the page confirms the save.
-    await expect(page.getByText('Profile saved')).toBeVisible();
+    // Assert: the edits save on their own and the page confirms it.
+    await expect(page.getByText('Saved', { exact: true }).first()).toBeVisible();
+    await expect.poll(async () => (await api(fan.context, '/me/profile')).profile.vibe.singalong).toBe(4);
 
     // Assert: the server really stored it, and the page shows the stored values
     // again after a full reload (not just the state left in memory).
@@ -95,16 +95,14 @@ test('the form refuses a blank display name and refuses to drop every language',
     await page.goto('/profile');
     await expect(page.getByLabel('Display name')).toHaveValue('hostA');
 
-    // Actions and assert: a name of only spaces is rejected.
+    // Actions and assert: a name of only spaces is not autosaved.
     await page.getByLabel('Display name').fill('   ');
-    await page.getByRole('button', { name: 'Save profile' }).click();
-    await expect(page.getByText('Enter a display name.')).toBeVisible();
+    await expect(page.getByText(/Enter a display name\./)).toBeVisible();
 
-    // Actions and assert: a valid name but no language is rejected too.
-    await page.getByLabel('Display name').fill('Jamie Tan');
+    // Actions and assert: with no language left, a valid name is not saved either.
     await page.getByLabel('English').uncheck();
-    await page.getByRole('button', { name: 'Save profile' }).click();
-    await expect(page.getByText('Choose at least one language.')).toBeVisible();
+    await page.getByLabel('Display name').fill('Jamie Tan');
+    await expect(page.getByText(/Choose at least one language\./)).toBeVisible();
 
     // Assert: nothing reached the server - the stored profile is untouched.
     const { profile } = await api(fan.context, '/me/profile');

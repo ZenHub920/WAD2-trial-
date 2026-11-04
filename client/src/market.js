@@ -1,6 +1,7 @@
 /** Display and browser-saved listing helpers for the concert ticket inventory. */
 import { ref, watch, toValue } from 'vue';
 import { api, LABELS } from './api.js';
+import { TICKET_SECTIONS } from '../../shared/ticketSections.mjs';
 
 const money = new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' });
 
@@ -34,7 +35,17 @@ export function listingTitle(listing) {
 }
 
 /** Common categories offered as suggestions; sellers can type any section printed on their ticket. */
-export const SECTION_SUGGESTIONS = ['Cat 1', 'Cat 2', 'Cat 3', 'Cat 4', 'Cat 5', 'Cat 6', 'VIP', 'Pen A', 'Pen B', 'Standing'];
+// The server accepts exactly these (shared/ticketSections.mjs).
+export const SECTION_SUGGESTIONS = TICKET_SECTIONS;
+
+/**
+ * Sections a seller can choose (as SearchSelect options). `keep` adds a listing's
+ * existing section when it predates this list, so editing it does not wipe it.
+ */
+export function sectionOptions(keep = '') {
+  const names = keep && !SECTION_SUGGESTIONS.includes(keep) ? [...SECTION_SUGGESTIONS, keep] : SECTION_SUGGESTIONS;
+  return names.map((name) => ({ value: name, label: name }));
+}
 
 /** SQLite's `datetime('now')` is UTC without a zone marker; parse it as such. */
 function parseDbTime(value) {

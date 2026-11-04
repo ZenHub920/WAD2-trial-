@@ -25,7 +25,7 @@ vi.mock('../../client/src/groupPreferences.js', async () => {
 vi.mock('../../client/src/components/ProfileNotifications.vue', () => ({ default: { template: '<div data-notifications>Notifications</div>' } }));
 
 const ownProfile = () => ({ id: 'me', displayName: 'Ari', email: 'ari@example.test', ageBand: '21-24', homeRegion: 'central',
-  gender: 'unspecified', companionGenderPref: 'any', languages: ['en'], vibe: { singalong: 4 }, reliability: .75, verified: false });
+  gender: 'unspecified', companionGenderPref: 'any', languages: ['en'], vibe: { singalong: 4 }, reliability: .75 });
 const existingAnswers = () => ({ about: [{ key: 'singalong', text: 'Singalong', recognized: true }], wants: [], avoid: [], quiz: [], dealbreakers: [] });
 
 beforeEach(() => {
@@ -89,7 +89,7 @@ describe('private questionnaire placement', () => {
     const { wrapper, router } = await mountPage(ProfileView, { path: '/profile?setup=1&next=%2Fgroups%3FconcertId%3Dc1#preferences' });
     expect(wrapper.get('h1').text()).toBe('Make it feel like you');
     expect(wrapper.find('[data-notifications]').exists()).toBe(false);
-    expect(wrapper.find('#profile-form').exists()).toBe(false);
+    expect(wrapper.find('.save-badge').exists()).toBe(false);
     await button(wrapper, 'Skip for now').trigger('click');
     await flushPromises();
     expect(saveMyPreferences).not.toHaveBeenCalled();

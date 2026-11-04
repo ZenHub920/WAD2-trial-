@@ -73,8 +73,8 @@ test('groups: past concert guard, draft creation, invitation, publication and or
     await card.getByRole('button').click();
     await expect(host.page).toHaveURL(/from=groups/);
     await host.page.getByLabel('Title', { exact: true }).fill(timing.title);
-    await host.page.getByLabel('First possible meeting time', { exact: false }).fill('2030-01-01T16:00');
-    await host.page.getByLabel('End of availability window', { exact: false }).fill('2030-01-01T17:30');
+    await host.page.getByLabel('Earliest meeting time', { exact: false }).fill('2030-01-01T16:00');
+    await host.page.getByLabel('Latest meeting time', { exact: false }).fill('2030-01-01T17:30');
     await host.page.getByRole('button', { name: 'Create planning board', exact: true }).click();
     await expect(host.page.getByRole('heading', { name: timing.title, exact: true })).toBeVisible();
     await stage(host.page, 'places'); await stage(host.page, 'review');

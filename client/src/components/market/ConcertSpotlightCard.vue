@@ -34,6 +34,7 @@ const from = computed(() => {
 const broken = ref(false);
 const image = computed(() => (!broken.value && props.concert.hero_image_url) || null);
 const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 0);
+const statClass = (count) => count === null ? null : count > 0 ? 'spot__stat--good' : 'spot__stat--bad';
 </script>
 
 <template>
@@ -65,10 +66,10 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
 
       <div class="spot__activity">
         <p class="spot__section-label">Find your company</p>
-        <p v-if="activityLoading"><LoadingSpinner /> Loading group activity…</p>
+        <p v-if="activityLoading" class="spot__activity-loading"><LoadingSpinner /> Loading group activity…</p>
         <template v-else>
-          <p :class="{ 'spot__stat--on': openSlots }">{{ openSlots === null ? 'Group spots unavailable' : openSlots === 0 ? 'No open spots in groups' : `${openSlots} open ${openSlots === 1 ? 'spot' : 'spots'} in groups` }}</p>
-          <p :class="{ 'spot__stat--on': openSeekers }">{{ openSeekers === null ? 'Group activity unavailable' : openSeekers === 0 ? 'Nobody looking for a group yet' : `${openSeekers} ${openSeekers === 1 ? 'person' : 'people'} looking for a group` }}</p>
+          <p class="spot__stat" :class="statClass(openSlots)">{{ openSlots === null ? 'Group spots unavailable' : openSlots === 0 ? 'No open spots in groups' : `${openSlots} open ${openSlots === 1 ? 'spot' : 'spots'} in groups` }}</p>
+          <p class="spot__stat" :class="statClass(openSeekers)">{{ openSeekers === null ? 'Group activity unavailable' : openSeekers === 0 ? 'Nobody looking for a group yet' : `${openSeekers} ${openSeekers === 1 ? 'person' : 'people'} looking for a group` }}</p>
         </template>
       </div>
 
@@ -88,6 +89,8 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
           target="_blank"
           rel="noopener noreferrer"
         >Buy on Ticketmaster ↗</a>
+        <!-- Keeps the link's line so every card's Tickets block is the same height. -->
+        <span v-else class="spot__official spot__official--none" aria-hidden="true">&nbsp;</span>
       </div>
 
       <footer class="spot__foot">
@@ -263,10 +266,12 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
   color: var(--accent-400);
 }
 
+/* Pushed to the bottom with Tickets and the footer, so the box lines up across
+   cards whose titles, tour names or descriptions take different heights. */
 .spot__activity {
   display: grid;
   gap: var(--space-1);
-  margin-block: var(--space-2);
+  margin: auto 0 var(--space-2);
   padding: var(--space-2) var(--space-3);
   border-left: 2px solid color-mix(in srgb, var(--accent-400) 45%, var(--panel-edge));
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
@@ -275,10 +280,30 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
   font-size: var(--step--1);
 }
 
-.spot__stat--on {
-  color: var(--accent-400);
-  font-weight: 700;
+/* Colour-coded at a glance: green when there is room or company, red when not. */
+.spot__stat {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
+.spot__stat--good,
+.spot__stat--bad {
+  font-weight: 650;
+}
+/* Same height as the two status lines it stands in for. */
+.spot__activity-loading { min-height: calc(2lh + var(--space-1)); }
+.spot__official--none { visibility: hidden; }
+.spot__stat--good::before,
+.spot__stat--bad::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.spot__stat--good { color: var(--signal-good); }
+.spot__stat--bad { color: var(--signal-bad); }
 .spot__section-label {
   margin: 0 0 var(--space-1);
   color: var(--text-300);
@@ -316,7 +341,6 @@ const busy = computed(() => (props.openSeekers ?? 0) + (props.openSlots ?? 0) > 
   justify-content: space-between;
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-3);
-  margin-top: auto;
   padding-top: var(--space-3);
   border-top: var(--border-hairline);
 }

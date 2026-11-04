@@ -8,10 +8,10 @@ export function createUserRepo(db) {
       db.prepare(`
         INSERT INTO users (id, display_name, email, password_hash, age_band, home_region, gender,
                            companion_gender_pref, languages_json, vibe_json,
-                           reliability, verified)
+                           reliability)
         VALUES (@id, @display_name, @email, @password_hash, @age_band, @home_region, @gender,
                 @companion_gender_pref, @languages_json, @vibe_json,
-                @reliability, @verified)
+                @reliability)
       `).run({
         id,
         display_name: data.display_name,
@@ -24,7 +24,6 @@ export function createUserRepo(db) {
         languages_json: JSON.stringify(data.languages ?? ['en']),
         vibe_json: JSON.stringify(data.vibe),
         reliability: data.reliability ?? 0.75,
-        verified: data.verified ? 1 : 0,
       });
       return this.findById(id);
     },

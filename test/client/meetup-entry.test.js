@@ -52,9 +52,9 @@ describe('conversation meetup status cards', () => {
   });
 
   it.each([
-    ['planning', {}, 'Share availability', '2 of 4 participants shared availability.', '#meetup-availability'],
+    ['planning', {}, 'Share availability', '2 of 4 shared their times', '#meetup-availability'],
     ['planning', { hasAvailability: true }, 'View planning board', 'Planning in progress', '#meetup-places'],
-    ['proposed', {}, 'Review and approve', '0 of 2 required approvals', '#meetup-review'],
+    ['proposed', {}, 'Review and approve', '0 of 2 approvals', '#meetup-review'],
     ['proposed', { capabilities: { canApprove: false }, hasApproved: true }, 'View proposed meetup', 'Your approval is saved', '#meetup-review'],
     ['confirmed', {}, 'View meetup details', 'Confirmed', '#meetup-review'],
     ['cancelled', { isHistorical: true }, 'View cancelled plan', 'not an active meetup', '#meetup-review'],
@@ -139,6 +139,12 @@ describe('conversation meetup status cards', () => {
     for (const handler of live.handlers) handler('meetup-updated', { meetupId: 'plan-1' });
     await flushPromises();
     expect(wrapper.get('a.btn').attributes('href')).toBe(`/meetups/plan-1?from=${from}#meetup-availability`);
+    // One plan needs no extra link; with several, the count links to all of them.
+    expect(wrapper.find('a.meetup-entry__more').exists()).toBe(false);
+    api.meetups.mockResolvedValue({ meetups: [plan(), plan('planning', { id: 'plan-2' })] });
+    for (const handler of live.handlers) handler('meetup-updated', { meetupId: 'plan-2' });
+    await flushPromises();
+    expect(wrapper.get('a.meetup-entry__more').text()).toBe('2 plans');
     expect(wrapper.get('a.meetup-entry__more').attributes('href')).toBe(`/meetups?partyId=group-1&from=${from}`);
   });
 });

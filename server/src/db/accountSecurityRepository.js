@@ -184,7 +184,7 @@ export function createAccountSecurityRepo(db, { now = Date.now } = {}) {
           .run(operatorId, userId, reportId, action, note.trim(), time);
         if (action === 'warn' && db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='notifications'").get()) {
           db.prepare(`INSERT INTO notifications(id,user_id,category,event_key,title,resource_path)
-            VALUES(?,?,'group',?,'An operator sent you an account notice','/account/security')`)
+            VALUES(?,?,'group',?,'An operator sent you an account notice','/profile')`)
             .run(`n_${randomUUID()}`, userId, `moderation:${result.lastInsertRowid}`);
         }
         return { id: Number(result.lastInsertRowid), action, userId, reportId, createdAt: time };

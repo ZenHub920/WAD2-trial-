@@ -833,3 +833,35 @@ li strong {
 [id] {
   scroll-margin-top: calc(var(--header-height) + var(--space-4));
 }
+
+/* Inline form errors (formErrors.js): a short red line under the field that
+   failed, replacing the browser's own validation bubble. */
+.field-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  color: var(--status-danger);
+  font-size: var(--step--1);
+  font-weight: 600;
+  line-height: 1.4;
+  text-transform: none;
+  letter-spacing: normal;
+}
+/* A drawn icon (circle with the "!" cut out) rather than a text glyph, so it is
+   always centred, and placed on the middle of the first line of text. */
+.field-error::before {
+  content: '';
+  flex: none;
+  width: 1.1em;
+  height: 1.1em;
+  margin-top: calc((1lh - 1.1em) / 2);
+  background: var(--status-danger);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill-rule='evenodd' d='M10 0a10 10 0 1 1 0 20a10 10 0 1 1 0-20ZM8.7 4.6h2.6l-.4 7h-1.8ZM10 13.2a1.45 1.45 0 1 1 0 2.9a1.45 1.45 0 1 1 0-2.9Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill-rule='evenodd' d='M10 0a10 10 0 1 1 0 20a10 10 0 1 1 0-20ZM8.7 4.6h2.6l-.4 7h-1.8ZM10 13.2a1.45 1.45 0 1 1 0 2.9a1.45 1.45 0 1 1 0-2.9Z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.field--invalid,
+.field--invalid:focus,
+.field--invalid:focus-visible {
+  border-color: var(--status-danger) !important;
+}

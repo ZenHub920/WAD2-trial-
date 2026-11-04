@@ -11,7 +11,7 @@ vi.mock('../../client/src/auth.js', async () => {
   return { currentUser: ref({ id: 'viewer' }) };
 });
 const publicPerson = (id = 'person') => ({ id, displayName: 'Ari Tan', avatarUrl: null,
-  ageBand: '21-24', languages: ['en', 'zh'], verified: true, hasVibeRatings: true,
+  ageBand: '21-24', languages: ['en', 'zh'], hasVibeRatings: true,
   vibe: { singalong: 4, photography: 2, dancing: 3, quiet: 1, queue_early: 3, merch: 0 } });
 beforeEach(() => vi.resetAllMocks());
 

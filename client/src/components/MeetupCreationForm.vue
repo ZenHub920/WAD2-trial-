@@ -76,28 +76,27 @@ function submit() {
 <template>
   <form class="card group-panel" :aria-busy="submitting" @submit.prevent="submit">
     <h2>{{ additionalPlan ? 'Create a separate meetup plan' : 'Create a meetup plan' }}</h2>
-    <p v-if="additionalPlan" class="group-muted">An active plan already exists. This creates a separate arrangement; it does not change or reopen the existing plan.</p>
+    <p v-if="additionalPlan" class="group-muted">This won’t change your existing plan.</p>
     <div class="meetup-concert-context">
       <strong>{{ context.concert?.artist }} · {{ context.concert?.event_date }}</strong>
       <span>{{ context.concert?.venue }}</span>
       <span v-if="context.policy.hasVerifiedStart">Verified concert start: {{ formatMeetupDateTime(context.policy.concertStartAt) }}</span>
       <p>{{ context.policy.message }}</p>
     </div>
-    <p class="group-muted">Choose a window in 30-minute steps. Companions can then paint when they are free.</p>
     <label>Title<input v-model="form.title" maxlength="120" required /></label>
-    <label>First possible meeting time (Singapore time)<input
+    <label>Earliest meeting time<input
       v-model="form.startsAt" type="datetime-local"
       :min="singaporeInputValue(context.policy.minimumStartsAt)"
       :max="shiftedInput(context.policy.maximumEndsAt, -1800000)"
       :aria-invalid="Boolean(validationError)" aria-describedby="meetup-creation-validation"
       step="1800" required /></label>
-    <label>End of availability window (Singapore time)<input
+    <label>Latest meeting time<input
       v-model="form.endsAt" type="datetime-local"
       :min="shiftedInput(context.policy.minimumStartsAt, 1800000)"
       :max="singaporeInputValue(context.policy.maximumEndsAt)"
       :aria-invalid="Boolean(validationError)" aria-describedby="meetup-creation-validation"
       step="1800" required /></label>
-    <p id="meetup-creation-validation" :class="{ 'group-error': validationError }" :role="validationError ? 'alert' : 'status'">{{ validationError || (!context.policy.canSchedule ? 'There is no future pre-concert window left for this concert.' : 'Times shown in Singapore time. Start and end must stay within the concert day or preceding travel day.') }}</p>
+    <p id="meetup-creation-validation" :class="{ 'group-error': validationError }" :role="validationError ? 'alert' : 'status'">{{ validationError || (!context.policy.canSchedule ? 'There is no future pre-concert window left for this concert.' : 'Singapore time, on the concert day or the day before. Everyone then marks when they’re free in this window.') }}</p>
     <p v-if="attemptNotice" id="meetup-creation-attempt" class="group-muted" role="status">{{ attemptNotice }}</p>
     <p v-if="error" class="group-error" role="alert">{{ error }}</p>
     <button type="submit" class="btn btn--primary" :formnovalidate="replayAttempt"

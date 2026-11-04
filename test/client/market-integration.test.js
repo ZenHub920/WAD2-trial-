@@ -12,7 +12,7 @@ vi.mock('../../client/src/api.js', async (importOriginal) => {
     ...actual,
     api: {
       ticket: vi.fn(), startChat: vi.fn(), updateTicket: vi.fn(), deleteTicket: vi.fn(),
-      myTickets: vi.fn(), submitProof: vi.fn(), createTicket: vi.fn(), externalConcerts: vi.fn(),
+      myTickets: vi.fn(), submitProof: vi.fn(), createTicket: vi.fn(), externalConcerts: vi.fn(), concerts: vi.fn(),
     },
   };
 });
@@ -317,33 +317,50 @@ describe('Integration: MyListingsView + ProofUpload', () => {
 
 // The "List a ticket" form: what it sends to the API and how it reacts.
 describe('Integration: ListingView (create a listing)', () => {
-  // Fills the hand-entered concert fields plus price and section, the way a user types them.
-  async function fillManualConcert(wrapper) {
-    await wrapper.get('input[placeholder="Enter the artist or concert title"]').setValue('  Coldplay  ');
-    await wrapper.get('input[placeholder="Enter the concert venue"]').setValue('National Stadium');
-    await wrapper.get('input[type="date"]').setValue('2030-01-01');
+  const saved = { id: 'tm_saved', artist: 'Coldplay', venue: 'National Stadium', event_date: '2030-01-01' };
+  // Picks a concert, price, section and description, the way a user does.
+  async function fillListing(wrapper, concertText = 'cold') {
+    const [concertBox, sectionBox] = wrapper.findAll('input[role="combobox"]');
+    await concertBox.setValue(concertText);
+    await concertBox.trigger('keydown', { key: 'Enter' });
     await wrapper.get('input[placeholder="0.00"]').setValue('120.5');
-    await wrapper.get('input[list="section-suggestions"]').setValue('Cat 3');
+    // Section is chosen from the list: type to find it, Enter picks the match.
+    await sectionBox.setValue('Cat 3');
+    await sectionBox.trigger('keydown', { key: 'Enter' });
+    await wrapper.get('textarea').setValue('  Two seats together  ');
   }
 
-  // If Ticketmaster is not set up, the form switches to typing the concert by
-  // hand. The exact request body is checked: spaces are trimmed, $120.50 is sent
-  // as 12050 cents, and after success the user lands on the new listing.
-  it('Test1: without Ticketmaster the seller enters the concert by hand and is taken to the new listing', async () => {
+  // Listings are for Ticketmaster concerts only: if live discovery is down, the
+  // Ticketmaster concerts already saved are offered, and there is no manual entry.
+  // The exact request body is checked: $120.50 is sent as 12050 cents, and after
+  // success the user lands on the new listing.
+  it('Test1: without live Ticketmaster discovery, saved concerts are offered and only the id is sent', async () => {
     api.externalConcerts.mockRejectedValue(apiError(503, 'concert_provider_not_configured'));
+    api.concerts.mockResolvedValue({ concerts: [saved] });
     api.createTicket.mockResolvedValue({ listing: { id: 'new_1' } });
     const { wrapper, router } = await mountPage(ListingView, '/list-ticket');
-    expect(wrapper.get('[role="alert"]').text()).toContain('Ticketmaster discovery is not configured');
+    expect(wrapper.text()).not.toContain('Concert not listed');
+    expect(wrapper.find('input[type="date"]').exists()).toBe(false);
 
-    await fillManualConcert(wrapper);
+    await fillListing(wrapper);
     await wrapper.get('form').trigger('submit');
     await flushPromises();
 
     expect(api.createTicket).toHaveBeenCalledWith({
-      concert: { artist: 'Coldplay', venue: 'National Stadium', event_date: '2030-01-01' },
-      priceCents: 12050, quantity: 1, section: 'Cat 3', description: '',
+      concertId: 'tm_saved', priceCents: 12050, quantity: 1, section: 'Cat 3', description: 'Two seats together',
     });
     expect(router.currentRoute.value.fullPath).toBe('/tickets/new_1');
+  });
+
+  it('Test1b: with no concerts anywhere, it says so and offers to try again', async () => {
+    api.externalConcerts.mockRejectedValue(apiError(503, 'concert_provider_not_configured'));
+    api.concerts.mockResolvedValue({ concerts: [] });
+    const { wrapper } = await mountPage(ListingView, '/list-ticket');
+    expect(wrapper.get('[role="alert"]').text()).toContain('Could not load concerts right now');
+    api.concerts.mockResolvedValue({ concerts: [saved] });
+    await wrapper.findAll('button').find((b) => b.text() === 'Try again').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
   });
   // When concerts load, picking one from the dropdown sends only its id.
   // The server rejects a request containing both `concertId` and `concert`.
@@ -351,9 +368,16 @@ describe('Integration: ListingView (create a listing)', () => {
     api.externalConcerts.mockResolvedValue({ events: [{ id: 'tm_1', artist: 'IU', venue: 'Indoor Stadium', event_date: '2030-02-02' }] });
     api.createTicket.mockResolvedValue({ listing: { id: 'new_2' } });
     const { wrapper } = await mountPage(ListingView, '/list-ticket');
-    await wrapper.get('select').setValue('tm_1');
+    // Type part of the name; the closest match is highlighted and Enter picks it.
+    const [concertBox, sectionBox] = wrapper.findAll('input[role="combobox"]');
+    await concertBox.trigger('focus');
+    await concertBox.setValue('iu');
+    await concertBox.trigger('keydown', { key: 'Enter' });
+    expect(concertBox.element.value).toContain('IU');
     await wrapper.get('input[placeholder="0.00"]').setValue('80');
-    await wrapper.get('input[list="section-suggestions"]').setValue('VIP');
+    await sectionBox.setValue('VIP');
+    await sectionBox.trigger('keydown', { key: 'Enter' });
+    await wrapper.get('textarea').setValue('Front row');
     await wrapper.get('form').trigger('submit');
     await flushPromises();
     expect(api.createTicket).toHaveBeenCalledWith(expect.objectContaining({ concertId: 'tm_1', priceCents: 8000, section: 'VIP' }));
@@ -362,10 +386,10 @@ describe('Integration: ListingView (create a listing)', () => {
   // The server's error code ("invalid_price") is turned into a readable
   // sentence, and the user stays on the form to fix it.
   it('Test3: a server validation error is shown in plain language', async () => {
-    api.externalConcerts.mockResolvedValue({ events: [] });
+    api.externalConcerts.mockResolvedValue({ events: [saved] });
     api.createTicket.mockRejectedValue(apiError(400, 'invalid_price'));
     const { wrapper, router } = await mountPage(ListingView, '/list-ticket');
-    await fillManualConcert(wrapper);
+    await fillListing(wrapper);
     await wrapper.get('form').trigger('submit');
     await flushPromises();
     expect(wrapper.get('.listing-form__error[role="alert"]').text()).toBe('Enter a valid total listing price.');

@@ -17,9 +17,9 @@ function submit() {
 
 <template>
   <section class="card group-panel meetup-discussion">
-    <h2>Group discussion &amp; change requests</h2>
-    <p class="group-muted">Share questions or request changes here. Messages don't change the confirmed plan. Organizers can reopen planning if needed.</p>
-    <p v-if="!comments.length">No discussion yet. Share a question or change request with the other participants.</p>
+    <h2>Discussion</h2>
+    <p class="group-muted">Ask questions or suggest changes.</p>
+    <p v-if="!comments.length">No messages yet.</p>
     <article v-for="entry in comments" :key="entry.id" class="meetup-comment">
       <div>
         <strong>{{ entry.name }}</strong>
@@ -41,6 +41,6 @@ function submit() {
 <style scoped>
 .meetup-comment { display: grid; gap: .5rem; }
 .meetup-comment > div { display: flex; flex-wrap: wrap; gap: .6rem; align-items: baseline; }
-.meetup-comment time { color: var(--text-300); font-size: .75rem; }
+.meetup-comment time { color: var(--text-300); font-size: .85rem; }
 .meetup-comment p { white-space: pre-wrap; }
 </style>

@@ -2,6 +2,7 @@ import { createApp } from 'vue';
 import { createRouter, createWebHistory } from 'vue-router';
 
 import { guardRoute } from './routeGuards.js';
+import { installFormErrors } from './formErrors.js';
 
 import App from './App.vue';
 // Bootstrap's responsive grid and utility classes only. Its component styles
@@ -17,7 +18,6 @@ const AlgorithmView = () => import('./views/AlgorithmView.vue');
 const RoundView = () => import('./views/RoundView.vue');
 const MethodView = () => import('./views/MethodView.vue');
 const LoginView = () => import('./views/LoginView.vue');
-const AccountSecurityView = () => import('./views/AccountSecurityView.vue');
 const ConcertsView = () => import('./views/ConcertsView.vue');
 const ListingView = () => import('./views/ListingView.vue');
 const WelcomeView = () => import('./views/WelcomeView.vue');
@@ -60,7 +60,6 @@ const router = createRouter({
     { path: '/rounds/:id', name: 'round', component: RoundView, props: true, meta: { title: 'Group matching results' } },
     { path: '/method', name: 'method', component: MethodView, meta: { title: 'How it works' } },
     { path: '/login', name: 'login', component: LoginView, meta: { title: 'Sign in' } },
-    { path: '/account/security', name: 'account-security', component: AccountSecurityView, meta: { title: 'Account security' } },
     { path: '/list-ticket', name: 'list-ticket', component: ListingView, meta: { title: 'List a ticket', requiresAuth: true } },
     { path: '/my-listings', name: 'my-listings', component: MyListingsView, meta: { title: 'My listings', requiresAuth: true } },
     { path: '/tickets', name: 'tickets', component: TicketMarketplaceView, meta: { title: 'Tickets' } },
@@ -141,4 +140,6 @@ router.afterEach((to) => {
   document.title = title && title !== 'Encore' ? `${title} | Encore` : 'Encore';
 });
 
+// Red inline messages under fields instead of the browser's validation bubbles.
+installFormErrors();
 createApp(App).use(router).mount('#app');

@@ -16,14 +16,14 @@ beforeEach(() => {
   browserPushStatus.mockResolvedValue({ supported: true, configured: true, enabled: false });
 });
 describe('notification settings and inbox', () => {
-  it('saves chosen categories without asking for push permission on mount', async () => {
+  it('saves a category as soon as it is unticked, without asking for push permission on mount', async () => {
     const { wrapper } = await mountPage(ProfileNotifications);
     expect(enableBrowserPush).not.toHaveBeenCalled();
+    expect(wrapper.findAll('button').some((b) => b.text() === 'Save notification preferences')).toBe(false);
     await field(wrapper, 'Companion and ticket messages').setValue(false);
-    await button(wrapper, 'Save notification preferences').trigger('click');
     await flushPromises();
     expect(api.saveNotificationSettings).toHaveBeenCalledWith({ chat: false, group: true, match: true, meetup: true, feedback: true });
-    expect(wrapper.get('[role="status"]').text()).toContain('Notification preferences saved.');
+    expect(wrapper.get('[role="status"]').text()).toContain('Saved');
   });
   it('requests push only after a click and explains denied permission', async () => {
     enableBrowserPush.mockRejectedValue(new Error('push_permission_denied'));

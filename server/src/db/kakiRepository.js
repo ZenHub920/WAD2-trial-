@@ -33,7 +33,7 @@ export function createKakiRepo(db) {
            u.id AS user_id, u.display_name AS user_display_name,
            u.age_band AS user_age_band, u.home_region AS user_home_region,
            u.languages_json AS user_languages_json, u.vibe_json AS user_vibe_json,
-           u.reliability AS user_reliability, u.verified AS user_verified,
+           u.reliability AS user_reliability,
            u.avatar_path AS user_avatar_path
     FROM concert_participants p
     JOIN concerts c ON c.id = p.concert_id

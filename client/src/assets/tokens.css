@@ -57,8 +57,8 @@
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
   /* A 1.25 modular scale, clamped so the page reflows without media queries. */
-  --step--2: clamp(0.69rem, 0.68rem + 0.06vw, 0.72rem);
-  --step--1: clamp(0.83rem, 0.81rem + 0.11vw, 0.9rem);
+  --step--2: clamp(0.8rem, 0.79rem + 0.06vw, 0.84rem);
+  --step--1: clamp(0.94rem, 0.92rem + 0.11vw, 1rem);
   --step-0:  clamp(1rem, 0.96rem + 0.18vw, 1.13rem);
   --step-1:  clamp(1.2rem, 1.14rem + 0.29vw, 1.41rem);
   --step-2:  clamp(1.44rem, 1.35rem + 0.45vw, 1.76rem);
@@ -115,6 +115,10 @@
   --status-info: var(--cyan-500);
   --positive-soft: #e2f4e9;
   --danger-soft: #fbe5e9;
+  /* At-a-glance signals (e.g. group activity on concert cards): a cool jade and a
+     berry that sit with the violet palette, unlike the plainer status colours. */
+  --signal-good: #24705a;
+  --signal-bad: #b3325f;
 
   /* ---- Colour: highlight -------------------------------------------------
    * Gold is the complement of Encore's purple. It is kept for the few things
@@ -233,6 +237,8 @@
   --status-info: var(--cyan-400);
   --positive-soft: rgba(111, 220, 156, 0.14);
   --danger-soft: rgba(255, 122, 122, 0.14);
+  --signal-good: #72d9b8;
+  --signal-bad: #ff8db2;
   --highlight: #ffbf55;
   --highlight-soft: rgba(255, 191, 85, 0.14);
   --highlight-ink: #ffcf70;

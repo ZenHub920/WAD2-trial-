@@ -124,7 +124,6 @@ export function makeUser(id, overrides = {}) {
     companion_gender_pref: 'any',
     vibe: { singalong: 3, photography: 3, dancing: 3, quiet: 3, queue_early: 3, merch: 3 },
     reliability: 0.8,
-    verified: 1,
     ...overrides,
   };
 }

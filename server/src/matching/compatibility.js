@@ -208,8 +208,7 @@ export function regionScore(regionA, regionB) {
 }
 
 export function reliabilityScore(user) {
-  const base = user.reliability ?? 0.5;
-  return Math.min(1, base + (user.verified ? 0.1 : 0));
+  return Math.min(1, user.reliability ?? 0.5);
 }
 
 /** Rewards a close budget fit; a seeker far above the party's band scores lower. */

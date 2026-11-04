@@ -9,11 +9,14 @@ import { createTestDb, migrateLegacyTickets } from '../../server/src/db/connecti
 
 const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000b49444154789c636000020000050001a5f645400000000049454e44ae426082', 'hex');
 const imageData = `data:image/png;base64,${png.toString('base64')}`;
-const concert = { artist: 'The Act', venue: 'Hall', event_date: '2027-03-01' };
-const listing = { concert, priceCents: 12345, quantity: 2, section: 'A1', description: 'Two seats' };
+// Listings name a concert already saved from Ticketmaster; each test database has this one.
+const concert = { id: 'tm_the_act', artist: 'The Act', venue: 'Hall', city: 'Singapore', event_date: '2027-03-01' };
+const listing = { concertId: concert.id, priceCents: 12345, quantity: 2, section: 'Cat 1', description: 'Two seats' };
 
 async function fixture(t) {
   const db = createTestDb();
+  db.prepare('INSERT INTO concerts (id, artist, venue, city, event_date) VALUES (?, ?, ?, ?, ?)')
+    .run(concert.id, concert.artist, concert.venue, concert.city, concert.event_date);
   const imageDir = mkdtempSync(join(tmpdir(), 'encore-ticket-images-'));
   const server = createApp({ db, imageDir }).app.listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
@@ -48,7 +51,13 @@ test('ticket inventory is independent of parties; create/list/detail/edit/delete
   const bob = await register('ticket-bob');
   assert.equal((await api('/tickets', { method: 'POST', cookie: alice.cookie,
     body: { ...listing, quantity: 0 } })).status, 400);
-  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM concerts').get().n, 0);
+  // A refused request creates nothing, and a typed-in concert is not accepted at all.
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM concerts').get().n, 1);
+  const { concertId: _id, ...withoutId } = listing;
+  assert.equal((await api('/tickets', { method: 'POST', cookie: alice.cookie,
+    body: { ...withoutId, concert: { artist: 'Made Up', venue: 'Hall', event_date: '2027-03-01' } } })).body.error, 'concert_must_be_listed');
+  assert.equal((await api('/tickets', { method: 'POST', cookie: alice.cookie, body: withoutId })).body.error, 'concert_required');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM concerts').get().n, 1);
   assert.equal((await api('/tickets', { method: 'POST', body: listing })).status, 401);
   const created = await api('/tickets', { method: 'POST', cookie: alice.cookie, body: {
     ...listing, seller_user_id: bob.body.user.id,
@@ -67,11 +76,19 @@ test('ticket inventory is independent of parties; create/list/detail/edit/delete
   assert.equal((await api(`/tickets/${id}`, { method: 'PATCH', cookie: bob.cookie,
     body: { priceCents: 1 } })).status, 404);
   assert.equal((await api(`/tickets/${id}`, { method: 'DELETE', cookie: bob.cookie })).status, 404);
+  // Sections come from a fixed list; anything else is refused on create and edit.
+  assert.equal((await api('/tickets', { method: 'POST', cookie: alice.cookie, body: { ...listing, section: 'Row Z99' } })).body.error, 'invalid_section');
+  assert.equal((await api(`/tickets/${id}`, { method: 'PATCH', cookie: alice.cookie, body: { section: 'Row Z99' } })).body.error, 'invalid_section');
+  // A description is required and cannot be blanked; a listing holds 1 to 10 tickets.
+  const { description: _omitted, ...withoutDescription } = listing;
+  assert.equal((await api('/tickets', { method: 'POST', cookie: alice.cookie, body: withoutDescription })).body.error, 'invalid_description');
+  assert.equal((await api(`/tickets/${id}`, { method: 'PATCH', cookie: alice.cookie, body: { description: '   ' } })).body.error, 'invalid_description');
+  assert.equal((await api('/tickets', { method: 'POST', cookie: alice.cookie, body: { ...listing, quantity: 11 } })).body.error, 'invalid_quantity');
   const edited = await api(`/tickets/${id}`, { method: 'PATCH', cookie: alice.cookie,
-    body: { priceCents: 14000, quantity: 1, section: 'B2', description: 'One seat' } });
+    body: { priceCents: 14000, quantity: 1, section: 'Cat 2', description: 'One seat' } });
   assert.equal(edited.status, 200);
   assert.equal(edited.body.listing.priceCents, 14000);
-  assert.equal(edited.body.listing.section, 'B2');
+  assert.equal(edited.body.listing.section, 'Cat 2');
   assert.equal((await api(`/tickets/${id}`, { method: 'DELETE', cookie: alice.cookie })).status, 204);
   assert.deepEqual((await api('/tickets')).body.listings, []);
   assert.deepEqual((await api('/me/tickets', { cookie: alice.cookie })).body.listings, []);
