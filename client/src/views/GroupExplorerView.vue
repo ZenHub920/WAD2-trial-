@@ -199,6 +199,12 @@ async function act(operation, success) {
   finally { busy.value = false; }
 }
 async function enroll(reopen = false) { if (!reopen) rememberPlan(); await act(() => reopen ? api.reopenSeekerRequest(concertId.value) : api.createRequest(concertId.value, { ...form, joining_mode: displayedMode.value }), 'Your answers are saved. Choose how you’d like to find a group.'); }
+const canSwitchMode = computed(() => canCoordinate.value && seeker.value?.status === 'open' && !currentGroup.value);
+// Choosing a method switches to it; it stays a preview only when switching is blocked (the error says why).
+async function chooseMode(mode) {
+  displayedMode.value = mode; applicationFor.value = '';
+  if (canSwitchMode.value && !modeIsActive.value) await activateMode();
+}
 async function activateMode() { const target = displayedMode.value; await act(() => api.setJoiningMode(concertId.value, target), target === 'direct' ? 'Browse the groups below and ask to join one at a time.' : 'Mark groups you like and join the match list.'); }
 async function join(id, note = applicationNote.value.trim()) {
   const key = context(), showId = concertId.value, userId = currentUser.value?.id;
@@ -317,12 +323,14 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
             <div class="joining-mode__eyebrow"><p class="group-kicker mono">{{ option.kicker }}</p><span v-if="displayedMode === option.mode" class="joining-mode__selected">{{ modeIsActive ? 'Active method' : 'Viewing' }}</span></div>
             <h3>{{ option.title }}</h3>
             <p>{{ option.description }}</p>
-            <button type="button" class="btn" :class="displayedMode === option.mode ? 'btn--primary' : 'btn--ghost'" :aria-pressed="displayedMode === option.mode" :disabled="busy" @click="displayedMode = option.mode; applicationFor = ''">{{ option.action }}</button>
+            <button type="button" class="btn" :class="displayedMode === option.mode ? 'btn--primary' : 'btn--ghost'" :aria-pressed="displayedMode === option.mode" :disabled="busy" @click="chooseMode(option.mode)">{{ option.action }}</button>
           </article>
         </div>
-        <p v-if="seeker" class="group-muted">You’re currently using: <strong>{{ modeLabels[persistedMode] }}</strong></p>
+        <p v-if="seeker && modeIsActive" class="group-muted">You’re using: <strong>{{ modeLabels[persistedMode] }}</strong></p>
+        <p v-else-if="seeker" class="group-muted">You’re only viewing <strong>{{ modeLabels[displayedMode] }}</strong>. Your active method is still <strong>{{ modeLabels[persistedMode] }}</strong>.</p>
         <button v-if="canCoordinate && seeker?.status === 'open' && !currentGroup && !modeIsActive" type="button" class="btn btn--primary" :disabled="busy" @click="activateMode">{{ displayedMode === 'direct' ? 'Switch to browsing' : 'Switch to matching' }}</button>
-        <p v-if="!modeIsActive && (seeker?.status === 'open' || pendingDirect.length || activeProposals.length || pendingLegacy.length)" class="group-muted">Just looking? That’s fine. Nothing changes until you switch, and open requests stay as they are.</p>
+        <p v-if="seeker && !modeIsActive && !canSwitchMode" class="group-status" role="status">{{ currentGroup ? 'You already have a group for this show, so the way you join can’t change.' : pendingDirect.length ? `To switch, first cancel your request to ${requestGroupName(pendingDirect[0])} under Your requests.` : activeProposals.length || pendingLegacy.length ? 'Finish or cancel your current match before switching.' : 'You can’t switch methods for this show right now.' }}</p>
+        <p v-else-if="!modeIsActive && (seeker?.status === 'open' || pendingDirect.length || activeProposals.length || pendingLegacy.length)" class="group-muted">Just looking? That’s fine. Nothing changes until you switch, and open requests stay as they are.</p>
         <p v-if="pendingDirect.length" class="group-status" role="status">
           {{ pendingDirect[0].seatReserved ? 'We’re saving you a spot.' : `You’re number ${pendingDirect[0].queuePosition ?? '?'} in line.` }}
           Your request expires {{ dateLabel(pendingDirect[0].expiresAt) }}, even if you are still waiting.
