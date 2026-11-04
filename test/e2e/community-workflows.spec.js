@@ -244,7 +244,6 @@ test('meeting planner: create, save car availability, suggest a place, fallback 
     await placeForm.getByLabel('Latitude', { exact: true }).fill('1.3028');
     await placeForm.getByLabel('Longitude', { exact: true }).fill('103.8743');
     await a.page.getByRole('button', { name: 'Add place', exact: true }).click();
-    await a.page.getByRole('button', { name: 'Compare travel options', exact: true }).click();
     await expect(a.page.getByText('Straight-line distance estimate. Fresh route times are unavailable for this option.').first()).toBeVisible();
     await a.page.getByRole('button', { name: 'Propose this time & place', exact: true }).first().click();
     await a.page.locator('[data-planner-step="review"]').click();

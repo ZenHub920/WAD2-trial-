@@ -48,6 +48,21 @@ export function useMeetupBoard(props) {
   const selectedOrigins = computed(() => Object.values(slots.value).filter(slot => slot.selected && validCoordinates(slot)).length);
   const recommendedOptions = computed(() => (travelRecommendations.value?.options ?? board.value?.suggestions ?? [])
     .filter(option => !travelOptions.shelteredOnly || board.value?.places.some(p => p.id === option.placeId && p.sheltered)));
+  const pickedPlaceId = ref('');
+  const pickedStartsAt = ref('');
+  const placeChoices = computed(() => {
+    const byPlace = new Map();
+    for (const option of recommendedOptions.value) {
+      if (!byPlace.has(option.placeId)) byPlace.set(option.placeId, { placeId: option.placeId, label: option.label, best: option, times: [] });
+      byPlace.get(option.placeId).times.push(option);
+    }
+    for (const entry of byPlace.values()) entry.times.sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+    return [...byPlace.values()];
+  });
+  const pickedPlace = computed(() => placeChoices.value.find(entry => entry.placeId === pickedPlaceId.value) ?? placeChoices.value[0] ?? null);
+  const pickedOption = computed(() => pickedPlace.value?.times.find(option => option.startsAt === pickedStartsAt.value)
+    ?? pickedPlace.value?.best ?? null);
+  const pickPlace = placeId => { pickedPlaceId.value = placeId; pickedStartsAt.value = ''; };
   const hasSavedAvailability = computed(() => board.value?.grid.some(slot => slot.availableCount > 0));
   const recommendationEmpty = computed(() => !board.value?.places.length ? 'No places suggested yet. Add a public meeting place above.'
     : travelOptions.shelteredOnly && !board.value.places.some(p => p.sheltered) ? 'The shelter filter excludes all suggested places. Clear it or suggest a sheltered place.'
@@ -502,6 +517,7 @@ export function useMeetupBoard(props) {
     selectPlace, selectJourney, invalidatePlace, invalidateJourney, editPlace, editJourney,
     selectedSlotCount, bestSavedOverlap, selectedTimes, activeStep, availabilityDirty, refreshing, syncNote,
     liveLabel, statuses, time, validCoordinates, recommendedOptions, hasSavedAvailability, recommendationEmpty,
+    placeChoices, pickedPlace, pickedOption, pickedStartsAt, pickPlace,
     refreshPlanner, showStep, navigateSteps, create, saveAvailability, discardAvailability, assignJourney,
     addPlace, vote, propose, approve, requestOrganizerAction, organizerAction, postComment, getWeather, getTravelSuggestions, getParking,
    };

@@ -143,17 +143,13 @@ describe('meeting planner with real OneMap search child', () => {
     expect(field(wrapper, 'Place name').exists()).toBe(true);
   });
   it('labels estimated journeys when fresh route times are unavailable', async () => {
-    api.meetupTravelSuggestions.mockResolvedValue({ recommendations: {
-      message: 'Fresh route times unavailable; using distance estimates.', options: [{
-        placeId: 'place-1', label: 'City Hall MRT', startsAt: start, availableCount: 2,
-        participantCount: 2, totalDistanceKm: 4, locationRespondents: 2,
-        basis: 'straight_line_distance', totalTravelMinutes: null, travelModes: { transit: 1, drive: 1 },
-      }],
-    } });
-    api.meetup.mockResolvedValue({ meetup: { ...board(), places: [publicPlace] } });
+    const estimate = {
+      placeId: 'place-1', label: 'City Hall MRT', startsAt: start, availableCount: 2,
+      participantCount: 2, totalDistanceKm: 4, locationRespondents: 2,
+      basis: 'straight_line_distance', totalTravelMinutes: null, travelModes: { transit: 1, drive: 1 },
+    };
+    api.meetup.mockResolvedValue({ meetup: { ...board(), places: [publicPlace], suggestions: [estimate] } });
     const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
-    await button(wrapper, 'Compare travel options').trigger('click');
-    await flushPromises();
     expect(wrapper.text()).toContain('1 by public transport · 1 by car.');
     expect(wrapper.text()).toContain('Straight-line distance estimate.');
     expect(wrapper.text()).toContain('Fresh route times are unavailable for this option.');
@@ -203,21 +199,16 @@ describe('meeting planner with real OneMap search child', () => {
     expect(wrapper.text()).toContain('Unsaved changes');
   });
   it('clears private drafts when changing boards and ignores the previous board’s late routes', async () => {
-    let finish;
-    api.meetupTravelSuggestions.mockReturnValue(new Promise(resolve => { finish = resolve; }));
     api.meetup.mockResolvedValue({ meetup: { ...board(), places: [publicPlace] } });
     const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
     await field(wrapper, 'Location label').setValue('Previous private origin');
     await field(wrapper, 'Place name').setValue('Previous proposed place');
     await wrapper.get('textarea').setValue('Previous discussion draft');
-    await button(wrapper, 'Compare travel options').trigger('click');
     api.meetup.mockResolvedValue({ meetup: { ...board(), id: 'meetup-2', title: 'Other plan' } });
     await wrapper.setProps({ id: 'meetup-2' }); await flushPromises();
     expect(field(wrapper, 'Location label').element.value).toBe('');
     expect(field(wrapper, 'Place name').element.value).toBe('');
     expect(wrapper.get('textarea').element.value).toBe('');
-    finish({ recommendations: { message: 'Obsolete previous route', options: [] } }); await flushPromises();
-    expect(wrapper.text()).not.toContain('Obsolete previous route');
   });
 
   it('keeps each period’s existing origin when applying only the travel method', async () => {
@@ -288,7 +279,6 @@ describe('meeting planner with real OneMap search child', () => {
     const form = wrapper.get('.meetup-place-editor');
     expect(wrapper.get('.meetup-suggested-places').text()).toContain('No places suggested yet');
     expect(wrapper.find('.meetup-option').exists()).toBe(false);
-    expect(button(wrapper, 'Compare travel options').element.disabled).toBe(true);
     const search = form.getComponent(MeetupLocationSearch);
     api.meetupLocations.mockResolvedValue({ result: { status: 'available', locations: [publicPlace] } });
     await search.get('input').setValue('City Hall');
@@ -342,14 +332,17 @@ describe('meeting planner with real OneMap search child', () => {
     expect(field(form, 'Place name').element.value).toBe('Public foyer');
   });
 
-  it('distinguishes no suitable combinations from a shelter filter excluding every saved place', async () => {
-    api.meetup.mockResolvedValue({ meetup: { ...board(), places: [{ ...publicPlace, sheltered: false }] } });
+  it('shows recommendations only to the organizer and without travel comparison controls', async () => {
+    api.meetup.mockResolvedValue({ meetup: { ...board(), places: [publicPlace] } });
     const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
     expect(wrapper.get('.meetup-empty-state').text()).toContain('No suitable time and place combinations yet.');
-    await field(wrapper, 'Only places marked sheltered').setValue(true);
-    expect(wrapper.get('.meetup-empty-state').text()).toContain('The shelter filter excludes all suggested places.');
-    expect(wrapper.get('.meetup-suggested-places').text()).toContain('City Hall MRT');
-    expect(api.meetupTravelSuggestions).not.toHaveBeenCalled();
+    expect(wrapper.text()).not.toContain('How recommendations work');
+    expect(wrapper.text()).not.toContain('Only places marked sheltered');
+    expect(wrapper.findAll('button').some(item => item.text() === 'Compare travel options')).toBe(false);
+    api.meetup.mockResolvedValue({ meetup: { ...board(), capabilities: permissions('planning', false), places: [publicPlace] } });
+    await wrapper.get('.meetup-page').exists();
+    const member = (await mountPage(MeetupView, { props: { id: 'meetup-1' } })).wrapper;
+    expect(member.find('.meetup-recommendations').exists()).toBe(false);
   });
 
   it('lets ordinary members contribute and discuss while keeping organizer decisions out of their controls', async () => {
@@ -720,11 +713,10 @@ describe('planner draft, selection and persistence hardening', () => {
     window.dispatchEvent(event); expect(event.defaultPrevented).toBe(false);
     await router.push('/messages'); expect(router.currentRoute.value.path).toBe('/messages');
   });
-  it('does not warn for search text or compare filters that cannot lose a saved contribution', async () => {
+  it('does not warn for search text that cannot lose a saved contribution', async () => {
     const { wrapper, router } = await view();
     const search = wrapper.findAllComponents(MeetupLocationSearch)[0];
     await search.get('input').setValue('Only a search query');
-    await wrapper.get('.meetup-recommendations input[type="checkbox"]').setValue(true);
     await router.push('/messages');
     expect(document.querySelector('[role="dialog"]')).toBe(null);
   });

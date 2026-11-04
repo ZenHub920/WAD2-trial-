@@ -20,6 +20,7 @@ const {
   selectPlace, selectJourney, invalidatePlace, invalidateJourney, editPlace, editJourney,
   selectedSlotCount, bestSavedOverlap, selectedTimes, activeStep, availabilityDirty, refreshing, syncNote,
   liveLabel, statuses, time, validCoordinates, recommendedOptions, hasSavedAvailability, recommendationEmpty,
+  placeChoices, pickedPlace, pickedOption, pickedStartsAt, pickPlace,
   refreshPlanner, showStep, navigateSteps, create, saveAvailability, discardAvailability, assignJourney,
   addPlace, vote, propose, approve, requestOrganizerAction, organizerAction, postComment, getWeather, getTravelSuggestions, getParking,
  } = useMeetupBoard(props);
@@ -149,29 +150,32 @@ const {
           <button type="button" class="btn btn--ghost" :disabled="busy || contributionsLocked" :aria-pressed="board.currentVotePlaceId === candidate.id" @click="vote(candidate.id)">{{ board.currentVotePlaceId === candidate.id ? 'Your vote' : 'Vote for place' }}</button>
         </article>
       </section>
-      <section class="card group-panel meetup-recommendations">
+      <section v-if="capabilities.canPropose" class="card group-panel meetup-recommendations">
         <h2>Recommended meeting times and places</h2>
         <p class="group-muted">Find times when more people are free, then compare convenient meeting places.</p>
-        <details class="meetup-disclosure"><summary>How recommendations work</summary><ul>
-          <li>More available participants rank higher.</li>
-          <li>Journey times are compared when reliable routes are sufficiently complete. The longest journey helps break ties.</li>
-          <li>Without complete routes, straight-line distances are approximate. Missing journeys never count as zero.</li>
-          <li>Votes and time help break remaining ties. Travel estimates are not guarantees.</li>
-        </ul></details>
-        <label class="group-check"><input v-model="travelOptions.shelteredOnly" type="checkbox" :disabled="busy" @change="travelRecommendations = null" />Only places marked sheltered</label>
-        <button class="btn btn--ghost" :disabled="busy || board.status === 'cancelled' || !hasSavedAvailability || !board.places.length" @click="getTravelSuggestions">Compare travel options</button>
         <p v-if="failures.recommendations" class="group-error" role="alert">{{ failures.recommendations }}</p>
         <p v-if="travelRecommendations" class="group-muted" role="status">{{ travelRecommendations.rankingBasis === 'route_times' ? 'Comparing estimated journey times.' : 'Fresh routes are incomplete or unavailable. Comparing approximate distances instead.' }}</p>
         <p v-if="!recommendedOptions.length" class="meetup-empty-state" role="status">{{ recommendationEmpty }}</p>
-        <article v-for="s in recommendedOptions" :key="`${s.placeId}:${s.startsAt}`" class="meetup-option">
-          <h3>{{ s.label }}</h3><p>{{ time(s.startsAt) }}</p>
-          <div class="group-tags"><span>{{ s.availableCount }} of {{ s.participantCount }} participants available</span><span v-if="s.totalTravelMinutes !== null && s.totalTravelMinutes !== undefined">Estimated journey time: {{ s.totalTravelMinutes }} minutes combined</span><span v-else>{{ s.totalDistanceKm === null ? 'Distance unavailable' : `Approximate distance: ${s.totalDistanceKm} km combined` }}</span></div>
-          <p v-if="s.travelModes" class="group-muted">Travel methods: {{ s.travelModes.transit }} by public transport &middot; {{ s.travelModes.drive }} by car.</p>
-          <p v-if="s.totalTravelMinutes !== null && s.totalTravelMinutes !== undefined" class="group-muted">Longest estimated journey: {{ s.maximumTravelMinutes }} minutes.</p>
-          <p v-if="s.basis === 'straight_line_distance' || s.basis === undefined" class="group-muted">Straight-line distance estimate. Fresh route times are unavailable for this option.</p>
-          <div class="group-actions">
-            <button type="button" class="btn btn--ghost" :disabled="busy || contributionsLocked" @click="vote(s.placeId)">Vote for place</button>
-            <button v-if="capabilities.canPropose" type="button" class="btn btn--primary" :disabled="busy" @click="propose(s)">{{ proposalLabel }}</button>
+        <div v-if="pickedOption" class="meetup-picker">
+          <label class="meetup-picker-field">Place
+            <select :value="pickedPlace.placeId" :disabled="busy" @change="pickPlace($event.target.value)">
+              <option v-for="p in placeChoices" :key="p.placeId" :value="p.placeId">{{ p.label }} · up to {{ p.best.availableCount }} of {{ p.best.participantCount }} free</option>
+            </select>
+          </label>
+          <label class="meetup-picker-field">Time
+            <select :value="pickedOption.startsAt" :disabled="busy" @change="pickedStartsAt = $event.target.value">
+              <option v-for="t in pickedPlace.times" :key="t.startsAt" :value="t.startsAt">{{ time(t.startsAt) }} · {{ t.availableCount }} of {{ t.participantCount }} free</option>
+            </select>
+          </label>
+        </div>
+        <article v-if="pickedOption" class="meetup-option">
+          <h3>{{ pickedOption.label }}</h3><p>{{ time(pickedOption.startsAt) }}</p>
+          <div class="group-tags"><span>{{ pickedOption.availableCount }} of {{ pickedOption.participantCount }} participants available</span><span v-if="pickedOption.totalTravelMinutes !== null && pickedOption.totalTravelMinutes !== undefined">Estimated journey time: {{ pickedOption.totalTravelMinutes }} minutes combined</span><span v-else>{{ pickedOption.totalDistanceKm === null ? 'Distance unavailable' : `Approximate distance: ${pickedOption.totalDistanceKm} km combined` }}</span></div>
+          <p v-if="pickedOption.travelModes" class="group-muted">Travel methods: {{ pickedOption.travelModes.transit }} by public transport &middot; {{ pickedOption.travelModes.drive }} by car.</p>
+          <p v-if="pickedOption.totalTravelMinutes !== null && pickedOption.totalTravelMinutes !== undefined" class="group-muted">Longest estimated journey: {{ pickedOption.maximumTravelMinutes }} minutes.</p>
+          <p v-if="pickedOption.basis === 'straight_line_distance' || pickedOption.basis === undefined" class="group-muted">Straight-line distance estimate. Fresh route times are unavailable for this option.</p>
+          <div v-if="capabilities.canPropose" class="group-actions">
+            <button type="button" class="btn btn--primary" :disabled="busy" @click="propose(pickedOption)">{{ proposalLabel }}</button>
           </div>
         </article>
       </section>
@@ -468,6 +472,15 @@ const {
 }
 .meetup-weather > .btn {
   margin-bottom: .75rem;
+}
+.meetup-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: .75rem;
+}
+.meetup-picker-field {
+  display: grid;
+  gap: .35rem;
 }
 .meetup-option {
   display: grid;
