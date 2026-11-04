@@ -12,6 +12,8 @@ vi.mock('../../client/src/api.js', async original => ({ ...await original(), api
   concerts: vi.fn(), discoverGroups: vi.fn(), groupPreferences: vi.fn(), seekerRequest: vi.fn(),
   groupJoinRequests: vi.fn(), groupMatching: vi.fn(), currentGroupMemberships: vi.fn(), myProposals: vi.fn(),
   requestGroupJoin: vi.fn(), withdrawGroupJoin: vi.fn(), createRequest: vi.fn(), findMyGroup: vi.fn(),
+  preferGroup: vi.fn(), removeGroupPreference: vi.fn(),
+  setJoiningMode: vi.fn(),
 } }));
 const pending = { id: 'request-1', userId: 'viewer', concertId: 'concert-1', partyId: 'group-1', status: 'pending', seatReserved: true, hostName: 'Host', expiresAt: '2030-01-01T10:00:00Z' };
 beforeEach(() => {
@@ -27,6 +29,62 @@ beforeEach(() => {
 });
 
 describe('group discovery historical and mutation feedback consistency', () => {
+  it('switches the displayed pathway without changing the saved joining method or enrolling', async () => {
+    const { wrapper } = await mountPage(GroupExplorerView, { path: '/groups?concertId=concert-1' });
+    expect(wrapper.text()).toContain('You’re using: Browse and choose');
+    await button(wrapper, 'Find my match').trigger('click'); await flushPromises();
+    expect(wrapper.text()).toContain('You’re only viewing Automatic matching. Your active method is still Browse and choose.');
+    expect(button(wrapper, 'Switch and join the match list').exists()).toBe(true);
+    expect(api.setJoiningMode).not.toHaveBeenCalled(); expect(api.findMyGroup).not.toHaveBeenCalled();
+    await button(wrapper, 'Browse groups').trigger('click'); await flushPromises();
+    expect(wrapper.text()).toContain('You’re using: Browse and choose');
+  });
+  it('makes switching from browsing one explicit enrollment action and requires no second join click', async () => {
+    api.setJoiningMode.mockImplementation(async () => {
+      api.seekerRequest.mockResolvedValue({ request: { status: 'open', joining_mode: 'algorithm' } });
+      api.groupMatching.mockResolvedValue({ matching: { optedIn: true, state: 'queued' } });
+      return { request: { status: 'open', joining_mode: 'algorithm' } };
+    });
+    const { wrapper } = await mountPage(GroupExplorerView, { path: '/groups?concertId=concert-1' });
+    await button(wrapper, 'Find my match').trigger('click'); await flushPromises();
+    expect(wrapper.text()).toContain('enrolls you immediately');
+    expect(api.setJoiningMode).not.toHaveBeenCalled();
+    await button(wrapper, 'Switch and join the match list').trigger('click'); await flushPromises();
+    expect(api.setJoiningMode).toHaveBeenCalledExactlyOnceWith('concert-1', 'algorithm');
+    expect(api.findMyGroup).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain('You’re on the match list. Matching rounds are run by an operator');
+    expect(button(wrapper, 'Leave the match list').exists()).toBe(true);
+    expect(wrapper.findAll('button').some(item => item.text() === 'Join the match list')).toBe(false);
+  });
+
+  it('shows the confirmed enrollment when the switch succeeds but its following read fails', async () => {
+    api.setJoiningMode.mockResolvedValue({ request: { status: 'open', joining_mode: 'algorithm' } });
+    const { wrapper } = await mountPage(GroupExplorerView, { path: '/groups?concertId=concert-1' });
+    await button(wrapper, 'Find my match').trigger('click');
+    api.discoverGroups.mockRejectedValueOnce(new Error('refresh unavailable'));
+    await button(wrapper, 'Switch and join the match list').trigger('click'); await flushPromises();
+    expect(wrapper.text()).toContain('Your change was saved.');
+    expect(wrapper.text()).toContain('You’re using: Automatic matching');
+    expect(button(wrapper, 'Leave the match list').exists()).toBe(true);
+    expect(wrapper.findAll('button').some(item => item.text() === 'Join the match list')).toBe(false);
+    expect(api.setJoiningMode).toHaveBeenCalledTimes(1);
+  });
+  it('saves an automatic matching preference without applying or enrolling in the match list', async () => {
+    api.seekerRequest.mockResolvedValue({ request: { status: 'open', joining_mode: 'algorithm' } });
+    api.preferGroup.mockImplementation(async () => {
+      api.discoverGroups.mockResolvedValue({ groups: [{ ...group('group-1', 'Supper crew'), preferred: true }], total: 1 });
+      return { partyId: 'group-1', preferred: true };
+    });
+    const { wrapper } = await mountPage(GroupExplorerView, { path: '/groups?concertId=concert-1' });
+    expect(wrapper.text()).toContain('It does not send an application or join the match list');
+    await button(wrapper, 'I like this group').trigger('click'); await flushPromises();
+    expect(api.preferGroup).toHaveBeenCalledExactlyOnceWith('group-1');
+    expect(wrapper.text()).toContain('Preference saved for matching. No request was sent');
+    expect(wrapper.text()).toContain('Saved for matching.');
+    expect(button(wrapper, 'Unlike').exists()).toBe(true);
+    expect(button(wrapper, 'Join the match list').exists()).toBe(true);
+    expect(api.requestGroupJoin).not.toHaveBeenCalled(); expect(api.findMyGroup).not.toHaveBeenCalled();
+  });
   it('closes both prospective pathways for a completed concert and retains pending request history', async () => {
     api.concerts.mockResolvedValue({ concerts: [{ id: 'concert-1', artist: 'Past artist', event_date: '2000-01-01' }] });
     api.groupJoinRequests.mockResolvedValue({ requests: [pending] });
@@ -38,7 +96,7 @@ describe('group discovery historical and mutation feedback consistency', () => {
     expect(button(wrapper, 'Request sent').element.disabled).toBe(true);
     await button(wrapper, 'Find my match').trigger('click');
     expect(wrapper.findAll('button').some(item => item.text() === 'Join the match list')).toBe(false);
-    expect(wrapper.findAll('button').some(item => item.text() === 'Switch to matching')).toBe(false);
+    expect(wrapper.findAll('button').some(item => item.text() === 'Switch and join the match list')).toBe(false);
     expect(api.requestGroupJoin).not.toHaveBeenCalled(); expect(api.findMyGroup).not.toHaveBeenCalled();
   });
 

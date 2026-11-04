@@ -87,10 +87,16 @@ const { canCoordinate, isFinished, canPlanMeetup, refreshEligibility } = useConc
 const pendingLimit = computed(() => seeker.value?.maxPendingDirectApplications ?? 1);
 const canApply = computed(() => canCoordinate.value && !busy.value && !loading.value && displayedMode.value === 'direct' && seeker.value?.status === 'open' && persistedMode.value === 'direct' && !currentGroup.value && !activeProposals.value.length && !pendingLegacy.value.length && pendingDirect.value.length < pendingLimit.value);
 const canPrefer = computed(() => canCoordinate.value && seeker.value?.status === 'open' && !currentGroup.value && !activeProposals.value.length);
+const modeLabels = { direct: 'Browse and choose', algorithm: 'Automatic matching' };
 const modeOptions = [
   { mode: 'direct', kicker: 'Pick yourself', title: 'Browse and choose', description: 'See every group and ask to join the one you like.', action: 'Browse groups' },
-  { mode: 'algorithm', kicker: 'Let us help', title: 'Match me with a group', description: 'Like a few groups and we’ll match you with a good fit.', action: 'Find my match' },
+  { mode: 'algorithm', kicker: 'Let us help', title: 'Match me with a group', description: 'Save groups you like, then join the match list for a compatible offer.', action: 'Find my match' },
 ];
+function chooseMode(mode) {
+  if (busy.value || !['direct', 'algorithm'].includes(mode)) return;
+  displayedMode.value = mode;
+  applicationFor.value = ''; void settleConfirm(false);
+}
 const originLabels = { direct: 'The host said yes to your request', algorithm: 'You were matched with this group', host: 'You’re the host', friend: 'A friend invited you' };
 const joinStatus = { pending: 'Waiting for the host', accepted: 'You’re in', rejected: 'Not this time', declined: 'Not this time', withdrawn: 'You cancelled this', expired: 'Timed out', superseded: 'Closed', cancelled: 'Ended' };
 let generation = 0, alive = true, filterTimer, loadedContext = '', loadedDataContext = '';
@@ -163,6 +169,7 @@ async function load() {
   } finally { if (isCurrent(key) && current === generation) loading.value = false; }
 }
 watch(concertId, id => {
+  void settleConfirm(false);
   applicationFor.value = ''; applicationNote.value = ''; offset.value = 0; message.value = '';
   clearTimeout(filterTimer); router.replace({ query: { ...route.query, concertId: id || undefined } }); load();
 });
@@ -172,7 +179,7 @@ watch(() => Object.values(filters), () => {
 });
 watch(() => route.query.concertId, id => { const next = typeof id === 'string' ? id : ''; if (next !== concertId.value) concertId.value = next; });
 watch(() => route.query.mode, mode => { if (['direct', 'algorithm'].includes(mode)) { displayedMode.value = mode; applicationFor.value = ''; } });
-watch(() => currentUser.value?.id, readRememberedPlan, { immediate: true });
+watch(() => currentUser.value?.id, () => { busy.value = false; void settleConfirm(false); readRememberedPlan(); }, { immediate: true });
 watch([() => currentUser.value?.id, sessionReady, preferencesReady], () => { message.value = ''; applicationFor.value = ''; loadedContext = ''; load(); });
 onMounted(async () => {
   try {
@@ -181,7 +188,7 @@ onMounted(async () => {
   } catch { if (alive) error.value = 'We couldn’t load concerts. Please try again.'; }
   finally { if (alive) concertsLoading.value = false; }
 });
-onUnmounted(() => { alive = false; generation++; clearTimeout(filterTimer); });
+onUnmounted(() => { alive = false; generation++; clearTimeout(filterTimer); void settleConfirm(false); });
 async function act(operation, success) {
   if (busy.value) return false;
   const key = context(); busy.value = true; error.value = ''; message.value = ''; refreshWarning.value = '';
@@ -195,11 +202,22 @@ async function act(operation, success) {
     return true;
   }
   catch (err) { if (isCurrent(key)) { refreshEligibility(); error.value = failureMessage(err); } return false; }
-  finally { busy.value = false; }
+  finally { if (isCurrent(key)) busy.value = false; }
 }
 async function enroll(reopen = false) { if (!reopen) rememberPlan(); await act(() => reopen ? api.reopenSeekerRequest(concertId.value) : api.createRequest(concertId.value, { ...form, joining_mode: displayedMode.value }), 'Your answers are saved. Choose how you’d like to find a group.'); }
-const canSwitchMode = computed(() => canCoordinate.value && seeker.value?.status === 'open' && !currentGroup.value);
-async function activateMode() { const target = displayedMode.value; await act(() => api.setJoiningMode(concertId.value, target), target === 'direct' ? 'Browse the groups below and ask to join one at a time.' : 'Mark groups you like and join the match list.'); }
+const canSwitchMode = computed(() => canCoordinate.value && seeker.value?.status === 'open' && !currentGroup.value
+  && !pendingDirect.value.length && !pendingLegacy.value.length && !activeProposals.value.length);
+async function activateMode() {
+  const target = displayedMode.value, key = context();
+  await act(async () => {
+    const result = await api.setJoiningMode(concertId.value, target);
+    if (!isCurrent(key)) return;
+    if (result.request) seeker.value = result.request;
+    // This existing endpoint switches the joining method and explicitly opts
+    // an open seeker into matching. A saved result must survive a failed read.
+    matching.value = { ...matching.value, optedIn: target === 'algorithm', state: target === 'algorithm' ? 'queued' : 'idle' };
+  }, target === 'direct' ? 'Browse the groups below and ask to join one at a time.' : 'You’re on the match list. Matching rounds are run by an operator; any offer still needs your approval and the host’s approval.');
+}
 async function join(id, note = applicationNote.value.trim()) {
   const key = context(), showId = concertId.value, userId = currentUser.value?.id;
   const group = groups.value.find(item => item.id === id);
@@ -216,7 +234,7 @@ async function join(id, note = applicationNote.value.trim()) {
     ? 'Request sent. A spot is held while the host reviews it. Check the expiry time below.'
     : `Request sent. You’re ${application?.queuePosition ? `number ${application.queuePosition} ` : ''}in line without a held spot. Check the expiry time below.`);
 }
-async function preference(id, remove) { await act(() => remove ? api.removeGroupPreference(id) : api.preferGroup(id), remove ? 'Removed from the groups you like.' : 'Added to the groups you like.'); }
+async function preference(id, remove) { await act(() => remove ? api.removeGroupPreference(id) : api.preferGroup(id), remove ? 'Removed from the groups you like.' : 'Preference saved for matching. No request was sent; joining the match list is a separate step.'); }
 async function withdraw(id) {
   const key = context();
   await act(async () => {
@@ -336,7 +354,8 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
             <li>Your request expires 48 hours after you send it, including time spent waiting in line. Holding a spot does not extend the deadline.</li>
           </ul>
           <ul v-else>
-            <li>Mark the groups you like, then join the match list. Matching rounds are run by an operator.</li>
+            <li>Viewing groups and saving likes do not enroll you. Switching from browsing with “Switch and join the match list” enrolls you immediately.</li>
+            <li>If automatic matching is already your active method but you are not listed, use “Join the match list”. Matching rounds are run by an operator.</li>
             <li>Both your preferences and the groups’ preferences affect the match. You may be offered a group you didn’t mark.</li>
             <li>A match joins the same queue as group requests. Once it reaches the front and has a held spot, both you and the host must approve it.</li>
             <li>Match requests expire 48 hours after creation, including time spent waiting in line.</li>
@@ -348,16 +367,17 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
         <p v-if="activeProposals.length">Your match is in the group queue below. Check whether a spot is held and whether it is ready for both approvals.</p>
         <p v-else-if="pendingLegacy.length">You have an earlier match waiting for the host. You can check on it or cancel it under Your requests.</p>
         <p v-else-if="matching.optedIn || matching.state === 'queued'" role="status">You’re on the match list. Keep marking groups you like, and check back soon.</p>
-        <p v-else-if="!modeIsActive">You’re viewing matching. Switch to it to mark groups you like and join the match list.</p>
+        <p v-else-if="!modeIsActive">You’re only viewing matching. Saving likes does not enroll you. “Switch and join the match list” changes your active method and enrolls you immediately.</p>
         <p v-else>You’re not on the match list yet.</p>
         <div class="group-actions">
-          <button v-if="canSwitchMode && !modeIsActive" type="button" class="btn btn--primary" :disabled="busy" @click="activateMode">Switch to matching</button>
+          <button v-if="canSwitchMode && !modeIsActive" type="button" class="btn btn--primary" :disabled="busy" @click="activateMode">Switch and join the match list</button>
           <button v-if="canCoordinate && !matching.optedIn && !activeProposals.length && !pendingLegacy.length && modeIsActive && seeker.status === 'open'" type="button" class="btn btn--primary" :disabled="busy" @click="joinPool">Join the match list</button>
           <button v-if="matching.optedIn" type="button" class="btn btn--danger-ghost" :disabled="busy || activeProposals.length > 0 || pendingLegacy.length > 0" @click="leavePool">Leave the match list</button>
           <button type="button" class="btn btn--ghost" :disabled="busy" @click="load">Check for updates</button>
           <RouterLink :to="`/concerts/${encodeURIComponent(concertId)}#my-result-title`">Past matches</RouterLink>
         </div>
         <p v-if="activeProposals.length" class="group-muted">Answer your match before leaving the list or switching to browsing.</p>
+        <p v-else-if="pendingLegacy.length" class="group-muted">Answer or cancel your earlier match under Your requests before leaving the match list.</p>
       </section>
       <section v-if="activeProposals.length" aria-label="Your match"><MatchProposalCard v-for="proposal in activeProposals" :key="proposal.id" :proposal="proposal" @updated="load" /></section>
       </section>
@@ -377,11 +397,16 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
       </div>
 
       <GroupComparisonDeck v-if="displayedMode === 'direct'" v-show="directLayout === 'compare' && groups.length" :groups="groups" :session-key="comparisonSession" :disabled="busy || loading || directLayout !== 'compare'" :can-apply="canApply" :apply-group="confirmJoin" />
+      <p v-if="displayedMode === 'algorithm' && groups.length" class="group-muted">“I like this group” saves a matching preference. It does not send an application or join the match list. An automatic offer still needs both your approval and the host’s approval.</p>
 
       <div v-if="displayedMode !== 'direct' || directLayout === 'list'" class="group-grid">
         <GroupListingCard v-for="group in groups" :key="group.id" :group="group">
           <template v-if="displayedMode === 'direct'">
             <button type="button" class="btn btn--ghost" :disabled="busy || !canApply || pendingFor(group.id) || declinedFor(group.id) || !canQueueFor(group) || group.status === 'cancelled'" @click="applicationFor = applicationFor === group.id ? '' : group.id; applicationNote = ''">{{ pendingFor(group.id) ? 'Request sent' : declinedFor(group.id) ? 'Not this time' : !canQueueFor(group) ? 'Group is full' : group.remainingCapacity < 1 ? 'Join the waitlist' : 'Ask to join' }}</button>
+            <p v-if="pendingFor(group.id)" class="group-muted">Your application is saved. Track or cancel it under Your requests.</p>
+            <p v-else-if="declinedFor(group.id)" class="group-muted">This group already declined your request or offer for this concert.</p>
+            <p v-else-if="!canQueueFor(group) || group.status === 'cancelled'" class="group-muted">This group is not accepting new requests.</p>
+            <p v-else-if="!canApply" class="group-muted">{{ !canCoordinate ? 'New group joining is closed for this concert.' : currentGroup ? 'You already have a group for this concert.' : activeProposals.length || pendingLegacy.length ? 'Resolve your current match before applying.' : pendingDirect.length ? 'You can have one pending request. Cancel it under Your requests before choosing another group.' : !modeIsActive ? 'Switch to browsing before sending a request.' : 'Finish your setup before sending a request.' }}</p>
             <form v-if="applicationFor === group.id" class="application-form" @submit.prevent="join(group.id)">
               <label>Say hi to the host (optional)<textarea v-model="applicationNote" maxlength="500" rows="3" :disabled="busy" placeholder="e.g. First time seeing them live, keen to grab dinner before!" /></label>
               <small class="group-muted">{{ applicationNote.length }}/500 · The host will see your public profile and match reasons. Your questionnaire answers stay private. Requests expire 48 hours after submission, even while waiting in line.</small>
@@ -393,7 +418,9 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
           </template>
           <template v-else>
             <button type="button" class="btn" :class="group.preferred ? 'btn--danger-ghost' : 'btn--ghost'" :disabled="busy || (!group.preferred && (!canPrefer || group.automaticPlacementAvailable === false))" @click="preference(group.id, group.preferred)">{{ group.preferred ? 'Unlike' : 'I like this group' }}</button>
+            <p v-if="group.preferred" class="group-muted">Saved for matching. You can remove this preference with Unlike.</p>
             <p v-if="group.automaticPlacementAvailable === false" class="group-muted">This group isn’t taking matches right now.</p>
+            <p v-else-if="!group.preferred && !canPrefer" class="group-muted">{{ currentGroup ? 'You already have a group for this concert.' : activeProposals.length ? 'Review your current offer before saving more group preferences.' : 'An open seeker request for this concert is needed to save group preferences.' }}</p>
           </template>
         </GroupListingCard>
       </div>

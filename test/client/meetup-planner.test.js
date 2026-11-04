@@ -14,6 +14,7 @@ vi.mock('../../client/src/api.js', async original => ({ ...await original(), api
   meetup: vi.fn(), meetupAvailability: vi.fn(), meetupLocations: vi.fn(), meetupTravelSuggestions: vi.fn(),
   meetups: vi.fn(), meetupContext: vi.fn(), createMeetup: vi.fn(), proposeMeetupPlace: vi.fn(),
   voteMeetupPlace: vi.fn(), proposeMeetupPlan: vi.fn(), approveMeetup: vi.fn(), reopenMeetup: vi.fn(),
+  removeMeetupVote: vi.fn(), updateMeetupPlace: vi.fn(), removeMeetupPlace: vi.fn(),
   cancelMeetup: vi.fn(), meetupComment: vi.fn(), meetupTransport: vi.fn(), meetupEnvironment: vi.fn(),
 } }));
 vi.mock('../../client/src/auth.js', async () => {
@@ -45,6 +46,7 @@ beforeEach(() => {
   api.meetupContext.mockResolvedValue({ context: { concert, policy: meetupDatePolicy(concert), capabilities: { canCreate: true } } });
   api.createMeetup.mockResolvedValue({ meetup: { id: 'new-meetup' } });
   api.proposeMeetupPlace.mockResolvedValue({}); api.voteMeetupPlace.mockResolvedValue({});
+  api.removeMeetupVote.mockResolvedValue({}); api.updateMeetupPlace.mockResolvedValue({}); api.removeMeetupPlace.mockResolvedValue({});
   api.proposeMeetupPlan.mockResolvedValue({}); api.reopenMeetup.mockResolvedValue({});
   api.cancelMeetup.mockResolvedValue({}); api.meetupComment.mockResolvedValue({});
   api.approveMeetup.mockResolvedValue({ approval: { confirmed: false } });
@@ -87,12 +89,12 @@ describe('meeting planner with real OneMap search child', () => {
     expect(timePanel.isVisible()).toBe(false);
     expect(placesPanel.isVisible()).toBe(true);
     expect(wrapper.get('[data-planner-step="places"]').attributes('aria-selected')).toBe('true');
-    // Agree on the plan stays locked until this person votes for a place.
-    expect(wrapper.get('[data-planner-step="review"]').attributes('aria-disabled')).toBe('true');
+    // Place preference votes are optional and do not block discussion/review.
+    expect(wrapper.get('[data-planner-step="review"]').attributes('aria-disabled')).toBe('false');
     await wrapper.get('[data-planner-step="places"]').trigger('keydown', { key: 'ArrowRight' });
-    expect(wrapper.get('#meetup-review').isVisible()).toBe(false);
-    expect(placesPanel.isVisible()).toBe(true);
-    await wrapper.get('[data-planner-step="places"]').trigger('keydown', { key: 'Home' });
+    expect(wrapper.get('#meetup-review').isVisible()).toBe(true);
+    expect(placesPanel.isVisible()).toBe(false);
+    await wrapper.get('[data-planner-step="review"]').trigger('keydown', { key: 'Home' });
     expect(timePanel.isVisible()).toBe(true);
     expect(wrapper.get('[data-availability-start]').attributes('aria-pressed')).toBe('false');
     expect(wrapper.text()).toContain('Unsaved changes');
@@ -116,17 +118,15 @@ describe('meeting planner with real OneMap search child', () => {
     await next.trigger('click');
     expect(wrapper.get('#meetup-places').isVisible()).toBe(true);
   });
-  it('keeps Agree on the plan locked until this person votes, and sends locked links to the furthest open step', async () => {
+  it('opens review and discussion with saved times without requiring or creating a place vote', async () => {
     api.meetup.mockResolvedValue({ meetup: { ...board(), places: [publicPlace] } });
     const { wrapper, router } = await mountPage(MeetupView, { path: '/meetups/meetup-1#meetup-review', props: { id: 'meetup-1' } });
-    expect(wrapper.get('#meetup-places').isVisible()).toBe(true);
-    expect(router.currentRoute.value.hash).toBe('#meetup-places');
-    expect(wrapper.text()).toContain('Vote for a place to continue.');
-    expect(button(wrapper, 'Next: agree on the plan →').element.disabled).toBe(true);
-    api.meetup.mockResolvedValue({ meetup: { ...board(), version: 2, places: [{ ...publicPlace, votes: 1 }], currentVotePlaceId: 'place-1' } });
-    await button(wrapper, 'Vote for place').trigger('click'); await flushPromises();
-    await button(wrapper, 'Next: agree on the plan →').trigger('click');
     expect(wrapper.get('#meetup-review').isVisible()).toBe(true);
+    expect(router.currentRoute.value.hash).toBe('#meetup-review');
+    expect(button(wrapper, 'Next: agree on the plan →').element.disabled).toBe(false);
+    expect(wrapper.get('.meetup-suggested-places').text()).toContain('Optional: one place vote per person.');
+    expect(api.voteMeetupPlace).not.toHaveBeenCalled();
+    expect(api.proposeMeetupPlan).not.toHaveBeenCalled();
   });
   it('opens an existing step anchor without changing the planner route', async () => {
     api.meetup.mockResolvedValue({ meetup: { ...board(), places: [publicPlace], currentVotePlaceId: 'place-1' } });
@@ -154,7 +154,7 @@ describe('meeting planner with real OneMap search child', () => {
   it('saves the real search child selection as the starting location', async () => {
     api.meetupLocations.mockResolvedValue({ result: { status: 'available', locations: [{ label: 'City Hall MRT', address: '150 North Bridge Road', latitude: 1.293, longitude: 103.852 }] } });
     const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
-    const search = wrapper.findAllComponents(MeetupLocationSearch).find(child => child.props('label') === 'Your nearest MRT or area');
+    const search = wrapper.findAllComponents(MeetupLocationSearch).find(child => child.props('label') === 'Private starting point');
     await search.get('input').setValue('City Hall');
     await button(search, 'Search OneMap').trigger('click');
     await flushPromises();
@@ -168,7 +168,7 @@ describe('meeting planner with real OneMap search child', () => {
   it('keeps manual entry available when OneMap fails', async () => {
     api.meetupLocations.mockResolvedValue({ result: { status: 'unavailable', locations: [] } });
     const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
-    const search = wrapper.findAllComponents(MeetupLocationSearch).find(child => child.props('label') === 'Your nearest MRT or area');
+    const search = wrapper.findAllComponents(MeetupLocationSearch).find(child => child.props('label') === 'Private starting point');
     await search.get('input').setValue('City Hall');
     await button(search, 'Search OneMap').trigger('click');
     await flushPromises();
@@ -188,7 +188,7 @@ describe('meeting planner with real OneMap search child', () => {
     const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
     await button(wrapper, 'Compare travel options').trigger('click');
     await flushPromises();
-    expect(wrapper.text()).toContain('About 4 km total');
+    expect(wrapper.text()).toContain('About 4 km combined distance');
     expect(wrapper.text()).toContain('Straight-line distance estimate.');
   });
   it('refreshes saved group counts live while keeping unsaved locations and discussion', async () => {
@@ -415,7 +415,8 @@ describe('meeting planner with real OneMap search child', () => {
     expect(button(wrapper, 'Save my times').element.disabled).toBe(true);
     expect(button(wrapper, 'Apply to selected times').element.disabled).toBe(true);
     expect(wrapper.get('[data-availability-start]').element.disabled).toBe(true);
-    expect(wrapper.get('.meetup-suggested-places button').element.disabled).toBe(true);
+    expect(wrapper.get('.meetup-suggested-places').findAll('button')).toHaveLength(0);
+    expect(wrapper.get('.meetup-suggested-places').text()).toContain('Voting locked');
     expect(wrapper.get('.meetup-place-editor fieldset').element.disabled).toBe(true);
     expect(wrapper.findAll('button').some(item => item.text() === 'Approve plan')).toBe(false);
     expect(wrapper.get('textarea').element.disabled).toBe(false);
@@ -433,6 +434,9 @@ describe('meeting planner with real OneMap search child', () => {
     api.meetup.mockResolvedValue({ meetup: { ...board(), version: 2, status: 'proposed', capabilities: permissions('proposed'),
       places: [publicPlace], selected_place_id: 'place-1', selected_start: start, requiredApprovers: ['user-1', 'user-2'] } });
     await button(wrapper, 'Propose this time & place').trigger('click'); await flushPromises();
+    expect(api.proposeMeetupPlan).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"]').textContent).toContain('City Hall MRT');
+    document.querySelector('.confirm__actions button:last-child').click(); await flushPromises();
     expect(api.proposeMeetupPlan).toHaveBeenCalledExactlyOnceWith('meetup-1', { placeId: 'place-1', startsAt: new Date(start).toISOString(), version: 1 });
     expect(wrapper.get('#meetup-review').isVisible()).toBe(true);
     expect(wrapper.text()).toContain('Your plan has been submitted for approval.');
@@ -529,6 +533,250 @@ describe('meeting planner with real OneMap search child', () => {
   });
 });
 
+describe('meetup decision interaction semantics', () => {
+  it('keeps the server’s final approval count accurate when another approval was absent from the stale board', async () => {
+    api.meetup.mockResolvedValueOnce({ meetup: { ...board(), status: 'proposed', capabilities: permissions('proposed'),
+      requiredApprovers: ['user-1', 'user-2'], approvals: [], selected_place_id: publicPlace.id, selected_start: start, places: [publicPlace] } });
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    api.approveMeetup.mockResolvedValueOnce({ approval: { confirmed: true, version: 1,
+      approvals: ['user-2', 'user-1'], requiredApprovers: ['user-1', 'user-2'] } });
+    api.meetup.mockRejectedValueOnce(new Error('offline'));
+    await button(wrapper, 'Approve plan').trigger('click'); await flushPromises();
+    expect(wrapper.get('.meetup-approval-progress').text()).toContain('Approvals: 2/2');
+    expect(wrapper.text()).toContain('Meetup confirmed');
+    expect(wrapper.findAll('button').some(item => item.text() === 'Approve plan')).toBe(false);
+  });
+  it('uses the acknowledged version to remove a newly saved vote after a failed follow-up read', async () => {
+    api.meetup.mockResolvedValueOnce({ meetup: { ...board(), places: [publicPlace] } });
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    api.voteMeetupPlace.mockResolvedValueOnce({ result: { voted: true, version: 2 } });
+    api.meetup.mockRejectedValueOnce(new Error('offline'));
+    await button(wrapper, 'Vote for place').trigger('click'); await flushPromises();
+    expect(wrapper.get('.meetup-suggested-places').text()).toContain('1 vote');
+    api.removeMeetupVote.mockResolvedValueOnce({ result: { voted: false, version: 3 } });
+    await button(wrapper, 'Remove vote').trigger('click'); await flushPromises();
+    expect(api.removeMeetupVote).toHaveBeenCalledExactlyOnceWith('meetup-1', 2);
+    expect(wrapper.get('[data-planner-step="review"]').attributes('aria-disabled')).toBe('false');
+  });
+  it('keeps acknowledged approval and hides its action when the following read fails', async () => {
+    api.meetup.mockResolvedValueOnce({ meetup: { ...board(), status: 'proposed', capabilities: permissions('proposed'),
+      requiredApprovers: ['user-1', 'user-2'], selected_place_id: publicPlace.id, selected_start: start, places: [publicPlace] } });
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    api.approveMeetup.mockResolvedValueOnce({ approval: { confirmed: false, version: 1 } });
+    api.meetup.mockRejectedValueOnce(new Error('offline'));
+    await button(wrapper, 'Approve plan').trigger('click'); await flushPromises();
+    expect(wrapper.findAll('button').some(item => item.text() === 'Approve plan')).toBe(false);
+    expect(wrapper.get('.meetup-approval-progress').text()).toContain('Approvals: 1/2');
+    expect(wrapper.text()).toContain('Your approval is saved.');
+    expect(wrapper.text()).toContain('Your change was saved. Group details could not refresh');
+  });
+  it('keeps an acknowledged reopening usable when the following read fails and clears old approvals', async () => {
+    api.meetup.mockResolvedValueOnce({ meetup: { ...board(), status: 'confirmed', capabilities: permissions('confirmed'),
+      requiredApprovers: ['user-1', 'user-2'], approvals: ['user-1', 'user-2'], hasApproved: true,
+      selected_place_id: publicPlace.id, selected_start: start, places: [publicPlace] } });
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    await button(wrapper, 'Reopen planning').trigger('click'); await flushPromises();
+    api.reopenMeetup.mockResolvedValueOnce({ result: { reopened: true, version: 2 } });
+    api.meetup.mockRejectedValueOnce(new Error('offline'));
+    document.querySelector('.confirm__actions button:last-child').click(); await flushPromises();
+    expect(wrapper.get('#meetup-availability').isVisible()).toBe(true);
+    expect(button(wrapper, 'Save my times').element.disabled).toBe(false);
+    expect(wrapper.text()).toContain('Collecting availability');
+    expect(wrapper.text()).not.toContain('Approvals: 2/2');
+    expect(wrapper.text()).toContain('Your change was saved. Group details could not refresh');
+  });
+  it('keeps an acknowledged cancellation read-only when the following read fails', async () => {
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    await button(wrapper, 'Cancel meetup').trigger('click'); await flushPromises();
+    api.cancelMeetup.mockResolvedValueOnce({ result: { cancelled: true } }); api.meetup.mockRejectedValueOnce(new Error('offline'));
+    document.querySelector('.confirm__actions button:last-child').click(); await flushPromises();
+    expect(wrapper.text()).toContain('Meetup cancelled');
+    expect(button(wrapper, 'Save my times').element.disabled).toBe(true);
+    expect(wrapper.get('textarea').element.disabled).toBe(true);
+    expect(wrapper.findAll('button').some(item => item.text() === 'Cancel meetup')).toBe(false);
+  });
+  it('keeps voting exclusively in suggested places and removes the current vote', async () => {
+    const plan = { ...board(), places: [{ ...publicPlace, votes: 1 }], currentVotePlaceId: publicPlace.id, suggestions: [suggestion] };
+    api.meetup.mockResolvedValue({ meetup: plan });
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    expect(wrapper.get('.meetup-recommendations').text()).toContain('Your preferred place');
+    expect(wrapper.get('.meetup-recommendations').findAll('button').some(item => /Vote for place|Remove vote/.test(item.text()))).toBe(false);
+    api.meetup.mockResolvedValue({ meetup: { ...plan, version: 2, currentVotePlaceId: null, places: [publicPlace] } });
+    await button(wrapper, 'Remove vote').trigger('click'); await flushPromises();
+    expect(api.removeMeetupVote).toHaveBeenCalledExactlyOnceWith('meetup-1', 1);
+    expect(api.voteMeetupPlace).not.toHaveBeenCalled();
+    expect(wrapper.get('.meetup-suggested-places').text()).toContain('0 votes');
+    expect(wrapper.get('.meetup-recommendations').text()).not.toContain('Your preferred place');
+    expect(wrapper.text()).toContain('Your vote has been removed.');
+    expect(wrapper.get('[data-planner-step="review"]').attributes('aria-disabled')).toBe('false');
+  });
+  it('shows locked support as information instead of an enabled-looking vote action', async () => {
+    api.meetup.mockResolvedValue({ meetup: { ...board(), status: 'confirmed', capabilities: permissions('confirmed', false),
+      selected_place_id: publicPlace.id, selected_start: start, currentVotePlaceId: publicPlace.id, places: [{ ...publicPlace, votes: 1 }] } });
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    expect(wrapper.get('.meetup-suggested-places').text()).toContain('Your vote');
+    expect(wrapper.get('.meetup-suggested-places').findAll('button')).toHaveLength(0);
+    expect(api.removeMeetupVote).not.toHaveBeenCalled();
+  });
+  it('groups time options by place while preserving each option’s global rank and proposal action', async () => {
+    api.meetup.mockResolvedValue({ meetup: { ...board(), places: [publicPlace], suggestions: [suggestion,
+      { ...suggestion, startsAt: start + 1800000, availableCount: 1 }] } });
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    expect(wrapper.findAll('.meetup-option')).toHaveLength(1);
+    expect(wrapper.findAll('.meetup-time-option')).toHaveLength(2);
+    expect(wrapper.get('.meetup-option h3').text()).toBe(publicPlace.label);
+    expect(wrapper.get('.meetup-option').text()).toContain('Rank 1');
+    expect(wrapper.get('.meetup-option').text()).toContain('Rank 2');
+    expect(wrapper.get('.meetup-option').findAll('button')).toHaveLength(2);
+  });
+  it('reviews incomplete attendance, votes and immediate confirmation before sending a proposal', async () => {
+    api.meetup.mockResolvedValue({ meetup: { ...board(), participantCount: 3, requiredApprovers: ['user-1'], places: [{ ...publicPlace, votes: 2 }],
+      suggestions: [{ ...suggestion, availableCount: 1, participantCount: 3, votes: 2 }] } });
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    await button(wrapper, 'Confirm this time & place').trigger('click'); await flushPromises();
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog.textContent).toContain('Only 1 of 3 participants');
+    expect(dialog.textContent).toContain('City Hall MRT');
+    expect(dialog.textContent).toContain('2 place votes');
+    expect(dialog.textContent).toContain('immediately confirms');
+    expect(api.proposeMeetupPlan).not.toHaveBeenCalled();
+    dialog.querySelector('.confirm__actions button').click(); await flushPromises();
+    expect(api.proposeMeetupPlan).not.toHaveBeenCalled();
+    expect(api.voteMeetupPlace).not.toHaveBeenCalled();
+  });
+  it('submits the version actually reviewed and explains a concurrent change without automatically retrying', async () => {
+    vi.useFakeTimers();
+    const original = { ...board(), requiredApprovers: ['user-1', 'user-2'], places: [publicPlace], suggestions: [suggestion] };
+    api.meetup.mockResolvedValueOnce({ meetup: original });
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    await button(wrapper, 'Propose this time & place').trigger('click'); await flushPromises();
+    api.meetup.mockResolvedValue({ meetup: { ...original, version: 2 } });
+    live.handler('meetup-updated', { meetupId: 'meetup-1', version: 2 });
+    await vi.advanceTimersByTimeAsync(160); await flushPromises();
+    api.proposeMeetupPlan.mockRejectedValueOnce(new Error('stale_meetup_version'));
+    document.querySelector('.confirm__actions button:last-child').click(); await flushPromises();
+    expect(api.proposeMeetupPlan).toHaveBeenCalledExactlyOnceWith('meetup-1', { placeId: publicPlace.id,
+      startsAt: new Date(start).toISOString(), version: 1 });
+    expect(wrapper.get('.meetup-recommendations').text()).toContain('This plan has changed.');
+    expect(document.querySelector('[role="dialog"]')).toBe(null);
+    expect(api.approveMeetup).not.toHaveBeenCalled();
+  });
+  it('requests sheltered baseline options from the server before limiting and never calls the travel provider implicitly', async () => {
+    api.meetup.mockResolvedValueOnce({ meetup: { ...board(), places: [publicPlace], suggestions: [] } });
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    api.meetup.mockResolvedValueOnce({ meetup: { ...board(), places: [publicPlace], suggestionsShelteredOnly: true, suggestions: [suggestion] } });
+    await field(wrapper, 'Only places marked sheltered').setValue(true); await flushPromises();
+    expect(api.meetup).toHaveBeenLastCalledWith('meetup-1', { shelteredOnly: true });
+    expect(wrapper.get('.meetup-recommendations').text()).toContain('City Hall MRT');
+    expect(api.meetupTravelSuggestions).not.toHaveBeenCalled();
+  });
+  it('does not leave stale unsheltered recommendations visible after a filter read fails', async () => {
+    api.meetup.mockResolvedValueOnce({ meetup: { ...board(), places: [publicPlace], suggestions: [suggestion] } });
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    api.meetup.mockRejectedValueOnce(new Error('offline'));
+    await field(wrapper, 'Only places marked sheltered').setValue(true); await flushPromises();
+    expect(wrapper.findAll('.meetup-time-option')).toHaveLength(0);
+    expect(wrapper.get('.meetup-recommendations').text()).toContain('Could not refresh filtered recommendations');
+    expect(wrapper.get('.meetup-suggested-places').text()).toContain('City Hall MRT');
+    api.meetup.mockResolvedValueOnce({ meetup: { ...board(), places: [publicPlace], suggestionsShelteredOnly: true, suggestions: [suggestion] } });
+    await button(wrapper, 'Refresh planner').trigger('click'); await flushPromises();
+    expect(wrapper.findAll('.meetup-time-option')).toHaveLength(1);
+    expect(wrapper.get('.meetup-recommendations').text()).not.toContain('Could not refresh filtered recommendations');
+  });
+  it.each([401, 403, 404])('clears the visible board when a filtered read reports access loss (%s)', async status => {
+    api.meetup.mockResolvedValueOnce({ meetup: { ...board(), places: [publicPlace], suggestions: [suggestion] } });
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    api.meetup.mockRejectedValueOnce(Object.assign(new Error('access denied'), { status }));
+    await field(wrapper, 'Only places marked sheltered').setValue(true); await flushPromises();
+    expect(wrapper.find('#meetup-availability').exists()).toBe(false);
+    expect(wrapper.find('.meetup-suggested-places').exists()).toBe(false);
+    expect(wrapper.text()).toContain('This meetup is unavailable, or you are no longer a participant.');
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+  });
+  it.each([401, 403, 404])('clears the visible board when a travel comparison reports access loss (%s)', async status => {
+    api.meetup.mockResolvedValueOnce({ meetup: { ...board(), places: [publicPlace], suggestions: [suggestion] } });
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    api.meetupTravelSuggestions.mockRejectedValueOnce(Object.assign(new Error('access denied'), { status }));
+    await button(wrapper, 'Compare travel options').trigger('click'); await flushPromises();
+    expect(wrapper.find('#meetup-availability').exists()).toBe(false);
+    expect(wrapper.text()).toContain('This meetup is unavailable, or you are no longer a participant.');
+  });
+  it.each([[401, 'authentication_required'], [404, 'meetup_not_found'], [403, 'scope_membership_required']])(
+    'clears the visible board when a mutation reports revoked authentication or scope (%s, %s)', async (status, code) => {
+      api.meetup.mockResolvedValueOnce({ meetup: { ...board(), places: [publicPlace] } });
+      const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+      api.voteMeetupPlace.mockRejectedValueOnce(Object.assign(new Error(code), { status }));
+      await button(wrapper, 'Vote for place').trigger('click'); await flushPromises();
+      expect(wrapper.find('#meetup-availability').exists()).toBe(false);
+      expect(wrapper.text()).toContain('This meetup is unavailable, or you are no longer a participant.');
+    });
+  it.each([[403, 'place_owner_required'], [404, 'place_not_found']])(
+    'retains the board and place draft for target-specific permission or missing-place errors (%s)', async (status, code) => {
+      api.meetup.mockResolvedValueOnce({ meetup: { ...board(), places: [{ ...publicPlace, canEdit: true }] } });
+      const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+      await button(wrapper, 'Correct place').trigger('click');
+      const form = wrapper.get('.meetup-place-editor');
+      await field(form, 'Place name').setValue('Corrected entrance');
+      await field(form, 'Latitude').setValue('1.3'); await field(form, 'Longitude').setValue('103.8');
+      api.updateMeetupPlace.mockRejectedValueOnce(Object.assign(new Error(code), { status }));
+      await form.trigger('submit'); await flushPromises();
+      expect(wrapper.find('#meetup-availability').exists()).toBe(true);
+      expect(field(form, 'Place name').element.value).toBe('Corrected entrance');
+      expect(form.find('[role="alert"]').exists()).toBe(true);
+    });
+  it('discloses partial origin coverage and does not claim transport methods affected straight-line ranking', async () => {
+    api.meetup.mockResolvedValue({ meetup: { ...board(), places: [publicPlace], suggestions: [{ ...suggestion, locationRespondents: 1,
+      distanceCoverageComparable: false, basis: 'insufficient_journey_data' }] } });
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    expect(wrapper.get('.meetup-recommendations').text()).toContain('1 of 2 available participants');
+    expect(wrapper.get('.meetup-recommendations').text()).toContain('not used to rank');
+    expect(wrapper.get('.meetup-recommendations').text()).toContain('Transport choices do not affect straight-line estimates');
+  });
+  it('lets the owner correct a planning suggestion and discloses that existing votes are cleared', async () => {
+    api.meetup.mockResolvedValue({ meetup: { ...board(), places: [{ ...publicPlace, votes: 2, canEdit: true, canRemove: true }] } });
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    await button(wrapper, 'Correct place').trigger('click');
+    const form = wrapper.get('.meetup-place-editor');
+    expect(field(form, 'Place name').element.value).toBe(publicPlace.label);
+    expect(button(form, 'Save place correction').element.disabled).toBe(true);
+    expect(form.text()).toContain('Existing votes for this place will be cleared');
+    await field(form, 'Place name').setValue('Corrected public lobby');
+    await field(form, 'Latitude').setValue('1.294'); await field(form, 'Longitude').setValue('103.853');
+    await form.trigger('submit'); await flushPromises();
+    expect(api.updateMeetupPlace).toHaveBeenCalledExactlyOnceWith('meetup-1', 'place-1', expect.objectContaining({
+      label: 'Corrected public lobby', latitude: 1.294, longitude: 103.853, version: 1,
+    }));
+    expect(api.proposeMeetupPlace).not.toHaveBeenCalled();
+    expect(field(form, 'Place name').element.value).toBe('');
+  });
+  it('lets the owner rename a saved suggestion without re-entering its established coordinates', async () => {
+    api.meetup.mockResolvedValue({ meetup: { ...board(), places: [{ ...publicPlace, votes: 2, canEdit: true }] } });
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    await button(wrapper, 'Correct place').trigger('click');
+    const form = wrapper.get('.meetup-place-editor');
+    expect(form.text()).toContain('Renaming keeps the saved coordinates.');
+    await field(form, 'Place name').setValue('City Hall north entrance');
+    expect(field(form, 'Latitude').element.value).toBe(String(publicPlace.latitude));
+    expect(field(form, 'Longitude').element.value).toBe(String(publicPlace.longitude));
+    await form.trigger('submit'); await flushPromises();
+    expect(api.updateMeetupPlace).toHaveBeenCalledExactlyOnceWith('meetup-1', 'place-1', expect.objectContaining({
+      label: 'City Hall north entrance', latitude: publicPlace.latitude, longitude: publicPlace.longitude, version: 1,
+    }));
+  });
+  it('requires confirmation before removing an owned suggestion and preserves it after a failed removal', async () => {
+    api.meetup.mockResolvedValue({ meetup: { ...board(), places: [{ ...publicPlace, canEdit: true, canRemove: true }] } });
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    await button(wrapper, 'Remove place').trigger('click'); await flushPromises();
+    expect(api.removeMeetupPlace).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"]').textContent).toContain('Votes for this place will also be removed');
+    api.removeMeetupPlace.mockRejectedValueOnce(new Error('stale_meetup_version'));
+    document.querySelector('.confirm__actions button:last-child').click(); await flushPromises();
+    expect(api.removeMeetupPlace).toHaveBeenCalledExactlyOnceWith('meetup-1', 'place-1', 1);
+    expect(wrapper.get('.meetup-suggested-places').text()).toContain('City Hall MRT');
+    expect(wrapper.get('.meetup-place-editor').text()).toContain('This plan has changed');
+  });
+});
+
 describe('teammate proposal recovery and explicit approval', () => {
   it('confirms a sole-organizer choice deliberately and records the returned approval without another request', async () => {
     api.meetup.mockResolvedValue({ meetup: { ...board(), requiredApprovers: ['user-1'], places: [publicPlace], suggestions: [suggestion] } });
@@ -540,6 +788,9 @@ describe('teammate proposal recovery and explicit approval', () => {
     api.meetup.mockResolvedValue({ meetup: { ...board(), status: 'confirmed', version: 2, requiredApprovers: ['user-1'], approvals: ['user-1'], hasApproved: true,
       places: [publicPlace], selected_place_id: 'place-1', selected_start: start, capabilities: permissions('confirmed') } });
     await button(wrapper, 'Confirm this time & place').trigger('click'); await flushPromises();
+    expect(api.proposeMeetupPlan).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"]').textContent).toContain('immediately confirms');
+    document.querySelector('.confirm__actions button:last-child').click(); await flushPromises();
     expect(api.proposeMeetupPlan).toHaveBeenCalledExactlyOnceWith('meetup-1', { placeId: 'place-1', startsAt: new Date(start).toISOString(), version: 1 });
     expect(api.approveMeetup).not.toHaveBeenCalled();
     expect(wrapper.get('#meetup-review').isVisible()).toBe(true);
@@ -593,6 +844,7 @@ describe('teammate proposal recovery and explicit approval', () => {
     api.proposeMeetupPlan.mockResolvedValueOnce({ proposal: { confirmed: true, version: 2 } });
     api.meetup.mockRejectedValueOnce(new Error('offline'));
     await button(wrapper, 'Confirm this time & place').trigger('click'); await flushPromises();
+    document.querySelector('.confirm__actions button:last-child').click(); await flushPromises();
     expect(wrapper.text()).toContain('The meetup is confirmed. Your organizer approval has been recorded.');
     expect(wrapper.text()).toContain('Your change was saved. Group details could not refresh');
     expect(api.proposeMeetupPlan).toHaveBeenCalledTimes(1);

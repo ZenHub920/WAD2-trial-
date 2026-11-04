@@ -132,7 +132,9 @@ test('chat: one thread per buyer and listing, readable only by its two people', 
   assert.equal((await api(`/tickets/${id}/conversations`, { method: 'POST', as: 'seller' })).status, 409);
 
   const send = (as, body) => api(`/conversations/${cid}/messages`, { method: 'POST', as, body: { body } });
-  assert.equal((await send('buyer', 'Is this still available?')).status, 201);
+  const sent = await send('buyer', 'Is this still available?');
+  assert.equal(sent.status, 201);
+  assert.ok(Number.isInteger(sent.body.message.seq));
   assert.equal((await send('seller', 'Yes it is!')).status, 201);
   assert.equal((await send('buyer', '   ')).status, 400);
   db.prepare("UPDATE ticket_messages SET created_at = '2026-10-17 12:00:00.000' WHERE conversation_id = ?").run(cid);
@@ -141,6 +143,8 @@ test('chat: one thread per buyer and listing, readable only by its two people', 
   const thread = await api(`/conversations/${cid}`, { as: 'seller' });
   assert.equal(thread.body.conversation.role, 'seller');
   assert.deepEqual(thread.body.messages.map((m) => m.body), ['Is this still available?', 'Yes it is!']);
+  assert.equal(thread.body.messages[0].seq, sent.body.message.seq);
+  assert.ok(thread.body.messages[1].seq > thread.body.messages[0].seq);
   const newer = await api(`/conversations/${cid}?after=${encodeURIComponent(thread.body.messages[0].id)}`, { as: 'buyer' });
   assert.deepEqual(newer.body.messages.map((m) => m.body), ['Yes it is!']);
   assert.equal((await api(`/conversations/${cid}`, { as: 'buyer2' })).status, 404);
