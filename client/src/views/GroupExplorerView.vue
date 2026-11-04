@@ -414,9 +414,9 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
 
       <!-- A page button exists only when that page does. Disabling them instead
            left two dead controls on every result set that fits on one page. -->
-      <nav class="group-actions group-pagination" aria-label="Group results pages">
+      <nav v-if="hasPreviousPage || hasNextPage" class="group-actions group-pagination" aria-label="Group results pages">
         <button v-if="hasPreviousPage" type="button" class="btn btn--ghost" :disabled="loading || busy" @click="offset = Math.max(0, offset - PAGE_SIZE); load()">Previous</button>
-        <span>{{ total }} {{ total === 1 ? 'group' : 'groups' }}</span>
+        <span>{{ offset + 1 }}–{{ Math.min(offset + PAGE_SIZE, total) }} of {{ total }}</span>
         <button v-if="hasNextPage" type="button" class="btn btn--ghost" :disabled="loading || busy" @click="offset += PAGE_SIZE; load()">Next</button>
       </nav>
 

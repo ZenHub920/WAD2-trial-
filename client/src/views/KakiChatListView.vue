@@ -286,8 +286,12 @@ watch(() => currentUser.value?.id, userId => {
   max-width: 800px;
 }
 .head {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--space-4);
+  margin-bottom: var(--space-5);
 }
 .head h1 {
   margin: 0;
