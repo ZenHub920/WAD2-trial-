@@ -138,7 +138,7 @@ describe('group settings disclosure and validation', () => {
     expect(wrapper.text()).not.toContain('Your group is visible to people looking for a group');
     expect(wrapper.findAll('button').some(item => ['Publish group', 'Plan meetup'].includes(item.text()))).toBe(false);
     expect(wrapper.findAll('a').some(item => item.text() === 'Connect with other groups')).toBe(false);
-    expect(wrapper.get('a[href="/groups/group-1/channel"]').text()).toBe('Group messages');
+    expect(wrapper.get('a[href="/groups/group-1/channel"]').text()).toBe('Messages');
     expect(button(wrapper, 'Create single-use friend link').element.disabled).toBe(false);
     expect(wrapper.find('details.member-settings').exists()).toBe(true);
     expect(wrapper.text()).not.toContain('companion places remaining');
@@ -184,5 +184,82 @@ describe('group settings disclosure and validation', () => {
     expect(wrapper.text()).toContain('A valid concert date is needed');
     expect(wrapper.findAll('button').some(item => ['Publish group', 'Plan meetup'].includes(item.text()))).toBe(false);
     expect(button(wrapper, 'Create single-use friend link').element.disabled).toBe(false);
+  });
+});
+
+describe('first-time host setup readiness', () => {
+  it('shows saved readiness and separates publication from connection opt-in', async () => {
+    const { wrapper } = await mountPage(GroupMembershipView, { props: { id: 'group-1' } });
+    const setup = wrapper.get('[aria-labelledby="group-setup-heading"]');
+    expect(setup.text()).toContain('Published · connections off');
+    expect(setup.text()).toContain('0 of 0 expected friends joined');
+    expect(setup.text()).toContain('1 of 1 members saved preferences');
+    expect(setup.get('a').attributes('href')).toBe('#group-publication');
+    expect(wrapper.findAll('a').some(item => item.text() === 'Discover groups to connect')).toBe(false);
+  });
+
+  it('offers the next publishing step only when the saved friend count and all member answers satisfy backend requirements', async () => {
+    const { group } = await api.groupMembership();
+    api.groupMembership.mockResolvedValue({ group: { ...group,
+      settings: { ...group.settings, published: false, expected_friends: 1 },
+      members: [...group.members, { id: 'friend', source: 'friend', name: 'Friend', answered: true }],
+    } });
+    const { wrapper } = await mountPage(GroupMembershipView, { props: { id: 'group-1' } });
+    expect(wrapper.get('#group-setup-heading').text()).toBe('Ready to publish');
+    expect(wrapper.text()).toContain('1 of 1 expected friends joined');
+    expect(wrapper.text()).toContain('2 of 2 members saved preferences');
+    expect(button(wrapper, 'Publish group').element.disabled).toBe(false);
+    expect(wrapper.get('a[href="#group-publication"]').text()).toBe('Go to publishing');
+  });
+
+  it('explains missing friends and opens the existing single-use invitation tools without generating a link automatically', async () => {
+    const { group } = await api.groupMembership();
+    api.groupMembership.mockResolvedValue({ group: { ...group, settings: { ...group.settings, published: false, expected_friends: 2 } } });
+    const { wrapper } = await mountPage(GroupMembershipView, { props: { id: 'group-1' } });
+    expect(wrapper.get('#group-setup-heading').text()).toBe('Finish your group setup');
+    expect(wrapper.text()).toContain('0 of 2 expected friends joined');
+    expect(button(wrapper, 'Publish group').element.disabled).toBe(true);
+    expect(wrapper.get('#publication-blocked-reason').text()).toContain('Wait for every expected friend to join');
+    await button(wrapper, 'Invite your friends').trigger('click'); await flushPromises();
+    expect(wrapper.get('details.member-invite-tools').element.open).toBe(true);
+    expect(document.activeElement).toBe(button(wrapper, 'Create single-use friend link').element);
+    expect(api.friendInvite).not.toHaveBeenCalled();
+    expect(api.publishGroup).not.toHaveBeenCalled();
+  });
+
+  it('counts every current member rather than just friends and directs the host to their own private preferences', async () => {
+    const { group } = await api.groupMembership();
+    api.groupMembership.mockResolvedValue({ group: { ...group, settings: { ...group.settings, published: false },
+      members: [{ ...group.members[0], answered: false }, { id: 'seeker', name: 'Seeker', source: 'proposal', answered: true }],
+    } });
+    const { wrapper } = await mountPage(GroupMembershipView, { props: { id: 'group-1' } });
+    const setup = wrapper.get('[aria-labelledby="group-setup-heading"]');
+    expect(setup.text()).toContain('1 of 2 members saved preferences');
+    expect(setup.get('a[href="/profile#preferences"]').text()).toBe('Save your private preferences');
+    expect(button(wrapper, 'Publish group').element.disabled).toBe(true);
+    expect(wrapper.get('#publication-blocked-reason').text()).toContain('Every member, including the host');
+  });
+
+  it('directs missing member answers to the roster and published connection-enabled groups to discovery', async () => {
+    const { group } = await api.groupMembership();
+    api.groupMembership.mockResolvedValue({ group: { ...group, settings: { ...group.settings, connect_open: true },
+      members: [...group.members, { id: 'member', name: 'Member', source: 'direct', answered: false }],
+    } });
+    const { wrapper } = await mountPage(GroupMembershipView, { props: { id: 'group-1' } });
+    const setup = wrapper.get('[aria-labelledby="group-setup-heading"]');
+    expect(setup.get('a[href="#group-members"]').text()).toBe('See who still needs to answer');
+    expect(setup.get('a.btn').attributes('href')).toBe('/groups/connect?view=connections&groupId=group-1&concertId=concert-1');
+    expect(wrapper.get('#group-setup-heading').text()).toBe('Published · connections on');
+  });
+
+  it('keeps host setup and publication controls away from an ordinary member while retaining conversation and planning', async () => {
+    currentUser.value = { id: 'member', displayName: 'Member' };
+    const { wrapper } = await mountPage(GroupMembershipView, { props: { id: 'group-1' } });
+    expect(wrapper.find('[aria-labelledby="group-setup-heading"]').exists()).toBe(false);
+    expect(wrapper.find('details.member-settings').exists()).toBe(false);
+    expect(wrapper.findAll('button').some(item => item.text() === 'Save publication settings')).toBe(false);
+    expect(wrapper.findAll('a').some(item => item.text() === 'Connect with other groups')).toBe(false);
+    expect(wrapper.get('a[href="/groups/group-1/channel"]').text()).toBe('Messages');
+    expect(button(wrapper, 'Plan meetup').exists()).toBe(true);
   });
 });

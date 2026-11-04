@@ -5,6 +5,7 @@ const defaults = {
   login: { limit: 20, windowMs: 15 * minute },
   registration: { limit: 30, windowMs: 60 * minute },
   catalogWrite: { limit: 20, windowMs: 60 * minute },
+  matching: { limit: 10, windowMs: minute },
   recovery: { limit: 8, windowMs: 60 * minute },
   credentials: { limit: 10, windowMs: 15 * minute },
   chat: { limit: 120, windowMs: minute },
@@ -19,6 +20,7 @@ export function ratePolicy(method, rawPath) {
   if (method === 'POST' && path === '/auth/login') return 'login';
   if (method === 'POST' && path === '/auth/register') return 'registration';
   if (method === 'POST' && path === '/concerts') return 'catalogWrite';
+  if (method === 'POST' && /^\/me\/concerts\/[^/]+\/matching\/find\/?$/i.test(path)) return 'matching';
   if (method === 'POST' && /^\/auth\/(password-reset|email-verification)\//.test(path)) return 'recovery';
   if (path === '/auth/password/change' || path === '/auth/sessions') return 'credentials';
   if (method === 'POST' && /\/messages$/.test(path)) return 'chat';

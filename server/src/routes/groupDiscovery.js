@@ -5,7 +5,7 @@ export function registerGroupDiscoveryRoutes(router, { repos, requireUser }) {
     : res.status(status).json({ [key]: result });
   const concertExists = (req, res, next) => repos.concerts.findById(req.params.concertId)
     ? next() : res.status(404).json({ error: 'concert_not_found' });
-  const page = (req,res,groups) => {
+  const page = (req,res,groups,discovery) => {
     const limit=Number(req.query.limit??20),offset=Number(req.query.offset??0);
     if(!Number.isInteger(limit)||limit<1||limit>30||!Number.isInteger(offset)||offset<0)return res.status(400).json({error:'invalid_pagination'});
     const q=typeof req.query.q==='string'?req.query.q.trim().toLowerCase():'';
@@ -16,10 +16,17 @@ export function registerGroupDiscoveryRoutes(router, { repos, requireUser }) {
       &&(req.query.preferredOnly!=='true'||g.preferred));
     if(req.query.sort==='capacity')filtered.sort((a,b)=>b.remainingCapacity-a.remainingCapacity||a.id.localeCompare(b.id));
     if(req.query.sort==='host')filtered.sort((a,b)=>a.hostName.localeCompare(b.hostName)||a.id.localeCompare(b.id));
-    return res.json({groups:filtered.slice(offset,offset+limit),total:filtered.length,limit,offset});
+    return res.json({groups:filtered.slice(offset,offset+limit),total:filtered.length,limit,offset,
+      ...(discovery ? { discovery: { ...discovery,
+        state: groups.length && !filtered.length ? 'filters_empty' : discovery.state,
+        filteredCount: filtered.length } } : {})});
   };
   router.get('/groups/discover/:concertId', requireUser, concertExists, (req, res,next) => {
-    try{return page(req,res,repos.recommendations.individual(req.user.id,req.params.concertId));}catch(e){next(e);}
+    try {
+      const { groups, discovery } = repos.recommendations.individualDiscovery(req.user.id,req.params.concertId);
+      res.set('Cache-Control', 'private, no-store');
+      return page(req,res,groups,discovery);
+    } catch(e){next(e);}
   });
   router.get('/me/seeker-request/:concertId', requireUser, concertExists, (req, res) => {
     repos.proposals.expire();
@@ -50,12 +57,16 @@ export function registerGroupDiscoveryRoutes(router, { repos, requireUser }) {
   router.post('/group-connections', requireUser, (req, res) => {
     const { fromPartyId, toPartyId } = req.body ?? {};
     if (typeof fromPartyId !== 'string' || typeof toPartyId !== 'string') return res.status(400).json({ error: 'group_ids_required' });
-    return send(res, repos.groups.invite(req.user.id, fromPartyId, toPartyId), 'connection', 201);
+    return send(res, connectionResult(repos.groups.invite(req.user.id, fromPartyId, toPartyId)), 'connection', 201);
   });
   router.post('/group-connections/:id/respond', requireUser, (req, res) =>
-    send(res, repos.groups.respond(req.user.id, req.params.id, req.body?.action), 'connection'));
+    send(res, connectionResult(repos.groups.respond(req.user.id, req.params.id, req.body?.action)), 'connection'));
   // Withdrawing is the sender's counterpart to responding, so it gets its own
   // verb rather than an action the respond route would have to refuse by host.
   router.delete('/group-connections/:id', requireUser, (req, res) =>
     send(res, repos.groups.cancel(req.user.id, req.params.id), 'connection'));
 }
+
+// Preserve authorization and status codes without identifying a private block.
+const connectionResult = result => result?.error === 'blocked_pair'
+  ? { error: 'connection_unavailable', status: result.status } : result;

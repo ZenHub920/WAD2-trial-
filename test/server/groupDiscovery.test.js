@@ -76,6 +76,83 @@ test('discovery is concert scoped, private, and uses existing feasibility scores
   assert.ok(!JSON.stringify(result.body).includes('@test.example'));
   assert.equal((await call('/groups/discover/c2', 'seeker')).body.groups.length, 0);
 });
+test('discovery distinguishes personalized filters, an active offer and confirmed membership', async () => {
+  const initial = await call('/groups/discover/c1', 'seeker');
+  assert.deepEqual(initial.body.discovery, { state: 'available', eligibleCount: 2, filteredCount: 2 });
+  const filtered = await call('/groups/discover/c1?q=no-such-public-group', 'seeker');
+  assert.deepEqual(filtered.body.groups, []);
+  assert.deepEqual(filtered.body.discovery, { state: 'filters_empty', eligibleCount: 2, filteredCount: 0 });
+  assert.equal(filtered.body.total, 0);
+  round();
+  const proposal = repos.proposals.forUser(cookies.seekerId, 'c1', ['proposed'])[0];
+  assert.ok(proposal);
+  const offered = await call('/groups/discover/c1', 'seeker');
+  assert.deepEqual(offered.body.groups, []); assert.equal(offered.body.discovery.state, 'offer_active');
+  repos.proposals.respond(proposal.hostUserId, proposal.id, 'accept');
+  repos.proposals.respond(cookies.seekerId, proposal.id, 'accept');
+  assert.equal((await call('/groups/discover/c1', 'seeker')).body.discovery.state, 'membership_confirmed');
+});
+test('discovery reports generic unavailable eligibility without disclosing unpublished or blocked groups', async () => {
+  repos.parties.setStatus('pB', 'cancelled');
+  repos.membership.configure(cookies.hostAId, 'pA', { strangerPlaces: 0 });
+  repos.membership.saveAnswers(cookies.hostAId, 'pA', { about: ['supper'] });
+  repos.membership.publish(cookies.hostAId, 'pA', { connectOpen: true });
+  const full = await call('/groups/discover/c1', 'seeker');
+  assert.deepEqual(full.body.discovery, { state: 'groups_unavailable', eligibleCount: 0, filteredCount: 0 });
+  db.prepare("UPDATE group_settings SET published=0 WHERE party_id='pA'").run();
+  assert.deepEqual((await call('/groups/discover/c1', 'seeker')).body.discovery,
+    { state: 'no_eligible_groups', eligibleCount: 0, filteredCount: 0 });
+  db.prepare("UPDATE group_settings SET published=1 WHERE party_id='pA'").run();
+  repos.users.block(cookies.hostAId, cookies.seekerId);
+  const blocked = await call('/groups/discover/c1', 'seeker');
+  assert.equal(blocked.body.discovery.state, 'no_eligible_groups');
+  assert.ok(!JSON.stringify(blocked.body).includes('blocked'));
+  assert.ok(!JSON.stringify(blocked.body).includes('pA'));
+  db.prepare("UPDATE concerts SET event_date='2020-01-01' WHERE id='c1'").run();
+  assert.equal((await call('/groups/discover/c1', 'seeker')).body.discovery.state, 'participation_unavailable');
+});
+test('the same concert-wide group count can produce different safe personalised results for two accounts', async () => {
+  repos.parties.setStatus('pB', 'cancelled');
+  repos.seekers.create(makeSeeker('other_request', makeUser(cookies.otherId), { spend_band_max: 1 }));
+  const counts = await Promise.all(['seeker', 'other'].map(async who => {
+    const result = await call('/concerts', who);
+    return result.body.concerts.find(concert => concert.id === 'c1').open_parties;
+  }));
+  assert.deepEqual(counts, [1, 1], 'the catalogue count describes the concert, not account-specific suitability');
+  const first = await call('/groups/discover/c1', 'seeker');
+  const second = await call('/groups/discover/c1', 'other');
+  assert.deepEqual(first.body.groups.map(group => group.id), ['pA']);
+  assert.deepEqual(second.body.groups, []);
+  assert.equal(second.body.discovery.state, 'groups_unavailable');
+  assert.equal(second.body.discovery.eligibleCount, 0);
+  const privateResult = JSON.stringify(second.body);
+  for (const forbidden of ['pA', 'hostA', 'unaffordable', 'blocked', 'answers', 'spend_band_max'])
+    assert.ok(!privateResult.includes(forbidden), 'empty results must not disclose excluded identities or private filtering causes');
+});
+test('saved preferences use the authoritative group name off-page and safely retain removable unavailable entries', async () => {
+  repos.parties.setName('pB', 'Midnight Concert Crew'); await pref();
+  assert.deepEqual((await call('/groups/discover/c1?q=not-this-group', 'seeker')).body.groups, []);
+  const saved = (await call('/me/group-preferences/c1', 'seeker')).body.preferences[0];
+  assert.equal(saved.groupName, 'Midnight Concert Crew'); assert.equal(saved.available, true);
+  repos.parties.setName('pB', 'Renamed Concert Crew');
+  assert.equal((await call('/me/group-preferences/c1', 'seeker')).body.preferences[0].groupName, 'Renamed Concert Crew');
+  repos.membership.configure(cookies.hostBId, 'pB', { expectedFriends: 0 });
+  const unavailable = (await call('/me/group-preferences/c1', 'seeker')).body.preferences[0];
+  assert.equal(unavailable.partyId, 'pB'); assert.equal(unavailable.available, false);
+  assert.equal(unavailable.groupName, null); assert.equal(unavailable.hostName, null);
+  assert.equal(unavailable.status, 'unavailable');
+  assert.equal((await pref('pB', 'seeker', 'DELETE')).status, 200);
+  assert.deepEqual((await call('/me/group-preferences/c1', 'seeker')).body.preferences, []);
+  await pref('pA');
+  db.transaction(() => {
+    // A fixture purge must remove the host membership first: production keeps
+    // memberships/history and normally cancels groups instead of hard-deleting.
+    db.prepare("DELETE FROM group_memberships WHERE party_id='pA'").run();
+    db.prepare("DELETE FROM parties WHERE id='pA'").run();
+  })();
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM seeker_party_preferences WHERE party_id='pA'").get().n, 0);
+  assert.deepEqual((await call('/me/group-preferences/c1', 'seeker')).body.preferences, []);
+});
 test('preferences persist, are idempotent, and never reserve capacity or trust submitted identity', async () => {
   assert.equal((await pref()).status, 200);
   assert.equal((await pref()).status, 200);
@@ -460,6 +537,46 @@ test('connections require both groups to publish and opt in, including acceptanc
   repos.membership.publish(cookies.hostAId, 'pA', { connectOpen: false });
   assert.equal((await call(`/group-connections/${connection.id}/respond`, 'hostB', 'POST', { action: 'accept' })).body.error, 'group_not_open_to_connections');
   assert.equal(repos.groups.connections(cookies.hostAId)[0].status, 'pending');
+});
+
+test('connection actionability reflects both hosts and stale requirements without exposing safety details', async () => {
+  const created = await invite();
+  const id = created.body.connection.id;
+  const sender = repos.groups.connections(cookies.hostAId)[0];
+  assert.equal(sender.canAccept, false); assert.equal(sender.canDecline, false);
+  assert.equal(sender.canWithdraw, true); assert.equal(sender.canCoordinate, false);
+  let receiver = repos.groups.connections(cookies.hostBId)[0];
+  assert.equal(receiver.canAccept, true); assert.equal(receiver.canDecline, true);
+  assert.equal(receiver.canWithdraw, false); assert.equal(receiver.unavailableReason, null);
+  db.prepare('UPDATE group_settings SET connect_open=0 WHERE party_id=?').run('pA');
+  receiver = (await call('/me/group-connections', 'hostB')).body.connections[0];
+  assert.equal(receiver.canAccept, false); assert.equal(receiver.canDecline, true);
+  assert.equal(receiver.unavailableReason, 'This invitation is no longer available. The connection requirements have changed.');
+  assert.equal((await call(`/group-connections/${id}/respond`, 'hostB', 'POST', { action: 'accept' })).status, 409);
+  db.prepare('UPDATE group_settings SET connect_open=1 WHERE party_id=?').run('pA');
+  repos.users.block(cookies.hostAId, cookies.hostBId);
+  const blocked = repos.groups.connections(cookies.hostBId)[0];
+  assert.equal(blocked.canAccept, false);
+  assert.equal(blocked.unavailableReason, receiver.unavailableReason);
+  assert.doesNotMatch(JSON.stringify(blocked), /blocked_pair|blocker|blockedUser/);
+  const denied = await call(`/group-connections/${id}/respond`, 'hostB', 'POST', { action: 'accept' });
+  assert.equal(denied.status, 403); assert.equal(denied.body.error, 'connection_unavailable');
+  assert.equal((await call(`/group-connections/${id}/respond`, 'hostB', 'POST', { action: 'decline' })).status, 200);
+});
+
+test('accepted coordination availability reuses room authorization without altering connection or memberships', async () => {
+  const id = (await invite()).body.connection.id;
+  const accepted = await call(`/group-connections/${id}/respond`, 'hostB', 'POST', { action: 'accept' });
+  assert.equal(accepted.body.connection.canCoordinate, true);
+  assert.equal(accepted.body.connection.canAccept, false);
+  assert.equal(accepted.body.connection.canWithdraw, false);
+  const before = db.prepare('SELECT * FROM group_memberships ORDER BY party_id,user_id').all();
+  repos.users.block(cookies.hostAId, cookies.hostBId);
+  const current = repos.groups.connections(cookies.hostBId)[0];
+  assert.equal(current.status, 'accepted'); assert.equal(current.canCoordinate, false);
+  assert.equal(current.unavailableReason, 'Shared coordination is currently unavailable. The current participation or safety settings prevent access.');
+  assert.deepEqual(db.prepare('SELECT * FROM group_memberships ORDER BY party_id,user_id').all(), before);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM connection_channel_members').get().n, 0);
 });
 
 test('supported recommendation reasons retain strongest evidence for repeated concepts', () => {

@@ -12,17 +12,24 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join as joinPath } from 'node:path';
 
 import { createApp } from '../../server/src/app.js';
 import { createTestDb } from '../../server/src/db/connection.js';
 
+const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
 async function fixture(t) {
   const db = createTestDb();
-  const server = createApp({ db }).app.listen(0, '127.0.0.1');
+  const avatarDir = mkdtempSync(joinPath(tmpdir(), 'encore-kaki-chat-avatars-'));
+  const server = createApp({ db, avatarDir }).app.listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   t.after(async () => {
     await new Promise((resolve) => server.close(resolve));
     db.close();
+    rmSync(avatarDir, { recursive: true, force: true });
   });
 
   async function api(path, { method = 'GET', cookie, body } = {}) {
@@ -45,7 +52,7 @@ async function fixture(t) {
   async function user(name) {
     const result = await api('/auth/register', {
       method: 'POST',
-      body: { display_name: name, email: `${name}@example.test`, password: 'test-password' },
+      body: { display_name: name, email: `${name}@example.test`, password: 'test-password', avatar: PNG_1PX },
     });
     assert.equal(result.status, 201, `register ${name}`);
     return { id: result.body.user.id, cookie: result.cookie };

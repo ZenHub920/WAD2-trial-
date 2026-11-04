@@ -35,7 +35,7 @@ function handleError(err, fallback) {
     channel.value = null;
     historyPage.value = null;
     unavailable.value = true;
-    error.value = 'This shared chat is unavailable. You need to be a current member of either connected group.';
+    error.value = 'Shared coordination is currently unavailable. The current participation or safety settings prevent access.';
   } else error.value = fallback;
 }
 async function scrollToEnd() {
@@ -242,6 +242,7 @@ onUnmounted(() => {
       </header>
       <MeetupEntryCard :scope="{ connectionId: id }" label="Meetup planner for both connected groups" />
       <p class="channel-hint">Current members of {{ channel.partyA.name }} and {{ channel.partyB.name }} share this room.</p>
+      <p class="channel-hint connection-next-step">Your groups remain separate. Use this shared chat to say hello or plan an optional meetup together. Both group hosts must approve a shared meetup plan; members can share availability, suggest places and vote.</p>
       <section v-if="showMembers" class="card channel-panel" aria-label="Shared chat members"><h2>Shared chat members</h2><ul class="members"><li v-for="person in channel.members" :key="person.id"><UserAvatar :src="person.avatarUrl" :name="person.displayName" :size="32" /><div><strong>{{ person.displayName }}{{ person.isHost ? ' · Host' : '' }}</strong><small>{{ groupFor(person) }}</small></div></li></ul><p class="channel-hint">The member list updates when either group’s membership changes.</p></section>
       <section v-if="showSettings" class="card channel-panel" aria-label="Shared chat options"><h2>Your chat background</h2><p class="channel-hint">This changes the background for you.</p><div class="swatches"><button v-for="name in backgrounds" :key="name" type="button" class="swatch" :data-bg="name" :aria-pressed="background === name" :disabled="Boolean(backgroundPending)" @click="chooseBackground(name)"><LoadingSpinner v-if="backgroundPending === name" />{{ name }}</button></div><RouterLink to="/profile#notifications">Message and meetup notification preferences</RouterLink></section>
       <div ref="list" class="stream" :data-bg="background" aria-label="Shared chat messages" tabindex="0">
@@ -254,7 +255,7 @@ onUnmounted(() => {
       </div>
       <form class="composer" @submit.prevent="send"><div v-if="editing || replyingTo" class="composer-context"><span>{{ editing ? 'Editing your message' : `Replying to ${replyingTo.sender.displayName}` }}<small>{{ editing?.body ?? replyingTo?.body }}</small></span><button type="button" :disabled="sending" aria-label="Cancel editing or reply" @click="cancelComposer">×</button></div><div class="composer-row"><input ref="composer" v-model="draft" :disabled="sending" maxlength="2000" aria-label="Message both groups" placeholder="Message both groups…" /><button type="submit" class="btn btn--primary" :disabled="sending || !draft.trim()"><LoadingSpinner v-if="sending" />{{ editing ? 'Save edit' : 'Send' }}</button></div></form>
     </template>
-    <div v-else-if="!loading" class="channel-panel"><h1>Shared chat unavailable</h1><RouterLink :to="'/messages'" class="btn btn--ghost">Back to group messages</RouterLink></div>
+    <div v-else-if="!loading" class="channel-panel"><h1>Shared coordination is currently unavailable.</h1><p>Return to your available conversations or group workspace. Your existing groups have not been disconnected.</p><RouterLink to="/messages" class="btn btn--ghost">Back to group messages</RouterLink><RouterLink to="/groups/connect" class="btn btn--ghost">My groups</RouterLink></div>
     <button v-if="!loading && error && !unavailable" type="button" class="btn btn--ghost" @click="load({ quiet: Boolean(channel) })">Refresh chat</button>
     <ConfirmDialog :open="Boolean(deleting)" title="Delete this message?" body="Both groups will see that the message was removed." confirm-label="Delete message" cancel-label="Keep message" danger :busy="deleteBusy" @confirm="removeMessage" @cancel="deleting = null" />
   </div>

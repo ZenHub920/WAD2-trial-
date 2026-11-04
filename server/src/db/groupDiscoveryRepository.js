@@ -19,6 +19,14 @@ export function createGroupDiscoveryRepo(db, repos) {
   const isTicket = id => Boolean(db.prepare('SELECT 1 FROM tickets WHERE source_party_id = ?').get(id));
   const blocked = (a, b, blocklist) =>
     blocklist.has(`${a}:${b}`) || blocklist.has(`${b}:${a}`);
+  // The empty-state summary must not reveal unpublished or blocked groups.
+  const visibleTo = (userId, party, blocklist = repos.users.blocklist()) => {
+    if (!party || !['open', 'matched'].includes(party.status) || isTicket(party.id)
+      || party.host_user_id === userId || !repos.recommendations.visible(party)
+      || blocked(userId, party.host_user_id, blocklist)) return false;
+    return !db.prepare("SELECT user_id FROM group_memberships WHERE party_id=? AND status='active'")
+      .all(party.id).some(member => blocked(userId, member.user_id, blocklist));
+  };
   const card = party => {
     const concert = repos.concerts.findById(party.concert_id);
     return {
@@ -65,9 +73,25 @@ export function createGroupDiscoveryRepo(db, repos) {
     const a = repos.parties.findById(row.party_a_id);
     const b = repos.parties.findById(row.party_b_id);
     const destination = row.initiator_party_id === a.id ? b : a;
+    const initiator = destination === a ? b : a;
+    const incoming = destination.host_user_id === userId;
+    const canDecline = row.status === 'pending' && incoming;
+    const canWithdraw = row.status === 'pending' && !incoming
+      && initiator.host_user_id === userId;
+    const pairAvailable = row.status === 'pending'
+      && !validConnectionPair(destination.host_user_id, destination.id, initiator.id).error;
+    const canAccept = canDecline && pairAvailable;
+    // Reuse the room's read-only authorization check. Neither existing room
+    // state nor the presence of this invitation grants coordination access.
+    const canCoordinate = row.status === 'accepted' && repos.connectionChannels.canAccess(userId, row.id);
+    const unavailableReason = row.status === 'pending' && !pairAvailable
+      ? 'This invitation is no longer available. The connection requirements have changed.'
+      : row.status === 'accepted' && !canCoordinate
+        ? 'Shared coordination is currently unavailable. The current participation or safety settings prevent access.' : null;
     return { id: row.id, status: row.status, initiatorPartyId: row.initiator_party_id,
       createdAt: row.created_at, respondedAt: row.responded_at,
-      incoming: destination.host_user_id === userId, partyA: card(a), partyB: card(b) };
+      incoming, canAccept, canDecline, canWithdraw, canCoordinate, unavailableReason,
+      partyA: card(a), partyB: card(b) };
   };
   return {
     seeker,
@@ -94,12 +118,23 @@ export function createGroupDiscoveryRepo(db, repos) {
         WHERE s.concert_id = ?`).all(concertId).map(r => `${r.seeker_request_id}|${r.party_id}`));
     },
     preferences(userId, concertId) {
-      return db.prepare(`SELECT pref.party_id, pref.created_at, p.status, p.section, u.display_name AS host_name
+      const blocklist = repos.users.blocklist();
+      return db.prepare(`SELECT pref.party_id, pref.created_at, p.status, p.section, p.name, u.display_name AS host_name
         FROM seeker_party_preferences pref JOIN seeker_requests s ON s.id = pref.seeker_request_id
         JOIN parties p ON p.id = pref.party_id JOIN users u ON u.id = p.host_user_id
         WHERE s.user_id = ? AND s.concert_id = ? ORDER BY pref.created_at, pref.party_id`)
-        .all(userId, concertId).map(r => ({ partyId: r.party_id, hostName: r.host_name,
-          section: r.section, status: r.status, createdAt: r.created_at }));
+        .all(userId, concertId).map(r => {
+          const party = repos.parties.findById(r.party_id), readable = visibleTo(userId, party, blocklist);
+          return { partyId: r.party_id, groupName: readable ? r.name : null,
+            hostName: readable ? r.host_name : null, section: readable ? r.section : null,
+            status: readable ? r.status : 'unavailable', available: readable && party.queueable_places > 0,
+            createdAt: r.created_at };
+        });
+    },
+    hasVisibleGroups(userId, concertId) {
+      const blocklist = repos.users.blocklist();
+      return db.prepare("SELECT id FROM parties WHERE concert_id=? AND status IN('open','matched')")
+        .all(concertId).some(row => visibleTo(userId, repos.parties.findById(row.id), blocklist));
     },
     discover(userId, concertId) {
       if (coordinationError(concertId)) return [];
@@ -180,7 +215,11 @@ export function createGroupDiscoveryRepo(db, repos) {
         .filter(p => !validConnectionPair(userId, fromId, p.id).error).map(p => {
           const [a, b] = [fromId, p.id].sort();
           const invitation = db.prepare('SELECT id, status FROM group_connections WHERE party_a_id = ? AND party_b_id = ?').get(a, b);
-          return { ...card(p), invitation: invitation ?? null };
+          const details = invitation ? connectionDetails(connectionRow(invitation.id), userId) : null;
+          // Candidate cards already carry group identity; keep only invitation
+          // context and capabilities rather than duplicating both group cards.
+          const { partyA, partyB, ...summary } = details ?? {};
+          return { ...card(p), invitation: details ? summary : null };
         });
     },
     invite: db.transaction((userId, fromId, toId) => {

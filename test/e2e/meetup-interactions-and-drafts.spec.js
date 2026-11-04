@@ -169,8 +169,8 @@ test('planner drafts: stages, failed saves, internal navigation, browser Back an
     const { meetup } = await api(host.context, '/meetups', 'POST', { ...shortWindow, partyId: data.parties.a });
     await host.page.goto('/meetups');
     await host.page.getByRole('link', { name: 'Share availability', exact: true }).click();
-    // Current teammate step gates require saved times before cross-stage
-    // editing. Retain one saved slot, then edit a different draft.
+    // Retain one saved slot, then edit a different draft; stage navigation must
+    // neither save the draft nor discard the earlier contribution.
     await api(host.context, `/meetups/${meetup.id}/availability`, 'PUT', { windows: [{ startsAt: '2030-01-01T17:00:00+08:00', endsAt: shortWindow.endsAt }] });
     const { place } = await api(host.context, `/meetups/${meetup.id}/places`, 'POST', { label: 'Saved entrance', latitude: 1.3, longitude: 103.85 });
     await api(host.context, `/meetups/${meetup.id}/vote`, 'PUT', { placeId: place.id });
@@ -180,11 +180,11 @@ test('planner drafts: stages, failed saves, internal navigation, browser Back an
     const cell = host.page.locator('[data-availability-start]').first();
     const dialog = host.page.getByRole('dialog', { name: 'Leave with unsaved changes?', exact: true });
     await cell.click();
-    await host.page.getByRole('button', { name: /Next: choose a place/ }).click();
+    await host.page.getByRole('button', { name: /Next: suggest places/ }).click();
     await expect(dialog).toHaveCount(0);
     await expect(host.page.locator('#meetup-places')).toContainText('Recommendations use saved availability');
-    await host.page.getByRole('tab', { name: /Agree on the plan/ }).click();
-    await host.page.getByRole('tab', { name: /Find a time/ }).click();
+    await host.page.getByRole('tab', { name: /Finalise meetup/ }).click();
+    await host.page.getByRole('tab', { name: /Share availability/ }).click();
     await expect(cell).toHaveAttribute('aria-pressed', 'true');
     expect((await api(host.context, `/meetups/${meetup.id}`)).meetup.availability).toEqual(originalAvailability);
 
@@ -202,7 +202,7 @@ test('planner drafts: stages, failed saves, internal navigation, browser Back an
     releaseSave();
     await expect(host.page.locator('.meetup-save-state')).toContainText('Availability was not saved. Your draft is kept.');
     await expect(cell).toHaveAttribute('aria-pressed', 'true');
-    await expect(host.page.getByText('Your availability and journey have been saved.', { exact: true })).toHaveCount(0);
+    await expect(host.page.getByText('Your availability has been saved.', { exact: true })).toHaveCount(0);
     await capture(host.page, 'availability-failed-dark-390');
     await host.page.unroute(savePath);
 
@@ -242,7 +242,7 @@ test('planner drafts: stages, failed saves, internal navigation, browser Back an
     await expect(cell).toHaveAttribute('aria-pressed', 'true');
 
     await host.page.getByRole('button', { name: 'Save my times', exact: true }).click();
-    await expect(host.page.getByText('Your availability and journey have been saved.', { exact: true })).toBeVisible();
+    await expect(host.page.getByText('Your availability has been saved.', { exact: true })).toBeVisible();
     await expect(host.page.locator('.meetup-availability__summary')).toContainText('Your saved availability');
     expect((await api(host.context, `/meetups/${meetup.id}`)).meetup.availability).toHaveLength(2);
     await capture(host.page, 'availability-saved-dark-390');
@@ -251,7 +251,7 @@ test('planner drafts: stages, failed saves, internal navigation, browser Back an
     await expect(dialog).toHaveCount(0);
 
     await host.page.locator('.meetup-overview-plan').filter({ has: host.page.getByRole('heading', { name: shortWindow.title, exact: true }) }).getByRole('link').click();
-    await host.page.getByRole('tab', { name: /Find a time/ }).click();
+    await host.page.getByRole('tab', { name: /Share availability/ }).click();
     await cell.click();
     await host.page.getByRole('link', { name: 'Back to My meetups', exact: true }).click();
     await expect(dialog).toBeVisible();

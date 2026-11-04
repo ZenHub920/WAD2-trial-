@@ -45,19 +45,21 @@ describe('concert participation and historical access consistency', () => {
     api.concert.mockResolvedValue(detail('old-show', '2026-11-03'));
     api.participation.mockResolvedValue({ participation: { sectionPref: 'pit', arrivalPref: 'doors' } });
     api.myProposals.mockResolvedValue({ proposals: [{ id: 'historic-result', concertId: 'old-show', status: 'confirmed' }] });
-    const { wrapper } = await mountPage(ConcertView, { path: '/concerts/old-show', props: { id: 'old-show' }, stubs });
+    const { wrapper, router } = await mountPage(ConcertView, { path: '/concerts/old-show', props: { id: 'old-show' }, stubs });
     expect(wrapper.get('h1').text()).toBe('old-show artist');
     expect(wrapper.text()).toContain('This concert has finished');
     expect(wrapper.text()).toContain('Your participation is saved as part of this concert');
     expect(wrapper.get('[data-test="proposal"]').text()).toBe('historic-result');
-    expect(wrapper.find('a[href="/groups/connect?concertId=old-show"]').exists()).toBe(true);
-    expect(wrapper.find('a[href="/messages"]').exists()).toBe(true);
+    const historyLink = wrapper.get('a[href="/messages"]');
+    expect(historyLink.text()).toBe('Existing conversations');
     expect(field(wrapper, 'Preferred section').element.disabled).toBe(true);
     expect(wrapper.findAll('button').some(item => ['Join companion finder', 'Save preferences'].includes(item.text()))).toBe(false);
     expect(wrapper.findAll('a').some(item => ['Join a group', 'Create a group', 'Find my group', 'Browse companions'].includes(item.text()))).toBe(false);
     await wrapper.get('form').trigger('submit'); await flushPromises();
     expect(api.joinConcert).not.toHaveBeenCalled();
     expect(button(wrapper, 'Leave companion finder').element.disabled).toBe(false);
+    await historyLink.trigger('click'); await flushPromises();
+    expect(router.currentRoute.value.path).toBe('/messages');
   });
 
   it('does not advertise automatic matching on a historical concert with no previous proposals', async () => {
@@ -70,13 +72,21 @@ describe('concert participation and historical access consistency', () => {
 
   it('retains same-day coordination after verified start while preventing late group creation', async () => {
     api.concert.mockResolvedValue(detail('tonight', '2026-11-04', { event_time: '08:00:00' }));
-    const { wrapper } = await mountPage(ConcertView, { path: '/concerts/tonight', props: { id: 'tonight' }, stubs });
+    const { wrapper, router } = await mountPage(ConcertView, { path: '/concerts/tonight', props: { id: 'tonight' }, stubs });
     expect(button(wrapper, 'Join companion finder').element.disabled).toBe(false);
-    expect(wrapper.findAll('a').some(item => item.text() === 'Join a group')).toBe(true);
+    const groupLink = wrapper.get('.my-result a.btn');
+    expect(groupLink.text()).toBe('Find my group');
+    expect(groupLink.attributes('href')).toBe('/groups?concertId=tonight&mode=algorithm');
+    expect(wrapper.get('.my-result').text()).toContain('then press Find a match to search');
+    expect(wrapper.get('.my-result').text()).toContain('you and the host');
+    expect(wrapper.text().toLowerCase()).not.toContain('operator');
     expect(wrapper.findAll('a').some(item => item.text() === 'Create a group')).toBe(false);
     expect(wrapper.text()).not.toContain('This concert has finished');
     await wrapper.get('form').trigger('submit'); await flushPromises();
     expect(api.joinConcert).toHaveBeenCalledWith('tonight', { sectionPref: 'category_1', arrivalPref: 'doors' });
+    await groupLink.trigger('click'); await flushPromises();
+    expect(router.currentRoute.value.path).toBe('/groups');
+    expect(router.currentRoute.value.query).toEqual({ concertId: 'tonight', mode: 'algorithm' });
   });
 
   it('asks for a profile picture before joining the companion finder', async () => {

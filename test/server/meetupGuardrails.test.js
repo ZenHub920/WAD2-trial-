@@ -214,7 +214,7 @@ test('connected groups and mutual Kaki pairs retain both-organizer approval requ
   for (const [scope, first, second] of [[{ connectionId }, 'host2', 'host'], [{ kakiConversationId }, 'kakiA', 'kakiB']]) {
     assert.equal(repos.meetups.context(second, scope).capabilities.canCreate, true);
     const id = create(scope, first), placeId = repos.meetups.place(second, id, location).id;
-    const proposal = repos.meetups.propose(first, id, { version: repos.meetups.access(first, id).version, startsAt, placeId });
+    const proposal = repos.meetups.propose(first, id, { version: repos.meetups.access(first, id).version, startsAt, placeId, acknowledgeNoAvailability: true });
     assert.equal(repos.meetups.approve(first, id, proposal.version).confirmed, false);
     assert.equal(repos.meetups.detail(second, id).status, 'proposed');
     assert.equal(repos.meetups.approve(second, id, proposal.version).confirmed, true);
@@ -246,7 +246,7 @@ test('HTTP context, creation and reopen enforce permissions even when browser va
   assert.equal(invalid.status, 400); assert.equal((await invalid.json()).error, 'meetup_must_end_before_concert');
   const id = (await (await call('/meetups', 'host', input)).json()).meetup.id;
   const placeId = repos.meetups.place('friend', id, location).id;
-  const proposal = repos.meetups.propose('host', id, { version: repos.meetups.access('host', id).version, placeId, startsAt });
+  const proposal = repos.meetups.propose('host', id, { version: repos.meetups.access('host', id).version, placeId, startsAt, acknowledgeNoAvailability: true });
   assert.equal((await call(`/meetups/${id}/reopen`, 'friend', { version: proposal.version })).status, 403);
   assert.equal((await call(`/meetups/${id}/reopen`, 'host', { version: proposal.version })).status, 200);
 });

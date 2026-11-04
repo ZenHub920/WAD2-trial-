@@ -231,6 +231,7 @@ export function createRoutes({
   router.get('/me/concerts/:id/result', requireUser, matches.myResult);
   router.get('/me/concerts/:id/matching', requireUser, matches.managedState);
   router.post('/me/concerts/:id/matching', requireUser, matches.matchManaged);
+  router.post('/me/concerts/:id/matching/find', requireUser, matches.findManaged);
   router.delete('/me/concerts/:id/matching', requireUser, matches.leaveManaged);
   router.get('/rounds/:id', requireOperator, matches.round);
   router.get('/solvers', matches.solvers);

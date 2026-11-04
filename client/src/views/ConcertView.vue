@@ -299,7 +299,7 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
               <dd class="tabular key-figure">{{ requests.length }}</dd>
             </div>
           </dl>
-          <p class="group-muted">Group places are not tickets. Open group requests are considered in matching rounds.</p>
+          <p class="group-muted">Group places are not tickets. Seekers start automatic matching by pressing Find a match.</p>
 
           <RouterLink
             v-if="concert.latestRound && sessionReady && currentUser?.isOperator"
@@ -345,7 +345,7 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
         </div>
         <div v-else-if="!myProposals.length" class="my-result__empty">
           <h3>{{ canCoordinate ? 'No group offer yet' : 'No matching history' }}</h3>
-          <p v-if="canCoordinate">Join matching and we’ll offer you a group. It’s confirmed once <strong>you and the host</strong> both approve.</p>
+          <p v-if="canCoordinate">Join the match list, then press Find a match to search. Any group offer is confirmed once <strong>you and the host</strong> both approve.</p>
           <p v-else>There are no previous group offers for this concert. Existing conversations and group history remain available.</p>
           <RouterLink v-if="canCoordinate" :to="{ path: '/groups', query: { concertId: id, mode: 'algorithm' } }" class="btn btn--primary">Find my group</RouterLink>
         </div>

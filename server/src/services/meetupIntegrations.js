@@ -87,7 +87,7 @@ export function createMeetupIntegrations({ db, repos, fetchImpl = globalThis.fet
       const context = meetupRankingContext(options, { routeTimes: routeRanking });
       const shortlistedPlaces = new Set(options.map(option => option.placeId)).size;
       const scope = `Compared a shortlist of ${options.length} time/place options across ${shortlistedPlaces} of ${byPlace.length} eligible places; this is not a global route optimization.`;
-      return { status: 'available', version: input.version, ...context, options, eligiblePlaces: byPlace.length, eligibleOptions: baseline.length,
+      return { status: 'available', version: input.version, participationRevision: input.participationRevision, ...context, options, eligiblePlaces: byPlace.length, eligibleOptions: baseline.length,
         shortlistedPlaces, routesRequested: jobIndex,
         message: `${context.rankingMessage} ${scope} ${routeRanking
           ? 'Routes use each supplied car or public-transport method. Transit schedules use a fixed departure one hour before the meeting; driving estimates do not predict future traffic.'

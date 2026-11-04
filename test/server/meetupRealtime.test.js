@@ -181,7 +181,7 @@ test('a sole hosted-group organizer explicitly confirms on proposal, preserving 
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM meetup_approvals WHERE meetup_id=?').get(id).n, 1);
   assert.equal((await call(`${path}/availability`, 'friendA', 'PUT', { windows: [], version: fresh.version })).status, 200);
   const nextVersion = repos.meetups.access('hostA', id).version;
-  const next = await call(`${path}/propose`, 'hostA', 'POST', { ...input, version: nextVersion });
+  const next = await call(`${path}/propose`, 'hostA', 'POST', { ...input, version: nextVersion, acknowledgeNoAvailability: true });
   assert.equal(next.body.proposal.confirmed, true);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM meetup_approvals WHERE meetup_id=?').get(id).n, 2);
   assert.equal((await call(`${path}/approve`, 'hostA', 'POST', { version })).status, 409);
@@ -193,7 +193,7 @@ test('sole-organizer proposal rolls back its approval, selected plan, version an
   const placeId = repos.meetups.place('friendA', id, { label: 'Public entrance', latitude: 1.31, longitude: 103.86 }).id;
   const before = repos.meetups.detail('hostA', id);
   db.exec("CREATE TRIGGER fail_solo_confirmation BEFORE INSERT ON notifications WHEN NEW.event_key LIKE '%:confirmed:%' BEGIN SELECT RAISE(ABORT,'confirmation_notification_failed'); END");
-  assert.throws(() => repos.meetups.propose('hostA', id, { version: before.version, startsAt, placeId }), /confirmation_notification_failed/);
+  assert.throws(() => repos.meetups.propose('hostA', id, { version: before.version, startsAt, placeId, acknowledgeNoAvailability: true }), /confirmation_notification_failed/);
   assert.deepEqual(repos.meetups.detail('hostA', id), before);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM meetup_approvals WHERE meetup_id=?').get(id).n, 0);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM notifications WHERE event_key LIKE ?").get(`meetup:${id}:confirmed:%`).n, 0);
@@ -208,7 +208,7 @@ test('connected-group proposal withdrawals preserve contributions, invalidate pa
   assert.equal((await call(`${path}/vote`, 'friendA', 'PUT', { placeId })).status, 200);
   const propose = async () => {
     const version = repos.meetups.access('hostA', id).version;
-    const result = await call(`${path}/propose`, 'hostA', 'POST', { version, startsAt, placeId });
+    const result = await call(`${path}/propose`, 'hostA', 'POST', { version, startsAt, placeId, acknowledgeNoAvailability: true });
     assert.equal(result.status, 200); assert.equal(result.body.proposal.confirmed, false);
     return result.body.proposal.version;
   };
@@ -246,7 +246,7 @@ test('mutual Kaki partners still each approve their own authenticated session an
   const path = `/meetups/${id}`;
   const placeId = (await call(`${path}/places`, 'kakiB', 'POST', { label: 'Pair entrance', latitude: 1.31, longitude: 103.86 })).body.place.id;
   const version = repos.meetups.access('kakiA', id).version;
-  const proposed = await call(`${path}/propose`, 'kakiA', 'POST', { version, startsAt, placeId });
+  const proposed = await call(`${path}/propose`, 'kakiA', 'POST', { version, startsAt, placeId, acknowledgeNoAvailability: true });
   assert.equal(proposed.body.proposal.confirmed, false);
   const revision = proposed.body.proposal.version;
   const beforeApproval = (await call(path, 'kakiB')).body.meetup;

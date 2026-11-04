@@ -75,6 +75,9 @@ function restart() {
 }
 onUnmounted(() => { alive = false; epoch++; cancelAnimation(); clearPointer(); emit('pending-change', false); });
 function stageEntered(element) {
+  // A transition may finish after someone has already focused an action or
+  // opened its review. Never take that newer focus away from them.
+  if (pending.value || (document.activeElement !== document.body && document.activeElement?.isConnected)) return;
   element.querySelector('.comparison-deck__candidate, .comparison-deck__instructions-title')?.focus({ preventScroll: true });
 }
 async function restoreCardFocus(slot, token) {
@@ -131,13 +134,15 @@ async function request(slot) {
   const group = state.value.slots[slot];
   if (!group || !canRequest(group)) return;
   const token = epoch;
+  const opener = document.activeElement;
+  let cancelled = false;
   pending.value = true;
   clearPointer();
   announcement.value = `Review your request to ${groupName(group)}.`;
   try {
     const saved = await props.applyGroup(group);
     if (!alive || token !== epoch) return;
-    if (saved === 'cancelled') { announcement.value = `No request sent to ${groupName(group)}.`; return; }
+    if (saved === 'cancelled') { cancelled = true; announcement.value = `No request sent to ${groupName(group)}.`; return; }
     if (saved !== true) {
       announcement.value = `Your request to ${groupName(group)} was not sent. Review the message above and try again.`;
       return;
@@ -148,7 +153,17 @@ async function request(slot) {
   } catch {
     if (alive && token === epoch) announcement.value = 'Could not send your application. Your group card has been kept. Please try again.';
   } finally {
-    if (alive && token === epoch) { pending.value = false; leaving.value = null; }
+    if (alive && token === epoch) {
+      pending.value = false; leaving.value = null;
+      if (cancelled) {
+        // Disabling a pending button blurs it in browsers. Restore the
+        // original control only after this component has enabled it again.
+        await nextTick();
+        const active = document.activeElement;
+        if (alive && token === epoch && opener?.isConnected && !opener.disabled
+          && (active === document.body || deckElement.value?.contains(active) || active?.closest('[role="dialog"]'))) opener.focus({ preventScroll: true });
+      }
+    }
   }
 }
 

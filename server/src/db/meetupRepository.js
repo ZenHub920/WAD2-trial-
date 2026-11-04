@@ -4,6 +4,7 @@ import { meetupRankingContext, rankMeetupOptions, SLOT_MS } from "../services/me
 import { meetupDatePolicy, parseMeetupTimestamp } from '../../../shared/meetupDates.mjs';
 import { meetupActionError, meetupCapabilities, requiredMeetupApprovers } from '../services/meetupPolicy.js';
 import { normalizeMeetupAvailability, normalizeMeetupPlace, normalizeMeetupTitle, requireMeetupWindow } from '../services/meetupValidation.js';
+import { migrateMeetupParticipation } from './meetupParticipationMigrations.js';
 export { coordinates } from '../services/meetupValidation.js';
 export function migrateMeetups(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS meetups(
@@ -31,6 +32,7 @@ export function migrateMeetups(db) {
   CREATE INDEX IF NOT EXISTS idx_meetup_kaki ON meetups(kaki_conversation_id);`);
   if (!db.prepare("PRAGMA table_info(meetup_availability)").all().some((column) => column.name === "travel_mode"))
     db.exec("ALTER TABLE meetup_availability ADD COLUMN travel_mode TEXT NOT NULL DEFAULT 'transit' CHECK(travel_mode IN ('transit','drive'))");
+  migrateMeetupParticipation(db);
 }
 const timestamp = parseMeetupTimestamp;
 const scopeFields = { partyId: 'party_id', connectionId: 'connection_id', kakiConversationId: 'kaki_conversation_id' };
@@ -208,6 +210,39 @@ export function createMeetupRepo(db, repos) {
       scopeLabel: `Kaki conversation with ${conversation.user_a_id === user ? conversation.b : conversation.a}`,
       returnPath: `/kaki/chat/${encodeURIComponent(m.kaki_conversation_id)}` };
   };
+  const participationRevision = (m, ids = participants(m)) => createHash('sha256')
+    .update(JSON.stringify([m.id, [...ids].sort()])).digest('hex');
+  const responseSummary = (m, ids, user) => {
+    const available = new Set(db.prepare('SELECT DISTINCT user_id FROM meetup_availability WHERE meetup_id=?')
+      .all(m.id).map(row => row.user_id));
+    const responses = new Map(db.prepare('SELECT user_id,status FROM meetup_availability_responses WHERE meetup_id=?')
+      .all(m.id).map(row => [row.user_id, row.status]));
+    const statusOf = id => responses.get(id) ?? (available.has(id) ? 'available' : 'unanswered');
+    const availabilityResponses = { respondedCount: 0, availableCount: 0, unavailableCount: 0, unansweredCount: 0 };
+    for (const id of ids) {
+      const status = statusOf(id);
+      availabilityResponses[`${status}Count`]++;
+      if (status !== 'unanswered') availabilityResponses.respondedCount++;
+    }
+    return { availabilityResponse: statusOf(user), hasResponded: statusOf(user) !== 'unanswered', availabilityResponses,
+      hasAvailability: available.has(user), availabilityParticipantCount: ids.filter(id => available.has(id)).length };
+  };
+  const rememberConfirmation = (m, version) => db.prepare(`INSERT INTO meetup_confirmation_context(meetup_id,version,confirmed_at,participant_ids_json)
+    VALUES(?,?,?,?) ON CONFLICT(meetup_id) DO UPDATE SET version=excluded.version,confirmed_at=excluded.confirmed_at,
+    participant_ids_json=excluded.participant_ids_json`).run(m.id, version, Date.now(), JSON.stringify(participants(m)));
+  const confirmationContext = (m, user) => {
+    if (m.status !== 'confirmed') return null;
+    const context = db.prepare('SELECT * FROM meetup_confirmation_context WHERE meetup_id=? AND version=?').get(m.id, m.version);
+    if (!context) return null; // The confirmation time of legacy plans is unknown.
+    let joinedAfter = !JSON.parse(context.participant_ids_json).includes(user);
+    if (!joinedAfter && !m.kaki_conversation_id) {
+      const parties = m.party_id ? [m.party_id] : Object.values(db.prepare('SELECT party_a_id,party_b_id FROM group_connections WHERE id=?').get(m.connection_id));
+      const memberships = db.prepare(`SELECT joined_at FROM group_memberships WHERE user_id=? AND status='active'
+        AND party_id IN(SELECT value FROM json_each(?))`).all(user, JSON.stringify(parties));
+      joinedAfter = memberships.some(row => Date.parse(`${row.joined_at.replace(' ', 'T')}Z`) > context.confirmed_at);
+    }
+    return { confirmedAt: context.confirmed_at, confirmedBeforeJoined: joinedAfter };
+  };
   const currentApprovals = m => {
     const requiredApprovers = approvers(m);
     const approvals = db.prepare('SELECT user_id FROM meetup_approvals WHERE meetup_id=? AND version=?')
@@ -221,9 +256,7 @@ export function createMeetupRepo(db, repos) {
   // details and the caller's own participation/approval state.
   const summary = (m, user) => {
     const ids = participants(m), { requiredApprovers, approvals } = currentApprovals(m);
-    const availabilityParticipantCount = db.prepare(`SELECT COUNT(DISTINCT user_id) AS n FROM meetup_availability
-      WHERE meetup_id=? AND user_id IN(SELECT value FROM json_each(?))`).get(m.id, JSON.stringify(ids)).n;
-    const hasAvailability = Boolean(db.prepare('SELECT 1 FROM meetup_availability WHERE meetup_id=? AND user_id=? LIMIT 1').get(m.id, user));
+    const response = responseSummary(m, ids, user);
     const hasApproved = approvals.includes(user);
     const permissions = capabilities(m, user);
     const selectedPlace = m.selected_place_id ? db.prepare('SELECT id,label FROM meetup_places WHERE id=? AND meetup_id=?')
@@ -232,11 +265,13 @@ export function createMeetupRepo(db, repos) {
       id: m.id, title: m.title, status: m.status, version: m.version,
       startsAt: m.starts_at, endsAt: m.ends_at,
       ...scopeMetadata(m, user), concert: concertFor(m),
-      participantCount: ids.length, availabilityParticipantCount, hasAvailability,
+      participantCount: ids.length, ...response, confirmationContext: confirmationContext(m, user),
       selectedStart: m.selected_start, selectedPlace,
       requiredApprovers, approvals, approvalCount: approvals.length, requiredApprovalCount: requiredApprovers.length, hasApproved,
       capabilities: { ...permissions, canApprove: permissions.canApprove && !hasApproved },
-      nextStage: m.status !== 'planning' ? 'review' : hasAvailability ? 'places' : 'availability',
+      nextStage: m.status !== 'planning' || permissions.canPropose && response.availabilityParticipantCount > 0
+        && Boolean(db.prepare('SELECT 1 FROM meetup_places WHERE meetup_id=? LIMIT 1').get(m.id))
+        ? 'review' : response.hasResponded ? 'places' : 'availability',
       isHistorical: isHistorical(m),
     };
   };
@@ -280,7 +315,7 @@ export function createMeetupRepo(db, repos) {
       return {
         ...m,
         participantCount: ids.length,
-        participantIds: [...ids].sort(),
+        participantIds: [...ids].sort(), participationRevision: participationRevision(m, ids),
         ...planningData(id, ids),
       };
     },
@@ -359,6 +394,8 @@ export function createMeetupRepo(db, repos) {
         policy: meetupDatePolicy(concertFor(m)),
         capabilities: { ...permissions, canApprove: permissions.canApprove && !hasApproved },
         participantCount: ids.length,
+        ...responseSummary(m, ids, user), participationRevision: participationRevision(m, ids),
+        confirmationContext: confirmationContext(m, user),
         requiredApprovers, approvals, hasApproved,
         places: places.map(place => ({ ...place,
           canEdit: permissions.canContribute && place.proposed_by === user,
@@ -389,14 +426,22 @@ export function createMeetupRepo(db, repos) {
           .all(id),
       };
     },
-    availability: db.transaction((user, id, input, expectedVersion) => {
+    availability: db.transaction((user, id, input, expectedVersion, responseStatus) => {
       const m = access(user, id);
       checkVersion(m, expectedVersion);
       enforcePolicy('retryContribution', m);
       const rows = normalizeMeetupAvailability(input, m.starts_at, m.ends_at);
+      const status = responseStatus === undefined ? rows.length ? 'available' : 'unanswered' : responseStatus;
+      if (!['available', 'unavailable', 'unanswered'].includes(status) || (status === 'available') !== Boolean(rows.length))
+        throw communityError('invalid_availability_response', 400);
+      const savedStatus = db.prepare('SELECT status FROM meetup_availability_responses WHERE meetup_id=? AND user_id=?').get(id, user)?.status;
       const saved = db.prepare('SELECT starts_at AS start,ends_at AS end,latitude,longitude,label,travel_mode AS travelMode FROM meetup_availability WHERE meetup_id=? AND user_id=? ORDER BY starts_at').all(id, user);
-      if (JSON.stringify(rows) === JSON.stringify(saved)) return { saved: true, unchanged: true };
+      if (JSON.stringify(rows) === JSON.stringify(saved) && status === (savedStatus ?? (saved.length ? 'available' : 'unanswered')))
+        return { saved: true, unchanged: true, version: m.version, responseStatus: status };
       revision(m, user, "availability");
+      db.prepare(`INSERT INTO meetup_availability_responses(meetup_id,user_id,status,responded_at) VALUES(?,?,?,?)
+        ON CONFLICT(meetup_id,user_id) DO UPDATE SET status=excluded.status,responded_at=excluded.responded_at`)
+        .run(id, user, status, status === 'unanswered' ? null : Date.now());
       db.prepare(
         "DELETE FROM meetup_availability WHERE meetup_id=? AND user_id=?",
       ).run(id, user);
@@ -412,7 +457,7 @@ export function createMeetupRepo(db, repos) {
           r.label,
           r.travelMode,
         );
-      return { saved: true };
+      return { saved: true, version: m.version + 1, responseStatus: status };
     }).immediate,
     place: db.transaction((user, id, input = {}) => {
       const m = access(user, id);
@@ -439,7 +484,7 @@ export function createMeetupRepo(db, repos) {
         place.longitude,
         place.sheltered,
       );
-      return { id: placeId };
+      return { id: placeId, version: m.version + 1 };
     }).immediate,
     vote: db.transaction((user, id, place, expectedVersion) => {
       const m = access(user, id);
@@ -515,6 +560,11 @@ export function createMeetupRepo(db, repos) {
       organizer(m, user);
       if (m.version !== input.version)
         throw communityError("stale_meetup_version");
+      const ids = participants(m);
+      if (input.participationRevision !== undefined && input.participationRevision !== participationRevision(m, ids))
+        throw communityError('stale_meetup_membership');
+      if (input.acknowledgeNoAvailability !== undefined && typeof input.acknowledgeNoAvailability !== 'boolean')
+        throw communityError('invalid_meetup_acknowledgement', 400);
       const start = timestamp(input.startsAt);
       if (
         !Number.isFinite(start) ||
@@ -529,6 +579,11 @@ export function createMeetupRepo(db, repos) {
         throw communityError("invalid_meetup_choice", 400);
       writable(m);
       requireMeetupWindow(input.startsAt, new Date(start + SLOT_MS).toISOString(), concertFor(m));
+      const availableCount = db.prepare(`SELECT COUNT(DISTINCT user_id) AS n FROM meetup_availability
+        WHERE meetup_id=? AND starts_at<=? AND ends_at>=? AND user_id IN(SELECT value FROM json_each(?))`)
+        .get(id, start, start + SLOT_MS, JSON.stringify(ids)).n;
+      if (!availableCount && input.acknowledgeNoAvailability !== true)
+        throw communityError('meetup_no_availability_acknowledgement_required', 400);
       const required = approvers(m), confirmed = required.length === 1 && required[0] === user;
       const version = m.version + 1;
       db.prepare(
@@ -536,7 +591,10 @@ export function createMeetupRepo(db, repos) {
       ).run(input.placeId, start, confirmed ? 'confirmed' : 'proposed', id);
       // Deliberately submitting the final plan is the sole organizer's approval.
       // Multiple organizers must still each use their own explicit approval.
-      if (confirmed) db.prepare('INSERT INTO meetup_approvals VALUES(?,?,?)').run(id, version, user);
+      if (confirmed) {
+        db.prepare('INSERT INTO meetup_approvals VALUES(?,?,?)').run(id, version, user);
+        rememberConfirmation(m, version);
+      }
       notify(
         m,
         user,
@@ -567,6 +625,7 @@ export function createMeetupRepo(db, repos) {
       const confirmed = required.every((u) => approved.includes(u));
       if (confirmed) {
         db.prepare("UPDATE meetups SET status='confirmed' WHERE id=?").run(id);
+        rememberConfirmation(m, version);
         notify(
           m,
           user,

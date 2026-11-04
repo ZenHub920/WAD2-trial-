@@ -247,6 +247,57 @@ test("notification hooks are persistent, recipient scoped, deduplicated and obey
   });
   assert.equal(repos.notifications.unread("friend"), 2, "a second thread gets its own");
 });
+
+test('group notifications identify the exact owned queue, invitation and accepted shared room', () => {
+  const request = directRequest('seeker', 'p1');
+  const hostRequest = repos.notifications.list('h1').find(item => item.title === 'A seeker requested to join your group');
+  assert.equal(hostRequest.path, `/groups/connect?groupId=p1&requestId=${request.id}#join-requests`);
+  repos.recommendations.respond('h1', request.id, 'reject');
+  const response = repos.notifications.list('seeker').find(item => item.title === 'Your group join request was updated');
+  assert.equal(response.path, `/groups?concertId=c1&mode=direct&requestId=${request.id}#group-request-${request.id}`);
+  for (const [host, party] of [['h1', 'p1'], ['h2', 'p2']]) {
+    repos.membership.configure(host, party, { expectedFriends: 0 });
+    repos.membership.saveAnswers(host, party, answers);
+    repos.membership.publish(host, party, { connectOpen: true });
+  }
+  const connection = repos.groups.invite('h1', 'p1', 'p2');
+  const received = repos.notifications.list('h2').find(item => item.title === 'A group invited your group to connect');
+  assert.equal(received.path, `/groups/connect?view=connections&groupId=p2&connectionId=${connection.id}#group-connections`);
+  repos.groups.respond('h2', connection.id, 'accept');
+  const accepted = repos.notifications.list('h1').find(item => item.title === 'Your group invitation was updated');
+  assert.equal(accepted.path, `/groups/connections/${connection.id}/channel`);
+  assert.equal(repos.connectionChannels.canAccess('h1', connection.id), true);
+});
+
+test('matching notifications distinguish host review, seeker review and confirmed membership', () => {
+  const round = createMatchingService({ db, repos }).run('c1', { batchKey: 'notification-context' });
+  assert.ok(round.roundId);
+  const proposal = repos.proposals.forUser('seeker').find(record => record.status === 'proposed');
+  assert.ok(proposal);
+  const host = repos.parties.findById(proposal.partyId).host_user_id;
+  const hostPath = `/groups/connect?groupId=${proposal.partyId}&proposalId=${proposal.id}#join-requests`;
+  const seekerPath = `/groups?concertId=c1&mode=algorithm&proposalId=${proposal.id}#automatic-offers`;
+  assert.equal(repos.notifications.list(host).find(item => item.title === 'You received a matching proposal').path, hostPath);
+  assert.equal(repos.notifications.list('seeker').find(item => item.title === 'You received a matching proposal').path, seekerPath);
+  repos.proposals.respond('seeker', proposal.id, 'accept');
+  assert.equal(repos.notifications.list(host).find(item => item.title === 'A matching proposal is waiting for your decision').path, hostPath);
+  repos.proposals.respond(host, proposal.id, 'accept');
+  for (const user of [host, 'seeker']) assert.equal(repos.notifications.list(user)
+    .find(item => item.title === 'A matching proposal was updated').path, `/groups/${proposal.partyId}/members`);
+});
+
+test('notification destination upgrades are repeatable and preserve historical identity and read state', () => {
+  const request = directRequest('seeker', 'p1');
+  const original = repos.notifications.list('h1')[0];
+  repos.notifications.read('h1', original.id);
+  db.prepare("UPDATE notifications SET resource_path='/groups/connect' WHERE id=?").run(original.id);
+  const before = db.prepare('SELECT id,event_key,created_at,read_at FROM notifications WHERE id=?').get(original.id);
+  migrateNotifications(db); migrateNotifications(db);
+  const after = db.prepare('SELECT id,event_key,created_at,read_at FROM notifications WHERE id=?').get(original.id);
+  assert.deepEqual(after, before);
+  assert.equal(repos.notifications.list('h1')[0].path, `/groups/connect?groupId=p1&requestId=${request.id}#join-requests`);
+  assert.deepEqual(db.pragma('foreign_key_check'), []);
+});
 test("join request notifications and business writes share transaction rollback", () => {
   const operation = db.transaction(() => {
     directRequest("seeker", "p1");
@@ -350,6 +401,7 @@ test("connected groups require both hosts to approve and never expose locations 
     version: m.version,
     placeId: place.id,
     startsAt: windowInput.startsAt,
+    acknowledgeNoAvailability: true,
   });
   assert.equal(p.confirmed, false);
   assert.throws(() => repos.meetups.approve('friend', id, p.version), /not_found/);

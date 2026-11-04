@@ -97,6 +97,7 @@ test('ticket inventory is independent of parties; create/list/detail/edit/delete
 
 test('ticket image bytes are stored on disk; invalid uploads and failed inserts leave no files or orphan concert', async (t) => {
   const { db, api, base, imageDir, register } = await fixture(t);
+  const savedConcerts = db.prepare('SELECT * FROM concerts ORDER BY id').all();
   const alice = await register('ticket-image');
   const cookie = alice.cookie;
   const bad = await api('/tickets', { method: 'POST', cookie, body: {
@@ -109,7 +110,9 @@ test('ticket image bytes are stored on disk; invalid uploads and failed inserts 
   } });
   assert.equal(oversized.status, 400);
   assert.equal(oversized.body.error, 'invalid_image');
-  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM concerts').get().n, 0);
+  assert.deepEqual(db.prepare('SELECT * FROM concerts ORDER BY id').all(), savedConcerts,
+    'rejected uploads must preserve the existing listed concert and create no orphan concert');
+  assert.deepEqual(readdirSync(imageDir), []);
   const created = await api('/tickets', { method: 'POST', cookie, body: { ...listing, imageData } });
   assert.equal(created.status, 201);
   const id = created.body.listing.id;
@@ -138,6 +141,8 @@ test('ticket image bytes are stored on disk; invalid uploads and failed inserts 
   assert.equal(failed.status, 500);
   assert.deepEqual(failed.body, { error: 'internal_error' }, 'database error details stay private');
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM concerts').get().n, countBefore);
+  assert.deepEqual(db.prepare('SELECT * FROM concerts ORDER BY id').all(), savedConcerts,
+    'a failed ticket insert must not alter the original concert metadata');
   assert.deepEqual(readdirSync(imageDir), []);
 });
 

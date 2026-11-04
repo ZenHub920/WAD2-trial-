@@ -22,10 +22,22 @@ import {
 import { communityError } from '../db/membershipRepository.js';
 import { requireConcertCoordination } from '../db/concertEligibility.js';
 import { concertParticipationEligibility } from '../../../shared/concertEligibility.mjs';
+import { createHash } from 'node:crypto';
+
+const validSearchKey = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const searchStatus = matching => matching.state === 'pending' ? 'proposed'
+  : matching.state === 'accepted' ? 'confirmed' : matching.state === 'queued' ? 'waiting' : 'idle';
+const timestamp = value => value == null ? null : Date.parse(value.includes('T') ? value : `${value.replace(' ', 'T')}Z`);
+const attemptSummary = row => row ? {
+  id: row.request_key, status: row.outcome ?? 'unknown', attemptedAt: timestamp(row.created_at),
+  completedAt: timestamp(row.completed_at), completed: row.completed_at ? true : null,
+  receivedProposal: row.received_proposal == null ? null : Boolean(row.received_proposal),
+  proposalId: row.proposal_id ?? null, ranMatching: row.ran_matching == null ? null : Boolean(row.ran_matching),
+} : null;
 
 export function createMatchingService({ db, repos }) {
   return {
-    // Keep the existing user-facing queue API; only an operator runs a round.
+    // Joining the pool remains distinct from explicitly asking to find a match.
     managedState(concertId, userId) {
       const concert = repos.concerts.findById(concertId);
       if (!concert) throw communityError('concert_not_found', 404);
@@ -46,6 +58,7 @@ export function createMatchingService({ db, repos }) {
       const optedIn = concertParticipationEligibility(concert).eligible
         && seeker?.joining_mode === 'algorithm' && seeker?.status === 'open';
       return { matching: {
+        preferencesComplete: repos.recommendations.hasAnswers(userId, concertId),
         optedIn: Boolean(optedIn),
         state: active || proposal?.status === 'confirmed' ? 'accepted'
           : proposal || legacy ? 'pending' : optedIn ? 'queued' : 'idle',
@@ -55,6 +68,8 @@ export function createMatchingService({ db, repos }) {
           status: legacy.status, expiresAt: legacy.expiresAt, matchingRoundId: legacy.matchingRoundId,
         } : null,
         proposal,
+        latestAttempt: attemptSummary(db.prepare(`SELECT * FROM matching_search_requests
+          WHERE user_id=? AND concert_id=? ORDER BY rowid DESC LIMIT 1`).get(userId, concertId)),
       } };
     },
 
@@ -68,6 +83,65 @@ export function createMatchingService({ db, repos }) {
         repos.membership.ensureFree(userId, concertId, '');
         repos.recommendations.setJoiningMode(userId, concertId, 'algorithm');
         return this.managedState(concertId, userId);
+      }).immediate();
+    },
+
+    /** Explicit seeker action; the existing batch solver and consent rules stay intact. */
+    findManaged(concertId, userId, { batchKey } = {}) {
+      if (typeof batchKey !== 'string' || !validSearchKey.test(batchKey))
+        throw communityError('invalid_idempotency_key', 400);
+      const key = batchKey.toLowerCase();
+      return db.transaction(() => {
+        const receipt = db.prepare(`SELECT * FROM matching_search_requests
+          WHERE user_id=? AND concert_id=? AND request_key=?`).get(userId, concertId, key);
+        const replayed = Boolean(receipt);
+        // Refresh the caller's state on replay; never resurrect an old proposal,
+        // reenrol a withdrawn seeker, or run again after an earlier empty result.
+        const current = this.managedState(concertId, userId);
+        const result = (state, attempt) => ({ ...state, search: {
+          status: searchStatus(state.matching),
+          replayed,
+          attempt: attemptSummary(attempt),
+          message: state.matching.state === 'pending' ? state.matching.proposal
+            ? 'Review your current offer. Joining still requires your approval and the host’s approval.'
+            : 'Your current group request is waiting for the host. Resolve it before starting another search.'
+            : state.matching.state === 'accepted' ? 'Your group membership is confirmed.'
+              : state.matching.state === 'queued' ? 'No suitable group is available. You are still in the matching pool. Try Find a match again later or browse groups.'
+                : 'You are not currently in the matching pool. Join it before starting a new search.',
+        } });
+        if (replayed) return result(current, receipt);
+        const record = (state, ranMatching, attemptedAt) => {
+          const completedAt = new Date().toISOString();
+          db.prepare(`INSERT INTO matching_search_requests(user_id,concert_id,request_key,created_at,
+            completed_at,outcome,received_proposal,proposal_id,ran_matching) VALUES(?,?,?,?,?,?,?,?,?)`)
+            .run(userId, concertId, key, attemptedAt, completedAt, searchStatus(state.matching),
+              state.matching.proposal ? 1 : 0, state.matching.proposal?.id ?? null, ranMatching ? 1 : 0);
+          // Reload once so the response and subsequent GET share exactly the same receipt.
+          return result(this.managedState(concertId, userId), db.prepare(`SELECT * FROM matching_search_requests
+            WHERE user_id=? AND concert_id=? AND request_key=?`).get(userId, concertId, key));
+        };
+        const attemptedAt = new Date().toISOString();
+        if (['pending', 'accepted'].includes(current.matching.state)) {
+          return record(current, false, attemptedAt);
+        }
+        requireConcertCoordination(db, concertId);
+        const seeker = repos.groups.seeker(userId, concertId);
+        if (!seeker || seeker.status !== 'open') throw communityError('open_seeker_request_required');
+        if (seeker.joining_mode !== 'algorithm') throw communityError('join_matching_pool_first');
+        if (!current.matching.preferencesComplete) throw communityError('save_discovery_preferences_first');
+        if (db.prepare(`SELECT 1 FROM group_join_requests j JOIN parties p ON p.id=j.party_id
+          WHERE j.user_id=? AND p.concert_id=? AND j.status='pending' AND j.expires_at>?`)
+          .get(userId, concertId, Date.now())) throw communityError('withdraw_pending_applications_first');
+        repos.membership.ensureFree(userId, concertId, '');
+        // An ordinary caller cannot replay or probe another user's/operator's
+        // batch UUID. Raw round outcomes never leave this service entry point.
+        const scopedKey = `seeker:${createHash('sha256').update(JSON.stringify([userId, concertId, key])).digest('hex')}`;
+        try { this.run(concertId, { batchKey: scopedKey, trace: true }); }
+        catch (error) {
+          if (error.message === 'legacy_matches_require_reconciliation') throw communityError(error.message);
+          throw error;
+        }
+        return record(this.managedState(concertId, userId), true, attemptedAt);
       }).immediate();
     },
 

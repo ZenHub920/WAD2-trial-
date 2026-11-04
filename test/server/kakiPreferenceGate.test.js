@@ -1,15 +1,24 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createApp } from '../../server/src/app.js';
 import { createTestDb } from '../../server/src/db/connection.js';
 import { createKakiPreferenceGate } from '../../server/src/services/kakiPreferenceGate.js';
 
+const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
 async function fixture(t) {
   const db = createTestDb();
-  const built = createApp({ db });
+  const avatarDir = mkdtempSync(join(tmpdir(), 'encore-kaki-gate-avatars-'));
+  const built = createApp({ db, avatarDir });
   const server = built.app.listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
-  t.after(async () => { await new Promise((resolve) => server.close(resolve)); db.close(); });
+  t.after(async () => {
+    await new Promise((resolve) => server.close(resolve)); db.close();
+    rmSync(avatarDir, { recursive: true, force: true });
+  });
   const api = async (path, user, method = 'GET', body) => {
     const response = await fetch(`http://127.0.0.1:${server.address().port}/api${path}`, {
       method, headers: { 'content-type': 'application/json', ...(user ? { cookie: user.cookie } : {}) },
@@ -21,7 +30,7 @@ async function fixture(t) {
   const users = [];
   for (const name of ['singer', 'listener']) {
     const result = await api('/auth/register', null, 'POST', {
-      display_name: name, email: `${name}@gate.test`, password: 'test-password',
+      display_name: name, email: `${name}@gate.test`, password: 'test-password', avatar: PNG_1PX,
     });
     assert.equal(result.status, 201);
     users.push({ id: result.body.user.id, cookie: result.cookie });

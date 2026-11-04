@@ -45,7 +45,7 @@ test('meetup summaries and scoped creation context expose actionable state witho
   assert.equal(context.capabilities.canCreate, false);
   assert.equal(context.returnPath, '/groups/p1/channel');
   assert.equal(repos.meetups.list('host')[0].hasAvailability, false);
-  assert.equal(repos.meetups.list('host')[0].nextStage, 'availability');
+  assert.equal(repos.meetups.list('host')[0].nextStage, 'review');
   assert.doesNotMatch(JSON.stringify(context), /private-home|latitude|longitude|travelMode|comments|grid|suggestions/);
   const version = repos.meetups.access('host', id).version;
   repos.meetups.propose('host', id, { version, placeId, startsAt });
@@ -164,7 +164,7 @@ test('connected hosts see their current approval state and cannot mistake an exi
   repos.groups.respond('otherHost', connectionId, 'accept');
   const { id } = repos.meetups.create('host', { ...input, partyId: undefined, connectionId });
   const placeId = repos.meetups.place('member', id, place).id;
-  const proposal = repos.meetups.propose('host', id, { version: repos.meetups.access('host', id).version, placeId, startsAt });
+  const proposal = repos.meetups.propose('host', id, { version: repos.meetups.access('host', id).version, placeId, startsAt, acknowledgeNoAvailability: true });
   repos.meetups.approve('host', id, proposal.version);
   const summary = repos.meetups.list('host')[0];
   assert.deepEqual(summary.scope, { connectionId });
@@ -190,7 +190,7 @@ test('meetup notifications link to the relevant stage without duplicate retry no
   assert.equal(note('place:2'), `/meetups/${id}#meetup-places`);
   repos.meetups.place('host', id, place);
   assert.equal(db.prepare("SELECT COUNT(*) n FROM notifications WHERE event_key LIKE ?").get(`meetup:${id}:place:%`).n, 1);
-  const proposal = repos.meetups.propose('host', id, { version: 2, placeId, startsAt });
+  const proposal = repos.meetups.propose('host', id, { version: 2, placeId, startsAt, acknowledgeNoAvailability: true });
   assert.equal(proposal.confirmed, true);
   assert.equal(note(`proposal:${proposal.version}`), undefined, 'a sole organizer does not leave a redundant approval notification');
   assert.equal(note(`confirmed:${proposal.version}`), `/meetups/${id}#meetup-review`);
@@ -223,7 +223,7 @@ test('legacy weather reads reauthorize the caller and reject stale selections af
   const { db, repos } = fixture(t), app = express();
   const { id } = repos.meetups.create('host', input);
   const placeId = repos.meetups.place('host', id, place).id;
-  const proposal = repos.meetups.propose('host', id, { version: 2, startsAt, placeId });
+  const proposal = repos.meetups.propose('host', id, { version: 2, startsAt, placeId, acknowledgeNoAvailability: true });
   let entered, finish, calls = 0;
   const weather = { forecast: () => { calls++; entered(); return new Promise(resolve => { finish = resolve; }); } };
   app.use((req, res, next) => { if (req.headers['x-test-user']) req.user = { id: req.headers['x-test-user'] }; next(); });

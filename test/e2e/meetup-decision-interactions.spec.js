@@ -5,6 +5,11 @@ import { api, fixture, person, origin } from './support.js';
 
 const timing = { title: 'Decide before the show', startsAt: '2030-01-01T16:00:00+08:00', endsAt: '2030-01-01T17:30:00+08:00' };
 const read = async (actor, id) => (await api(actor.context, `/meetups/${id}`)).meetup;
+async function compareAlternatives(page) {
+  const toggle = page.locator('.meetup-compare-toggle');
+  if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
+  await expect(page.locator('.meetup-picker')).toBeVisible();
+}
 async function capture(page, name) {
   const directory = process.env.ENCORE_UX_CAPTURE_DIR;
   if (!directory) return;
@@ -85,10 +90,13 @@ test('two hosts: create, paint availability, switch/remove votes, inspect partia
     await expect(b.page.locator('#meetup-tab-review')).toHaveAttribute('aria-disabled', 'false');
     await placeRow(b.page, 'Funan').getByRole('button', { name: 'Vote for place', exact: true }).click();
     await expect(preferred).toContainText('2 votes');
+    await a.page.locator('[data-planner-step="review"]').click();
+    await expect(a.page.locator('.meetup-recommendations')).toBeVisible();
     await expect(a.page.locator('.meetup-recommendations').getByRole('button', { name: /^(Vote for place|Remove vote)$/ })).toHaveCount(0);
     const ranked = await read(a, id), funanId = ranked.places.find(place => place.label === 'Funan').id;
-    const picker = a.page.locator('.meetup-picker'), placeChoice = picker.getByLabel('Place', { exact: true });
-    const timeChoice = picker.getByLabel('Time', { exact: true });
+    await compareAlternatives(a.page);
+    const picker = a.page.locator('.meetup-picker'), placeChoice = picker.getByRole('combobox', { name: 'Place', exact: true });
+    const timeChoice = picker.getByRole('combobox', { name: 'Time', exact: true });
     await expect(placeChoice.locator('option')).toHaveCount(2);
     await expect(timeChoice.locator('option')).toHaveCount(3);
     await expect(a.page.locator('.meetup-option')).toHaveCount(1);
@@ -138,8 +146,9 @@ test('two hosts: create, paint availability, switch/remove votes, inspect partia
     const reopened = await read(a, id);
     expect(reopened.approvals).toEqual([]); expect(reopened.version).toBeGreaterThan(confirmed.version);
     expect(reopened.places.map(p => [p.id, p.votes])).toEqual(confirmed.places.map(p => [p.id, p.votes]));
-    await a.page.locator('[data-planner-step="places"]').click();
+    await a.page.locator('[data-planner-step="review"]').click();
     const revisedStart = Date.parse(timing.startsAt) + 2 * 1800000;
+    await compareAlternatives(a.page);
     await placeChoice.selectOption(funanId); await timeChoice.selectOption(String(revisedStart));
     await a.page.getByRole('button', { name: 'Propose this time & place', exact: true }).click();
     await a.page.getByRole('dialog').getByRole('button', { name: 'Submit proposal for approval', exact: true }).click();
@@ -171,11 +180,12 @@ test('server shelter filtering precedes top-20 limits; owners correct and remove
     const sheltered = (await api(a.context, `${path}?shelteredOnly=true`)).meetup;
     expect(sheltered.suggestions).toHaveLength(3);
     expect(sheltered.suggestions.every(option => option.placeId === place.id)).toBe(true);
-    await a.page.goto(`${path}#meetup-places`);
+    await a.page.goto(`${path}#meetup-review`);
     await expect(a.page.locator('.meetup-option')).toHaveCount(1);
     // The teammate's picker uses the actual unfiltered top-ranked options.
     // Saved suggestions remain correctable even when absent from that shortlist.
-    await expect(a.page.locator('.meetup-picker').getByLabel('Place', { exact: true }).locator(`option[value="${place.id}"]`)).toHaveCount(0);
+    await expect(a.page.locator('.meetup-picker').getByRole('combobox', { name: 'Place', exact: true }).locator(`option[value="${place.id}"]`)).toHaveCount(0);
+    await a.page.locator('[data-planner-step="places"]').click();
     const row = placeRow(a.page, 'Farther sheltered choice');
     await row.getByRole('button', { name: 'Correct place', exact: true }).click();
     await expect(a.page.locator('.meetup-place-editor')).toContainText('Existing votes for this place will be cleared');
@@ -192,7 +202,8 @@ test('server shelter filtering precedes top-20 limits; owners correct and remove
     await expect(placeRow(a.page, 'Corrected sheltered entrance')).toHaveCount(0);
     expect((await read(a, meetup.id)).places).toHaveLength(8);
     expect((await api(a.context, `${path}?shelteredOnly=true`)).meetup.suggestions).toEqual([]);
-    await expect(a.page.locator('.meetup-picker')).toBeVisible();
+    await a.page.locator('[data-planner-step="review"]').click();
+    await compareAlternatives(a.page);
   } finally { await a.context.close(); await b.context.close(); }
 });
 
@@ -206,9 +217,10 @@ test('organizer dropdowns preserve ranked choices, synchronize attendance and re
     await api(member.context, `${path}/availability`, 'PUT', { windows: [{ startsAt: timing.startsAt, endsAt: new Date(start + 2 * 1800000).toISOString() }] });
     const a = (await api(host.context, `${path}/places`, 'POST', { label: 'Funan picker choice', latitude: 1.2913, longitude: 103.85, sheltered: true })).place;
     const b = (await api(host.context, `${path}/places`, 'POST', { label: 'Raffles picker choice', latitude: 1.2936, longitude: 103.8532, sheltered: true })).place;
-    await host.page.goto(`${path}#meetup-places`);
-    const picker = host.page.locator('.meetup-picker'), place = picker.getByLabel('Place', { exact: true });
-    const time = picker.getByLabel('Time', { exact: true }), selected = host.page.locator('.meetup-option');
+    await host.page.goto(`${path}#meetup-review`);
+    await compareAlternatives(host.page);
+    const picker = host.page.locator('.meetup-picker'), place = picker.getByRole('combobox', { name: 'Place', exact: true });
+    const time = picker.getByRole('combobox', { name: 'Time', exact: true }), selected = host.page.locator('.meetup-option');
     const initial = await read(host, meetup.id), expectedPlaces = [...new Set(initial.suggestions.map(option => option.placeId))];
     await expect(place).toHaveValue(initial.suggestions[0].placeId);
     await expect(time).toHaveValue(String(initial.suggestions[0].startsAt));
@@ -229,12 +241,16 @@ test('organizer dropdowns preserve ranked choices, synchronize attendance and re
     }
     expect(proposalRequests).toBe(0, 'Selecting places and times must not submit a proposal.');
 
-    await member.page.goto(`${path}#meetup-places`);
+    await member.page.goto(`${path}#meetup-review`);
     await expect(member.page.locator('.meetup-recommendations')).toHaveCount(0);
     await expect(member.page.locator('.meetup-picker')).toHaveCount(0);
     await expect(member.page.getByRole('button', { name: 'Confirm this time & place', exact: true })).toHaveCount(0);
+    await member.page.locator('[data-planner-step="places"]').click();
     await placeRow(member.page, 'Funan picker choice').getByRole('button', { name: 'Vote for place', exact: true }).click();
+    await host.page.locator('[data-planner-step="places"]').click();
     await expect(placeRow(host.page, 'Funan picker choice')).toContainText('1 vote');
+    await host.page.locator('[data-planner-step="review"]').click();
+    await compareAlternatives(host.page);
 
     await place.selectOption(b.id); await time.selectOption(String(start + 2 * 1800000));
     await host.page.getByRole('button', { name: 'Refresh planner', exact: true }).click();
@@ -277,12 +293,13 @@ for (const theme of ['light', 'dark']) test(`place/time dropdowns and review mod
     await api(host.context, `/meetups/${meetup.id}/vote`, 'PUT', { placeId: place.id });
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
       await host.page.setViewportSize({ width, height: width < 600 ? 844 : 1000 });
-      await host.page.goto(`/meetups/${meetup.id}#meetup-places`);
+      await host.page.goto(`/meetups/${meetup.id}#meetup-review`);
+      await compareAlternatives(host.page);
       const picker = host.page.locator('.meetup-picker');
-      await expect(picker.getByLabel('Place', { exact: true }).locator('option')).toHaveCount(1);
-      await expect(picker.getByLabel('Time', { exact: true }).locator('option')).toHaveCount(3);
+      await expect(picker.getByRole('combobox', { name: 'Place', exact: true }).locator('option')).toHaveCount(1);
+      await expect(picker.getByRole('combobox', { name: 'Time', exact: true }).locator('option')).toHaveCount(3);
       await expect(host.page.locator('.meetup-option')).toHaveCount(1);
-      const place = picker.getByLabel('Place', { exact: true }), time = picker.getByLabel('Time', { exact: true });
+      const place = picker.getByRole('combobox', { name: 'Place', exact: true }), time = picker.getByRole('combobox', { name: 'Time', exact: true });
       await place.focus(); await expect(place).toBeFocused();
       await host.page.keyboard.press('Tab'); await expect(time).toBeFocused();
       const times = await time.locator('option').evaluateAll(options => options.map(option => option.value));

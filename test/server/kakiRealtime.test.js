@@ -74,6 +74,11 @@ async function fixture(t) {
   }
 
   async function participate(person, concertId) {
+    // Joining Kaki now requires a picture; plain registration stays optional.
+    if (!db.prepare('SELECT avatar_path FROM users WHERE id=?').get(person.id)?.avatar_path) {
+      const picture = await api('/me/avatar', { method: 'PUT', cookie: person.cookie, body: { image: PNG_1PX } });
+      assert.equal(picture.status, 200);
+    }
     const result = await api(`/concerts/${concertId}/participation`, {
       method: 'POST', cookie: person.cookie, body: { sectionPref: 'pit', arrivalPref: 'doors' },
     });

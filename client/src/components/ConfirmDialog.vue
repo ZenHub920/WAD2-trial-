@@ -19,6 +19,8 @@ const props = defineProps({
   danger: { type: Boolean, default: false },
   busy: { type: Boolean, default: false },
   initialFocus: { type: String, default: 'confirm', validator: value => ['confirm', 'cancel'].includes(value) },
+  // Some callers disable their opener before this dialog's watcher runs.
+  returnFocusTo: { type: Object, default: null },
 });
 const emit = defineEmits(['confirm', 'cancel']);
 
@@ -29,6 +31,9 @@ let returnFocus = null;
 let focusVersion = 0;
 
 function restoreFocus(container = dialog.value) {
+  // A caller may release its pending state in the same render as this close.
+  // Let the post-render watcher retry once that opener is enabled again.
+  if (returnFocus?.isConnected && returnFocus.matches?.(':disabled')) return;
   if (returnFocus?.isConnected && (document.activeElement === document.body || container?.contains(document.activeElement))) {
     returnFocus.focus();
   }
@@ -38,7 +43,7 @@ function restoreFocus(container = dialog.value) {
 // Keep the existing initial action, with a stable focus target while saving.
 watch(() => props.open, async (open) => {
   const version = ++focusVersion;
-  if (open) returnFocus = document.activeElement;
+  if (open) returnFocus = props.returnFocusTo ?? document.activeElement;
   await nextTick();
   if (version !== focusVersion) return;
   if (open) (props.busy ? dialog.value : props.initialFocus === 'cancel' ? cancelEl.value : confirmEl.value)?.focus();
@@ -58,7 +63,7 @@ function onKeydown(event) {
     event.stopPropagation();
     if (!props.busy) emit('cancel');
   } else if (event.key === 'Tab') {
-    const buttons = [...dialog.value.querySelectorAll('button:not(:disabled)')];
+    const buttons = [...dialog.value.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')];
     const first = buttons[0], last = buttons.at(-1), active = document.activeElement;
     if (!first) {
       event.preventDefault();
@@ -92,6 +97,7 @@ function onKeydown(event) {
       <div class="confirm__panel">
         <h2 class="confirm__title">{{ title }}</h2>
         <p v-if="body" class="confirm__body">{{ body }}</p>
+        <slot />
         <div class="confirm__actions">
           <button ref="cancelEl" type="button" class="btn btn--ghost" :disabled="busy" @click="emit('cancel')">
             {{ cancelLabel }}

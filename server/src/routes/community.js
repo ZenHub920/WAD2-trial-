@@ -133,7 +133,7 @@ export function registerCommunityRoutes(
     return repos.meetups.detail(r.user.id, r.params.id, { shelteredOnly: r.query.shelteredOnly === 'true' });
   });
   route("put", "/meetups/:id/availability", "result", (r) =>
-    repos.meetups.availability(r.user.id, r.params.id, r.body?.windows, r.body?.version),
+    repos.meetups.availability(r.user.id, r.params.id, r.body?.windows, r.body?.version, r.body?.responseStatus),
   );
   route("post", "/meetups/:id/places", "place", (r) =>
     repos.meetups.place(r.user.id, r.params.id, r.body),

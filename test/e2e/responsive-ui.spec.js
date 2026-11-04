@@ -290,7 +290,7 @@ for (const theme of ['light', 'dark']) test(`responsive visual audit: ${theme} l
           }
           if (name === 'dashboard') {
             const attention = person.page.locator('.workspace-overview a[href="/meetups"]');
-            await expect(attention).toContainText('1 need your attention');
+            await expect(attention).toContainText('2 need your attention');
           }
           await fitsViewport(person.page, `${name} ${theme} ${width}`);
           await headerFits(person.page, width);

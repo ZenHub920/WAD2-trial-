@@ -10,7 +10,7 @@ const props = defineProps({ proposal: { type: Object, required: true } });
 const savedResponse = ref(null);
 const currentProposal = computed(() => ({ ...props.proposal, ...(savedResponse.value?.id === props.proposal.id ? savedResponse.value.result : {}) }));
 watch(() => props.proposal, () => { savedResponse.value = null; });
-const { canCoordinate, isFinished } = useConcertEligibility(() => currentProposal.value);
+const { canCoordinate, isFinished, canPlanMeetup } = useConcertEligibility(() => currentProposal.value);
 const canAccept = computed(() => !currentProposal.value.eventDate || canCoordinate.value);
 
 const emit = defineEmits(['updated']);
@@ -69,7 +69,7 @@ async function respond(action) {
     if (id !== props.proposal.id) return;
     const result = response?.proposal;
     if (result?.status) savedResponse.value = { id, result };
-    emit('updated');
+    emit('updated', { ...currentProposal.value });
   } catch (err) {
     error.value = err.status === 409 ? 'This proposal is not ready for a reply, changed or expired. Refresh the queue before replying.' : 'Could not update this proposal. Please try again.';
   } finally {
@@ -151,7 +151,14 @@ async function explain() {
       </div>
       <p v-if="isFinished" class="proposal__note">This concert has finished. New membership approvals are closed; your proposal remains available here.</p>
     </template>
-    <p v-else-if="currentProposal.status === 'confirmed'" class="proposal__note">{{ isHost ? `${currentProposal.seekerName} is now a member of your group.` : 'Your group spot is confirmed. You can find the group under My groups.' }}</p>
+    <template v-else-if="currentProposal.status === 'confirmed'">
+      <p class="proposal__note" role="status">{{ isHost ? `${currentProposal.seekerName} is now a member of your group.` : 'Your group membership is confirmed. Meet everyone in the group chat and plan your meetup together.' }}</p>
+      <div v-if="currentProposal.partyId" class="actions" aria-label="Confirmed group actions">
+        <RouterLink :to="`/groups/${encodeURIComponent(currentProposal.partyId)}/members`" class="btn btn--primary">Open your group</RouterLink>
+        <RouterLink :to="`/groups/${encodeURIComponent(currentProposal.partyId)}/channel`" class="btn btn--ghost">Group messages</RouterLink>
+        <RouterLink v-if="canPlanMeetup" :to="{ path: '/meetups', query: { partyId: currentProposal.partyId, from: 'groups' } }" class="btn btn--ghost">Plan meetup</RouterLink>
+      </div>
+    </template>
 
     <div class="proposal__explanation">
       <button type="button" class="proposal__why" :disabled="busy || explanationLoading" :aria-expanded="explanationOpen" @click="explain"><LoadingSpinner v-if="explanationLoading" />{{ explanationOpen ? 'Hide match reasons' : 'Why this group match?' }}<span aria-hidden="true">{{ explanationOpen ? '−' : '+' }}</span></button>

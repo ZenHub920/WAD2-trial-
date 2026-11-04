@@ -28,6 +28,7 @@ function publicLedger(ledger) {
 export function createMatchController({ repos, matching }) {
   return {
     managedState(req, res) {
+      res.set('Cache-Control', 'private, no-store');
       try {
         return res.json(matching.managedState(req.params.id, req.user.id));
       } catch (err) {
@@ -42,6 +43,15 @@ export function createMatchController({ repos, matching }) {
       }
       try {
         return res.json(matching.matchManaged(req.params.id, req.user.id, { batchKey }));
+      } catch (err) {
+        return res.status(err.status ?? 500).json({ error: err.status ? err.message : 'match_failed' });
+      }
+    },
+
+    findManaged(req, res) {
+      res.set('Cache-Control', 'private, no-store');
+      try {
+        return res.json(matching.findManaged(req.params.id, req.user.id, { batchKey: req.get('Idempotency-Key') }));
       } catch (err) {
         return res.status(err.status ?? 500).json({ error: err.status ? err.message : 'match_failed' });
       }

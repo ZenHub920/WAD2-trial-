@@ -2,6 +2,13 @@ import { randomUUID } from "node:crypto";
 import { communityError } from "./membershipRepository.js";
 export function migrateNotifications(db) {
   db.transaction(() => {
+    const hostRequestPath = alias => `'/groups/connect?groupId='||${alias}.party_id||'&requestId='||${alias}.id||'#join-requests'`;
+    const seekerRequestPath = alias => `'/groups?concertId='||(SELECT concert_id FROM parties WHERE id=${alias}.party_id)||'&mode=direct&requestId='||${alias}.id||'#group-request-'||${alias}.id`;
+    const invitationPath = alias => `'/groups/connect?view=connections&groupId='||CASE WHEN ${alias}.initiator_party_id=${alias}.party_a_id THEN ${alias}.party_b_id ELSE ${alias}.party_a_id END||'&connectionId='||${alias}.id||'#group-connections'`;
+    const sentInvitationPath = alias => `'/groups/connect?view=connections&groupId='||${alias}.initiator_party_id||'&connectionId='||${alias}.id||'#group-connections'`;
+    const matchPath = (alias, recipient) => `CASE WHEN ${recipient}=(SELECT host_user_id FROM parties WHERE id=${alias}.party_id)
+      THEN '/groups/connect?groupId='||${alias}.party_id||'&proposalId='||${alias}.id||'#join-requests'
+      ELSE '/groups?concertId='||(SELECT concert_id FROM parties WHERE id=${alias}.party_id)||'&mode=algorithm&proposalId='||${alias}.id||'#automatic-offers' END`;
     db.exec(`CREATE TABLE IF NOT EXISTS notifications(
     id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     category TEXT NOT NULL CHECK(category IN('chat','group','match','meetup','feedback')),
@@ -59,7 +66,7 @@ export function migrateNotifications(db) {
       "group",
       "SELECT host_user_id recipient FROM parties WHERE id=NEW.party_id",
       "'A seeker requested to join your group'",
-      "'/groups/connect'",
+      hostRequestPath('NEW'),
       "'join-request:'||NEW.id",
     );
     trigger(
@@ -72,7 +79,7 @@ export function migrateNotifications(db) {
       // Accepted lands on the group itself; anything else reopens browsing for
       // that concert, since a bare /groups has no concert picked.
       `CASE WHEN NEW.status='accepted' THEN '/groups/'||NEW.party_id||'/members'
-        ELSE '/groups?concertId='||(SELECT concert_id FROM parties WHERE id=NEW.party_id) END`,
+        ELSE ${seekerRequestPath('NEW')} END`,
       "'join-response:'||NEW.id||':'||NEW.status",
       "NEW.status<>OLD.status AND NEW.status<>'pending'",
     );
@@ -83,7 +90,7 @@ export function migrateNotifications(db) {
       "group",
       "SELECT host_user_id recipient FROM parties WHERE id=NEW.party_id",
       "'A seeker requested to join your group'",
-      "'/groups/connect'",
+      hostRequestPath('NEW'),
       "'join-reopened:'||lower(hex(randomblob(16)))",
       "NEW.status='pending' AND OLD.status IN('withdrawn','expired')",
     );
@@ -94,7 +101,7 @@ export function migrateNotifications(db) {
       "group",
       `SELECT host_user_id recipient FROM parties WHERE id=CASE WHEN NEW.initiator_party_id=NEW.party_a_id THEN NEW.party_b_id ELSE NEW.party_a_id END`,
       "'A group invited your group to connect'",
-      "'/groups/connect'",
+      invitationPath('NEW'),
       "'group-invite:'||NEW.id",
     );
     trigger(
@@ -104,7 +111,7 @@ export function migrateNotifications(db) {
       "group",
       "SELECT user_id recipient FROM group_join_requests WHERE party_id=NEW.party_id AND status='pending' AND COALESCE(group_version,0)<>NEW.version",
       "'A group you chose changed; review and resubmit your request'",
-      "'/groups'",
+      "'/groups?concertId='||(SELECT concert_id FROM parties WHERE id=NEW.party_id)||'&mode=direct'",
       "'group-profile:'||NEW.party_id||':'||NEW.version",
       "NEW.version<>OLD.version",
     );
@@ -118,7 +125,7 @@ export function migrateNotifications(db) {
        UNION SELECT p.host_user_id recipient FROM group_join_requests r JOIN parties p ON p.id=r.party_id
         WHERE r.user_id=NEW.user_id AND p.concert_id=NEW.concert_id AND r.status='pending'`,
       "'Seeker preferences changed; review and resubmit the join request'",
-      "CASE WHEN recipient=NEW.user_id THEN '/groups' ELSE '/groups/connect' END",
+      "CASE WHEN recipient=NEW.user_id THEN '/groups?concertId='||NEW.concert_id||'&mode=direct' ELSE '/groups/connect?concertId='||NEW.concert_id||'#join-requests' END",
       "'seeker-profile:'||NEW.user_id||':'||NEW.concert_id||':'||lower(hex(randomblob(16)))",
       "NEW.answers_json<>OLD.answers_json",
     );
@@ -129,12 +136,12 @@ export function migrateNotifications(db) {
       "group",
       "SELECT host_user_id recipient FROM parties WHERE id=NEW.initiator_party_id",
       "'Your group invitation was updated'",
-      "'/groups/connect'",
+      `CASE WHEN NEW.status='accepted' THEN '/groups/connections/'||NEW.id||'/channel' ELSE ${sentInvitationPath('NEW')} END`,
       "'group-response:'||NEW.id||':'||NEW.status",
       "NEW.status<>OLD.status",
     );
-    // Existing installations notified only the seeker. Both decision makers
-    // now receive the same offer, without rewriting any delivered notification.
+    // Both decision makers receive the same offer. Existing historical event
+    // identities and read state are retained when destinations are upgraded.
     // Join responses once all linked to a bare /groups; point them at the group.
     db.exec(`UPDATE notifications SET resource_path=(
         SELECT CASE WHEN j.status='accepted' THEN '/groups/'||j.party_id||'/members'
@@ -152,7 +159,7 @@ export function migrateNotifications(db) {
       `SELECT user_id recipient FROM seeker_requests WHERE id=NEW.seeker_request_id
         UNION SELECT host_user_id recipient FROM parties WHERE id=NEW.party_id`,
       "'You received a matching proposal'",
-      "'/concerts/'||(SELECT concert_id FROM parties WHERE id=NEW.party_id)",
+      matchPath('NEW', 'recipient'),
       "'match-offer:'||NEW.id",
     );
     const proposalColumns = new Set(db.prepare("PRAGMA table_info(match_proposals)").all().map((c) => c.name));
@@ -166,7 +173,7 @@ export function migrateNotifications(db) {
         UNION SELECT user_id recipient FROM seeker_requests WHERE id=NEW.seeker_request_id
         AND OLD.host_approved_at IS NULL AND NEW.host_approved_at IS NOT NULL`,
       "'A matching proposal is waiting for your decision'",
-      "'/concerts/'||(SELECT concert_id FROM parties WHERE id=NEW.party_id)",
+      matchPath('NEW', 'recipient'),
       "'match-approval:'||NEW.id||':'||CASE WHEN OLD.seeker_approved_at IS NULL AND NEW.seeker_approved_at IS NOT NULL THEN 'seeker' ELSE 'host' END",
       "NEW.status='proposed' AND (NEW.seeker_approved_at IS NULL OR NEW.host_approved_at IS NULL) AND ((OLD.seeker_approved_at IS NULL AND NEW.seeker_approved_at IS NOT NULL) OR (OLD.host_approved_at IS NULL AND NEW.host_approved_at IS NOT NULL))",
     );
@@ -177,10 +184,30 @@ export function migrateNotifications(db) {
       "match",
       `SELECT host_user_id recipient FROM parties WHERE id=NEW.party_id UNION SELECT user_id recipient FROM seeker_requests WHERE id=NEW.seeker_request_id`,
       "'A matching proposal was updated'",
-      "'/concerts/'||(SELECT concert_id FROM parties WHERE id=NEW.party_id)",
+      `CASE WHEN NEW.status='confirmed' THEN '/groups/'||NEW.party_id||'/members' ELSE ${matchPath('NEW', 'recipient')} END`,
       "'match-status:'||NEW.id||':'||NEW.status",
       "NEW.status<>OLD.status",
     );
+    // Upgrade only the old broad destinations, retaining every notification's
+    // identity, read state, timestamp and transactional event key. Missing or
+    // deleted resources keep their existing safe destination.
+    db.exec(`UPDATE notifications AS n SET resource_path=(SELECT ${hostRequestPath('j')}
+      FROM group_join_requests j WHERE n.event_key='join-request:'||j.id)
+      WHERE resource_path='/groups/connect' AND EXISTS(SELECT 1 FROM group_join_requests j WHERE n.event_key='join-request:'||j.id);
+      UPDATE notifications AS n SET resource_path=(SELECT CASE WHEN j.status='accepted' THEN '/groups/'||j.party_id||'/members'
+        ELSE ${seekerRequestPath('j')} END FROM group_join_requests j WHERE n.event_key LIKE 'join-response:'||j.id||':%')
+      WHERE (resource_path='/groups' OR resource_path LIKE '/groups?concertId=%')
+        AND EXISTS(SELECT 1 FROM group_join_requests j WHERE n.event_key LIKE 'join-response:'||j.id||':%');
+      UPDATE notifications AS n SET resource_path=(SELECT ${invitationPath('c')} FROM group_connections c WHERE n.event_key='group-invite:'||c.id)
+      WHERE resource_path='/groups/connect' AND EXISTS(SELECT 1 FROM group_connections c WHERE n.event_key='group-invite:'||c.id);
+      UPDATE notifications AS n SET resource_path=(SELECT CASE WHEN c.status='accepted' THEN '/groups/connections/'||c.id||'/channel'
+        ELSE ${sentInvitationPath('c')} END FROM group_connections c WHERE n.event_key LIKE 'group-response:'||c.id||':%')
+      WHERE resource_path='/groups/connect' AND EXISTS(SELECT 1 FROM group_connections c WHERE n.event_key LIKE 'group-response:'||c.id||':%');
+      UPDATE notifications AS n SET resource_path=(SELECT CASE WHEN p.status='confirmed' THEN '/groups/'||p.party_id||'/members'
+        ELSE ${matchPath('p', 'n.user_id')} END FROM match_proposals p
+        WHERE n.event_key='match-offer:'||p.id OR n.event_key LIKE 'match-approval:'||p.id||':%' OR n.event_key LIKE 'match-status:'||p.id||':%')
+      WHERE resource_path LIKE '/concerts/%' AND EXISTS(SELECT 1 FROM match_proposals p
+        WHERE n.event_key='match-offer:'||p.id OR n.event_key LIKE 'match-approval:'||p.id||':%' OR n.event_key LIKE 'match-status:'||p.id||':%');`);
     // The previous scheme wrote one row per message with a generic title. Those
     // rows cannot be upgraded in place — their keys are per-message — so they are
     // cleared once. A per-conversation row reappears with the next message, named

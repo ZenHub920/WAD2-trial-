@@ -168,6 +168,16 @@ export function createRecommendationRepo(db, repos) {
             a.id.localeCompare(b.id),
         );
     },
+    individualDiscovery(user, concert) {
+      const groups = this.individual(user, concert);
+      let state = 'available';
+      if (!concertParticipationEligibility(repos.concerts.findById(concert)).eligible) state = 'participation_unavailable';
+      else if (repos.membership.active(user, concert)) state = 'membership_confirmed';
+      else if (repos.proposals.forUser(user, concert, ['proposed']).some(p => p.role === 'seeker'
+        && repos.parties.findById(p.partyId)?.status !== 'cancelled' && p.expiresAt > Date.now())) state = 'offer_active';
+      else if (!groups.length) state = repos.groups.hasVisibleGroups(user, concert) ? 'groups_unavailable' : 'no_eligible_groups';
+      return { groups, discovery: { state, eligibleCount: groups.length } };
+    },
     groups(user, concert, source) {
       const candidates = repos.groups.connectionCandidates(
         user,

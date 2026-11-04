@@ -1,4 +1,4 @@
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api.js';
 import { currentUser } from '../auth.js';
@@ -41,6 +41,21 @@ export function useMeetupBoard(props) {
   let createdAttempt = null;
   let resolveLeave;
   const creatingAdditional = ref(false);
+  const availabilityResponse = ref('unanswered'), savedAvailabilityResponse = ref('unanswered');
+  const unavailable = computed({ get: () => availabilityResponse.value === 'unavailable', set: value => {
+    selectedTimes.value = [];
+    availabilityResponse.value = value ? 'unavailable' : 'unanswered';
+  } });
+  const hasResponded = computed(() => savedAvailabilityResponse.value !== 'unanswered');
+  const responseLabel = computed(() => ({ available: 'Available times selected', unavailable: 'Unavailable for these times', unanswered: 'No response selected' })[availabilityResponse.value]);
+  const manualPlaceId = ref(''), manualStartsAt = ref(''), acknowledgeNoAvailability = ref(false);
+  const manualOption = computed(() => {
+    const candidate = board.value?.places.find(place => place.id === manualPlaceId.value);
+    const slot = board.value?.grid.find(slot => String(slot.startsAt) === String(manualStartsAt.value));
+    return candidate && slot ? { placeId: candidate.id, label: candidate.label, startsAt: slot.startsAt,
+      availableCount: slot.availableCount, participantCount: board.value.participantCount, votes: candidate.votes ?? 0 } : null;
+  });
+  watch([manualPlaceId, manualStartsAt], () => { acknowledgeNoAvailability.value = false; });
   const capabilities = computed(() => board.value?.capabilities ?? {});
   const contributionsLocked = computed(() => !capabilities.value.canContribute);
   const coordinate = value => value !== null && value !== '' && Number.isFinite(Number(value));
@@ -70,6 +85,14 @@ export function useMeetupBoard(props) {
   const pickedPlace = computed(() => placeChoices.value.find(choice => choice.placeId === pickedPlaceId.value) ?? null);
   const pickedOption = computed(() => pickedPlace.value?.times.find(option => String(option.startsAt) === pickedStartsAt.value) ?? null);
   const pickedVotes = computed(() => board.value?.places.find(candidate => candidate.id === pickedPlaceId.value)?.votes ?? pickedOption.value?.votes ?? 0);
+  const comparingOptions = ref(false);
+  const bestOption = computed(() => recommendedOptions.value[0] ?? null);
+  const pickedIsBest = computed(() => pickedOption.value?.placeId === bestOption.value?.placeId
+    && pickedOption.value?.startsAt === bestOption.value?.startsAt);
+  function useBestOption() {
+    if (!bestOption.value || busy.value || refreshing.value) return;
+    pickPlace(bestOption.value.placeId); pickTime(bestOption.value.startsAt);
+  }
   function pickPlace(placeId) {
     const choice = placeChoices.value.find(option => option.placeId === placeId);
     if (!choice) return;
@@ -91,8 +114,8 @@ export function useMeetupBoard(props) {
     ? `Route comparison covers ${travelRecommendations.value.options?.length ?? 0} time/place options across ${travelRecommendations.value.shortlistedPlaces ?? '?'} of ${travelRecommendations.value.eligiblePlaces ?? board.value?.places.length ?? '?'} eligible places. This is a bounded shortlist, not a global route optimization.` : 'Suggestions use saved availability. You choose the final time and place; recommendations do not confirm a meetup.');
   const hasSavedAvailability = computed(() => board.value?.grid.some(slot => slot.availableCount > 0));
   const recommendationEmpty = computed(() => recommendationsLoading.value ? 'Updating filtered recommendations…'
-    : recommendationsInvalid.value ? 'Recommendations need refreshing. Your saved suggestions are still available above.'
-    : !board.value?.places.length ? 'No places suggested yet. Add a public meeting place above.'
+    : recommendationsInvalid.value ? 'Recommendations need refreshing. Your saved places remain in step 2.'
+    : !board.value?.places.length ? 'No places suggested yet. Add a public meeting place in step 2.'
     : travelOptions.shelteredOnly && !board.value.places.some(p => p.sheltered) ? 'The shelter filter excludes all suggested places. Clear it or suggest a sheltered place.'
       : !hasSavedAvailability.value ? 'Your suggested places are saved. Recommendations will appear once participants save their available times.'
         : 'No suitable time and place combinations yet. Review saved availability or suggest another place.');
@@ -105,6 +128,7 @@ export function useMeetupBoard(props) {
     set: times => {
       const chosen = new Set(times);
       for (const [start, slot] of Object.entries(slots.value)) slot.selected = chosen.has(Number(start));
+      availabilityResponse.value = chosen.size ? 'available' : 'unanswered';
     },
   });
   const scope = computed(() => normalizeMeetupScope(route.query));
@@ -159,7 +183,8 @@ export function useMeetupBoard(props) {
   }, { immediate: true, flush: 'sync' });
   const selectionSnapshot = rows => JSON.stringify(Object.entries(rows).filter(([, slot]) => slot.selected)
     .map(([start, slot]) => [Number(start), slot.travelMode, slot.latitude, slot.longitude, slot.label]));
-  const availabilityDirty = computed(() => selectionSnapshot(slots.value) !== savedSlots.value);
+  const availabilityDirty = computed(() => selectionSnapshot(slots.value) !== savedSlots.value
+    || availabilityResponse.value !== savedAvailabilityResponse.value);
   const journeySnapshot = () => JSON.stringify(position);
   const appliedJourney = ref(journeySnapshot());
   const journeyDirty = computed(() => journeySnapshot() !== appliedJourney.value
@@ -172,6 +197,48 @@ export function useMeetupBoard(props) {
   });
   const hasUnsavedDrafts = computed(() => Boolean(props.id && currentUser.value && board.value && (
     availabilityDirty.value || journeyDirty.value || comment.value.trim() || placeDirty.value)));
+  const hasOwnSavedTimes = computed(() => savedSlots.value !== '[]');
+  const organizerRole = computed(() => capabilities.value.isOrganizer
+    ? 'You help choose and approve the final plan. Everyone can share times, suggest places and vote while planning is open.'
+    : 'You can share times, suggest places and vote while planning is open. The required organizers choose and approve the final plan.');
+  const nextStep = computed(() => {
+    const plan = board.value;
+    if (!plan) return null;
+    if (plan.status === 'confirmed') return { title: 'Your meetup is confirmed', body: 'The agreed time and place are saved. Check travel information before setting off; discussion stays open.', label: 'View the agreed plan', step: 'review', target: '.meetup-current-proposal' };
+    if (plan.status === 'cancelled') return { title: 'This meetup is cancelled', body: 'Saved contributions are read-only. Return to your conversation to arrange another plan.', label: 'View the saved plan', step: 'review', target: '.meetup-current-proposal' };
+    if (plan.status === 'proposed') {
+      if (capabilities.value.canApprove) return { title: 'Your approval is needed', body: 'Review the proposed time and place, then explicitly approve this version. It is confirmed only when every required approval is recorded.', label: 'Review and approve', step: 'review', target: '.meetup-current-proposal .btn--success' };
+      return { title: plan.hasApproved ? 'Waiting for the remaining approval' : 'Waiting for organizer approval', body: plan.hasApproved ? 'Your approval is saved. The other required approver still needs to review this version.' : 'The organizers are reviewing this proposal. You can read it and discuss any concerns; place votes do not count as approval.', label: 'View the proposal', step: 'review', target: '.meetup-current-proposal' };
+    }
+    if (!capabilities.value.canContribute) return { title: 'View the planning progress', body: 'Your current permissions allow you to inspect this plan. Contribution controls follow the current planning permissions.', label: 'View planning discussion', step: 'review', target: '.meetup-discussion' };
+    if (availabilityDirty.value) return { title: 'Save your time changes', body: 'Your selected times are still a private draft. Recommendations and other participants use your last saved availability until you save.', label: 'Review and save my times', step: 'availability', target: '.meetup-save-bar .btn--primary' };
+    if (journeyDirty.value) return { title: 'Apply your optional journey details', body: 'These starting-point or travel changes have not been applied. Apply them to selected times, then save your availability. You can also leave the starting point blank.', label: 'Review journey details', step: 'availability', target: '.meetup-journey' };
+    if (placeDirty.value) return { title: editingPlaceId.value ? 'Save your place correction' : 'Share your place suggestion', body: 'This place is still a draft. Saving shares it with participants; it does not select a final time or approve a meetup.', label: 'Review my place draft', step: 'places', target: '.meetup-place-editor input[required]' };
+    if (comment.value.trim()) return { title: 'Finish your discussion message', body: 'Your message has not been posted. Review it in the discussion before leaving this planner.', label: 'Review my message', step: 'review', target: '.meetup-discussion textarea' };
+    if (capabilities.value.canPropose && recommendationsInvalid.value) return { title: 'Refresh the recommendations', body: 'Your saved contributions are kept. Refresh the options before choosing the final time and place.', label: 'Reload recommendations', refresh: true };
+    if (capabilities.value.canPropose && bestOption.value) return { title: 'Review a time and place for your group', body: `${bestOption.value.availableCount} of ${bestOption.value.participantCount} participants marked themselves available for the leading option. Review it or compare alternatives before submitting.`, label: 'Review the recommendation', step: 'review', target: '.meetup-option .btn--primary' };
+    if (!hasResponded.value) return { title: 'Share when you can meet', body: 'No response is saved for you. Select the half-hour blocks you can make, or tell the group you cannot make these times, then save. You can explore the other steps first.', label: 'Choose my available times', step: 'availability', target: '[data-availability-start]' };
+    if (!plan.places.length) return { title: 'Suggest somewhere to meet', body: 'Your response is saved. Add a public meeting place so the group can compare time and place options. A suggestion is not a confirmed plan.', label: 'Suggest a meeting place', step: 'places', target: '.meetup-place-editor input[required]' };
+    if (capabilities.value.canPropose) return { title: 'Collect availability for a recommendation', body: 'Places are saved, but there is no usable time and place combination yet. Ask participants to save times, or review the saved availability.', label: 'Review group availability', step: 'availability', target: '.meetup-time-context' };
+    return plan.currentVotePlaceId
+      ? { title: 'Your place preference is saved', body: 'Your vote helps the organizers compare places. It does not approve a meeting time. You can change your vote or discuss the plan while organizers choose.', label: 'View planning discussion', step: 'review', target: '.meetup-discussion' }
+      : { title: 'Help choose a meeting place', body: 'Your response is saved. Suggest a place or optionally vote for an existing one. The organizers choose the final time and place; you do not need to vote to read the discussion.', label: 'Explore suggested places', step: 'places', target: '.meetup-suggested-places' };
+  });
+  async function followNextStep() {
+    if (busy.value || refreshing.value || !nextStep.value) return;
+    if (nextStep.value.refresh) { await refreshPlanner(); return; }
+    const key = context();
+    const { step, target } = nextStep.value;
+    showStep(step);
+    await nextTick();
+    if (context() !== key || !board.value) return;
+    const element = document.querySelector(target);
+    if (!element) return;
+    if (element instanceof HTMLDetailsElement) element.open = true;
+    if (!element.matches('button, input, textarea, select, summary, [tabindex]')) element.tabIndex = -1;
+    element.focus({ preventScroll: true });
+    element.scrollIntoView?.({ block: 'nearest', behavior: 'auto' });
+  }
   // Hash changes only switch stages on the same board. All other ordinary
   // navigation shares one confirmation, including Back and in-app links.
   const stopNavigationGuard = router.beforeEach((to, from) => {
@@ -195,7 +262,7 @@ export function useMeetupBoard(props) {
     event.preventDefault(); event.returnValue = '';
   }
   const clearNotice = area => { feedback[area] = ''; failures[area] = ''; };
-  watch(() => selectionSnapshot(slots.value), () => { feedback.availability = ''; }, { flush: 'sync' });
+  watch(() => `${availabilityResponse.value}:${selectionSnapshot(slots.value)}`, () => { feedback.availability = ''; }, { flush: 'sync' });
   watch(journeySnapshot, () => { feedback.journey = ''; }, { flush: 'sync' });
   watch(() => JSON.stringify(place), () => {
     if (place.label.trim() || place.latitude !== '' || place.longitude !== '' || !place.sheltered) feedback.places = '';
@@ -234,6 +301,7 @@ export function useMeetupBoard(props) {
   function clearUnavailable(message = 'This meetup is unavailable, or you are no longer a participant.') {
     loadRequest++;
     board.value = null; slots.value = {}; savedSlots.value = '[]';
+    availabilityResponse.value = savedAvailabilityResponse.value = 'unanswered';
     travelRecommendations.value = null; transport.value = null; weather.value = null; rainfall.value = null;
     confirmAction.value = null; proposalReview.value = null; removingPlace.value = null;
     error.value = message;
@@ -244,7 +312,7 @@ export function useMeetupBoard(props) {
       const data = (await api.meetup(props.id, travelOptions.shelteredOnly ? { shelteredOnly: true } : {})).meetup;
       if (!alive || context() !== key || request !== loadRequest) return;
       const keepDraft = preserveDrafts && availabilityDirty.value;
-      if (board.value?.version !== data.version) {
+      if (board.value?.version !== data.version || board.value?.participationRevision !== data.participationRevision) {
         travelRecommendations.value = null; transport.value = null; weather.value = null; rainfall.value = null;
       }
       const nextSlots = Object.fromEntries(
@@ -265,6 +333,8 @@ export function useMeetupBoard(props) {
         }),
       );
       savedSlots.value = selectionSnapshot(nextSlots);
+      savedAvailabilityResponse.value = data.availabilityResponse ?? (data.availability.length ? 'available' : 'unanswered');
+      if (!keepDraft) availabilityResponse.value = savedAvailabilityResponse.value;
       if (keepDraft) for (const start of Object.keys(nextSlots)) if (slots.value[start]) nextSlots[start] = slots.value[start];
       slots.value = nextSlots;
       for (const [start, point] of slotLookups) if (!nextSlots[start]
@@ -297,6 +367,9 @@ export function useMeetupBoard(props) {
       creationContext.value = null; confirmAction.value = null;
       proposalReview.value = null; removingPlace.value = null; editingPlaceId.value = null;
       pickedPlaceId.value = ''; pickedStartsAt.value = ''; selectionTouched.value = false;
+      comparingOptions.value = false;
+      manualPlaceId.value = ''; manualStartsAt.value = ''; acknowledgeNoAvailability.value = false;
+      availabilityResponse.value = savedAvailabilityResponse.value = 'unanswered';
       recommendationsLoading.value = false; recommendationsInvalid.value = false;
       createdAttempt = null; slotLookups.clear();
       creatingAdditional.value = false;
@@ -357,24 +430,9 @@ export function useMeetupBoard(props) {
       void refreshPlanner();
     }, 150);
   }
-  // Saved personal times open the later stages. Place votes are optional
-  // preferences and must not prevent reading discussion or reviewing a plan.
-  // Locked or decided plans (and people who cannot contribute) can read every step.
-  function stepUnlocked(step) {
-    const plan = board.value;
-    if (!plan || contributionsLocked.value || plan.selected_place_id) return true;
-    const timesSaved = savedSlots.value !== '[]';
-    if (step === 'places') return timesSaved;
-    if (step === 'review') return timesSaved;
-    return true;
-  }
-  // A link or refresh can land on a step that is not open yet; fall back to the furthest open one.
-  watch(() => !stepUnlocked(activeStep.value), (locked) => {
-    if (!locked) return;
-    const step = [...plannerSteps].reverse().find(stepUnlocked);
-    activeStep.value = step;
-    if (props.id && route.hash) void router.replace({ path: route.path, query: route.query, hash: `#meetup-${step}` });
-  });
+  // Detail access already authorizes reading every stage. Missing personal
+  // availability is guidance, not a server contribution or approval restriction.
+  const stepUnlocked = step => plannerSteps.includes(step);
   function showStep(step) {
     if (!plannerSteps.includes(step) || !stepUnlocked(step)) return;
     activeStep.value = step;
@@ -421,7 +479,10 @@ export function useMeetupBoard(props) {
       invalidateMeetupSummaries();
       if (!alive || context() !== key) return;
       onSaved?.(result);
-      if (savingAvailability) savedSlots.value = selectionSnapshot(slots.value);
+      if (savingAvailability) {
+        savedSlots.value = selectionSnapshot(slots.value);
+        savedAvailabilityResponse.value = availabilityResponse.value;
+      }
       // A successful mutation must not be reported as a failed save merely
       // because its follow-up read was unavailable.
       try { await load({ preserveDrafts: !savingAvailability }); }
@@ -442,7 +503,7 @@ export function useMeetupBoard(props) {
         clearUnavailable(); return;
       }
       failures[area] = meetupErrorMessage(e.message);
-      if (e.message === 'stale_meetup_version') await refreshPlannerAfterConflict();
+      if (['stale_meetup_version', 'stale_meetup_membership'].includes(e.message)) await refreshPlannerAfterConflict();
     } finally {
       if (context() === key) {
         busy.value = false;
@@ -506,8 +567,24 @@ export function useMeetupBoard(props) {
               : {}),
           })),
         board.value.version,
+        ...(!selected.length ? [availabilityResponse.value] : []),
       ),
-      { savingAvailability: true, area: 'availability', onSaved: () => { travelRecommendations.value = null; recommendationsInvalid.value = true; }, success: 'Your availability and journey have been saved.' },
+      { savingAvailability: true, area: 'availability', onSaved: result => {
+        travelRecommendations.value = null; recommendationsInvalid.value = true;
+        const previous = board.value.availabilityResponse ?? (board.value.availability.length ? 'available' : 'unanswered');
+        const status = availabilityResponse.value;
+        if (board.value.availabilityResponses && previous !== status) {
+          const counts = { ...board.value.availabilityResponses };
+          counts[`${previous}Count`]--; counts[`${status}Count`]++;
+          counts.respondedCount += Number(status !== 'unanswered') - Number(previous !== 'unanswered');
+          board.value.availabilityResponses = counts;
+        }
+        board.value.availabilityResponse = status; board.value.hasResponded = status !== 'unanswered';
+        if (Number.isInteger(result.result?.version)) board.value.version = result.result.version;
+      }, success: () => availabilityResponse.value === 'unavailable'
+        ? "Your availability has been saved. The group knows you cannot make these times."
+        : availabilityResponse.value === 'unanswered' ? 'Your saved response has been cleared. You have not marked yourself unavailable.'
+          : 'Your availability has been saved.' },
     );
     if (ok) feedback.journey = '';
   }
@@ -539,6 +616,9 @@ export function useMeetupBoard(props) {
       onSaved: result => {
         travelRecommendations.value = null; recommendationsInvalid.value = true;
         if (Number.isInteger(result.place?.version)) board.value.version = result.place.version;
+        if (!editing && result.place?.id && !result.place.unchanged && !board.value.places.some(candidate => candidate.id === result.place.id))
+          board.value.places = [...board.value.places, { ...data, id: result.place.id, proposed_by: currentUser.value.id,
+            votes: 0, canEdit: true, canRemove: true }];
         if (editing && !result.place?.unchanged) board.value = { ...board.value,
           places: board.value.places.map(candidate => candidate.id === editing ? { ...candidate, ...data, votes: 0 } : candidate),
           currentVotePlaceId: board.value.currentVotePlaceId === editing ? null : board.value.currentVotePlaceId };
@@ -586,7 +666,7 @@ export function useMeetupBoard(props) {
   function vote(placeId) {
     const previous = board.value.currentVotePlaceId, removing = previous === placeId;
     return act(() => removing ? api.removeMeetupVote(props.id, board.value.version) : api.voteMeetupPlace(props.id, placeId, board.value.version), {
-      area: 'places', success: removing ? 'Your vote has been removed.' : 'Your vote has been saved.',
+      area: 'places', success: removing ? 'Your vote has been removed.' : 'Your vote has been saved. This records your preferred place; the final time and place still need organizer confirmation.',
       onSaved: result => {
         board.value = { ...board.value, currentVotePlaceId: removing ? null : placeId,
           ...(Number.isInteger(result.result?.version) ? { version: result.result.version } : {}),
@@ -599,21 +679,42 @@ export function useMeetupBoard(props) {
   function requestProposal(option) {
     if (busy.value || refreshing.value || recommendationsLoading.value || recommendationsInvalid.value || !capabilities.value.canPropose || !recommendedOptions.value.some(candidate => candidate.placeId === option?.placeId
       && String(candidate.startsAt) === String(option?.startsAt))) return;
-    proposalReview.value = { ...option, version: board.value.version, immediate: isSoleApprover.value,
+    proposalReview.value = { ...option, version: board.value.version, participationRevision: board.value.participationRevision, immediate: isSoleApprover.value,
       votes: board.value.places.find(candidate => candidate.id === option.placeId)?.votes ?? option.votes ?? 0,
       preferred: board.value.currentVotePlaceId === option.placeId };
+  }
+  function requestManualProposal() {
+    const option = manualOption.value;
+    if (!option || busy.value || refreshing.value || recommendationsInvalid.value || recommendationsLoading.value || !capabilities.value.canPropose) return;
+    if (!option.availableCount && !acknowledgeNoAvailability.value) {
+      failures.recommendations = 'No participant has marked this time available. Acknowledge this before reviewing the proposal.';
+      return;
+    }
+    proposalReview.value = { ...option, manual: true, version: board.value.version,
+      participationRevision: board.value.participationRevision,
+      acknowledgeNoAvailability: !option.availableCount && acknowledgeNoAvailability.value,
+      immediate: isSoleApprover.value, preferred: board.value.currentVotePlaceId === option.placeId };
+  }
+  function reviewedChoiceExists(option) {
+    return option.manual
+      ? board.value.places.some(place => place.id === option.placeId)
+        && board.value.grid.some(slot => slot.startsAt === option.startsAt && slot.availableCount === option.availableCount)
+        && (option.availableCount > 0 || option.acknowledgeNoAvailability === true)
+      : recommendedOptions.value.some(candidate => candidate.placeId === option.placeId && String(candidate.startsAt) === String(option.startsAt));
   }
   async function propose() {
     const option = proposalReview.value, key = context();
     if (!option) return;
-    if (board.value?.version !== option.version || !capabilities.value.canPropose
-      || !recommendedOptions.value.some(candidate => candidate.placeId === option.placeId && String(candidate.startsAt) === String(option.startsAt))) {
+    if (board.value?.version !== option.version || board.value?.participationRevision !== option.participationRevision || !capabilities.value.canPropose
+      || !reviewedChoiceExists(option)) {
       proposalReview.value = null;
       failures.recommendations = 'This recommendation or plan has changed. Review the current time and place before submitting again.';
       return;
     }
     const ok = await act(() => api.proposeMeetupPlan(props.id, { placeId: option.placeId,
-      startsAt: iso(option.startsAt), version: option.version }), { area: 'review',
+      startsAt: iso(option.startsAt), version: option.version,
+      ...(option.participationRevision !== undefined ? { participationRevision: option.participationRevision } : {}),
+      ...(option.acknowledgeNoAvailability ? { acknowledgeNoAvailability: true } : {}) }), { area: 'review',
       onSaved: result => {
         if (!result.proposal) return;
         const confirmed = Boolean(result.proposal.confirmed);
@@ -700,12 +801,18 @@ export function useMeetupBoard(props) {
   // These reads share the same board/session/version guards and never overwrite drafts.
   async function readPlan(request, apply, area, failureMessage) {
     if (busy.value) return;
-    const key = context(), version = board.value?.version, id = props.id, filter = travelOptions.shelteredOnly;
+    const key = context(), version = board.value?.version, participation = board.value?.participationRevision, id = props.id, filter = travelOptions.shelteredOnly;
     busy.value = true; failures[area] = '';
-    const stillCurrent = () => alive && context() === key && board.value?.version === version && travelOptions.shelteredOnly === filter;
+    const stillCurrent = () => alive && context() === key && board.value?.version === version && board.value?.participationRevision === participation && travelOptions.shelteredOnly === filter;
     try {
       const result = await request(id);
-      if (stillCurrent()) apply(result);
+      if (stillCurrent()) {
+        const recommendations = result.recommendations;
+        if (recommendations && (recommendations.version !== version || recommendations.participationRevision !== participation)) {
+          travelRecommendations.value = null; recommendationsInvalid.value = true;
+          failures.recommendations = 'The plan changed while journey options were loading. Refresh the planner before reviewing a final choice.';
+        } else apply(result);
+      }
     } catch (cause) {
       if (stillCurrent()) {
         if ([401, 403, 404].includes(cause.status)) clearUnavailable();
@@ -728,12 +835,14 @@ export function useMeetupBoard(props) {
     route, router, currentUser, context, board, boards, error, busy, loading, creationContext,
     scope, hasActiveBoards, showCreation, creatingAdditional, returnRoute, returnLabel, proposalLabel, proposalGuidance, approvalGuidance,
     weather, rainfall, travelRecommendations, transport, comment, slots, place, position, travelOptions,
+    availabilityResponse, savedAvailabilityResponse, unavailable, hasResponded, responseLabel,
+    manualPlaceId, manualStartsAt, manualOption, acknowledgeNoAvailability, requestManualProposal,
     feedback, failures, placeSearchKey, journeySearchKey, confirmAction, capabilities, contributionsLocked, selectedOrigins,
-    editingPlaceId, removingPlace, proposalReview, proposalReviewBody, recommendationsLoading,
-    leavePrompt, settleLeave, hasUnsavedDrafts, journeyDirty, placeDirty,
+    editingPlaceId, removingPlace, proposalReview, proposalReviewBody, recommendationsLoading, recommendationsInvalid,
+    leavePrompt, settleLeave, hasUnsavedDrafts, journeyDirty, placeDirty, hasOwnSavedTimes, organizerRole, nextStep, followNextStep,
     selectPlace, selectJourney, invalidatePlace, invalidateJourney, editPlace, editJourney,
     selectedSlotCount, bestSavedOverlap, selectedTimes, activeStep, availabilityDirty, refreshing, syncNote,
-    liveLabel, statuses, time, validCoordinates, recommendedOptions, placeChoices, pickedPlace, pickedOption, pickedVotes, pickedStartsAt, pickPlace, pickTime, rankingMessage, recommendationMethod, recommendationScope, journeySummary, hasSavedAvailability, recommendationEmpty,
+    liveLabel, statuses, time, validCoordinates, recommendedOptions, placeChoices, pickedPlace, pickedOption, pickedVotes, pickedStartsAt, pickPlace, pickTime, comparingOptions, bestOption, pickedIsBest, useBestOption, rankingMessage, recommendationMethod, recommendationScope, journeySummary, hasSavedAvailability, recommendationEmpty,
     refreshPlanner, showStep, stepUnlocked, navigateSteps, create, saveAvailability, discardAvailability, assignJourney,
     addPlace, resetPlaceDraft, correctPlace, requestRemovePlace, removePlace, vote, requestProposal, propose, approve, requestOrganizerAction, organizerAction, postComment, getWeather, getTravelSuggestions, getParking, changeShelterFilter,
    };

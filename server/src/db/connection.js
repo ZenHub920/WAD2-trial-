@@ -26,6 +26,7 @@ import { migrateProviders } from './providerMigrations.js';
 import { migrateAccountSecurity } from './accountSecurityRepository.js';
 import { migrateDelivery } from './deliveryRepository.js';
 import { migrateSetlists } from './setlistRepository.js';
+import { migrateMatchingSearches } from './matchingSearchMigrations.js';
 const here = dirname(fileURLToPath(import.meta.url));
 
 let db = null;
@@ -59,6 +60,7 @@ export function getDb() {
   migrateAccountSecurity(db);
   migrateDelivery(db);
   migrateSetlists(db);
+  migrateMatchingSearches(db);
   return db;
 }
 
@@ -267,6 +269,7 @@ export function createTestDb({ hybrid = true } = {}) {
   migrateAccountSecurity(testDb);
   migrateDelivery(testDb);
   migrateSetlists(testDb);
+  migrateMatchingSearches(testDb);
   return testDb;
 }
 

@@ -52,7 +52,7 @@ export const api = {
   meetupContext: scope=>request(`/meetup-context?${new URLSearchParams(scope)}`),
   createMeetup: data=>request('/meetups',{method:'POST',body:JSON.stringify(data)}),
   meetup: (id,options={})=>request(`/meetups/${encodeURIComponent(id)}${Object.keys(options).length ? `?${new URLSearchParams(options)}` : ''}`),
-  meetupAvailability: (id,windows,version)=>request(`/meetups/${encodeURIComponent(id)}/availability`,{method:'PUT',body:JSON.stringify({windows,...(version === undefined ? {} : {version})})}),
+  meetupAvailability: (id,windows,version,responseStatus)=>request(`/meetups/${encodeURIComponent(id)}/availability`,{method:'PUT',body:JSON.stringify({windows,...(version === undefined ? {} : {version}),...(responseStatus === undefined ? {} : {responseStatus})})}),
   proposeMeetupPlace: (id,data)=>request(`/meetups/${encodeURIComponent(id)}/places`,{method:'POST',body:JSON.stringify(data)}),
   updateMeetupPlace: (id,placeId,data)=>request(`/meetups/${encodeURIComponent(id)}/places/${encodeURIComponent(placeId)}`,{method:'PUT',body:JSON.stringify(data)}),
   removeMeetupPlace: (id,placeId,version)=>request(`/meetups/${encodeURIComponent(id)}/places/${encodeURIComponent(placeId)}`,{method:'DELETE',body:JSON.stringify({version})}),
@@ -268,6 +268,9 @@ export const api = {
   groupMatching: (id) => request(`/me/concerts/${encodeURIComponent(id)}/matching`),
   findMyGroup: (id, batchKey) => request(`/me/concerts/${encodeURIComponent(id)}/matching`, {
     method: 'POST', headers: { 'Idempotency-Key': batchKey },
+  }),
+  findGroupMatch: (id, attemptKey) => request(`/me/concerts/${encodeURIComponent(id)}/matching/find`, {
+    method: 'POST', headers: { 'Idempotency-Key': attemptKey },
   }),
   leaveGroupMatching: (id) => request(`/me/concerts/${encodeURIComponent(id)}/matching`, { method: 'DELETE' }),
 

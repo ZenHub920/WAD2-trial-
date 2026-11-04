@@ -66,6 +66,38 @@ describe('direct comparison with real listing cards', () => {
     expect(wrapper.text()).toContain('Your pick so far');
     expect(applyGroup).not.toHaveBeenCalled();
   });
+  it('keeps a cancelled review local and allows the same group to be reviewed again', async () => {
+    const applyGroup = vi.fn().mockResolvedValueOnce('cancelled').mockResolvedValueOnce(true);
+    const candidate = group('a', 'Alpha');
+    const wrapper = mount(GroupComparisonDeck, { props: {
+      groups: [candidate], sessionKey: 'concert-1', instructionsSeen: true, canApply: true, applyGroup,
+    } });
+    await flushPromises();
+    await button(wrapper, 'Request to join').trigger('click'); await flushPromises();
+    expect(wrapper.text()).toContain('No request sent to Alpha.');
+    expect(wrapper.text()).not.toContain('Request sent to Alpha');
+    expect(wrapper.find('article h3').text()).toBe('Alpha');
+    expect(button(wrapper, 'Request to join').element.disabled).toBe(false);
+    await button(wrapper, 'Request to join').trigger('click'); await flushPromises();
+    expect(applyGroup.mock.calls).toEqual([[candidate], [candidate]]);
+    expect(wrapper.text()).toContain('Request sent to Alpha');
+  });
+  it('locks a pending request review against duplicate submissions without reporting an application', async () => {
+    let finishReview;
+    const applyGroup = vi.fn(() => new Promise(resolve => { finishReview = resolve; }));
+    const wrapper = mount(GroupComparisonDeck, { props: {
+      groups: [group('a', 'Alpha')], sessionKey: 'concert-1', instructionsSeen: true, canApply: true, applyGroup,
+    } });
+    await flushPromises();
+    await button(wrapper, 'Request to join').trigger('click');
+    expect(button(wrapper, 'Request to join').element.disabled).toBe(true);
+    await button(wrapper, 'Request to join').trigger('click');
+    expect(applyGroup).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).not.toContain('Request sent to Alpha');
+    finishReview('cancelled'); await flushPromises();
+    expect(button(wrapper, 'Request to join').element.disabled).toBe(false);
+    expect(wrapper.text()).toContain('No request sent to Alpha.');
+  });
 });
 describe('automatic approvals and arrival queue', () => {
   it('applies the saved approval response immediately if the parent cannot refresh the proposal', async () => {
@@ -75,6 +107,7 @@ describe('automatic approvals and arrival queue', () => {
     expect(wrapper.text()).toContain('Your approval is saved');
     expect(wrapper.findAll('button').some(item => item.text() === 'Accept group offer')).toBe(false);
     expect(wrapper.text()).toContain('Waiting for host');
+    expect(wrapper.emitted('updated')[0][0]).toMatchObject({ id: 'offer-1', role: 'seeker', status: 'proposed', seekerApproved: true, hostApproved: false });
     expect(api.acceptProposal).toHaveBeenCalledTimes(1);
   });
   it('keeps historical automatic and direct requests readable, disables acceptance and leaves decline available', async () => {
@@ -102,7 +135,7 @@ describe('automatic approvals and arrival queue', () => {
     expect(wrapper.text()).toContain('The host still needs to approve.');
     expect(wrapper.findAll('button').some(item => item.text() === 'Accept group offer')).toBe(false);
     await wrapper.setProps({ proposal: proposal({ seekerApproved: true, hostApproved: true, status: 'confirmed', eventDate: '2099-01-01' }) });
-    expect(wrapper.text()).toContain('Your group spot is confirmed.');
+    expect(wrapper.text()).toContain('Your group membership is confirmed.');
   });
   it('blocks accepting a queued offer but lets its seeker decline', async () => {
     api.declineProposal.mockResolvedValue({});

@@ -1,20 +1,27 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join as joinPath } from 'node:path';
 
 import { createApp } from '../../server/src/app.js';
 import { createTestDb } from '../../server/src/db/connection.js';
 
+const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
 async function fixture(t) {
   const db = createTestDb();
+  const avatarDir = mkdtempSync(joinPath(tmpdir(), 'encore-kaki-avatars-'));
   let server;
   async function listen() {
-    server = createApp({ db }).app.listen(0, '127.0.0.1');
+    server = createApp({ db, avatarDir }).app.listen(0, '127.0.0.1');
     await new Promise((resolve) => server.once('listening', resolve));
   }
   await listen();
   t.after(async () => {
     await new Promise((resolve) => server.close(resolve));
     db.close();
+    rmSync(avatarDir, { recursive: true, force: true });
   });
   async function api(path, { method = 'GET', cookie, body } = {}) {
     const response = await fetch(`http://127.0.0.1:${server.address().port}/api${path}`, {
@@ -27,7 +34,7 @@ async function fixture(t) {
   }
   async function user(name) {
     const result = await api('/auth/register', { method: 'POST', body: {
-      display_name: name, email: `${name}@example.test`, password: 'test-password',
+      display_name: name, email: `${name}@example.test`, password: 'test-password', avatar: PNG_1PX,
     } });
     assert.equal(result.status, 201);
     return { id: result.body.user.id, cookie: result.cookie };

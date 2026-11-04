@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "../api.js";
 import { useMeetupSummaries } from '../composables/useMeetupSummaries.js';
@@ -20,7 +20,7 @@ const router = useRouter();
 const { plans: meetupPlans } = useMeetupSummaries();
 const meetupLink = scope => meetupDestination(meetupPlans.value, scope, { from: 'manage-group' });
 const meetupLabel = scope => meetupActionForScope(meetupPlans.value, scope);
-const settingsPanel = ref(null);
+const settingsPanel = ref(null), inviteTools = ref(null);
 const cancelPrompt = ref(false), leavePrompt = ref(false);
 const group = ref(null),
   error = ref(""),
@@ -53,6 +53,21 @@ const publicationDirty = computed(() => Boolean(group.value) && connect.value !=
 const dirty = computed(() => detailsDirty.value || publicationDirty.value);
 const publicationLabel = computed(() => group.value?.settings?.published ? 'Save publication settings' : 'Publish group');
 const invalid = computed(() => nameMissing.value || !validCount(friends.value) || !validCount(strangerPlaces.value));
+// These are the same saved prerequisites checked by membership.publish.
+const joinedFriends = computed(() => group.value?.members.filter(member => member.source === 'friend').length ?? 0);
+const answeredMembers = computed(() => group.value?.members.filter(member => member.answered).length ?? 0);
+const friendsReady = computed(() => joinedFriends.value === savedFriends.value);
+const preferencesReady = computed(() => Boolean(group.value) && group.value.members.every(member => member.answered));
+const publicationReady = computed(() => Boolean(group.value?.settings) && friendsReady.value && preferencesReady.value);
+const ownPreferencesMissing = computed(() => group.value?.members.some(member => member.id === currentUser.value?.id && !member.answered));
+const publicationBlocker = computed(() => !group.value?.settings ? 'Save your group settings first.'
+  : detailsDirty.value ? 'Save your group details below before publishing or updating publication settings.'
+    : !friendsReady.value ? joinedFriends.value < savedFriends.value ? 'Wait for every expected friend to join, or update the saved number of friends in Group settings.'
+      : 'Update the saved number of friends to match the friends already in this group.'
+      : !preferencesReady.value ? 'Every member, including the host, must save their preferences in Profile before publishing.' : '');
+const setupTitle = computed(() => detailsDirty.value ? 'Save your group changes' : group.value?.settings?.published
+  ? group.value.settings.connect_open ? 'Published · connections on' : 'Published · connections off'
+  : publicationReady.value ? 'Ready to publish' : 'Finish your group setup');
 watch(invalid, (value) => {
   if (!value && error.value === "Fill in the highlighted fields before saving.") error.value = "";
 });
@@ -214,13 +229,21 @@ async function saveAll() {
   }
 }
 async function publish() {
-  if (busy.value || detailsDirty.value) return;
+  if (busy.value || detailsDirty.value || !publicationReady.value) return;
   const connectOpen = connect.value, id = props.id, userId = currentUser.value?.id;
   await act(async () => {
     await api.publishGroup(id, { connectOpen });
     if (!alive || props.id !== id || currentUser.value?.id !== userId) return;
     group.value = { ...group.value, settings: { ...group.value.settings, published: true, connect_open: connectOpen } };
   }, group.value.settings?.published ? 'Publication settings saved.' : 'Group published.');
+}
+async function openSetupPanel(panel) {
+  const element = panel === 'friends' ? inviteTools.value : settingsPanel.value;
+  if (!element) return;
+  element.open = true;
+  await nextTick();
+  (element.querySelector('button:not(:disabled), input:not(:disabled)') ?? element.querySelector('summary'))?.focus();
+  element.scrollIntoView?.({ behavior: 'instant', block: 'nearest' });
 }
 async function cancelGroup() {
   const id = props.id, userId = currentUser.value?.id;
@@ -280,10 +303,22 @@ async function leave() {
         <nav v-if="isHost" class="member-workspace__links" aria-label="Host tools">
           <span class="member-workspace__links-label">Host tools</span>
           <RouterLink v-if="isHost && canStartCoordination" :to="{path:'/groups/connect',query:{view:'connections',groupId:id,concertId:group.concertId}}">Connect with other groups</RouterLink>
-          <RouterLink v-if="isHost" :to="{path:'/groups/connect',query:{concertId:group.concertId},hash:'#join-requests'}">Review join applications</RouterLink>
+          <RouterLink v-if="isHost" :to="{path:'/groups/connect',query:{concertId:group.concertId,groupId:id},hash:'#join-requests'}">Review join applications</RouterLink>
         </nav>
       </section>
       <p v-if="group && isHost && !group.settings" class="group-muted" role="status">Your draft group exists. Save its settings below to finish setup before inviting friends or publishing.</p>
+      <section v-if="group && isHost && canStartCoordination" class="card group-panel group-setup" aria-labelledby="group-setup-heading">
+        <p class="member-eyebrow">Group setup</p><h2 id="group-setup-heading">{{ setupTitle }}</h2>
+        <p class="group-muted">{{ group.settings?.published ? 'Publishing makes your group discoverable. Connections are a separate setting; they never merge memberships.' : 'A draft stays private. Save your setup, invite any expected friends, then publish when every member has saved preferences.' }}</p>
+        <ol class="group-setup__checks">
+          <li><span :class="{'group-setup__done':group.settings}">{{ group.settings ? 'Settings saved' : 'Settings not saved' }}</span><button v-if="!group.settings || detailsDirty" type="button" class="btn btn--ghost" @click="openSetupPanel('settings')">Review group settings</button></li>
+          <li><span :class="{'group-setup__done':friendsReady}">{{ joinedFriends }} of {{ savedFriends }} expected friends joined</span><button v-if="joinedFriends < savedFriends && group.settings && !detailsDirty" type="button" class="btn btn--ghost" @click="openSetupPanel('friends')">Invite your friends</button><button v-else-if="!friendsReady" type="button" class="btn btn--ghost" @click="openSetupPanel('settings')">Review friend count</button></li>
+          <li><span :class="{'group-setup__done':preferencesReady}">{{ answeredMembers }} of {{ group.members.length }} members saved preferences</span><RouterLink v-if="ownPreferencesMissing" to="/profile#preferences">Save your private preferences</RouterLink><a v-else-if="!preferencesReady" href="#group-members">See who still needs to answer</a></li>
+        </ol>
+        <p v-if="publicationReady && !detailsDirty && !group.settings.published" class="group-muted">Next: choose whether to meet other groups, then publish below.</p>
+        <RouterLink v-if="group.settings?.published && group.settings.connect_open" class="btn btn--primary" :to="{path:'/groups/connect',query:{view:'connections',groupId:id,concertId:group.concertId}}">Discover groups to connect</RouterLink>
+        <a v-else href="#group-publication">{{ group.settings?.published ? 'Review connection settings' : publicationReady && !detailsDirty ? 'Go to publishing' : 'Review publication requirements' }}</a>
+      </section>
       <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading your group…</p>
       <section v-if="token && !group" class="card group-panel">
         <p>Join your friend's group using this invitation. Your saved profile preferences contribute to the group's shared preferences; your individual answers stay private.</p>
@@ -292,7 +327,7 @@ async function leave() {
       </section>
       <p v-else-if="error && !isHost" role="alert" class="group-error">{{ error }}</p>
       <template v-if="group">
-        <section class="card group-panel member-roster">
+        <section id="group-members" class="card group-panel member-roster">
           <div class="section-row">
             <h2>Members ({{ group.members.length }})</h2>
             <span class="group-state" :class="{ 'group-state--published': group.settings?.published && canStartCoordination }">{{ group.status === 'cancelled' ? 'Cancelled' : isFinished ? 'Past concert' : group.settings?.published ? "Published" : "Draft" }}</span>
@@ -363,9 +398,9 @@ async function leave() {
             </div>
           </details>
 
-          <section class="card group-panel member-publish">
+          <section id="group-publication" class="card group-panel member-publish">
             <h2>{{ canStartCoordination ? 'Invite friends & publish' : 'Friend invitations & group management' }}</h2>
-            <details class="member-invite-tools">
+            <details ref="inviteTools" class="member-invite-tools">
               <summary>Create a friend invitation <span>Single-use link</span></summary>
               <div class="member-invite-tools__content">
             <button class="btn btn--ghost" :disabled="busy || !group.settings || detailsDirty || group.status === 'cancelled'" @click="invite">Create single-use friend link</button>
@@ -376,8 +411,9 @@ async function leave() {
             <label v-if="canStartCoordination" class="group-check"><input v-model="connect" type="checkbox" :disabled="busy" />Open to meeting other groups</label>
             <p v-if="canStartCoordination" class="group-muted">{{ publicationDirty ? `Publication setting not saved. Use ${publicationLabel.toLowerCase()} to apply it.` : group.settings?.published ? 'Publication settings are saved.' : 'Publish when every expected friend has joined and every member has saved preferences.' }} Group details are saved separately below.</p>
             <p v-if="detailsDirty" class="group-muted">Save your group details below before publishing or updating publication settings.</p>
+            <p v-if="canStartCoordination && publicationBlocker && !detailsDirty" id="publication-blocked-reason" class="group-muted" role="status">{{ publicationBlocker }}</p>
             <div class="group-actions">
-              <button v-if="canStartCoordination" class="btn btn--primary" :disabled="busy || !group.settings || detailsDirty || (group.settings.published && !publicationDirty)" @click="publish">{{ publicationLabel }}</button>
+              <button v-if="canStartCoordination" class="btn btn--primary" :disabled="busy || !publicationReady || detailsDirty || (group.settings.published && !publicationDirty)" :aria-describedby="publicationBlocker && !detailsDirty ? 'publication-blocked-reason' : undefined" @click="publish">{{ publicationLabel }}</button>
               <button v-if="group.status !== 'cancelled'" class="btn btn--danger" :disabled="busy" @click="cancelPrompt = true">Cancel group</button>
             </div>
           </section>
@@ -405,6 +441,14 @@ async function leave() {
 </template>
 
 <style scoped>
+.group-setup { border-left:3px solid var(--accent-400); }
+.group-setup h2 { font-size:var(--step-1); }
+.group-setup__checks { display:grid; gap:var(--space-3); padding-left:var(--space-5); margin:0; }
+.group-setup__checks li { padding-left:var(--space-1); color:var(--text-300); }
+.group-setup__checks li > :first-child { margin-right:var(--space-3); }
+.group-setup__checks .group-setup__done { color:var(--mint-400); }
+.group-setup > .btn { justify-self:start; white-space:normal; }
+#group-members,#group-publication { scroll-margin-top:calc(var(--header-height) + var(--space-4)); }
 .member-eyebrow { margin:0 0 var(--space-1); font:600 .68rem var(--font-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--accent-400); }
 .member-workspace { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:var(--space-4); padding:var(--space-5); border:1px solid color-mix(in srgb,var(--accent-400) 36%,var(--panel-edge)); border-radius:var(--radius-lg); background:var(--panel-bg); box-shadow:var(--panel-shadow); }
 .member-workspace__context > p:last-child { margin-top:var(--space-2); max-width:58ch; color:var(--text-300); font-size:var(--step--1); }

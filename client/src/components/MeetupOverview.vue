@@ -5,7 +5,7 @@ import { meetupRouteForBoard } from '../utils/meetupNavigation.js';
 
 const props = defineProps({ plans: { type: Array, default: () => [] }, scoped: Boolean, from: { type: String, default: '' } });
 const sections = computed(() => [
-  { id: 'attention', title: 'Needs your attention', hint: 'Share your times or review a proposal.', plans: props.plans.filter(meetupNeedsAttention) },
+  { id: 'attention', title: 'Needs your attention', hint: 'Share your response, finalise an option or review a proposal.', plans: props.plans.filter(meetupNeedsAttention) },
   { id: 'active', title: 'Upcoming & in progress', hint: 'Keep track of the plans you are making together.', plans: props.plans.filter(plan => !isMeetupHistorical(plan) && !meetupNeedsAttention(plan)) },
   { id: 'history', title: 'Past & cancelled', hint: 'Previous plans remain available for reference.', plans: props.plans.filter(plan => isMeetupHistorical(plan)) },
 ].filter(section => section.plans.length));

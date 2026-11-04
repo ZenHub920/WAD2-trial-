@@ -9,7 +9,8 @@ export function isMeetupHistorical(plan, now = Date.now()) {
 
 export function meetupNeedsAttention(plan) {
   return !isMeetupHistorical(plan) && ((plan.status === 'proposed' && plan.capabilities?.canApprove)
-    || (plan.status === 'planning' && !plan.hasAvailability));
+    || (plan.status === 'planning' && (!(plan.hasResponded ?? plan.hasAvailability)
+      || plan.nextStage === 'review' && plan.capabilities?.canPropose)));
 }
 
 export function meetupsForScope(plans, scope) {
@@ -26,8 +27,14 @@ export function meetupPresentation(plan) {
   if (plan.status === 'confirmed') return { label: isMeetupHistorical(plan) ? 'Past · Confirmed' : 'Confirmed', action: 'View meetup details', detail: 'The agreed time and place are confirmed.', stage: 'review' };
   if (plan.status === 'proposed') return { label: isMeetupHistorical(plan) ? 'Past · Proposed' : 'Awaiting approval', action: plan.capabilities?.canApprove && !isMeetupHistorical(plan) ? 'Review and approve' : 'View proposed meetup',
     detail: `${plan.approvalCount ?? 0} of ${plan.requiredApprovalCount ?? 0} approvals${plan.hasApproved ? ' · Your approval is saved' : ''}`, stage: 'review' };
-  return { label: isMeetupHistorical(plan) ? 'Past · Planning' : 'Planning in progress', action: plan.hasAvailability ? 'View planning board' : 'Share availability',
-    detail: `${plan.availabilityParticipantCount ?? 0} of ${plan.participantCount ?? 0} shared their times`, stage: plan.hasAvailability ? 'places' : 'availability' };
+  const responded = plan.hasResponded ?? plan.hasAvailability;
+  const readyToFinalise = plan.capabilities?.canPropose && plan.nextStage === 'review';
+  const counts = plan.availabilityResponses;
+  const detail = counts ? `${counts.respondedCount} of ${plan.participantCount ?? 0} responded; ${counts.unavailableCount} cannot make these times`
+    : `${plan.availabilityParticipantCount ?? 0} of ${plan.participantCount ?? 0} shared their times`;
+  return { label: isMeetupHistorical(plan) ? 'Past · Planning' : 'Planning in progress',
+    action: readyToFinalise ? 'Review meetup recommendations' : responded ? 'View planning board' : 'Share availability',
+    detail, stage: readyToFinalise ? 'review' : responded ? 'places' : 'availability' };
 }
 
 export function meetupSelectedDetails(plan) {

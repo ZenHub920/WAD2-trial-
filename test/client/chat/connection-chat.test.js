@@ -33,10 +33,23 @@ beforeEach(() => {
     participantCount: 2, availabilityParticipantCount: 1, capabilities: { canApprove: false } }] });
 });
 describe('connected groups shared chat', () => {
+  it('uses a privacy-safe unavailable state and recovery links for revoked coordination', async () => {
+    api.connectionChannel.mockRejectedValue(Object.assign(new Error('connection_channel_not_found'), { status: 404 }));
+    const { wrapper } = await mountPage(ConnectionChannelView, { props: { id: 'old-connection' } });
+    expect(wrapper.text()).toContain('Shared coordination is currently unavailable.');
+    expect(wrapper.text()).toContain('The current participation or safety settings prevent access.');
+    expect(wrapper.find('a[href="/groups/connect"]').exists()).toBe(true);
+    expect(wrapper.find('a[href="/messages"]').exists()).toBe(true);
+    expect(wrapper.find('input[aria-label="Message both groups"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toMatch(/blocked|blocker|blocked_pair/);
+  });
+
   it('shows both groups and members and opens their existing scoped plan', async () => {
     api.connectionChannel.mockResolvedValue({ channel: channel([]) });
     const { wrapper, router } = await mountPage(ConnectionChannelView, { props: { id: 'connection-1' } });
     expect(wrapper.text()).toContain('Current members of Alpha and Beta share this room.');
+    expect(wrapper.text()).toContain('Your groups remain separate.');
+    expect(wrapper.text()).toContain('Both group hosts must approve a shared meetup plan');
     await button(wrapper, 'Members').trigger('click');
     expect(wrapper.get('[aria-label="Shared chat members"]').text()).toContain('Alex');
     expect(wrapper.get('[aria-label="Shared chat members"]').text()).toContain('Sam');

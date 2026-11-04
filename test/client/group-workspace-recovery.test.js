@@ -3,6 +3,7 @@ import { flushPromises } from '@vue/test-utils';
 import { ref } from 'vue';
 import GroupConnectionsView from '../../client/src/views/GroupConnectionsView.vue';
 import AvatarPicker from '../../client/src/components/AvatarPicker.vue';
+import GroupPreferencesGate from '../../client/src/components/GroupPreferencesGate.vue';
 import { api } from '../../client/src/api.js';
 import { currentUser } from '../../client/src/auth.js';
 import { button, field, group, mountPage } from './helpers.js';
@@ -11,6 +12,7 @@ const plans = ref([]);
 vi.mock('../../client/src/composables/useMeetupSummaries.js', () => ({ useMeetupSummaries: () => ({ plans }) }));
 vi.mock('../../client/src/api.js', async original => ({ ...await original(), api: {
   concerts: vi.fn(), hostedGroups: vi.fn(), groupConnections: vi.fn(), hostedGroupJoinRequests: vi.fn(),
+  groupJoinRequests: vi.fn(),
   currentGroupMemberships: vi.fn(), myProposals: vi.fn(), groupMembership: vi.fn(), connectionCandidates: vi.fn(),
   createParty: vi.fn(), configureGroup: vi.fn(), setGroupImage: vi.fn(),
 } }));
@@ -29,6 +31,7 @@ const deferred = () => {
 const endpointDefaults = {
   concerts: { concerts: [upcomingConcert('concert-1')] }, hostedGroups: { groups: [] },
   groupConnections: { connections: [] }, hostedGroupJoinRequests: { requests: [] },
+  groupJoinRequests: { requests: [] },
   currentGroupMemberships: { groups: [] }, myProposals: { proposals: [] },
 };
 
@@ -43,6 +46,84 @@ beforeEach(() => {
 });
 
 describe('independent group workspace reads', () => {
+  it('does not claim an empty pending queue when a refresh fails and only historical requests are known', async () => {
+    api.hostedGroups.mockResolvedValue({ groups: [group('owned', 'Our crew')] });
+    api.hostedGroupJoinRequests.mockResolvedValue({ requests: [{ id: 'past', hostId: 'host', partyId: 'owned',
+      status: 'accepted', seekerName: 'Previous companion', artist: 'Test artist' }] });
+    const { wrapper } = await mountPage(GroupConnectionsView, { path: '/groups/connect' });
+    expect(wrapper.get('#join-requests').text()).toContain('No pending requests to join your groups.');
+    api.hostedGroupJoinRequests.mockRejectedValue(new Error('queue unavailable'));
+    wrapper.findComponent(GroupPreferencesGate).vm.$emit('saved'); await flushPromises();
+    expect(wrapper.text()).toContain('Could not load applications.');
+    expect(wrapper.get('#join-requests').text()).toContain('Some request details are unavailable');
+    expect(wrapper.get('#join-requests').text()).not.toContain('No pending requests to join your groups.');
+    expect(wrapper.text()).toContain('Past join requests (1)');
+  });
+
+  it('labels request queue totals as incomplete when one independent source fails', async () => {
+    api.hostedGroups.mockResolvedValue({ groups: [group('owned', 'Our crew')] });
+    api.hostedGroupJoinRequests.mockRejectedValue(new Error('applications offline'));
+    api.myProposals.mockResolvedValue({ proposals: [{ id: 'offer', role: 'host', status: 'proposed', partyId: 'owned',
+      hostName: 'Host', seekerName: 'Companion', artist: 'Test artist', hostApproved: true, queueStatus: 'held', seatReserved: true }] });
+    const { wrapper } = await mountPage(GroupConnectionsView, { path: '/groups/connect' });
+    expect(wrapper.get('#join-requests').text()).toContain('Some request details are unavailable');
+    expect(wrapper.get('.queue-summary').text()).toContain('1 loaded requests');
+    expect(wrapper.get('#join-requests').text()).not.toContain('1 in your queues');
+    expect(wrapper.get('.owned-card').text()).toContain('Request status could not be fully checked.');
+    expect(wrapper.findAll('a').some(link => link.text() === 'Review requests')).toBe(false);
+  });
+
+  it('keeps every owned group visible when one setup read fails and retries only that group', async () => {
+    api.hostedGroups.mockResolvedValue({ groups: [
+      { ...group('first', 'First crew'), settings: undefined },
+      { ...group('second', 'Second crew'), settings: undefined },
+    ] });
+    api.groupMembership.mockImplementation(async id => {
+      if (id === 'first') throw new Error('first setup offline');
+      return { group: { settings: { published: true, connect_open: true } } };
+    });
+    const { wrapper, router } = await mountPage(GroupConnectionsView, { path: '/groups/connect' });
+    const cards = wrapper.findAll('.owned-card');
+    expect(cards).toHaveLength(2);
+    expect(cards[0].text()).toContain('Setup unavailable');
+    expect(cards[0].text()).not.toContain('Draft');
+    expect(cards[1].text()).toContain('Published');
+    expect(wrapper.find('a[href="/groups/first/channel"]').exists()).toBe(true);
+    await router.push('/groups/connect?view=connections&groupId=first'); await flushPromises();
+    expect(wrapper.get('.selected-group .group-state').text()).toBe('Setup unavailable');
+    expect(wrapper.get('.selected-group').text()).not.toContain('Draft');
+    api.groupMembership.mockResolvedValue({ group: { settings: { published: true, connect_open: false } } });
+    await button(wrapper, 'Retry First crew setup').trigger('click'); await flushPromises();
+    expect(api.groupMembership.mock.calls.map(([id]) => id)).toEqual(['first', 'second', 'first']);
+    expect(api.hostedGroups).toHaveBeenCalledTimes(1);
+    expect(wrapper.get('.selected-group .group-state').text()).toBe('Published');
+    await router.push('/groups/connect'); await flushPromises();
+    expect(wrapper.findAll('.owned-card')[0].text()).toContain('Published');
+    expect(wrapper.text()).not.toContain('Setup unavailable');
+  });
+
+  it('retains an authorized received invitation when the independent owned-group read fails', async () => {
+    const partyA = group('other', 'Other crew'), partyB = group('own', 'Our crew');
+    api.hostedGroups.mockRejectedValue(new Error('owned list offline'));
+    api.groupConnections.mockResolvedValue({ connections: [{ id: 'received', partyA, partyB,
+      initiatorPartyId: 'other', incoming: true, status: 'pending', canAccept: true, canDecline: true }] });
+    const { wrapper } = await mountPage(GroupConnectionsView, { path: '/groups/connect?view=connections&groupId=own&connectionId=received' });
+    expect(wrapper.get('.invite--received').text()).toContain('Other crew');
+    expect(button(wrapper, 'Accept').element.disabled).toBe(false);
+    expect(api.connectionCandidates).not.toHaveBeenCalled();
+    expect(wrapper.text()).not.toContain('notification’s item is no longer available');
+    expect(document.activeElement.id).toBe('group-connection-received');
+  });
+
+  it('does not claim a notification item is gone until its own read succeeds', async () => {
+    api.hostedGroupJoinRequests.mockRejectedValueOnce(new Error('queue offline'));
+    const { wrapper } = await mountPage(GroupConnectionsView, { path: '/groups/connect?groupId=own&requestId=old-request' });
+    expect(wrapper.text()).toContain('Could not load applications.');
+    expect(wrapper.text()).not.toContain('notification’s item is no longer available');
+    await button(wrapper, 'Retry applications').trigger('click'); await flushPromises();
+    expect(wrapper.text()).toContain('This notification’s item is no longer available here.');
+  });
+
   it('keeps owned and joined conversations available when the concert catalogue fails', async () => {
     api.concerts.mockRejectedValue(new Error('catalogue offline'));
     api.hostedGroups.mockResolvedValue({ groups: [group('owned', 'Owned crew')] });

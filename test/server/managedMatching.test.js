@@ -68,7 +68,7 @@ async function queue(...users) {
   for (const who of users) {
     const response = await run(who);
     assert.equal(response.status, 200);
-    assert.deepEqual(response.body, { matching: { optedIn: true, state: 'queued', request: null, proposal: null } });
+    assert.deepEqual(response.body, { matching: { preferencesComplete: true, optedIn: true, state: 'queued', request: null, proposal: null, latestAttempt: null } });
   }
 }
 
@@ -78,7 +78,7 @@ const answer = (offer, who, decision) => call(`/proposals/${offer.id}/${decision
 
 test('queue authenticates, validates keys and ignores submitted identities without running a global batch', async () => {
   for (const method of ['GET', 'POST', 'DELETE']) assert.equal((await call(endpoint, null, method)).status, 401);
-  assert.deepEqual((await state('friend')).body, { matching: { optedIn: false, state: 'idle', request: null, proposal: null } });
+  assert.deepEqual((await state('friend')).body, { matching: { preferencesComplete: false, optedIn: false, state: 'idle', request: null, proposal: null, latestAttempt: null } });
   assert.equal((await run('friend')).body.error, 'open_seeker_request_required');
   assert.equal((await call(endpoint, 'a', 'POST')).status, 400);
   assert.equal((await call(endpoint, 'a', 'POST', {}, { 'Idempotency-Key': 'not-a-uuid' })).status, 400);
@@ -89,6 +89,35 @@ test('queue authenticates, validates keys and ignores submitted identities witho
   assert.equal((await state('b')).body.matching.optedIn, false);
   assert.equal(count('match_rounds'), 0);
   assert.equal((await call('/concerts/c1/match', 'a', 'POST', {}, { 'Idempotency-Key': randomUUID() })).status, 403);
+});
+
+test('matching readiness reports the authenticated user answers without enrolling or exposing another account', async () => {
+  const initial = await call(`${endpoint}?userId=${ids.a}`, 'outsider');
+  assert.equal(initial.body.matching.preferencesComplete, false);
+  assert.equal(initial.body.matching.optedIn, false);
+  repos.membership.savePreferences(ids.outsider, { about: ['supper'], wants: [], avoid: [] });
+  const saved = (await state('outsider')).body.matching;
+  assert.equal(saved.preferencesComplete, true);
+  assert.equal(saved.state, 'idle');
+  assert.equal(saved.optedIn, false);
+  assert.equal(repos.groups.seeker(ids.outsider, 'c1').joining_mode, 'direct');
+  assert.equal(count('match_rounds'), 0);
+  assert.equal(count('match_proposals'), 0);
+  assert.ok(!JSON.stringify(saved).includes('supper'));
+  assert.equal((await state('friend')).body.matching.preferencesComplete, false);
+});
+
+test('reported matching enrollment preserves the existing algorithm-mode contract rather than the legacy flag', async () => {
+  db.prepare("UPDATE seeker_requests SET joining_mode='algorithm',matching_opt_in=0 WHERE id='s_a'").run();
+  const current = (await state('a')).body.matching;
+  assert.equal(current.preferencesComplete, true);
+  assert.equal(current.optedIn, true);
+  assert.equal(current.state, 'queued');
+  assert.equal(count('match_rounds'), 0);
+  const left = await call(endpoint, 'a', 'DELETE');
+  assert.equal(left.status, 200);
+  assert.equal(left.body.matching.optedIn, false);
+  assert.equal(left.body.matching.state, 'idle');
 });
 
 test('official batches use two-sided managed scores, saved priorities and actual reserved proposals', async () => {
