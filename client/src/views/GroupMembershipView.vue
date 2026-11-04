@@ -10,7 +10,6 @@ import LoadingSpinner from "../components/LoadingSpinner.vue";
 import GroupNavigation from "../components/GroupNavigation.vue";
 import GroupAvatar from "../components/GroupAvatar.vue";
 import AvatarPicker from "../components/AvatarPicker.vue";
-import BackLink from "../components/BackLink.vue";
 import GroupPreferencesGate from "../components/GroupPreferencesGate.vue";
 import GroupPrioritiesSummary from "../components/GroupPrioritiesSummary.vue";
 import ConfirmDialog from "../components/ConfirmDialog.vue";
@@ -257,7 +256,7 @@ async function leave() {
 </script>
 <template>
   <div class="container groups-page">
-    <BackLink v-if="!token" fallback="/groups/connect" fallback-label="Back to My groups" />
+    <GroupNavigation class="groups-page__nav" />
     <header class="group-management-heading">
       <div v-if="group" class="group-identity">
         <GroupAvatar :src="previewImage" :name="groupNameDraft || group.name || group.artist || ''" :size="64" />
@@ -272,7 +271,6 @@ async function leave() {
       </template>
     </header>
     <GroupPreferencesGate @saved="load">
-      <template #before><GroupNavigation /></template>
       <section v-if="group" class="member-workspace" aria-label="Selected group links">
         <div class="member-workspace__context"><p class="member-eyebrow">Your group workspace · <RouterLink class="member-workspace__concert" :to="`/concerts/${encodeURIComponent(group.concertId)}`">View concert</RouterLink></p><strong>{{ canStartCoordination ? 'From meeting the group to making a plan.' : 'Your group, conversations and previous plans.' }}</strong><p>{{ canStartCoordination ? 'Compare availability, choose a meeting point and coordinate your concert day.' : 'Return to your group conversation or review an existing meetup. Your saved group information remains available.' }}</p></div>
         <div class="member-workspace__primary">

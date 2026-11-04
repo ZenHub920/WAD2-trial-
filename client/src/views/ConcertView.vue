@@ -17,7 +17,7 @@ const props = defineProps({ id: { type: String, required: true } });
 const router = useRouter();
 
 const concert = ref(null);
-const { canCoordinate, isFinished, canCreateGroup, refreshEligibility } = useConcertEligibility(() => concert.value?.concert);
+const { canCoordinate, isFinished, refreshEligibility } = useConcertEligibility(() => concert.value?.concert);
 let alive = true, concertRequest = 0;
 // Ticketmaster image URLs occasionally 404; the cover then falls back to a gradient.
 const coverBroken = ref(false);
@@ -500,20 +500,6 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
         </template>
       </section>
 
-      <section id="concert-groups" class="card group-panel companion-options">
-        <h2>Go with a group</h2>
-        <p v-if="canCoordinate">Already have a ticket? Join an existing group or create your own. Group places do not include concert tickets.</p>
-        <p v-else-if="isFinished" role="status">This concert has finished. Existing groups, conversations and matching history remain available.</p>
-        <p v-else role="status">New coordination is unavailable until this concert has a valid date.</p>
-        <p v-if="!currentUser">
-          <RouterLink :to="{ path: '/login', query: { redirect: $route.fullPath } }" class="btn btn--primary">Sign in to go with a group</RouterLink>
-        </p>
-        <nav v-else class="group-actions" aria-label="Group workflows">
-          <RouterLink v-if="canCoordinate" :to="{ path: '/groups', query: { concertId: id } }" class="btn btn--primary">Join a group</RouterLink>
-          <RouterLink v-if="canCreateGroup" :to="{ path: '/groups/connect', query: { concertId: id, view: 'create' } }" class="btn btn--ghost">Create a group</RouterLink>
-          <RouterLink :to="{ path: '/groups/connect', query: { concertId: id } }" class="btn btn--ghost">My groups</RouterLink>
-        </nav>
-      </section>
       <section class="kaki-join card" aria-labelledby="kaki-join-title">
         <div class="kaki-join__intro">
           <h2 id="kaki-join-title">Find a companion</h2>
@@ -1034,10 +1020,7 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
 .ticket-summary .btn {
   white-space: normal;
 }
-.ticket-summary h2, .companion-options h2 {
+.ticket-summary h2 {
   font-size: var(--step-2);
-}
-.companion-options {
-  margin-bottom: var(--space-6);
 }
 </style>

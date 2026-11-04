@@ -16,7 +16,6 @@ import ConfirmDialog from '../components/ConfirmDialog.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import GroupAvatar from '../components/GroupAvatar.vue';
 import AvatarPicker from '../components/AvatarPicker.vue';
-import BackLink from '../components/BackLink.vue';
 import GroupPreferencesGate from '../components/GroupPreferencesGate.vue';
 import '../assets/groups.css';
 import { currentUser } from '../auth.js';
@@ -397,7 +396,7 @@ async function openCreatedDraft() {
 
 <template>
   <div class="container groups-page">
-    <BackLink v-if="mode !== 'dashboard'" :fallback="viewLink()" fallback-label="Back to My groups" />
+    <GroupNavigation class="groups-page__nav" />
     <header class="page-heading">
       <div>
         <h1>{{ pageTitle }}</h1>
@@ -408,7 +407,6 @@ async function openCreatedDraft() {
       <div v-if="mode === 'dashboard'" class="group-actions"><RouterLink to="/meetups" class="btn btn--ghost">My meetups</RouterLink></div>
     </header>
     <GroupPreferencesGate :summary="mode === 'dashboard'" @saved="retry">
-    <template #before><GroupNavigation /></template>
     <p v-if="error" class="group-error" role="alert">{{ error }} <button class="btn btn--ghost" :disabled="busy || groupsLoading" @click="retry">Retry</button></p>
     <p v-if="message" class="group-success" role="status">{{ message }}</p>
     <p v-if="refreshWarning" class="group-muted" role="status">{{ refreshWarning }} <button type="button" class="btn btn--ghost" :disabled="busy || groupsLoading" @click="retry">Retry refresh</button></p>

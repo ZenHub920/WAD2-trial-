@@ -252,13 +252,13 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
 
 <template>
   <div class="container groups-page">
+    <GroupNavigation class="groups-page__nav" />
     <header class="groups-hero">
       <p class="groups-hero__eyebrow mono">Groups</p>
       <h1>Find your people for the show</h1>
     </header>
 
     <GroupPreferencesGate summary @saved="load">
-    <template #before><GroupNavigation /></template>
 
     <div class="discovery-context">
     <div class="groups-concert-picker">
