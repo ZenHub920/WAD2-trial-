@@ -47,8 +47,8 @@ test('meetup navigation: chat status, duplicate protection, private origins, ove
     const hostCard = host.page.getByRole('region', { name: 'Meetup planner for this group', exact: true });
     await hostCard.getByRole('link', { name: 'Create meetup plan', exact: true }).click();
     await host.page.getByLabel('Title', { exact: true }).fill(window.title);
-    await host.page.getByLabel('First possible meeting time (Singapore time)', { exact: true }).fill('2030-01-01T16:00');
-    await host.page.getByLabel('End of availability window (Singapore time)', { exact: true }).fill('2030-01-01T17:30');
+    await host.page.getByLabel('Earliest meeting time (Singapore time)', { exact: true }).fill('2030-01-01T16:00');
+    await host.page.getByLabel('Latest meeting time (Singapore time)', { exact: true }).fill('2030-01-01T17:30');
     const saved = host.page.waitForResponse(response => response.url().endsWith('/api/meetups') && response.request().method() === 'POST');
     await host.page.getByRole('button', { name: 'Create planning board', exact: true }).evaluate(element => { element.click(); element.click(); });
     const created = await saved;
@@ -73,7 +73,7 @@ test('meetup navigation: chat status, duplicate protection, private origins, ove
     await member.page.getByRole('tab', { name: /Find a time/ }).click();
     await expect(member.page.locator('[data-availability-start]').first()).toHaveAttribute('aria-label', /1 of 2 available/);
     await member.page.locator('[data-availability-start]').first().click();
-    await member.page.getByRole('button', { name: 'Save availability and journey', exact: true }).click();
+    await member.page.getByRole('button', { name: 'Save my times', exact: true }).click();
     await expect(member.page.getByText('Your availability and journey have been saved.', { exact: true })).toBeVisible();
     await member.page.getByRole('tab', { name: /Choose a place/ }).click();
     await expect(member.page).toHaveURL(/#meetup-places$/);

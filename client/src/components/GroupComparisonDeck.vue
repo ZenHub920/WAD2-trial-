@@ -200,21 +200,20 @@ function cardStyle(slot) {
   <section ref="deckElement" class="comparison-deck" aria-label="Compare groups" :aria-busy="pending || transitioning">
     <Transition name="comparison-stage" mode="out-in" @after-enter="stageEntered">
     <div v-if="instructionsVisible" key="instructions" class="comparison-deck__instructions">
-      <div class="comparison-deck__intro"><div><h3 class="comparison-deck__instructions-title" tabindex="-1">Find your concert crew, two groups at a time.</h3><p>Compare first. Nothing is sent until you ask to join.</p></div><span class="comparison-deck__progress">{{ state.groups.length }} compatible {{ state.groups.length === 1 ? 'group' : 'groups' }} on this page</span></div>
+      <div class="comparison-deck__intro"><div><h3 class="comparison-deck__instructions-title" tabindex="-1">Compare two groups at a time</h3><p>Compare first. Nothing is sent until you ask to join.</p></div><span class="comparison-deck__progress">{{ state.groups.length }} {{ state.groups.length === 1 ? 'group' : 'groups' }}</span></div>
       <ol class="comparison-deck__steps">
-        <li><span class="comparison-deck__step-number" aria-hidden="true">1</span><div><h4>Compare</h4><p>Tap <strong>Prefer this group</strong> on the one you like more, or <strong>swipe left</strong> to skip.</p></div></li>
-        <li><span class="comparison-deck__step-number" aria-hidden="true">2</span><div><h4>Request to join</h4><p><strong>Swipe right</strong> or tap <strong>Request to join</strong>. The host approves it.</p></div></li>
+        <li><span class="comparison-deck__step-number" aria-hidden="true">1</span><div><h4>Compare</h4><p>Tap <strong>Prefer this group</strong> or swipe left to skip.</p></div></li>
+        <li><span class="comparison-deck__step-number" aria-hidden="true">2</span><div><h4>Request to join</h4><p>Swipe right or tap <strong>Request to join</strong>.</p></div></li>
       </ol>
-      <div class="comparison-deck__start"><button type="button" class="btn btn--primary" :disabled="locked || !state.groups.length" @click="instructionsVisible = false">Start comparing</button><p>One request per concert at a time.</p></div>
+      <div class="comparison-deck__start"><button type="button" class="btn btn--primary" :disabled="locked || !state.groups.length" @click="instructionsVisible = false">Start comparing</button></div>
     </div>
     <div v-else key="cards" class="comparison-deck__content">
     <div class="comparison-deck__intro">
-      <div><h3>Which group feels more like you?</h3><p>Keep one to compare with the next group. When you find your people, request to join either card.</p></div>
-      <div class="comparison-deck__tools"><p class="comparison-deck__progress">{{ state.nextIndex }} of {{ state.groups.length }} groups shown<span v-if="unseenCount"> · {{ unseenCount }} more to compare</span></p><button type="button" class="btn btn--ghost" :disabled="locked" @click="instructionsVisible = true">How this works</button></div>
+      <h3>Which group feels more like you?</h3>
+      <div class="comparison-deck__tools"><p class="comparison-deck__progress">{{ state.nextIndex }} of {{ state.groups.length }}</p><button type="button" class="btn btn--ghost" :disabled="locked" @click="instructionsVisible = true">How this works</button></div>
     </div>
-    <p class="comparison-deck__help"><strong>Prefer this group</strong> to keep one · <strong>Swipe right</strong> to request · <strong>Swipe left</strong> to skip</p>
-    <p v-if="!canApply && !submitted" class="comparison-deck__notice">You can compare groups. Set up and activate direct joining, or resolve your current application or offer, before applying.</p>
-    <p v-if="submitted" class="comparison-deck__notice" role="status">Request sent to <strong>{{ groupName(submitted) }}</strong>. See Your applications for its queue position, whether a place is held and its deadline.</p>
+    <p v-if="!canApply && !submitted" class="comparison-deck__notice">You can compare groups, but can’t send a request right now.</p>
+    <p v-if="submitted" class="comparison-deck__notice" role="status">Request sent to <strong>{{ groupName(submitted) }}</strong>. Track it under Your requests.</p>
     <div v-if="visibleCount" class="comparison-deck__pair">
       <div v-for="(group, slot) in state.slots" :key="slot" class="comparison-deck__position">
         <div v-if="group" :key="group.id" class="comparison-deck__candidate" :class="{ 'comparison-deck__candidate--favorite': state.favoriteId === group.id, 'comparison-deck__candidate--dragging': drag?.slot === slot }" :style="cardStyle(slot)" :data-comparison-slot="slot" tabindex="0" role="group" :aria-label="`${groupName(group)}. Enter to prefer; left arrow to skip; right arrow to request to join.`" :aria-disabled="locked" @click="onCardClick($event, slot)" @keydown="onKeydown($event, slot)" @pointerdown="onPointerDown($event, slot)" @pointermove="onPointerMove" @pointerup="onPointerUp" @pointercancel="clearPointer">
@@ -227,10 +226,10 @@ function cardStyle(slot) {
             </div>
           </GroupListingCard>
         </div>
-        <div v-else class="comparison-deck__empty-position"><p>You have seen every other group on this page.</p><p>You can choose the remaining group, review this page again or change your filters.</p></div>
+        <div v-else class="comparison-deck__empty-position"><p>No more groups to compare.</p></div>
       </div>
     </div>
-    <div v-else class="comparison-deck__empty"><p>{{ state.groups.length ? 'You have compared all the groups on this page.' : 'No groups to compare with these filters.' }}</p><p v-if="state.groups.length">Skipping a group here does not reject it permanently.</p></div>
+    <div v-else class="comparison-deck__empty"><p>{{ state.groups.length ? 'You have compared all the groups on this page.' : 'No groups to compare with these filters.' }}</p></div>
     <div v-if="state.skippedIds.length" class="comparison-deck__review"><span>{{ state.skippedIds.length }} skipped in this comparison.</span><button type="button" class="btn btn--ghost" :disabled="locked || !!submitted" @click="restart">Review this page again</button></div>
     </div>
     </Transition>
@@ -318,12 +317,14 @@ function cardStyle(slot) {
   margin: 0 0 var(--space-2);
   font-size: var(--step-1);
 }
-.comparison-deck__intro p, .comparison-deck__help {
+.comparison-deck__intro p {
   margin: 0;
   color: var(--text-300);
   line-height: 1.6;
   max-width: 78ch;
 }
+.comparison-deck__content > .comparison-deck__intro { align-items: center; }
+.comparison-deck__content > .comparison-deck__intro h3 { margin: 0; }
 .comparison-deck__progress {
   font-size: var(--step--1);
 }

@@ -1,14 +1,15 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, LABELS } from '../api.js';
-import { currentUser, sessionReady, refreshSession, setCurrentUser, signOut } from '../auth.js';
+import { currentUser, sessionReady, setCurrentUser, signOut } from '../auth.js';
 import AvatarPicker from '../components/AvatarPicker.vue';
 import PreferenceEditor from '../components/PreferenceEditor.vue';
 import { myPreferences, loadMyPreferences, saveMyPreferences } from '../groupPreferences.js';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import ProfileNotifications from '../components/ProfileNotifications.vue';
 import VibeChart from '../components/VibeChart.vue';
+import SaveBadge from '../components/SaveBadge.vue';
 
 const avatarBusy = ref(false);
 const avatarError = ref('');
@@ -122,7 +123,6 @@ const saving = ref(false);
 const loadError = ref(null);
 const saveError = ref('');
 const sessionExpired = ref(false);
-const saved = ref(false);
 let profileRequest = 0;
 
 function fillForm(value) {
@@ -168,41 +168,87 @@ watch([() => currentUser.value?.id, sessionReady], ([userId, ready], _previous, 
     .finally(() => { if (!stale) prefLoading.value = false; });
 }, { immediate: true });
 
+/* ---- Autosave -------------------------------------------------------------
+ * Details and vibe sliders save on their own a moment after the last change,
+ * so a slider drag or a burst of typing becomes one request. Edits made while
+ * a save is in flight are kept and sent right after it.
+ */
+const AUTOSAVE_DELAY_MS = 700;
+const snapshot = (value) => JSON.stringify({ ...value, displayName: value.displayName.trim() });
+let lastSaved = '';
+let autosaveTimer = null;
+const SAVED_VISIBLE_MS = 2000;
+
+// Each autosaving card shows its own badge: '' (hidden), 'saving' or 'saved'.
+// Only the cards whose fields changed light up; errors show in one card.
+const cardStatus = reactive({ about: '', vibe: '' });
+const errorCard = ref('');
+const fades = {};
+const cardsOf = (saved) => { const { vibe, ...about } = JSON.parse(saved); return { about: JSON.stringify(about), vibe: JSON.stringify(vibe) }; };
+const changedCards = (from, to) => { const a = cardsOf(from), b = cardsOf(to); return Object.keys(a).filter((card) => a[card] !== b[card]); };
+function markCards(cards, state) {
+  for (const card of cards) {
+    clearTimeout(fades[card]);
+    cardStatus[card] = state;
+    if (state === 'saved') fades[card] = setTimeout(() => { cardStatus[card] = ''; }, SAVED_VISIBLE_MS);
+  }
+}
+
+watch(form, (value, previous) => {
+  if (!value) return;
+  // A fresh load (or a new account) is the saved state, not an edit.
+  if (!previous || previous !== value) { lastSaved = snapshot(value); return; }
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(save, AUTOSAVE_DELAY_MS);
+}, { deep: true });
+
+function flushAutosave() {
+  if (!autosaveTimer) return;
+  clearTimeout(autosaveTimer);
+  autosaveTimer = null;
+  void save();
+}
+onBeforeUnmount(() => { Object.values(fades).forEach(clearTimeout); flushAutosave(); });
+
 async function save() {
-  if (saving.value) return;
-  saveError.value = '';
+  autosaveTimer = null;
+  if (saving.value || !form.value) return;
   sessionExpired.value = false;
-  saved.value = false;
   if (!form.value.displayName.trim()) {
-    saveError.value = 'Enter a display name.';
+    errorCard.value = 'about';
+    saveError.value = 'Enter a display name. Your last saved name is kept.';
     return;
   }
   if (!form.value.languages.length) {
-    saveError.value = 'Choose at least one language.';
+    errorCard.value = 'about';
+    saveError.value = 'Choose at least one language. Your last saved languages are kept.';
     return;
   }
+  const sending = snapshot(form.value);
+  if (sending === lastSaved) { saveError.value = ''; return; }
+  const cards = changedCards(lastSaved, sending);
+  saveError.value = '';
   saving.value = true;
+  markCards(cards, 'saving');
   try {
-    const { profile: updated } = await api.updateProfile({
-      ...form.value,
-      displayName: form.value.displayName.trim(),
-    });
+    const { profile: updated } = await api.updateProfile(JSON.parse(sending));
     profile.value = updated;
-    fillForm(updated);
-    await refreshSession();
-    if (!currentUser.value) {
-      sessionExpired.value = true;
-      saveError.value = 'Your changes were saved, but your session expired. Sign in again.';
-      return;
-    }
-    saved.value = true;
+    lastSaved = sending;
+    // Update the header name in place. Re-checking the whole session here
+    // briefly un-readies it, which reloads this page and jumps to the top.
+    if (currentUser.value) setCurrentUser({ ...currentUser.value, displayName: updated.displayName });
+    markCards(cards, 'saved');
   } catch (error) {
+    markCards(cards, '');
+    errorCard.value = cards[0] ?? 'about';
     sessionExpired.value = error.status === 401;
     saveError.value = sessionExpired.value
       ? 'Your session has expired. Sign in again to edit your profile.'
-      : 'Could not save your profile. Please try again.';
+      : 'Could not save your changes. They will be retried with your next edit.';
   } finally {
     saving.value = false;
+    // Anything changed during the request goes out now.
+    if (form.value && !sessionExpired.value && snapshot(form.value) !== lastSaved && !saveError.value) void save();
   }
 }
 </script>
@@ -212,12 +258,7 @@ async function save() {
     <header class="profile__head page-banner">
       <h1>{{ settingUp ? 'Make it feel like you' : 'Profile' }}</h1>
       <p>{{ settingUp ? 'Your account is ready. Add a few private matching preferences, or explore first.' : 'Manage your profile, concert preferences and notifications.' }}</p>
-      <RouterLink v-if="!settingUp" to="/account/security" class="btn btn--outline-light profile__security">Account security</RouterLink>
     </header>
-    <nav v-if="!settingUp && form" class="profile__sections" aria-label="Profile sections">
-      <a href="#your-vibe"><span class="profile__section-dot" aria-hidden="true" />Public concert vibe</a>
-      <a href="#preferences"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4" y="8" width="12" height="9" rx="2"/><path d="M6.5 8V5.5a3.5 3.5 0 0 1 7 0V8"/></svg>Private matching</a>
-    </nav>
 
     <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading your profile…</p>
     <div v-else-if="loadError" class="profile__notice" role="alert">
@@ -242,11 +283,12 @@ async function save() {
       </section>
 
       <section class="profile__card" aria-labelledby="profile-about">
-        <h2 id="profile-about">About you</h2>
+        <div class="profile__card-head"><h2 id="profile-about">About you</h2><SaveBadge :state="cardStatus.about" /></div>
+        <p v-if="saveError && errorCard === 'about'" class="profile__error" role="alert">{{ saveError }} <RouterLink v-if="sessionExpired" to="/login">Sign in</RouterLink></p>
         <div class="profile__fields">
           <label class="profile__field">
             Display name
-            <input v-model="form.displayName" form="profile-form" type="text" autocomplete="nickname" required />
+            <input v-model="form.displayName" type="text" autocomplete="nickname" required />
           </label>
           <label class="profile__field">
             <span>Email <span class="profile__hint">Only visible to you.</span></span>
@@ -254,25 +296,25 @@ async function save() {
           </label>
           <label class="profile__field">
             Age range
-            <select v-model="form.ageBand" form="profile-form" required>
+            <select v-model="form.ageBand" required>
               <option v-for="band in ageBands" :key="band" :value="band">{{ band }}</option>
             </select>
           </label>
           <label class="profile__field">
             Home region
-            <select v-model="form.homeRegion" form="profile-form" required>
+            <select v-model="form.homeRegion" required>
               <option v-for="(label, value) in regions" :key="value" :value="value">{{ label }}</option>
             </select>
           </label>
           <label class="profile__field">
             Gender
-            <select v-model="form.gender" form="profile-form" required>
+            <select v-model="form.gender" required>
               <option v-for="(label, value) in genders" :key="value" :value="value">{{ label }}</option>
             </select>
           </label>
           <label class="profile__field">
             Companion preference
-            <select v-model="form.companionGenderPref" form="profile-form" required>
+            <select v-model="form.companionGenderPref" required>
               <option v-for="(label, value) in companionPreferences" :key="value" :value="value">{{ label }}</option>
             </select>
           </label>
@@ -280,12 +322,12 @@ async function save() {
         <fieldset class="profile__choices">
           <legend>Languages you speak</legend>
           <label v-for="(label, value) in languages" :key="value">
-            <input v-model="form.languages" form="profile-form" type="checkbox" :value="value" /> {{ label }}
+            <input v-model="form.languages" type="checkbox" :value="value" /> {{ label }}
           </label>
         </fieldset>
       </section>
       <p class="profile__hint">
-        {{ profile.verified ? 'Profile verified' : 'Profile not verified' }} · Reliability {{ Math.round(profile.reliability * 100) }}%
+        Reliability {{ Math.round(profile.reliability * 100) }}%
       </p>
       </template>
 
@@ -326,38 +368,28 @@ async function save() {
       <template v-if="!settingUp">
       <section id="your-vibe" class="profile__card profile__card--public" aria-labelledby="profile-vibe">
         <p class="profile__public-label">Public · Visible to other members</p>
-        <h2 id="profile-vibe">Your concert vibe</h2>
+        <div class="profile__card-head"><h2 id="profile-vibe">Your concert vibe</h2><SaveBadge :state="cardStatus.vibe" /></div>
+        <p v-if="saveError && errorCard === 'vibe'" class="profile__error" role="alert">{{ saveError }} <RouterLink v-if="sessionExpired" to="/login">Sign in</RouterLink></p>
         <p class="profile__hint">These six interests appear on your public concert profile. Your matching questionnaire stays private.</p>
         <div class="profile__vibe-layout">
           <div class="profile__vibe-preview">
             <VibeChart :vibe="form.vibe" :size="220" />
             <RouterLink :to="`/people/${encodeURIComponent(profile.id)}`">View your public profile</RouterLink>
-            <span class="profile__hint">Preview updates as you move the sliders. Save profile to share changes.</span>
           </div>
           <div class="profile__vibes">
             <p class="profile__hint">0 = not for me · 4 = love it</p>
             <label v-for="(label, axis) in LABELS.vibe" :key="axis" class="profile__vibe">
               <span>{{ label }}</span>
-              <input v-model.number="form.vibe[axis]" :style="{ '--vibe-fill': `${form.vibe[axis] / 4 * 100}%` }" form="profile-form" type="range" min="0" max="4" step="1" :aria-valuetext="`${form.vibe[axis]} out of 4`" />
+              <input v-model.number="form.vibe[axis]" :style="{ '--vibe-fill': `${form.vibe[axis] / 4 * 100}%` }" type="range" min="0" max="4" step="1" :aria-valuetext="`${form.vibe[axis]} out of 4`" />
               <output>{{ form.vibe[axis] }}</output>
             </label>
           </div>
         </div>
       </section>
 
-      <!-- Sticks to the bottom of the screen while the form is in view, so Save
-           is always one click away without scrolling back down. -->
-      <form id="profile-form" class="profile__actions" @submit.prevent="save">
-        <p v-if="saveError" class="profile__error" role="alert">{{ saveError }} <RouterLink v-if="sessionExpired" to="/login">Sign in</RouterLink></p>
-        <p v-else-if="saved" class="profile__success" role="status">✓ Profile saved</p>
-        <button type="submit" class="btn btn--primary profile__save" :disabled="saving">
-          <LoadingSpinner v-if="saving" />
-          {{ saving ? 'Saving…' : 'Save profile' }}
-        </button>
-      </form>
+      <ProfileNotifications v-if="currentUser" class="profile__card" />
       </template>
     </div>
-    <ProfileNotifications v-if="currentUser && !settingUp" />
 
     <section v-if="currentUser && !settingUp" class="profile__card profile__logout" aria-labelledby="profile-logout">
       <div>
@@ -384,15 +416,6 @@ async function save() {
 .profile__head h1 {
   margin-block: var(--space-2);
 }
-.profile__security {
-  margin-top: var(--space-5);
-}
-.profile__sections { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-2); margin:0 0 var(--space-5); padding-bottom:var(--space-4); border-bottom:var(--border-hairline); }
-.profile__sections a { display:inline-flex; align-items:center; gap:var(--space-2); min-height:40px; padding:var(--space-2) var(--space-3); border:1px solid var(--panel-edge); border-radius:var(--radius-pill); background:var(--panel-bg); color:var(--text-200); font-size:var(--step--1); text-decoration:none; box-shadow:var(--panel-shadow); transition:border-color var(--dur-fast), transform var(--dur-fast); }
-.profile__sections a:hover { border-color:var(--accent-400); transform:translateY(-1px); }
-.profile__sections a:active { transform:translateY(1px); }
-.profile__sections svg { width:16px; height:16px; stroke:var(--text-300); stroke-width:1.4; }
-.profile__section-dot { width:8px; height:8px; border-radius:50%; background:var(--accent-400); box-shadow:0 0 0 3px var(--focus-halo); }
 .profile__hint {
   color: var(--text-400);
   font-size: var(--step--1);
@@ -526,27 +549,14 @@ async function save() {
   justify-items: start;
   gap: var(--space-3);
 }
-.profile__actions {
-  position: sticky;
-  bottom: 0;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-4) var(--space-5);
-  border: var(--border-soft);
-  border-radius: var(--radius-lg);
-  background: var(--glass-tint);
-  backdrop-filter: var(--glass-blur);
-  box-shadow: var(--panel-shadow), 0 -6px 20px color-mix(in oklab,var(--accent-600) 6%,transparent);
+/* Card title with its autosave badge on the right. */
+.profile__card-head {
+  position: relative;
+  padding-right: 6.5rem;
+  margin-bottom: var(--space-4);
 }
-.profile__actions p {
+.profile__card-head h2 {
   margin: 0;
-  font-size: var(--step--1);
-}
-.profile__save {
-  margin-left: auto;
-  min-width: 160px;
 }
 .profile__logout {
   display: flex;
@@ -580,19 +590,10 @@ async function save() {
     grid-column: 2;
     grid-row: 1;
   }
-  .profile__actions {
-    padding: var(--space-3) var(--space-4);
-  }
-  .profile__save {
-    min-width: 0;
-    flex: 1;
-  }
 }
 @media (prefers-reduced-motion:reduce) {
-  .profile__sections a { transition:none; }
   .profile__vibe input::-webkit-slider-thumb { transition:none; }
   .profile__vibe input::-moz-range-thumb { transition:none; }
-  .profile__sections a:hover,.profile__sections a:active { transform:none; }
   .profile__vibe input:active::-webkit-slider-thumb { transform:none; }
   .profile__vibe input:active::-moz-range-thumb { transform:none; }
 }

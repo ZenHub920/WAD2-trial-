@@ -1,7 +1,8 @@
 <script setup>
-import { onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { api } from '../api.js';
 import LoadingSpinner from './LoadingSpinner.vue';
+import SaveBadge from './SaveBadge.vue';
 import '../assets/groups.css';
 import { browserPushStatus, enableBrowserPush, disableBrowserPush } from '../browserPush.js';
 
@@ -20,6 +21,9 @@ const notice = ref('');
 const push = ref(null);
 const pushBusy = ref(false);
 const pushError = ref('');
+// The saved confirmation fades after a moment; errors stay until the next try.
+let noticeFade = null;
+onBeforeUnmount(() => clearTimeout(noticeFade));
 async function loadPush() {
   try { push.value = await browserPushStatus(); }
   catch { pushError.value = 'Could not check browser notifications.'; }
@@ -48,6 +52,7 @@ async function load() {
     loading.value = false;
   }
 }
+// Each tick saves straight away; boxes are disabled until the save settles.
 async function save() {
   if (saving.value) return;
   saving.value = true;
@@ -57,6 +62,8 @@ async function save() {
     await api.saveNotificationSettings(settings.value);
     settings.value = (await api.notificationSettings()).preferences;
     notice.value = 'Notification preferences saved.';
+    clearTimeout(noticeFade);
+    noticeFade = setTimeout(() => { notice.value = ''; }, 2000);
   } catch {
     error.value = 'Could not save notification preferences. Please try again.';
   } finally {
@@ -69,19 +76,20 @@ onMounted(loadPush);
 
 <template>
   <section id="notifications" class="profile-notifications" aria-labelledby="profile-notifications-title">
-    <h2 id="profile-notifications-title">Notification preferences</h2>
+    <div class="profile-notifications__head">
+      <h2 id="profile-notifications-title">Notification preferences</h2>
+      <SaveBadge :state="saving ? 'saving' : notice ? 'saved' : ''" />
+    </div>
     <p v-if="error" role="alert" class="group-error">{{ error }}</p>
-    <p v-if="notice" role="status" class="group-success">{{ notice }}</p>
     <p v-if="loading" class="loading-state"><LoadingSpinner /> Loading notification preferences…</p>
-    <form v-else-if="settings" class="card group-panel" @submit.prevent="save">
+    <div v-else-if="settings" class="profile-notifications__group">
       <p>Notify me about:</p>
       <label v-for="(_, key) in settings" :key="key" class="group-check">
-        <input v-model="settings[key]" type="checkbox" :disabled="saving" />{{ categories[key] ?? 'Other updates' }}
+        <input v-model="settings[key]" type="checkbox" :disabled="saving" @change="save" />{{ categories[key] ?? 'Other updates' }}
       </label>
-      <button class="btn btn--primary" type="submit" :disabled="saving"><LoadingSpinner v-if="saving" />{{ saving ? 'Saving…' : 'Save notification preferences' }}</button>
-    </form>
+    </div>
     <button v-if="error && !settings" class="btn btn--ghost" type="button" :disabled="loading" @click="load">Try again</button>
-    <div class="card group-panel">
+    <div class="profile-notifications__group profile-notifications__device">
       <h3>Notifications on this device</h3>
       <p>Get message and meetup pop-ups even when Encore is in the background. Your category preferences above still apply.</p>
       <p v-if="pushError" role="alert" class="group-error">{{ pushError }}</p>
@@ -99,13 +107,35 @@ onMounted(loadPush);
 .profile-notifications {
   display: grid;
   gap: var(--space-4);
-  margin-top: var(--space-7);
-  padding-top: var(--space-6);
-  border-top: var(--border-hairline);
   min-width: 0;
 }
 .profile-notifications h2 {
-  font-size: var(--step-2);
+  font-size: var(--step-1);
+}
+.profile-notifications__group {
+  display: grid;
+  gap: var(--space-2);
+}
+.profile-notifications .group-check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 2rem;
+}
+.profile-notifications .group-check input[type=checkbox] {
+  flex: none;
+  margin: 0;
+}
+.profile-notifications__head {
+  position: relative;
+  padding-right: 6.5rem;
+}
+.profile-notifications__device {
+  padding-top: var(--space-4);
+  border-top: var(--border-hairline);
+}
+.profile-notifications h3 {
+  font-size: var(--step-0);
 }
 .profile-notifications > .btn {
   justify-self: start;

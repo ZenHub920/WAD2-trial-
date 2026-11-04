@@ -460,7 +460,7 @@ function save() {
   height: auto !important;
   padding: 2px var(--space-2) !important;
   border-radius: var(--radius-pill) !important;
-  font-size: 11px !important;
+  font-size: 13px !important;
   font-weight: 600;
   letter-spacing: .02em;
   border: 1px solid currentColor !important;

@@ -19,7 +19,6 @@ function profile(user) {
     languages: user.languages,
     vibe: Object.fromEntries(VIBE_AXES.map((axis) => [axis, user.vibe[axis] ?? 0])),
     reliability: Math.round(user.reliability * 100) / 100,
-    verified: Boolean(user.verified),
   };
 }
 
@@ -31,7 +30,6 @@ function publicProfile(user) {
     avatarUrl: user.avatar_path ? `/api/avatars/${user.avatar_path}` : null,
     ageBand: user.age_band,
     languages: user.languages,
-    verified: Boolean(user.verified),
     hasVibeRatings: VIBE_AXES.some(axis => Number.isInteger(user.vibe?.[axis])
       && user.vibe[axis] >= 0 && user.vibe[axis] <= 4),
     vibe: Object.fromEntries(VIBE_AXES.map((axis) => {

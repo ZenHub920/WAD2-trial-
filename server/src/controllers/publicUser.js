@@ -9,7 +9,6 @@ export function publicUser(user) {
     languages: user.languages,
     vibe: user.vibe,
     reliability: Math.round(user.reliability * 100) / 100,
-    verified: Boolean(user.verified),
     // null when the user has not set a picture. The interface draws a grey
     // silhouette in that case rather than an initial, so declining a photo
     // is a neutral choice rather than a visibly incomplete profile.

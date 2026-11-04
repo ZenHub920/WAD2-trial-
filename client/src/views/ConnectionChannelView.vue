@@ -235,7 +235,7 @@ onUnmounted(() => {
     <p v-if="error" class="notice notice--error" role="alert">{{ error }}</p>
     <template v-if="!loading && channel">
       <header class="channel-head">
-        <BackArrow :to="{ path: '/messages', query: { tab: 'groups' } }" label="Back to group messages" />
+        <BackArrow :to="'/messages'" label="Back to messages" />
         <GroupAvatar :name="channel.name" :size="44" />
         <div class="channel-identity"><p class="channel-label">Connected groups</p><h1>{{ channel.name }}</h1><p>{{ channel.concert.artist }} · {{ channel.members.length }} members</p></div>
         <div class="channel-tools"><button type="button" class="btn btn--ghost" :aria-expanded="showMembers" @click="showMembers = !showMembers">Members</button><button type="button" class="btn btn--ghost" :aria-expanded="showSettings" @click="showSettings = !showSettings">Chat options</button></div>
@@ -254,7 +254,7 @@ onUnmounted(() => {
       </div>
       <form class="composer" @submit.prevent="send"><div v-if="editing || replyingTo" class="composer-context"><span>{{ editing ? 'Editing your message' : `Replying to ${replyingTo.sender.displayName}` }}<small>{{ editing?.body ?? replyingTo?.body }}</small></span><button type="button" :disabled="sending" aria-label="Cancel editing or reply" @click="cancelComposer">×</button></div><div class="composer-row"><input ref="composer" v-model="draft" :disabled="sending" maxlength="2000" aria-label="Message both groups" placeholder="Message both groups…" /><button type="submit" class="btn btn--primary" :disabled="sending || !draft.trim()"><LoadingSpinner v-if="sending" />{{ editing ? 'Save edit' : 'Send' }}</button></div></form>
     </template>
-    <div v-else-if="!loading" class="channel-panel"><h1>Shared chat unavailable</h1><RouterLink :to="{ path: '/messages', query: { tab: 'groups' } }" class="btn btn--ghost">Back to group messages</RouterLink></div>
+    <div v-else-if="!loading" class="channel-panel"><h1>Shared chat unavailable</h1><RouterLink :to="'/messages'" class="btn btn--ghost">Back to group messages</RouterLink></div>
     <button v-if="!loading && error && !unavailable" type="button" class="btn btn--ghost" @click="load({ quiet: Boolean(channel) })">Refresh chat</button>
     <ConfirmDialog :open="Boolean(deleting)" title="Delete this message?" body="Both groups will see that the message was removed." confirm-label="Delete message" cancel-label="Keep message" danger :busy="deleteBusy" @confirm="removeMessage" @cancel="deleting = null" />
   </div>

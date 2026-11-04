@@ -216,7 +216,7 @@ async function leave() {
     if (valid(key)) leaving.value = false;
   }
   if (!valid(key)) return;
-  try { await router.push({ path: '/messages', query: { tab: 'groups' } }); }
+  try { await router.push('/messages'); }
   catch { if (valid(key)) notice.value = 'You left this channel. Use Back to messages to return to your inbox.'; }
 }
 
@@ -273,16 +273,16 @@ onUnmounted(() => {
           ? 'You are not in this group channel. The group host decides who is added.'
           : 'Could not load this channel.' }}
       </p>
-      <RouterLink class="btn btn--ghost" :to="{ path: '/messages', query: { tab: 'groups' } }">Back to messages</RouterLink>
+      <RouterLink class="btn btn--ghost" :to="'/messages'">Back to messages</RouterLink>
       <button v-if="![401, 403, 404].includes(error.status)" type="button" class="btn btn--ghost" @click="load().then(loadCandidates)">Retry loading channel</button>
     </div>
 
-    <RouterLink v-if="!loading && !error && !channel" class="btn btn--ghost" :to="{ path: '/messages', query: { tab: 'groups' } }">Back to messages</RouterLink>
+    <RouterLink v-if="!loading && !error && !channel" class="btn btn--ghost" :to="'/messages'">Back to messages</RouterLink>
 
     <template v-else-if="channel">
       <header class="channel__head">
         <div class="channel__id">
-          <BackArrow :to="{ path: '/messages', query: { tab: 'groups' } }" label="Back to messages" />
+          <BackArrow :to="'/messages'" label="Back to messages" />
           <div>
             <h1>{{ channel.concert?.artist }} group</h1>
             <p class="channel__sub">{{ channel.members.length }} in this channel · {{ channel.concert?.venue }}</p>

@@ -331,7 +331,7 @@ test('operator warning resolves report atomically, creates an account notice and
     const details = await api.request('/operator/reports/reported-case', { cookie: cookieOf(operator) });
     assert.deepEqual(details.body.audit.map((entry) => entry.action), ['review', 'warn']);
     const notice = api.db.prepare('SELECT * FROM notifications WHERE user_id=?').get(reported.body.user.id);
-    assert.equal(notice.resource_path, '/account/security');
+    assert.equal(notice.resource_path, '/profile');
     const security = await api.request('/auth/security', { cookie: cookieOf(reported) });
     assert.equal(security.body.warnings[0].note, 'Please follow the community rules');
     assert.equal(security.body.warnings[0].operatorId, undefined);

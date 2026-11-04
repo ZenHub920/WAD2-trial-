@@ -82,7 +82,7 @@ onBeforeUnmount(() => { generation++; });
       <label :for="fieldId">{{ label }}<input :id="fieldId" ref="input" v-model="query" :disabled="disabled" :aria-describedby="descriptionIds" :aria-controls="results.length ? `${fieldId}-results` : undefined" maxlength="100" placeholder="e.g. City Hall MRT" autocomplete="off" @keydown.enter.prevent="search" @keydown.down="focusResult($event)" /></label>
       <button type="button" class="btn btn--ghost" :disabled="disabled || busy || query.trim().length < 2" @click="search">{{ busy ? 'Searching…' : 'Search OneMap' }}</button>
     </div>
-    <p :id="`${fieldId}-help`" class="group-muted meetup-location-search__help">Search for an address, select a result, then apply or save it in this form.</p>
+    <p :id="`${fieldId}-help`" class="group-muted meetup-location-search__help">Search, then pick a result.</p>
     <p v-if="busy" :id="`${fieldId}-status`" role="status" class="group-muted">Searching OneMap for places…</p>
     <p v-else-if="message" :id="`${fieldId}-status`" :class="failed ? 'group-error' : 'group-muted'" :role="failed ? 'alert' : 'status'">{{ message }}</p>
     <ul v-if="results.length" :id="`${fieldId}-results`" ref="resultList" class="meetup-search-results" aria-label="Address search results">

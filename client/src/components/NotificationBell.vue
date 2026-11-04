@@ -249,7 +249,7 @@ onUnmounted(() => {
   gap: var(--space-2);
 }
 .notification-popover__head > div { flex: 1; min-width: 0; }
-.notification-popover__eyebrow { margin-bottom: var(--space-1); color: var(--text-300); font-size: .65rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+.notification-popover__eyebrow { margin-bottom: var(--space-1); color: var(--text-300); font-size: .75rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
 .notification-popover__total { display: inline-flex; align-items: center; min-height: 24px; padding: .15rem .45rem; border: 1px solid color-mix(in srgb, var(--accent-400) 35%, var(--panel-edge)); border-radius: 5px; background: var(--accent-glow); color: var(--accent-400); font-size: .68rem; font-weight: 600; letter-spacing: normal; }
 .notification-popover__close {
   flex: none;

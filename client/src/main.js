@@ -17,7 +17,6 @@ const AlgorithmView = () => import('./views/AlgorithmView.vue');
 const RoundView = () => import('./views/RoundView.vue');
 const MethodView = () => import('./views/MethodView.vue');
 const LoginView = () => import('./views/LoginView.vue');
-const AccountSecurityView = () => import('./views/AccountSecurityView.vue');
 const ConcertsView = () => import('./views/ConcertsView.vue');
 const ListingView = () => import('./views/ListingView.vue');
 const WelcomeView = () => import('./views/WelcomeView.vue');
@@ -60,7 +59,6 @@ const router = createRouter({
     { path: '/rounds/:id', name: 'round', component: RoundView, props: true, meta: { title: 'Group matching results' } },
     { path: '/method', name: 'method', component: MethodView, meta: { title: 'How it works' } },
     { path: '/login', name: 'login', component: LoginView, meta: { title: 'Sign in' } },
-    { path: '/account/security', name: 'account-security', component: AccountSecurityView, meta: { title: 'Account security' } },
     { path: '/list-ticket', name: 'list-ticket', component: ListingView, meta: { title: 'List a ticket', requiresAuth: true } },
     { path: '/my-listings', name: 'my-listings', component: MyListingsView, meta: { title: 'My listings', requiresAuth: true } },
     { path: '/tickets', name: 'tickets', component: TicketMarketplaceView, meta: { title: 'Tickets' } },

@@ -169,8 +169,8 @@ describe('Directional scoring', () => {
   test('the two directions differ when reliability differs', () => {
     // A flaky seeker and a rock-solid host: the host should rate the seeker lower
     // than the seeker rates the host.
-    const seekerUser = makeUser('u1', { reliability: 0.2, verified: 0 });
-    const hostUser = makeUser('u2', { reliability: 1.0, verified: 1 });
+    const seekerUser = makeUser('u1', { reliability: 0.2 });
+    const hostUser = makeUser('u2', { reliability: 1.0 });
     const scored = scorePair(makeSeeker('s1', seekerUser), makeParty('p1', hostUser));
     assert.ok(
       scored.seekerToParty > scored.partyToSeeker,
@@ -187,8 +187,8 @@ describe('Directional scoring', () => {
 
   test('a perfectly aligned pair scores near the top', () => {
     const vibe = { singalong: 5, photography: 2, dancing: 5, quiet: 0, queue_early: 4, merch: 3 };
-    const seekerUser = makeUser('u1', { vibe, reliability: 1, verified: 1, home_region: 'east' });
-    const hostUser = makeUser('u2', { vibe, reliability: 1, verified: 1, home_region: 'east' });
+    const seekerUser = makeUser('u1', { vibe, reliability: 1, home_region: 'east' });
+    const hostUser = makeUser('u2', { vibe, reliability: 1, home_region: 'east' });
     const plans = { pre_meetup: true, post_supper: true, merch_run: true, transport_share: true };
     const scored = scorePair(
       makeSeeker('s1', seekerUser, {

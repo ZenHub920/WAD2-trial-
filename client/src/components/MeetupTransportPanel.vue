@@ -105,17 +105,15 @@ onUnmounted(() => { alive = false; generation++; clearInterval(refreshTimer); do
 
 <template>
   <section class="card group-panel nearby-transport" :aria-labelledby="headingId" :data-transport-phase="phase">
-    <header><h2 :id="headingId">Getting there and getting home</h2><p>Check current MRT disruptions, station crowds and nearby buses. These are live conditions, not predictions for concert day.</p></header>
+    <header><h2 :id="headingId">Getting there and getting home</h2><p>Live MRT, crowd and bus updates.</p></header>
     <div class="nearby-transport__choices" role="group" aria-label="Transport journey">
       <button type="button" class="btn" :class="phase === 'pre' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="phase === 'pre'" @click="switchPhase('pre')">Before the meetup</button>
       <button type="button" class="btn" :class="phase === 'post' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="phase === 'post'" @click="switchPhase('post')">After the concert</button>
     </div>
-    <p v-if="phase === 'pre'">Look around your proposed meeting place before travelling to meet the group.</p>
-    <p v-else>Look around <strong>{{ venueName }}</strong> when deciding how to leave the concert.</p>
     <p v-if="phase === 'pre' && !hasMeetingPlace" class="group-muted">Choose a meeting place first to check nearby transport.</p>
     <details v-show="phase === 'post'" :open="Boolean(result && !result.anchor)" class="nearby-transport__venue">
       <summary>{{ venueOverride ? `Selected venue: ${venueOverride.label}` : 'Check or correct the concert venue' }}</summary>
-      <p class="group-muted">Choose the venue itself, rather than your home or meeting place. This selection is only for these transport checks.</p>
+      <p class="group-muted">Pick the concert venue, not your home or meeting place.</p>
       <MeetupLocationSearch :key="meetupId" :meetup-id="meetupId" :reset-key="venueSearchReset" :manual-fallback="false" label="Find the concert venue" selection-hint="This only selects a location for transport checks. Press Check nearby transport to use it; the concert and meetup are unchanged." @selected="selectVenue" @selection-invalidated="invalidateVenue" />
       <p v-if="venuePending" class="group-muted" role="status">Choose a new search result, or use the concert's venue again before checking transport.</p>
       <button v-if="venueOverride || venuePending" type="button" class="btn btn--ghost" @click="useConcertVenue">Use the concert's venue again</button>
@@ -128,11 +126,8 @@ onUnmounted(() => { alive = false; generation++; clearInterval(refreshTimer); do
     <details class="nearby-transport__about">
       <summary>About this transport data</summary>
       <ul>
-        <li>Checks show conditions now, not a prediction for a future meetup or the concert journey home.</li>
-        <li>The checked time is when this panel refreshed. Station observations have their own reported time; LTA updates them about every ten minutes. Saved information is marked when a fresh check is unavailable.</li>
-        <li>Bus loads describe approaching vehicles at that stop, rather than an entire route. Arrival times are not shown.</li>
-        <li>Station crowding describes the reported station area, rather than individual trains. Missing reports do not mean an empty station or bus.</li>
-        <li>Coverage can be incomplete. Up to three nearby stations and bus stops are shown; distances are straight-line estimates. OneMap and LTA must be configured for their respective checks.</li>
+        <li>These are conditions right now, not a forecast for concert day.</li>
+        <li>Up to three nearby stations and bus stops are shown. Missing reports don’t mean it’s empty.</li>
       </ul>
     </details>
     <p v-if="error" role="alert" class="group-error">{{ error }}</p>

@@ -11,7 +11,7 @@ import { currentUser, sessionReady } from './auth.js';
 import { loadMyPreferences } from './groupPreferences.js';
 
 /** Pages a signed-in member can open before saving preferences. */
-export const OPEN_BEFORE_PREFERENCES = new Set(['welcome', 'login', 'account-security']);
+export const OPEN_BEFORE_PREFERENCES = new Set(['welcome', 'login']);
 
 /** Wait for the cookie-backed session check, so we know who is signed in. */
 function sessionSettled() {

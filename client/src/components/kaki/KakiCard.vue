@@ -42,9 +42,6 @@ const interests = computed(() => {
 
       <p class="kaki-card__meta">
         {{ person.user.ageBand }}, {{ person.user.homeRegion.replace('_', ' ') }}
-        <span v-if="person.user.verified" class="kaki-card__verified" title="Profile verified">
-          ✓ Profile verified
-        </span>
       </p>
 
       <p class="kaki-card__concert">
@@ -113,13 +110,6 @@ const interests = computed(() => {
   text-transform: capitalize;
 }
 .kaki-card__profile { align-self:flex-start; display:inline-flex; align-items:center; min-height:44px; font-size:var(--step--1); color:var(--accent-400); }
-
-.kaki-card__verified {
-  margin-left: var(--space-2);
-  color: var(--mint-400);
-  font-weight: 700;
-  text-transform: none;
-}
 
 .kaki-card__concert {
   margin: var(--space-2) 0 0;

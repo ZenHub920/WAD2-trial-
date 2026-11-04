@@ -13,7 +13,6 @@ export function mapUser(row) {
     languages: JSON.parse(row.languages_json),
     vibe: JSON.parse(row.vibe_json),
     reliability: row.reliability,
-    verified: row.verified,
     // Enumerate fields so private database columns cannot leak through spreads.
     avatar_path: row.avatar_path ?? null,
     ...(Object.hasOwn(row, 'is_operator') ? { is_operator: Boolean(row.is_operator) } : {}),
@@ -93,7 +92,6 @@ export const USER_COLUMNS = (alias, prefix) => `
   ${alias}.languages_json        AS ${prefix}languages_json,
   ${alias}.vibe_json             AS ${prefix}vibe_json,
   ${alias}.reliability           AS ${prefix}reliability,
-  ${alias}.verified              AS ${prefix}verified,
   ${alias}.avatar_path           AS ${prefix}avatar_path,
   ${alias}.created_at            AS ${prefix}created_at
 `;

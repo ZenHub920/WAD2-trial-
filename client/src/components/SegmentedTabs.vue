@@ -164,7 +164,7 @@ function navigate(event, current) {
 /* Keep the words on mobile: an unfamiliar icon should not be a guessing game. */
 @media (max-width: 560px) {
   .segs__label {
-    font-size: .75rem;
+    font-size: .82rem;
     max-width: 100%;
   }
   .segs__tab {

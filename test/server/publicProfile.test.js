@@ -31,7 +31,7 @@ test('concert profile requires authentication and only publishes whitelisted sel
   assert.equal((await f.request(`/users/${owner.id}/profile`)).status, 401);
   const result = await f.request(`/users/${owner.id}/profile`, { cookie: viewer.cookie });
   assert.equal(result.status, 200);
-  assert.deepEqual(Object.keys(result.body.profile).sort(), ['ageBand', 'avatarUrl', 'displayName', 'hasVibeRatings', 'id', 'languages', 'verified', 'vibe']);
+  assert.deepEqual(Object.keys(result.body.profile).sort(), ['ageBand', 'avatarUrl', 'displayName', 'hasVibeRatings', 'id', 'languages', 'vibe']);
   assert.equal(result.body.profile.hasVibeRatings, true);
   assert.deepEqual(result.body.profile.vibe, { singalong: 4, photography: 0, dancing: 0, quiet: 2, queue_early: 0, merch: 0 });
   for (const secret of ['email', 'password_hash', 'companionGenderPref', 'answers', 'wants', 'avoid', 'homeRegion', 'reliability'])

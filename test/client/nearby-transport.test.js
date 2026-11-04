@@ -104,11 +104,11 @@ describe('nearby meetup and concert transport', () => {
     expect(wrapper.text()).toContain('Limited standing space');
     expect(wrapper.text()).not.toContain('must-not-show-arrival');
     expect(wrapper.text()).toContain('No disruption reported on these nearby lines.');
-    expect(wrapper.text()).toContain('These are live conditions, not predictions for concert day.');
+    expect(wrapper.text()).toContain('Live MRT, crowd and bus updates.');
     const about = wrapper.get('.nearby-transport__about');
     expect(about.get('summary').text()).toBe('About this transport data');
     expect(about.attributes('open')).toBeUndefined();
-    expect(about.text()).toContain('Missing reports do not mean an empty station or bus.');
+    expect(about.text()).toContain('Missing reports don’t mean it’s empty.');
     expect(wrapper.text()).not.toContain('TrainLine');
   });
 

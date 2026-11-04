@@ -55,7 +55,7 @@ watch([() => props.id, () => currentUser.value?.id], (_value, _old, onCleanup) =
         <div>
           <p class="public-profile__eyebrow">Concert profile</p>
           <h1>{{ profile.displayName }}</h1>
-          <p class="public-profile__meta">{{ profile.ageBand }} · {{ profile.languages.map(code => languageLabels[code] ?? code).join(', ') }}<span v-if="profile.verified"> · Profile verified</span></p>
+          <p class="public-profile__meta">{{ profile.ageBand }} · {{ profile.languages.map(code => languageLabels[code] ?? code).join(', ') }}</p>
         </div>
         <RouterLink v-if="currentUser?.id === profile.id" to="/profile#your-vibe" class="btn btn--ghost">Edit your vibe</RouterLink>
       </header>

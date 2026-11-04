@@ -52,7 +52,7 @@ test('registration creates a private, persistent, expiring session without accep
     assert.equal(registered.status, 201);
     assert.notEqual(registered.body.user.id, 'chosen');
     assert.equal(registered.body.user.reliability, 0.75);
-    assert.equal(registered.body.user.verified, false);
+    assert.equal(Object.hasOwn(registered.body.user, 'verified'), false);
     assert.equal(registered.body.user.email, undefined);
     assert.equal(registered.body.user.isOperator, false);
     assert.equal(db.prepare('SELECT is_operator FROM users WHERE id = ?')

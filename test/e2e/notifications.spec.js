@@ -69,8 +69,7 @@ test('turning off chat notifications in the profile stops new ones', async ({ br
     const conversationId = await chatPair(data, alice, bob);
     await bob.page.goto('/profile#notifications');
     await bob.page.getByLabel(/Companion and ticket messages/).uncheck();
-    await bob.page.getByRole('button', { name: 'Save notification preferences' }).click();
-    await expect(bob.page.getByText('Notification preferences saved.')).toBeVisible();
+    await expect(bob.page.locator('#notifications').getByText('Saved', { exact: true })).toBeVisible();
 
     await api(alice.context, `/kaki/conversations/${conversationId}/messages`, 'POST', { body: 'muted?' });
     expect((await api(bob.context, '/me/notifications/unread')).unread).toBe(0);

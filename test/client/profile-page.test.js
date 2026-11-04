@@ -22,6 +22,9 @@ import { loadMyPreferences } from '../../client/src/groupPreferences.js';
 import { browserPushStatus, disableBrowserPush } from '../../client/src/browserPush.js';
 import { button, field, mountPage } from './helpers.js';
 
+// The profile saves itself shortly after the last edit (ProfileView's AUTOSAVE_DELAY_MS).
+const waitForAutosave = async () => { await new Promise((resolve) => setTimeout(resolve, 750)); await flushPromises(); };
+
 vi.mock('../../client/src/api.js', async original => ({ ...await original(), api: {
   profile: vi.fn(), updateProfile: vi.fn(), setAvatar: vi.fn(), clearAvatar: vi.fn(),
   me: vi.fn(), logout: vi.fn(),
@@ -51,7 +54,6 @@ const savedProfile = (overrides = {}) => ({
   languages: ['en'],
   vibe: { singalong: 3, photography: 1, dancing: 2, quiet: 0, queue_early: 4, merch: 2 },
   reliability: 0.82,
-  verified: true,
   ...overrides,
 });
 
@@ -100,9 +102,9 @@ beforeEach(() => {
  * | (2)  | profile loads                   | the picture control gets the user name |
  * | (3)  | load answers 401                | "Sign in to see your profile."         |
  * | (4)  | load fails, then Retry          | the form appears                       |
- * | (5)  | display name blank + Save       | "Enter a display name.", no request    |
- * | (6)  | no language chosen + Save       | "Choose at least one language."        |
- * | (7)  | edited fields + Save            | PATCH sent trimmed, "Profile saved"    |
+ * | (5)  | display name blanked            | "Enter a display name.", no request    |
+ * | (6)  | no language chosen              | "Choose at least one language."        |
+ * | (7)  | several fields edited           | one PATCH sent trimmed, "Saved"        |
  * | (8)  | save answers 401                | expired-session message + sign-in link |
  * | (9)  | a picture is chosen             | sent at once, profile PATCH untouched  |
  * | (10) | the picture is rejected         | "That file is not a readable image."   |
@@ -118,7 +120,7 @@ describe('profile page (component tests)', () => {
     expect(field(wrapper, 'English').element.checked).toBe(true);
     expect(field(wrapper, 'Chinese').element.checked).toBe(false);
     expect(field(wrapper, 'Singalong').element.value).toBe('3');
-    expect(wrapper.text()).toContain('Profile verified');
+    expect(wrapper.text()).not.toContain('verified');
     expect(wrapper.text()).toContain('Reliability 82%');
   });
 
@@ -134,7 +136,7 @@ describe('profile page (component tests)', () => {
     const { wrapper } = await openProfile();
     expect(wrapper.get('[role="alert"]').text()).toContain('Sign in to see your profile.');
     expect(wrapper.findAll('a').some(link => link.attributes('href') === '/login')).toBe(true);
-    expect(wrapper.find('form#profile-form').exists()).toBe(false);
+    expect(wrapper.find('.save-badge').exists()).toBe(false);
   });
 
   it('(4) offers Retry after a failed load and shows the form once it succeeds', async () => {
@@ -149,18 +151,16 @@ describe('profile page (component tests)', () => {
   it('(5) refuses to save a blank display name', async () => {
     const { wrapper } = await openProfile();
     await field(wrapper, 'Display name').setValue('   ');
-    await button(wrapper, 'Save profile').trigger('click');
-    await flushPromises();
-    expect(wrapper.get('.profile__actions [role="alert"]').text()).toContain('Enter a display name.');
+    await waitForAutosave();
+    expect(wrapper.get('[aria-labelledby="profile-about"] [role="alert"]').text()).toContain('Enter a display name.');
     expect(api.updateProfile).not.toHaveBeenCalled();
   });
 
   it('(6) refuses to save with no language chosen', async () => {
     const { wrapper } = await openProfile();
     await field(wrapper, 'English').setValue(false);
-    await button(wrapper, 'Save profile').trigger('click');
-    await flushPromises();
-    expect(wrapper.get('.profile__actions [role="alert"]').text()).toContain('Choose at least one language.');
+    await waitForAutosave();
+    expect(wrapper.get('[aria-labelledby="profile-about"] [role="alert"]').text()).toContain('Choose at least one language.');
     expect(api.updateProfile).not.toHaveBeenCalled();
   });
 
@@ -171,8 +171,7 @@ describe('profile page (component tests)', () => {
     await field(wrapper, 'Home region').setValue('west');
     await field(wrapper, 'Chinese').setValue(true);
     await field(wrapper, 'Singalong').setValue('4');
-    await button(wrapper, 'Save profile').trigger('click');
-    await flushPromises();
+    await waitForAutosave();
 
     expect(api.updateProfile).toHaveBeenCalledTimes(1);
     expect(api.updateProfile.mock.calls[0][0]).toMatchObject({
@@ -182,22 +181,21 @@ describe('profile page (component tests)', () => {
       languages: ['en', 'zh'],
       vibe: expect.objectContaining({ singalong: 4 }),
     });
-    expect(wrapper.get('.profile__actions [role="status"]').text()).toContain('Profile saved');
+    expect(wrapper.get('[aria-labelledby="profile-about"] .save-badge').text()).toContain('Saved');
   });
 
   it('(8) explains an expired session instead of losing the edit', async () => {
     api.updateProfile.mockRejectedValue(failure(401, 'unauthorized'));
     const { wrapper } = await openProfile();
     await field(wrapper, 'Display name').setValue('Jamie Tan');
-    await button(wrapper, 'Save profile').trigger('click');
-    await flushPromises();
-    const notice = wrapper.get('.profile__actions [role="alert"]');
+    await waitForAutosave();
+    const notice = wrapper.get('[aria-labelledby="profile-about"] [role="alert"]');
     expect(notice.text()).toContain('Your session has expired. Sign in again to edit your profile.');
     expect(notice.find('a').attributes('href')).toBe('/login');
     expect(field(wrapper, 'Display name').element.value).toBe('Jamie Tan');
   });
 
-  it('(9) applies a chosen picture at once, without waiting for Save', async () => {
+  it('(9) applies a chosen picture at once, separately from the profile autosave', async () => {
     api.setAvatar.mockResolvedValue({ user: { ...SIGNED_IN, avatarUrl: 'https://cdn.test/a.png' } });
     const { wrapper } = await openProfile();
     await button(wrapper, 'Choose picture').trigger('click');
@@ -231,8 +229,8 @@ describe('profile page (component tests)', () => {
  * | Test | Input                            | Expected output                         |
  * | ---- | -------------------------------- | --------------------------------------- |
  * | (1)  | page opens signed in             | both sections render, categories loaded |
- * | (2)  | a category is unticked and saved | only the notification request is sent   |
- * | (3)  | the profile is saved             | only the profile request is sent        |
+ * | (2)  | a category is unticked           | only the notification request is sent   |
+ * | (3)  | the profile is edited            | only the profile request is sent        |
  * | (4)  | page opens signed out            | no notification section at all          |
  * ------------------------------------------------------------------ */
 describe('profile page with its notification section (integration tests)', () => {
@@ -249,20 +247,18 @@ describe('profile page with its notification section (integration tests)', () =>
   it('(2) saves notification categories without touching the profile', async () => {
     const { wrapper } = await openProfile(withNotifications);
     await field(wrapper, 'Companion and ticket messages').setValue(false);
-    await button(wrapper, 'Save notification preferences').trigger('click');
     await flushPromises();
     expect(api.saveNotificationSettings).toHaveBeenCalledExactlyOnceWith(
       { chat: false, group: true, match: true, meetup: true, feedback: true },
     );
     expect(api.updateProfile).not.toHaveBeenCalled();
-    expect(wrapper.get('#notifications [role="status"]').text()).toContain('Notification preferences saved.');
+    expect(wrapper.get('#notifications [role="status"]').text()).toContain('Saved');
   });
 
   it('(3) saves the profile without touching the notification categories', async () => {
     const { wrapper } = await openProfile(withNotifications);
     await field(wrapper, 'Display name').setValue('Jamie Tan');
-    await button(wrapper, 'Save profile').trigger('click');
-    await flushPromises();
+    await waitForAutosave();
     expect(api.updateProfile).toHaveBeenCalledTimes(1);
     expect(api.saveNotificationSettings).not.toHaveBeenCalled();
   });

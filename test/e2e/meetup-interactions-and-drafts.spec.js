@@ -172,7 +172,7 @@ test('planner drafts: stages, failed saves, internal navigation, browser Back an
     const cell = host.page.locator('[data-availability-start]').first();
     const dialog = host.page.getByRole('dialog', { name: 'Leave with unsaved changes?', exact: true });
     await cell.click();
-    await host.page.getByRole('button', { name: /Continue to places/ }).click();
+    await host.page.getByRole('button', { name: /Next: choose a place/ }).click();
     await expect(dialog).toHaveCount(0);
     await expect(host.page.locator('#meetup-places')).toContainText('Recommendations use saved availability');
     await host.page.getByRole('tab', { name: /Agree on the plan/ }).click();
@@ -187,7 +187,7 @@ test('planner drafts: stages, failed saves, internal navigation, browser Back an
       await saveGate;
       await route.fulfill({ status: 503, json: { error: 'temporarily_unavailable' } });
     });
-    await host.page.getByRole('button', { name: 'Save availability and journey', exact: true }).click();
+    await host.page.getByRole('button', { name: 'Save my times', exact: true }).click();
     await expect(host.page.getByRole('button', { name: 'Updating…', exact: true })).toBeDisabled();
     await expect(cell).toBeDisabled();
     await capture(host.page, 'availability-saving-disabled-dark-390');
@@ -233,7 +233,7 @@ test('planner drafts: stages, failed saves, internal navigation, browser Back an
     await expect(host.page).toHaveURL(new RegExp(`/meetups/${meetup.id}`));
     await expect(cell).toHaveAttribute('aria-pressed', 'true');
 
-    await host.page.getByRole('button', { name: 'Save availability and journey', exact: true }).click();
+    await host.page.getByRole('button', { name: 'Save my times', exact: true }).click();
     await expect(host.page.getByText('Your availability and journey have been saved.', { exact: true })).toBeVisible();
     await expect(host.page.locator('.meetup-save-state')).toContainText('Showing your saved availability.');
     expect((await api(host.context, `/meetups/${meetup.id}`)).meetup.availability).toHaveLength(1);

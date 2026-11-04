@@ -32,7 +32,7 @@ const radius = computed(() => props.size / 2 - 22);
  * Horizontal breathing room in the viewBox itself. The left and right axis labels
  * sit outside the chart circle, so without it they are clipped by the card.
  */
-const padX = 26;
+const padX = 40;
 
 function score(axis) {
   const value = props.vibe?.[axis];
@@ -69,8 +69,8 @@ const labelPositions = computed(() =>
     return {
       axis,
       label: SHORT[axis],
-      x: centre.value + Math.cos(angle) * (radius.value + 11),
-      y: centre.value + Math.sin(angle) * (radius.value + 11),
+      x: centre.value + Math.cos(angle) * (radius.value + 13),
+      y: centre.value + Math.sin(angle) * (radius.value + 13),
       anchor: Math.abs(Math.cos(angle)) < 0.3 ? 'middle' : Math.cos(angle) > 0 ? 'start' : 'end',
     };
   }),
@@ -150,8 +150,9 @@ const labelPositions = computed(() =>
 
 .radar__labels text {
   font-family: var(--font-mono);
-  font-size: 8.5px;
-  fill: var(--text-400);
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--text-100);
   letter-spacing: 0.02em;
 }
 </style>

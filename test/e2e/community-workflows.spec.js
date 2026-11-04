@@ -141,7 +141,7 @@ test('automatic matching: joining pool produces an offer; both approvals are req
   const hosts = {};
   try {
     await seeker.page.goto(`/groups?concertId=${data.concertId}&mode=algorithm`);
-    await seeker.page.getByRole('button', { name: 'Switch to matching', exact: true }).click();
+    await seeker.page.getByRole('button', { name: 'Find my match', exact: true }).click();
     await expect(seeker.page.getByRole('button', { name: 'Leave the match list', exact: true })).toBeVisible();
     const round = await request.post('http://127.0.0.1:3105/__test/round', { data: { concertId: data.concertId } });
     expect(round.ok(), await round.text()).toBeTruthy();
@@ -218,8 +218,8 @@ test('meeting planner: create, save car availability, suggest a place, fallback 
     const connectionId = await connect(a.context, b.context, data);
     await a.page.goto(`/meetups?connectionId=${connectionId}`);
     await a.page.getByLabel('Title', { exact: true }).fill('Before the show');
-    await a.page.getByLabel('First possible meeting time').fill('2030-01-01T16:00');
-    await a.page.getByLabel('End of availability window').fill('2030-01-01T17:00');
+    await a.page.getByLabel('Earliest meeting time').fill('2030-01-01T16:00');
+    await a.page.getByLabel('Latest meeting time').fill('2030-01-01T17:00');
     await a.page.getByRole('button', { name: 'Create planning board', exact: true }).click();
     await expect(a.page.getByRole('heading', { name: 'Before the show' })).toBeVisible();
     const availability = a.page.locator('section').filter({ has: a.page.getByRole('heading', { name: 'When are you available?', exact: true }) });
@@ -231,8 +231,8 @@ test('meeting planner: create, save car availability, suggest a place, fallback 
     await journey.getByLabel('Location label', { exact: true }).first().fill('City Hall MRT');
     await journey.getByLabel('Latitude', { exact: true }).first().fill('1.293');
     await journey.getByLabel('Longitude', { exact: true }).first().fill('103.852');
-    await a.page.getByRole('button', { name: 'Apply journey to selected times', exact: true }).click();
-    await a.page.getByRole('button', { name: 'Save availability and journey', exact: true }).click();
+    await a.page.getByRole('button', { name: 'Apply to selected times', exact: true }).click();
+    await a.page.getByRole('button', { name: 'Save my times', exact: true }).click();
     await expect(a.page.getByText('Your availability and journey have been saved.', { exact: true })).toBeVisible();
     const path = new URL(a.page.url()).pathname;
     const { meetup: saved } = await api(a.context, path);
@@ -306,7 +306,7 @@ test('availability heatmap: drag paints/erases and updates another member live w
     await a.page.mouse.move(last.x + last.width / 2, last.y + last.height / 2, { steps: 8 });
     await a.page.mouse.up();
     await expect(a.page.locator('[data-availability-start][aria-pressed="true"]')).toHaveCount(3);
-    await a.page.getByRole('button', { name: 'Save availability and journey', exact: true }).click();
+    await a.page.getByRole('button', { name: 'Save my times', exact: true }).click();
     const other = b.page.locator('[data-availability-start]');
     await expect(other.first()).toHaveAttribute('aria-label', /1 of 4 available/);
     await a.page.locator('.meetup-availability').screenshot({ path: test.info().outputPath('heatmap-desktop.png') });
@@ -316,7 +316,7 @@ test('availability heatmap: drag paints/erases and updates another member live w
     await b.page.getByLabel('Message', { exact: true }).fill('My unsaved discussion');
     await b.page.locator('[data-planner-step="availability"]').click();
     await cells.first().click();
-    await a.page.getByRole('button', { name: 'Save availability and journey', exact: true }).click();
+    await a.page.getByRole('button', { name: 'Save my times', exact: true }).click();
     await expect(other.first()).toHaveAttribute('aria-label', /0 of 4 available/);
     await expect(other.nth(1)).toHaveAttribute('aria-pressed', 'true');
     await expect(b.page.getByLabel('Message', { exact: true })).toHaveValue('My unsaved discussion');
@@ -372,8 +372,8 @@ test('meetup guardrails: members contribute, places stay visible and only the ho
     expect(unauthorized.status()).toBe(403);
     await host.page.goto(`/meetups?partyId=${data.parties.a}`);
     await host.page.getByLabel('Title', { exact: true }).fill('Our concert meetup');
-    const start = host.page.getByLabel('First possible meeting time');
-    const end = host.page.getByLabel('End of availability window');
+    const start = host.page.getByLabel('Earliest meeting time');
+    const end = host.page.getByLabel('Latest meeting time');
     await expect(start).toHaveAttribute('min', /2029-12-31T/);
     await expect(end).toHaveAttribute('max', '2030-01-02T00:00');
     await start.fill('2030-01-02T16:00');
@@ -416,13 +416,13 @@ test('meetup guardrails: members contribute, places stay visible and only the ho
     await host.page.mouse.move(last.x + last.width / 2, last.y + last.height / 2, { steps: 8 });
     await host.page.mouse.up();
     await expect(host.page.locator('[data-availability-start][aria-pressed="true"]')).toHaveCount(3);
-    const journey = host.page.locator('details').filter({ has: host.page.locator('summary').filter({ hasText: 'Your journey to the meetup' }) }).first();
+    const journey = host.page.locator('details').filter({ has: host.page.locator('summary').filter({ hasText: 'Where are you coming from?' }) }).first();
     await journey.locator('summary').first().click();
     await journey.getByRole('combobox').first().selectOption('drive');
     await journey.locator('.meetup-location-search input').fill('Indoor Stadium');
     await journey.getByRole('button', { name: 'Search OneMap', exact: true }).click();
     await journey.getByRole('button', { name: /SINGAPORE INDOOR STADIUM.*2 STADIUM WALK/ }).click();
-    await host.page.getByRole('button', { name: 'Apply journey to selected times', exact: true }).click();
+    await host.page.getByRole('button', { name: 'Apply to selected times', exact: true }).click();
     await expect(host.page.getByText(/Journey details applied to 3 selected times/)).toBeVisible();
     expect((await api(host.context, path)).meetup.availability).toHaveLength(0);
     await plannerSnippet(journey, 'meetup-journey-draft.png');
@@ -430,7 +430,7 @@ test('meetup guardrails: members contribute, places stay visible and only the ho
     expect(await host.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await plannerSnippet(journey, 'meetup-journey-mobile.png');
     await host.page.setViewportSize({ width: 1280, height: 720 });
-    await host.page.getByRole('button', { name: 'Save availability and journey', exact: true }).click();
+    await host.page.getByRole('button', { name: 'Save my times', exact: true }).click();
     await expect(host.page.getByText('Your availability and journey have been saved.', { exact: true })).toBeVisible();
     await host.page.reload();
     await expect(host.page.locator('[data-availability-start][aria-pressed="true"]')).toHaveCount(3);
@@ -440,7 +440,7 @@ test('meetup guardrails: members contribute, places stay visible and only the ho
     await plannerSnippet(host.page.locator('#meetup-availability'), 'meetup-availability-saved.png');
     await member.page.locator('[data-planner-step="availability"]').click();
     await member.page.locator('[data-availability-start]').first().click();
-    await member.page.getByRole('button', { name: 'Save availability and journey', exact: true }).click();
+    await member.page.getByRole('button', { name: 'Save my times', exact: true }).click();
     await expect(member.page.getByText('Your availability and journey have been saved.', { exact: true })).toBeVisible();
     await host.page.reload();
     await host.page.locator('[data-planner-step="places"]').click();
@@ -450,7 +450,7 @@ test('meetup guardrails: members contribute, places stay visible and only the ho
     await expect(host.page.locator('.meetup-context').getByText('Meetup confirmed', { exact: true })).toBeVisible();
     const confirmed = (await api(host.context, path)).meetup;
     await member.page.reload();
-    await expect(member.page.getByRole('button', { name: 'Save availability and journey', exact: true })).toBeDisabled();
+    await expect(member.page.getByRole('button', { name: 'Save my times', exact: true })).toBeDisabled();
     for (const [suffix, method, body] of [
       ['/availability', 'PUT', { version: confirmed.version, windows: [] }],
       ['/vote', 'PUT', { placeId: confirmed.selected_place_id }],
@@ -467,7 +467,7 @@ test('meetup guardrails: members contribute, places stay visible and only the ho
     expect({ status: saved.status, version: saved.version, place: saved.selected_place_id, start: saved.selected_start })
       .toEqual({ status: 'confirmed', version: confirmed.version, place: confirmed.selected_place_id, start: confirmed.selected_start });
     await member.page.locator('[data-planner-step="review"]').click();
-    await expect(member.page.getByRole('heading', { name: 'Group discussion & change requests', exact: true })).toBeVisible();
+    await expect(member.page.getByRole('heading', { name: 'Discussion', exact: true })).toBeVisible();
     await member.page.getByLabel('Message', { exact: true }).fill('Could we meet half an hour later?');
     await member.page.getByRole('button', { name: 'Post', exact: true }).click();
     await expect(member.page.getByText('Your message was posted.', { exact: true })).toBeVisible();

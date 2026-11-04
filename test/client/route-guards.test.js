@@ -40,10 +40,10 @@ describe('guardRoute', () => {
       .toEqual({ name: 'welcome', query: { next: '/concerts/c1' } });
   });
 
-  it('still opens the welcome, sign-in and account security pages before preferences are saved', async () => {
+  it('still opens the welcome and sign-in pages before preferences are saved', async () => {
     currentUser.value = { id: 'me' };
     loadMyPreferences.mockResolvedValue(null);
-    for (const name of ['welcome', 'login', 'account-security']) {
+    for (const name of ['welcome', 'login']) {
       expect(await guardRoute(route(name, `/${name}`))).toBe(true);
     }
     expect(loadMyPreferences).not.toHaveBeenCalled();
