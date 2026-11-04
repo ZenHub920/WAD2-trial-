@@ -29,7 +29,7 @@ const meetupLink = scope => meetupDestination(meetupPlans.value, scope, { from: 
 const meetupLabel = scope => meetupActionForScope(meetupPlans.value, scope);
 const hasMeetup = scope => meetupsForScope(meetupPlans.value, scope).length > 0;
 const hosted = ref([]), candidates = ref([]), connections = ref([]), joins = ref([]);
-const attendance = ref([]);
+const attendance = ref([]), myRequests = ref([]);
 const automaticOffers = ref([]);
 const loading = ref(false), busy = ref(false), candidateError = ref('');
 const error = ref(''), message = ref(''), refreshWarning = ref('');
@@ -102,7 +102,7 @@ const pageTitle = computed(() => mode.value === 'create' ? 'Create a group' : mo
 const sectionName = key => LABELS.section[key] ?? key;
 const describe = c => `${c.partyA.name || c.partyA.hostName} (${sectionName(c.partyA.section)}) ↔ ${c.partyB.name || c.partyB.hostName} (${sectionName(c.partyB.section)}), ${c.partyA.artist}`;
 let generation = 0, sessionGeneration = 0, operationGeneration = 0, alive = true, filterTimer, concertClock;
-const groupSourceKeys = ['owned', 'joined', 'connections', 'applications', 'offers'];
+const groupSourceKeys = ['owned', 'joined', 'myRequests', 'connections', 'applications', 'offers'];
 const sources = {
   concerts: { label: 'concerts', load: () => api.concerts(), apply: result => {
     allConcerts.value = result.concerts; concertNow.value = Date.now(); selectConcert(concertId.value);
@@ -117,6 +117,7 @@ const sources = {
     }));
   }, apply: result => { hosted.value = result; } },
   joined: { label: 'joined groups', load: () => api.currentGroupMemberships(), apply: result => { attendance.value = result.groups ?? result.memberships ?? []; } },
+  myRequests: { label: 'your join requests', load: () => api.groupJoinRequests({ scope: 'own' }), apply: result => { myRequests.value = result.requests.filter(r => r.userId === currentUser.value?.id && r.status === 'pending'); } },
   connections: { label: 'invitations', load: () => api.groupConnections(), apply: result => { connections.value = result.connections; } },
   applications: { label: 'applications', load: () => api.hostedGroupJoinRequests(), apply: result => { joins.value = result.requests.filter(j => j.hostId === currentUser.value?.id); } },
   offers: { label: 'automatic offers', load: () => api.myProposals(), apply: result => { automaticOffers.value = result.proposals.filter(proposal => proposal.role === 'host' && proposal.status === 'proposed'); } },
@@ -237,7 +238,7 @@ watch(() => Object.values(filters), () => {
 });
 watch(() => currentUser.value?.id, () => {
   sessionGeneration++; operationGeneration++; generation++;
-  hosted.value = []; attendance.value = []; connections.value = []; joins.value = []; automaticOffers.value = []; candidates.value = []; error.value = ''; message.value = ''; refreshWarning.value = '';
+  hosted.value = []; attendance.value = []; myRequests.value = []; connections.value = []; joins.value = []; automaticOffers.value = []; candidates.value = []; error.value = ''; message.value = ''; refreshWarning.value = '';
   createdDraftId.value = ''; createdDraftNote.value = ''; uncertainCreation.value = null; busy.value = false; candidateError.value = '';
   hostForm.name = ''; hostForm.notes = ''; hostImage.value = null; attempted.value = false;
   allConcerts.value = []; hostConcertId.value = ''; concertNotice.value = '';
@@ -469,6 +470,7 @@ async function openCreatedDraft() {
     <template v-else-if="!groupsLoading">
       <nav v-if="mode === 'dashboard'" class="workspace-overview" aria-label="Group workspace sections">
         <a href="#owned-heading"><span class="workspace-overview__value">{{ activeGroups.length + upcomingJoinedGroups.length }}</span><span>Upcoming &amp; ongoing groups<small>Chat, plan and manage</small></span></a>
+        <a v-if="myRequests.length" href="#my-requests-heading" class="workspace-overview__attention"><span class="workspace-overview__value">{{ myRequests.length }}</span><span>Waiting to join<small>Requests you’ve sent</small></span></a>
         <a v-if="historicalGroups.length" href="#historical-groups"><span class="workspace-overview__value">{{ historicalGroups.length }}</span><span>{{ historicalTitle }}<small>Conversations and group history</small></span></a>
         <a v-if="admissionQueues.length || historicalJoins.length" href="#join-requests" :class="{'workspace-overview__attention':incomingCount}"><span class="workspace-overview__value">{{ incomingCount }}</span><span>Requests &amp; offers<small>{{ incomingCount ? 'Review in arrival order' : 'View past requests' }}</small></span></a>
         <a v-if="incoming.length || outgoing.length || accepted.length" href="#group-connections"><span class="workspace-overview__value">{{ accepted.length }}</span><span>Group connections<small>{{ incoming.length ? `${incoming.length} invitations need a reply` : 'Invitations and shared chats' }}</small></span></a>
@@ -476,6 +478,15 @@ async function openCreatedDraft() {
       </nav>
       <template v-if="mode === 'dashboard' || !sourceGroup">
         <p v-if="mode === 'connections'" class="group-muted" role="status">{{ route.query.groupId ? 'This group is historical, unavailable, cancelled, or not owned by you. Choose an upcoming or ongoing group below. Existing conversations remain in My groups.' : 'Choose an upcoming or ongoing group to connect with other groups.' }}</p>
+        <section v-if="mode === 'dashboard' && myRequests.length" class="owned-section" aria-labelledby="my-requests-heading">
+          <div class="section-heading"><h2 id="my-requests-heading">Groups you’ve asked to join</h2><span class="group-muted">{{ myRequests.length }} waiting for a host</span></div>
+          <article v-for="r in myRequests" :key="r.id" class="card group-panel">
+            <h3>{{ r.groupName || `${r.hostName}’s group` }}</h3>
+            <p class="group-muted">{{ r.artist }} · Hosted by {{ r.hostName }} · <strong>Waiting for the host</strong></p>
+            <p class="group-muted">{{ r.seatReserved ? 'A spot is held for you until the host replies.' : `No spot held yet — you’re number ${r.queuePosition ?? '?'} in line.` }}</p>
+            <div class="group-actions"><RouterLink class="btn btn--ghost" :to="{ path: '/groups', query: { concertId: r.concertId } }">View or cancel request</RouterLink></div>
+          </article>
+        </section>
         <section class="owned-section" aria-labelledby="owned-heading">
           <div class="section-heading"><h2 id="owned-heading">{{ mode === 'connections' ? 'Choose one of your groups' : 'Groups you own' }}</h2><span v-if="reads.owned.loaded" class="group-muted">{{ activeGroups.length }} upcoming or ongoing</span></div>
           <div v-if="activeGroups.length" class="owned-grid">

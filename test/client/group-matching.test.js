@@ -30,7 +30,7 @@ describe('direct comparison with real listing cards', () => {
     expect(wrapper.findAll('article')).toHaveLength(0);
     await button(wrapper, 'Start comparing').trigger('click');
     expect(wrapper.findAll('article').map(card => card.find('h3').text())).toEqual(['Alpha', 'Beta']);
-    await button(wrapper, 'Prefer this group').trigger('click');
+    await button(wrapper, 'Keep this group').trigger('click');
     await flushPromises();
     expect(wrapper.findAll('article').map(card => card.find('h3').text())).toEqual(['Alpha', 'Gamma']);
     expect(applyGroup).not.toHaveBeenCalled();
@@ -61,9 +61,9 @@ describe('direct comparison with real listing cards', () => {
     } });
     await flushPromises();
     expect(button(wrapper, 'Request to join').element.disabled).toBe(true);
-    await button(wrapper, 'Prefer this group').trigger('click');
+    await button(wrapper, 'Keep this group').trigger('click');
     await flushPromises();
-    expect(wrapper.text()).toContain('Your comparison favorite');
+    expect(wrapper.text()).toContain('Your pick so far');
     expect(applyGroup).not.toHaveBeenCalled();
   });
 });
