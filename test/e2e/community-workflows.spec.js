@@ -46,8 +46,8 @@ test('direct search: comparing sends no request; applying waits for host approva
   try {
     await seeker.page.goto(`/groups?concertId=${data.concertId}&mode=direct`);
     await seeker.page.getByRole('button', { name: 'Start comparing', exact: true }).click();
-    await expect(seeker.page.getByRole('button', { name: 'Prefer this group', exact: true })).toHaveCount(2);
-    await seeker.page.getByRole('button', { name: 'Prefer this group', exact: true }).first().click();
+    await expect(seeker.page.getByRole('button', { name: 'Keep this group', exact: true })).toHaveCount(2);
+    await seeker.page.getByRole('button', { name: 'Keep this group', exact: true }).first().click();
     expect((await api(seeker.context, '/me/group-join-requests?scope=own')).requests).toHaveLength(0);
     // Select hostA's actual card, independent of its compatibility tie-break order.
     const card = seeker.page.locator('[data-comparison-slot]').filter({ hasText: `Supper crew ${data.suffix}` });

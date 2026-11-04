@@ -281,7 +281,7 @@ for (const theme of ['light', 'dark']) test(`responsive visual audit: ${theme} l
           }
           if (name === 'groups') {
             await person.page.getByRole('button', { name: 'Start comparing', exact: true }).click();
-            await expect(person.page.getByRole('button', { name: 'Prefer this group', exact: true })).toHaveCount(2);
+            await expect(person.page.getByRole('button', { name: 'Keep this group', exact: true })).toHaveCount(2);
           }
           if (name === 'my-meetups') {
             await expect(person.page.getByRole('heading', { name: 'Needs your attention', exact: true })).toBeVisible();

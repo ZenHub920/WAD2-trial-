@@ -8,7 +8,7 @@ import { button, field, group, mountPage } from './helpers.js';
 const plans = ref([]);
 vi.mock('../../client/src/composables/useMeetupSummaries.js', () => ({ useMeetupSummaries: () => ({ plans }) }));
 vi.mock('../../client/src/api.js', async original => ({ ...await original(), api: {
-  concerts: vi.fn(), hostedGroups: vi.fn(), groupConnections: vi.fn(), hostedGroupJoinRequests: vi.fn(),
+  concerts: vi.fn(), hostedGroups: vi.fn(), groupConnections: vi.fn(), hostedGroupJoinRequests: vi.fn(), groupJoinRequests: vi.fn(),
   currentGroupMemberships: vi.fn(), myProposals: vi.fn(), createParty: vi.fn(), configureGroup: vi.fn(),
 } }));
 vi.mock('../../client/src/auth.js', async () => {
@@ -25,6 +25,7 @@ beforeEach(() => {
   api.hostedGroups.mockResolvedValue({ groups: [] });
   api.groupConnections.mockResolvedValue({ connections: [] });
   api.hostedGroupJoinRequests.mockResolvedValue({ requests: [] });
+  api.groupJoinRequests.mockResolvedValue({ requests: [] });
   api.currentGroupMemberships.mockResolvedValue({ groups: [] });
   api.myProposals.mockResolvedValue({ proposals: [] });
   api.createParty.mockResolvedValue({ party: { id: 'new-group' } });

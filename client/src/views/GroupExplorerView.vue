@@ -36,6 +36,45 @@ const hasNextPage = computed(() => offset.value + PAGE_SIZE < total.value);
 const directLayout = ref('compare'), comparisonSession = ref('');
 const filters = reactive({ query: '', section: '', minCapacity: 0, spendBand: '', arrival: '', activity: '', vibe: '', sort: 'compatibility', preferredOnly: false });
 const form = reactive({ section_pref: 'standing_pen', spend_band_max: 3, arrival_pref: 'doors', plans_wanted: {} });
+// Plan answers are remembered per viewer so switching concert is one click, not a re-fill.
+const planKey = () => `encore:group-plan:${currentUser.value?.id ?? ''}`;
+const rememberedPlan = ref(null), editingPlan = ref(false);
+function readRememberedPlan() {
+  try { const raw = localStorage.getItem(planKey()); rememberedPlan.value = raw ? JSON.parse(raw) : null; } catch { rememberedPlan.value = null; }
+  if (rememberedPlan.value) Object.assign(form, { ...rememberedPlan.value, plans_wanted: { ...(rememberedPlan.value.plans_wanted ?? {}) } });
+  editingPlan.value = !rememberedPlan.value;
+}
+function rememberPlan() {
+  const value = { section_pref: form.section_pref, spend_band_max: form.spend_band_max, arrival_pref: form.arrival_pref, plans_wanted: { ...form.plans_wanted } };
+  try { localStorage.setItem(planKey(), JSON.stringify(value)); } catch { /* convenience only */ }
+  rememberedPlan.value = value;
+}
+const planSummary = computed(() => rememberedPlan.value ? [SECTION_OPTIONS[rememberedPlan.value.section_pref], LABELS.spendBand[rememberedPlan.value.spend_band_max], ARRIVAL_OPTIONS[rememberedPlan.value.arrival_pref]].filter(Boolean).join(' · ') : '');
+// Concert picker: upcoming shows only, with venue/time so repeated names are distinguishable.
+const pickerConcerts = computed(() => concerts.value.filter(concert => concertParticipationEligibility(concert).eligible || concert.id === concertId.value));
+const concertOptionLabel = concert => {
+  const date = concert.event_date ? new Date(`${concert.event_date}T00:00:00`).toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  const time = concert.event_time ? ` ${concert.event_time.slice(0, 5)}` : '';
+  const count = Number(concert.open_parties) || 0;
+  const clash = concerts.value.some(other => other.id !== concert.id && other.artist === concert.artist && other.event_date === concert.event_date);
+  const name = clash && concert.tour_name ? `${concert.artist} — ${concert.tour_name}` : concert.artist;
+  return `${name} · ${date}${time}${concert.venue ? ` · ${concert.venue}` : ''} · ${count ? `${count} ${count === 1 ? 'group' : 'groups'}` : 'no groups yet'}`;
+};
+const hasActiveFilters = computed(() => Boolean(filters.query || filters.section || filters.minCapacity || filters.spendBand || filters.arrival || filters.activity || filters.vibe || filters.preferredOnly));
+const requestGroupName = request => request.groupName || `${request.hostName}’s group`;
+// Join confirmation: nothing is sent until the person reviews and confirms.
+const confirmingGroup = ref(null), confirmNote = ref('');
+let confirmResolve = null;
+const groupDisplayName = group => group?.name || (group?.hostName ? `${group.hostName}’s group` : 'this group');
+function confirmJoin(group) {
+  confirmingGroup.value = group; confirmNote.value = '';
+  return new Promise(resolve => { confirmResolve = resolve; });
+}
+async function settleConfirm(send) {
+  const group = confirmingGroup.value, resolve = confirmResolve;
+  confirmingGroup.value = null; confirmResolve = null;
+  resolve?.(send && group ? await join(group.id, confirmNote.value.trim()) : 'cancelled');
+}
 const persistedMode = computed(() => seeker.value?.joining_mode ?? seeker.value?.joiningMode ?? 'algorithm');
 const currentGroup = computed(() => memberships.value.find(group => group.concertId === concertId.value));
 const ownRequests = computed(() => joins.value.filter(request => request.userId === currentUser.value?.id && request.concertId === concertId.value));
@@ -134,6 +173,7 @@ watch(() => Object.values(filters), () => {
 });
 watch(() => route.query.concertId, id => { const next = typeof id === 'string' ? id : ''; if (next !== concertId.value) concertId.value = next; });
 watch(() => route.query.mode, mode => { if (['direct', 'algorithm'].includes(mode)) { displayedMode.value = mode; applicationFor.value = ''; } });
+watch(() => currentUser.value?.id, readRememberedPlan, { immediate: true });
 watch([() => currentUser.value?.id, sessionReady, preferencesReady], () => { message.value = ''; applicationFor.value = ''; loadedContext = ''; load(); });
 onMounted(async () => {
   try {
@@ -158,7 +198,7 @@ async function act(operation, success) {
   catch (err) { if (isCurrent(key)) { refreshEligibility(); error.value = failureMessage(err); } return false; }
   finally { busy.value = false; }
 }
-async function enroll(reopen = false) { await act(() => reopen ? api.reopenSeekerRequest(concertId.value) : api.createRequest(concertId.value, { ...form, joining_mode: displayedMode.value }), 'Your answers are saved. Choose how you’d like to find a group.'); }
+async function enroll(reopen = false) { if (!reopen) rememberPlan(); await act(() => reopen ? api.reopenSeekerRequest(concertId.value) : api.createRequest(concertId.value, { ...form, joining_mode: displayedMode.value }), 'Your answers are saved. Choose how you’d like to find a group.'); }
 async function activateMode() { const target = displayedMode.value; await act(() => api.setJoiningMode(concertId.value, target), target === 'direct' ? 'Browse the groups below and ask to join one at a time.' : 'Mark groups you like and join the match list.'); }
 async function join(id, note = applicationNote.value.trim()) {
   const key = context(), showId = concertId.value, userId = currentUser.value?.id;
@@ -186,7 +226,7 @@ async function withdraw(id) {
 }
 async function joinPool() { await act(() => api.findMyGroup(concertId.value, crypto.randomUUID()), 'You’re waiting for the next operator-run matching round. Check here for a proposal.'); }
 async function leavePool() { await act(() => api.leaveGroupMatching(concertId.value), 'You’ve left matching. Your saved preferences and match history remain available.'); }
-function dateLabel(value) { if (!value) return ''; const date = new Date(typeof value === 'number' ? value : value.includes('T') ? value : `${value.replace(' ', 'T')}Z`); return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('en-SG'); }
+function dateLabel(value) { if (!value) return ''; const date = new Date(typeof value === 'number' ? value : value.includes('T') ? value : `${value.replace(' ', 'T')}Z`); return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }); }
 </script>
 
 <template>
@@ -205,7 +245,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
       <label>Which concert are you going to?
         <select v-model="concertId" :disabled="busy">
           <option value="">Pick a concert</option>
-          <option v-for="concert in concerts" :key="concert.id" :value="concert.id">{{ concert.artist }}, {{ concert.event_date }}</option>
+          <option v-for="concert in pickerConcerts" :key="concert.id" :value="concert.id">{{ concertOptionLabel(concert) }}</option>
         </select>
       </label>
     </div>
@@ -240,11 +280,18 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
         <div class="group-setup__heading">
           <div>
             <p class="next-step__label">Next step</p>
-            <h2>First, tell us your plans</h2>
-            <p class="group-muted">Answer these to see the groups going. Hosts can see your answers when you ask to join.</p>
+            <h2>{{ rememberedPlan && !editingPlan ? 'Use your usual plans for this show?' : 'First, tell us your plans' }}</h2>
+            <p class="group-muted">{{ rememberedPlan && !editingPlan ? 'These are the answers you gave last time.' : 'Answer these to see the groups going.' }} Hosts can see your answers when you ask to join.</p>
           </div>
         </div>
-        <form class="group-panel" @submit.prevent="enroll()"><fieldset :disabled="busy" class="group-fieldset group-setup__form">
+        <div v-if="rememberedPlan && !editingPlan" class="group-panel">
+          <p><strong>{{ planSummary }}</strong></p>
+          <div class="group-actions">
+            <button type="button" class="btn btn--primary" :disabled="busy" @click="enroll()">Use these and see groups</button>
+            <button type="button" class="btn btn--ghost" :disabled="busy" @click="editingPlan = true">Change answers</button>
+          </div>
+        </div>
+        <form v-else class="group-panel" @submit.prevent="enroll()"><fieldset :disabled="busy" class="group-fieldset group-setup__form">
           <div class="group-controls group-setup__questions">
             <label>Where do you want to be?<select v-model="form.section_pref"><option v-for="(name, id) in SECTION_OPTIONS" :key="id" :value="id">{{ name }}</option></select></label>
             <label>How much do you want to spend?<select v-model.number="form.spend_band_max"><option v-for="n in 4" :key="n" :value="n">{{ LABELS.spendBand[n] }}</option></select></label>
@@ -326,7 +373,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
         </div>
       </div>
 
-      <GroupComparisonDeck v-if="displayedMode === 'direct'" v-show="directLayout === 'compare' && groups.length" :groups="groups" :session-key="comparisonSession" :disabled="busy || loading || directLayout !== 'compare'" :can-apply="canApply" :apply-group="group => join(group.id, '')" />
+      <GroupComparisonDeck v-if="displayedMode === 'direct'" v-show="directLayout === 'compare' && groups.length" :groups="groups" :session-key="comparisonSession" :disabled="busy || loading || directLayout !== 'compare'" :can-apply="canApply" :apply-group="confirmJoin" />
 
       <div v-if="displayedMode !== 'direct' || directLayout === 'list'" class="group-grid">
         <GroupListingCard v-for="group in groups" :key="group.id" :group="group">
@@ -347,7 +394,11 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
           </template>
         </GroupListingCard>
       </div>
-      <p v-if="!groups.length" class="group-empty">No groups match that yet. Try loosening the filters, or start your own group.</p>
+      <p v-if="!groups.length && !loading" class="group-empty">
+        <template v-if="pendingDirect.length">You’ve asked to join <strong>{{ requestGroupName(pendingDirect[0]) }}</strong>. Track it under <a href="#applications-heading">Your requests</a> below or in <RouterLink to="/groups/connect">My groups</RouterLink>.</template>
+        <template v-else-if="hasActiveFilters">No groups match these filters. Try loosening them, or start your own group.</template>
+        <template v-else>No groups for this show yet. <RouterLink :to="{ path: '/groups/connect', query: { concertId, view: 'create' } }">Start your own group</RouterLink> and others can ask to join.</template>
+      </p>
 
       <!-- A page button exists only when that page does. Disabling them instead
            left two dead controls on every result set that fits on one page. -->
@@ -361,11 +412,11 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
         <h2 id="applications-heading">Your requests</h2>
         <article v-for="application in ownRequests.filter(request => request.status === 'pending')" :key="application.id" class="application-row">
           <div>
-            <h3>{{ application.hostName }}’s group</h3>
-            <p>{{ application.artist }} · {{ joinStatus[application.status] }}</p>
-            <p><strong>{{ application.seatReserved ? 'We’re saving you a spot' : `You’re number ${application.queuePosition ?? '?'} in line` }}</strong></p>
+            <h3>{{ requestGroupName(application) }}</h3>
+            <p>{{ application.artist }} · Hosted by {{ application.hostName }} · <strong>{{ joinStatus[application.status] }}</strong></p>
+            <p>{{ application.seatReserved ? 'A spot is held for you until the host replies.' : `No spot held yet — you’re number ${application.queuePosition ?? '?'} in line.` }}</p>
             <p class="group-muted">Sent {{ dateLabel(application.createdAt) }} · expires {{ dateLabel(application.expiresAt) }}, including time spent waiting.</p>
-            <p class="group-muted">{{ application.canHostRespond ? 'You’re up next for the host.' : 'The host is replying to earlier requests first.' }}</p>
+            <p v-if="!application.canHostRespond" class="group-muted">The host is replying to earlier requests first.</p>
             <p v-if="application.applicationNote" class="group-quote">“{{ application.applicationNote }}”</p>
           </div>
           <div class="group-actions">
@@ -377,7 +428,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
           <summary>Past requests</summary>
           <article v-for="application in ownRequests.filter(request => request.status !== 'pending')" :key="application.id" class="application-row">
             <div>
-              <h3>{{ application.hostName }}’s group</h3>
+              <h3>{{ requestGroupName(application) }}</h3>
               <p>{{ application.artist }} · {{ application.resolutionReason === 'migrated_to_mutual_proposal' ? 'Turned into a match' : application.resolutionReason === 'group_full' ? 'Filled up before your turn' : joinStatus[application.status] ?? 'Updated' }}</p>
               <p class="group-muted">Sent {{ dateLabel(application.createdAt) }}</p>
             </div>
@@ -397,10 +448,32 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
     </template>
     <p v-else-if="!concertsLoading && !concerts.length" class="group-empty">No concerts yet. Check back soon!</p>
     </GroupPreferencesGate>
+
+    <Teleport to="body"><div v-if="confirmingGroup" class="join-confirm" role="dialog" aria-modal="true" aria-labelledby="join-confirm-heading" @keydown.esc="settleConfirm(false)">
+      <form class="card group-panel join-confirm__panel" @submit.prevent="settleConfirm(true)">
+        <h2 id="join-confirm-heading">Ask to join {{ groupDisplayName(confirmingGroup) }}?</h2>
+        <p class="group-muted">{{ selectedConcert?.artist }} · Hosted by {{ confirmingGroup.hostName }}</p>
+        <ul class="group-muted">
+          <li>The host sees your public profile, your plans for this show and why you match.</li>
+          <li>You can ask {{ pendingLimit === 1 ? 'one group' : `${pendingLimit} groups` }} at a time for this concert.</li>
+          <li>The request expires after 48 hours if the host doesn’t reply. You can cancel any time.</li>
+        </ul>
+        <label>Say hi to the host (optional)<textarea v-model="confirmNote" maxlength="500" rows="3" placeholder="e.g. First time seeing them live, keen to grab dinner before!" /></label>
+        <div class="group-actions">
+          <button class="btn btn--primary" :disabled="busy">Send request</button>
+          <button type="button" class="btn btn--ghost" :disabled="busy" @click="settleConfirm(false)">Not yet</button>
+        </div>
+      </form>
+    </div></Teleport>
   </div>
 </template>
 
 <style scoped>
+.join-confirm { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 16px; background: rgb(20 12 40 / 0.45); }
+.join-confirm__panel { width: min(520px, 100%); max-height: calc(100vh - 32px); overflow: auto; }
+.join-confirm__panel ul { padding-left: 1.2rem; margin: 0; display: grid; gap: 0.35rem; }
+.join-confirm__panel textarea { width: 100%; }
+
 .groups-hero {
   display: grid;
   gap: var(--space-3);
