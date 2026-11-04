@@ -125,7 +125,7 @@ const STATUS_TEXT = {
             class="reel__player"
             :src="current.embedUrl"
             :title="`Spotify preview of ${current.title}`"
-            height="80"
+            height="152"
             loading="lazy"
             allow="encrypted-media; clipboard-write"
             referrerpolicy="no-referrer"
@@ -210,10 +210,11 @@ const STATUS_TEXT = {
 .reel__arrow:hover:not(:disabled) { border-color: var(--mint-400); color: var(--mint-400); }
 .reel__arrow:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.reel__song { display: grid; gap: var(--space-3); justify-items: center; text-align: center; min-width: 0; }
+.reel__song { display: grid; gap: var(--space-3); justify-items: stretch; text-align: center; min-width: 0; }
 .reel__position { color: var(--text-300); font-size: var(--step--1); margin: 0; }
 .reel__title { margin: 0; font-size: var(--step-2); font-weight: 600; line-height: 1.25; }
-.reel__player { width: 100%; max-width: 420px; border: 0; border-radius: var(--radius-sm); }
+/* Fills the stage rather than floating in the middle of it. */
+.reel__player { width: 100%; border: 0; border-radius: var(--radius-sm); }
 .reel__play { min-height: 44px; }
 .reel__none { font-size: var(--step--1); margin: 0; }
 

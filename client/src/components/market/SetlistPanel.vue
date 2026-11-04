@@ -111,7 +111,7 @@ onBeforeUnmount(() => {
                 class="track__player"
                 :src="track.embedUrl"
                 :title="`Spotify preview of ${track.title}`"
-                height="80"
+                height="152"
                 loading="lazy"
                 allow="encrypted-media; clipboard-write"
                 referrerpolicy="no-referrer"
@@ -203,10 +203,21 @@ onBeforeUnmount(() => {
 .track__cue { color: var(--mint-400); font-size: var(--step--1); }
 .track__cue--none { color: var(--text-300); }
 
+/* Full bleed: the negative margin cancels the panel's own padding so the
+   player reaches both edges instead of sitting in a frame of white. */
 .track__player {
-  width: 100%;
+  display: block;
+  width: calc(100% + var(--space-5) * 2);
+  margin: 0 calc(var(--space-5) * -1);
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: 0;
+}
+
+@media (max-width: 600px) {
+  .track__player {
+    width: calc(100% + var(--space-4) * 2);
+    margin: 0 calc(var(--space-4) * -1);
+  }
 }
 
 @media (max-width: 600px) {

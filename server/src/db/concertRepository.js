@@ -61,6 +61,9 @@ export function createConcertRepo(db) {
           ) AS open_slots,
           (SELECT COUNT(*) FROM seeker_requests s
             WHERE s.concert_id = c.id AND s.status = 'open')            AS open_seekers,
+          -- Everyone who has joined this concert for one-to-one companion
+          -- finding. Distinct from open_seekers, which counts people waiting
+          -- for a GROUP; these are the people the Kaki finder draws from.
           (SELECT COUNT(*) FROM concert_participants cp
             WHERE cp.concert_id = c.id AND cp.status = 'joined')        AS open_companions
         FROM concerts c

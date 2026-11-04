@@ -45,9 +45,6 @@ const statClass = (count) => count === null ? null : count > 0 ? 'spot__stat--go
       <span v-else class="spot__initial" aria-hidden="true">{{ concert.artist.charAt(0) }}</span>
       <span class="spot__date-badge mono">{{ formatShortDate(concert.event_date) }}</span>
       <span v-if="busy" class="spot__live">Fans looking</span>
-      <!-- In the artwork's corner rather than the card's: the card footer
-           already owns its bottom right with the View concert button. -->
-      <SetlistDisc :concert-id="concert.id" :artist="concert.artist" :summary="setlistSummary" />
     </div>
 
     <div class="spot__body">
@@ -92,6 +89,12 @@ const statClass = (count) => count === null ? null : count > 0 ? 'spot__stat--go
         >Buy on Ticketmaster ↗</a>
         <!-- Keeps the link's line so every card's Tickets block is the same height. -->
         <span v-else class="spot__official spot__official--none" aria-hidden="true">&nbsp;</span>
+      </div>
+
+      <!-- Its own row rather than floated over the card: the footer below
+           owns the bottom right, and an absolute disc landed on its button. -->
+      <div v-if="setlistSummary?.trackCount" class="spot__disc-row">
+        <SetlistDisc :concert-id="concert.id" :artist="concert.artist" :summary="setlistSummary" />
       </div>
 
       <footer class="spot__foot">
@@ -334,6 +337,12 @@ const statClass = (count) => count === null ? null : count > 0 ? 'spot__stat--go
 .spot__see:focus-visible {
   outline: 2px solid var(--accent-400);
   outline-offset: 3px;
+}
+
+.spot__disc-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-2);
 }
 
 .spot__foot {

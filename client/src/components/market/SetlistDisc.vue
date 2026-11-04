@@ -69,9 +69,7 @@ async function openSetlist() {
 
 <style scoped>
 .disc {
-  position: absolute;
-  right: var(--space-2);
-  bottom: var(--space-2);
+  position: relative;
   display: grid;
   place-items: center;
   width: 44px;
@@ -81,8 +79,6 @@ async function openSetlist() {
   border-radius: 50%;
   background: transparent;
   cursor: pointer;
-  /* Above the card's own link so the press opens the setlist, not the concert. */
-  z-index: 2;
 }
 
 .disc__face {
