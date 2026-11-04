@@ -200,11 +200,6 @@ async function act(operation, success) {
 }
 async function enroll(reopen = false) { if (!reopen) rememberPlan(); await act(() => reopen ? api.reopenSeekerRequest(concertId.value) : api.createRequest(concertId.value, { ...form, joining_mode: displayedMode.value }), 'Your answers are saved. Choose how you’d like to find a group.'); }
 const canSwitchMode = computed(() => canCoordinate.value && seeker.value?.status === 'open' && !currentGroup.value);
-// Choosing a method switches to it; it stays a preview only when switching is blocked (the error says why).
-async function chooseMode(mode) {
-  displayedMode.value = mode; applicationFor.value = '';
-  if (canSwitchMode.value && !modeIsActive.value) await activateMode();
-}
 async function activateMode() { const target = displayedMode.value; await act(() => api.setJoiningMode(concertId.value, target), target === 'direct' ? 'Browse the groups below and ask to join one at a time.' : 'Mark groups you like and join the match list.'); }
 async function join(id, note = applicationNote.value.trim()) {
   const key = context(), showId = concertId.value, userId = currentUser.value?.id;
@@ -316,19 +311,19 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
       </section>
 
       <template v-if="seeker || currentGroup">
-      <section class="group-panel group-panel--bare" aria-labelledby="joining-mode-heading">
+      <section class="card group-panel joining-section" aria-labelledby="joining-mode-heading">
         <div class="discovery-section-heading"><span class="discovery-step mono" aria-hidden="true">01</span><div><p class="group-kicker mono">Your way in</p><h2 id="joining-mode-heading">How do you want to find a group?</h2></div></div>
         <div class="joining-modes" role="group" aria-label="Ways to find a group">
           <article v-for="option in modeOptions" :key="option.mode" class="joining-mode" :class="{ 'joining-mode--selected': displayedMode === option.mode }">
             <div class="joining-mode__eyebrow"><p class="group-kicker mono">{{ option.kicker }}</p><span v-if="displayedMode === option.mode" class="joining-mode__selected">{{ modeIsActive ? 'Active method' : 'Viewing' }}</span></div>
             <h3>{{ option.title }}</h3>
             <p>{{ option.description }}</p>
-            <button type="button" class="btn" :class="displayedMode === option.mode ? 'btn--primary' : 'btn--ghost'" :aria-pressed="displayedMode === option.mode" :disabled="busy" @click="chooseMode(option.mode)">{{ option.action }}</button>
+            <button type="button" class="btn" :class="displayedMode === option.mode ? 'btn--primary' : 'btn--ghost'" :aria-pressed="displayedMode === option.mode" :disabled="busy" @click="displayedMode = option.mode; applicationFor = ''">{{ option.action }}</button>
           </article>
         </div>
         <p v-if="seeker && modeIsActive" class="group-muted">You’re using: <strong>{{ modeLabels[persistedMode] }}</strong></p>
         <p v-else-if="seeker" class="group-muted">You’re only viewing <strong>{{ modeLabels[displayedMode] }}</strong>. Your active method is still <strong>{{ modeLabels[persistedMode] }}</strong>.</p>
-        <button v-if="canCoordinate && seeker?.status === 'open' && !currentGroup && !modeIsActive" type="button" class="btn btn--primary" :disabled="busy" @click="activateMode">{{ displayedMode === 'direct' ? 'Switch to browsing' : 'Switch to matching' }}</button>
+        <button v-if="canSwitchMode && !modeIsActive && displayedMode === 'direct'" type="button" class="btn btn--primary" :disabled="busy" @click="activateMode">Switch to browsing</button>
         <p v-if="seeker && !modeIsActive && !canSwitchMode" class="group-status" role="status">{{ currentGroup ? 'You already have a group for this show, so the way you join can’t change.' : pendingDirect.length ? `To switch, first cancel your request to ${requestGroupName(pendingDirect[0])} under Your requests.` : activeProposals.length || pendingLegacy.length ? 'Finish or cancel your current match before switching.' : 'You can’t switch methods for this show right now.' }}</p>
         <p v-else-if="!modeIsActive && (seeker?.status === 'open' || pendingDirect.length || activeProposals.length || pendingLegacy.length)" class="group-muted">Just looking? That’s fine. Nothing changes until you switch, and open requests stay as they are.</p>
         <p v-if="pendingDirect.length" class="group-status" role="status">
@@ -349,15 +344,16 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
             <li>Match requests expire 48 hours after creation, including time spent waiting in line.</li>
           </ul>
         </details>
-      </section>
 
       <section v-if="displayedMode === 'algorithm' && seeker && !currentGroup" class="card group-panel automatic-matching" aria-labelledby="automatic-matching-heading">
         <h2 id="automatic-matching-heading">Your match</h2>
         <p v-if="activeProposals.length">Your match is in the group queue below. Check whether a spot is held and whether it is ready for both approvals.</p>
         <p v-else-if="pendingLegacy.length">You have an earlier match waiting for the host. You can check on it or cancel it under Your requests.</p>
         <p v-else-if="matching.optedIn || matching.state === 'queued'" role="status">You’re on the match list. Keep marking groups you like, and check back soon.</p>
+        <p v-else-if="!modeIsActive">You’re viewing matching. Switch to it to mark groups you like and join the match list.</p>
         <p v-else>You’re not on the match list yet.</p>
         <div class="group-actions">
+          <button v-if="canSwitchMode && !modeIsActive" type="button" class="btn btn--primary" :disabled="busy" @click="activateMode">Switch to matching</button>
           <button v-if="canCoordinate && !matching.optedIn && !activeProposals.length && !pendingLegacy.length && modeIsActive && seeker.status === 'open'" type="button" class="btn btn--primary" :disabled="busy" @click="joinPool">Join the match list</button>
           <button type="button" class="btn btn--ghost" :disabled="busy" @click="load">Check for updates</button>
           <button v-if="matching.optedIn" type="button" class="btn btn--danger-ghost" :disabled="busy || activeProposals.length > 0 || pendingLegacy.length > 0" @click="leavePool">Leave the match list</button>
@@ -366,6 +362,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
         <p v-if="activeProposals.length" class="group-muted">Answer your match before leaving the list or switching to browsing.</p>
       </section>
       <section v-if="activeProposals.length" aria-label="Your match"><MatchProposalCard v-for="proposal in activeProposals" :key="proposal.id" :proposal="proposal" @updated="load" /></section>
+      </section>
 
       <section class="card group-panel discovery-search" aria-labelledby="discovery-search-heading">
         <div class="discovery-section-heading"><span class="discovery-step mono" aria-hidden="true">02</span><div><p class="group-kicker mono">{{ selectedConcert?.artist || 'This concert' }}</p><h2 id="discovery-search-heading">Narrow it down</h2></div></div>
