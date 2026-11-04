@@ -19,7 +19,7 @@
 
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { api } from '../api.js';
+import { api, formatDate } from '../api.js';
 import MeetupEntryCard from '../components/MeetupEntryCard.vue';
 import { fetchChatUpdates } from '../chatPages.js';
 import { onChatEvent, connectionState, refreshUnread } from '../chatLive.js';
@@ -478,6 +478,11 @@ watch(() => props.id, async () => {
       <button v-if="historyPage?.nextCursor" class="btn btn--ghost" :disabled="loadingHistory" @click="loadOlder">
         {{ loadingHistory ? 'Loading…' : 'Load older messages' }}
       </button>
+      <!-- Only at the true start of the thread, once no older page remains. -->
+      <div v-if="!historyPage?.nextCursor" class="match-intro">
+        <p class="match-intro__title">You and {{ conversation.other.displayName }} matched</p>
+        <p class="match-intro__concert">{{ conversation.concert.artist }}<template v-if="conversation.concert.eventDate"> · {{ formatDate(conversation.concert.eventDate) }}</template></p>
+      </div>
       <p v-if="!messages.length" class="empty">
         Say hello to {{ conversation?.other.displayName }}.
       </p>
@@ -758,6 +763,26 @@ watch(() => props.id, async () => {
   flex-direction: column;
   gap: var(--space-2);
   scroll-behavior: smooth;
+}
+
+.match-intro {
+  align-self: center;
+  margin: var(--space-4) 0 var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--accent-400) 35%, var(--panel-edge));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--accent-400) 8%, var(--ink-850));
+  text-align: center;
+}
+.match-intro__title {
+  color: var(--text-100);
+  font-size: var(--step--1);
+  font-weight: 600;
+}
+.match-intro__concert {
+  margin-top: var(--space-1);
+  color: var(--accent-400);
+  font-size: var(--step--2);
 }
 
 .day {
