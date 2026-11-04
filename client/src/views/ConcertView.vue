@@ -1,12 +1,10 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
-import { useRouter } from 'vue-router';
 import { api, LABELS, SECTION_OPTIONS, ARRIVAL_OPTIONS, formatDate } from '../api.js';
 import { currentUser, sessionReady } from '../auth.js';
 import { formatMoney } from '../market.js';
 import '../assets/groups.css';
 import MatchProposalCard from '../components/MatchProposalCard.vue';
-import { useCountUp } from '../composables/useCountUp.js';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import BackLink from '../components/BackLink.vue';
 import SetlistReel from '../components/market/SetlistReel.vue';
@@ -14,7 +12,6 @@ import SetlistEditor from '../components/market/SetlistEditor.vue';
 import { useConcertEligibility } from '../composables/useConcertEligibility.js';
 
 const props = defineProps({ id: { type: String, required: true } });
-const router = useRouter();
 
 const concert = ref(null);
 const { canCoordinate, isFinished, refreshEligibility } = useConcertEligibility(() => concert.value?.concert);
@@ -24,15 +21,9 @@ const coverBroken = ref(false);
 const coverImage = computed(() => (!coverBroken.value && concert.value?.concert?.hero_image_url) || null);
 const parties = ref([]);
 const requests = ref([]);
-const preview = ref(null);
 const loading = ref(true);
-const running = ref(false);
 const error = ref(null);
-const runError = ref('');
-const runNotice = ref('');
 const matchingError = ref('');
-const completedRound = ref(null);
-let roundRequest = 0, previewRequest = 0;
 const setlist = ref(null);
 
 /**
@@ -208,11 +199,7 @@ async function load() {
   const current = () => alive && requestId === concertRequest && props.id === id;
   loading.value = true;
   error.value = null;
-  runError.value = '';
-  runNotice.value = '';
   matchingError.value = '';
-  roundRequest++; previewRequest++; running.value = false; previewLoading.value = false;
-  if (completedRound.value?.concertId !== id) completedRound.value = null;
   parties.value = [];
   requests.value = [];
   concert.value = null; setlist.value = null; coverBroken.value = false;
@@ -235,8 +222,6 @@ async function load() {
       parties.value = matching[0].parties;
       requests.value = matching[1].requests;
     }
-
-    preview.value = null;
   } catch (err) {
     if (current()) error.value = err;
   } finally {
@@ -246,96 +231,10 @@ async function load() {
 
 onMounted(load);
 watch(() => props.id, load);
-watch([() => currentUser.value?.id, () => currentUser.value?.isOperator, sessionReady], () => {
-  roundRequest++; previewRequest++; running.value = false; previewLoading.value = false;
-  preview.value = null; completedRound.value = null; runError.value = ''; runNotice.value = '';
-});
-onUnmounted(() => { alive = false; concertRequest++; participationRequest++; resultRequest++; ticketRequest++; roundRequest++; previewRequest++; });
-
-async function runRound() {
-  refreshEligibility();
-  if (!canRun.value) return;
-  const id = props.id, user = currentUser.value?.id, page = concertRequest, requestId = ++roundRequest;
-  const current = () => alive && requestId === roundRequest && page === concertRequest && props.id === id && currentUser.value?.id === user && currentUser.value?.isOperator && sessionReady.value;
-  runError.value = '';
-  runNotice.value = '';
-  running.value = true;
-  try {
-    // Keep the same key for retries, including after a page refresh.
-    const storageKey = `encore-batch:${id}`;
-    let batchKey = sessionStorage.getItem(storageKey);
-    if (!batchKey) {
-      batchKey = crypto.randomUUID();
-      sessionStorage.setItem(storageKey, batchKey);
-    }
-    const outcome = await api.runMatch(id, batchKey);
-    if (!current()) return;
-    completedRound.value = { id: outcome.roundId, concertId: id };
-    runNotice.value = 'Matching completed. Your round is saved.';
-    // The matching transaction has succeeded. A blocked/failed navigation must
-    // retain that result, rather than telling the operator matching failed.
-    try {
-      const failure = await router.push({ path: `/rounds/${outcome.roundId}`, query: { concertId: id } });
-      if (failure && current()) runNotice.value = 'Matching completed and was saved, but the results page could not open. Open the saved matching round below.';
-    } catch {
-      if (current()) runNotice.value = 'Matching completed and was saved, but the results page could not open. Open the saved matching round below.';
-    }
-  } catch (err) {
-    if (!current()) return;
-    runError.value = err.status === 403
-      ? 'Only an operator can run matching rounds.'
-      : err.status === 401
-        ? 'Your session has expired. Sign in as an operator.'
-        : err.status === 409
-          ? 'Matching cannot run yet. Check availability and existing assignments.'
-          : 'Could not run this matching round. Please try again.';
-  } finally {
-    if (current()) running.value = false;
-  }
-}
-
-function newMatchingBatch() {
-  // Only an explicit new operation replaces the retry key.
-  sessionStorage.setItem(`encore-batch:${props.id}`, crypto.randomUUID());
-  runError.value = '';
-  completedRound.value = null;
-  runNotice.value = 'New matching batch prepared. You can run matching now.';
-}
-
-const previewLoading = ref(false);
-
-async function loadPreview() {
-  refreshEligibility();
-  if (previewLoading.value || running.value || !canCoordinate.value || !sessionReady.value || !currentUser.value?.isOperator) return;
-  const id = props.id, user = currentUser.value.id, page = concertRequest, requestId = ++previewRequest;
-  const current = () => alive && requestId === previewRequest && page === concertRequest && props.id === id && currentUser.value?.id === user && currentUser.value?.isOperator && sessionReady.value;
-  previewLoading.value = true;
-  runError.value = '';
-  try {
-    const result = await api.preview(id, { baselines: false, trace: false });
-    if (current()) preview.value = result;
-  } catch (err) {
-    if (current()) runError.value = 'Could not calculate a matching preview. Please try again.';
-  } finally {
-    if (current()) previewLoading.value = false;
-  }
-}
+onUnmounted(() => { alive = false; concertRequest++; participationRequest++; resultRequest++; ticketRequest++; });
 
 const totalPlaces = computed(() => parties.value.reduce((sum, party) => sum + party.capacity, 0));
 
-const canRun = computed(
-  () => sessionReady.value && currentUser.value?.isOperator === true
-    && canCoordinate.value && parties.value.length > 0 && requests.value.length > 0 && !running.value && !completedRound.value,
-);
-
-
-const forecastMatched = useCountUp(() => preview.value?.metrics?.matched ?? 0, {
-  duration: 1000,
-});
-const forecastFirstChoice = useCountUp(
-  () => Math.round((preview.value?.metrics?.firstChoiceRate ?? 0) * 100),
-  { duration: 1100 },
-);
 const pendingProposals = computed(() => myProposals.value.filter(proposal => proposal.status === 'proposed'));
 const confirmedProposals = computed(() => myProposals.value.filter(proposal => proposal.status === 'confirmed'));
 const pastProposals = computed(() => myProposals.value.filter(proposal => !['proposed', 'confirmed'].includes(proposal.status)));
@@ -397,44 +296,6 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
             </div>
           </dl>
           <p class="group-muted">Group places are not tickets. Open group requests are considered in matching rounds.</p>
-
-          <div v-if="preview && !preview.empty" class="head__forecast">
-            <p class="head__forecast-label">If the round ran now</p>
-            <p class="head__forecast-value">
-              <strong class="tabular">{{ forecastMatched }}</strong>
-              of {{ preview.metrics.eligibleSeekers }} placed
-            </p>
-            <p class="head__forecast-note">
-              <span class="tag tag--mint">{{ preview.metrics.blockingPairs }} blocking pairs</span>
-              <span class="tag tabular">{{ forecastFirstChoice }}% first choice</span>
-            </p>
-          </div>
-          <p v-if="preview?.empty" class="group-muted">No matching preview is available for the current groups and requests.</p>
-
-          <div v-if="sessionReady && currentUser?.isOperator" class="head__actions">
-            <button
-              type="button"
-              class="btn btn--ghost"
-              :disabled="previewLoading || running || !canCoordinate"
-              @click="loadPreview"
-            >
-              <LoadingSpinner v-if="previewLoading" />
-              {{ previewLoading ? 'Calculating…' : 'Preview matching' }}
-            </button>
-            <button type="button" class="btn btn--ghost" :disabled="running || !canCoordinate" @click="newMatchingBatch">
-              Prepare new batch
-            </button>
-            <button type="button" class="btn btn--primary" :disabled="!canRun" @click="runRound">
-              <LoadingSpinner v-if="running" />
-              {{ running ? 'Running…' : 'Run matching round' }}
-            </button>
-            <RouterLink :to="`/concerts/${id}/algorithm`" class="btn btn--ghost">
-              Watch it run
-            </RouterLink>
-          </div>
-          <p v-if="runError" class="kaki-join__error" role="alert">{{ runError }}</p>
-          <p v-if="runNotice" class="group-success" role="status">{{ runNotice }}</p>
-          <RouterLink v-if="completedRound" :to="{ path: `/rounds/${completedRound.id}`, query: { concertId: completedRound.concertId } }" class="btn btn--ghost">Open saved matching round</RouterLink>
 
           <RouterLink
             v-if="concert.latestRound && sessionReady && currentUser?.isOperator"
@@ -710,7 +571,7 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
 
 @media (min-width: 960px) {
   .head {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 340px);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 320px);
     gap: var(--space-8);
     align-items: start;
   }
@@ -722,6 +583,15 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
   isolation: isolate;
   display: grid;
   align-items: end;
+  /* The poster scales with its column rather than stopping at a fixed height,
+     so it fills the width it is given instead of leaving a band of empty
+     column beside it. `min-height` is the floor for narrow screens, where
+     the ratio alone would make it too short to read the title over. */
+  aspect-ratio: 16 / 10;
+  /* The ratio must only ever decide the HEIGHT. Left to itself it also sizes
+     the width, which on a phone resolved the 360px floor into a 576px-wide
+     box and pushed the page sideways. */
+  width: 100%;
   min-height: 360px;
   overflow: hidden;
   border-radius: var(--radius-xl);
@@ -916,44 +786,6 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
   font-weight: 700;
   color: var(--highlight-ink);
   line-height: 1.1;
-}
-
-.head__forecast {
-  padding-block: var(--space-4);
-  border-bottom: var(--border-hairline);
-}
-
-.head__forecast-label {
-  font-size: var(--step--2);
-  color: var(--text-400);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-family: var(--font-mono);
-}
-
-.head__forecast-value {
-  margin-top: var(--space-2);
-  font-size: var(--step-0);
-  color: var(--text-200);
-}
-
-.head__forecast-value strong {
-  font-family: var(--font-display);
-  font-size: var(--step-2);
-  color: var(--accent-400);
-}
-
-.head__forecast-note {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-}
-
-.head__actions {
-  display: grid;
-  gap: var(--space-2);
-  margin-top: var(--space-4);
 }
 
 .head__previous {

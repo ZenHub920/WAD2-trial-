@@ -170,61 +170,32 @@ describe('live concert eligibility without guessed finish times', () => {
   });
 });
 
-describe('operator matching context and saved results', () => {
+/**
+ * The operator run controls were taken off this page: an operator reads the
+ * matching context here and runs a round from the algorithm page instead.
+ * These guard the removal, so a stray re-add is caught rather than shipped.
+ */
+describe('the operator matching panel', () => {
   async function operatorPage() {
     currentUser.value = { id: 'operator', displayName: 'Operator', isOperator: true };
     api.concert.mockImplementation(id => Promise.resolve(detail(id)));
     api.parties.mockResolvedValue({ parties: [{ capacity: 2 }] }); api.requests.mockResolvedValue({ requests: [{}] });
     return mountPage(ConcertView, { path: '/concerts/first', props: { id: 'first' }, stubs });
   }
-  const forecast = { empty: false, metrics: { matched: 1, eligibleSeekers: 1, firstChoiceRate: 1, blockingPairs: 0 } };
 
-  it.each(['concert', 'account'])('ignores a late operator preview after the %s context changes', async change => {
-    const preview = deferred(); api.preview.mockReturnValue(preview.promise);
-    const { wrapper, router } = await operatorPage();
-    await button(wrapper, 'Preview matching').trigger('click');
-    if (change === 'concert') { await router.push('/concerts/second'); await wrapper.setProps({ id: 'second' }); }
-    else currentUser.value = { id: 'another-operator', displayName: 'Other operator', isOperator: true };
-    await flushPromises(); preview.resolve(forecast); await flushPromises();
-    expect(wrapper.find('.head__forecast').exists()).toBe(false);
-    expect(button(wrapper, 'Preview matching').element.disabled).toBe(false);
-    expect(api.preview).toHaveBeenCalledExactlyOnceWith('first', { baselines: false, trace: false });
+  it('still shows an operator the matching context', async () => {
+    const { wrapper } = await operatorPage();
+    expect(wrapper.text()).toContain('Group matching');
+    expect(wrapper.text()).toContain('Group places');
   });
 
-  it.each(['concert', 'account', 'permission'])('does not redirect an old matching response after the %s context changes', async change => {
-    const round = deferred(); api.runMatch.mockReturnValue(round.promise);
-    const { wrapper, router } = await operatorPage();
-    await button(wrapper, 'Run matching round').trigger('click');
-    if (change === 'concert') { await router.push('/concerts/second'); await wrapper.setProps({ id: 'second' }); }
-    else if (change === 'account') currentUser.value = { id: 'new-user', displayName: 'New user' };
-    else currentUser.value = { id: 'operator', displayName: 'Operator', isOperator: false };
-    await flushPromises(); round.resolve({ roundId: 'old-round' }); await flushPromises();
-    expect(router.currentRoute.value.path).toBe(change === 'concert' ? '/concerts/second' : '/concerts/first');
-    expect(wrapper.text()).not.toContain('Matching completed');
-    expect(wrapper.findAll('a').some(item => item.text() === 'Open saved matching round')).toBe(false);
-  });
-
-  it('preserves confirmed matching success when opening the results page is blocked', async () => {
-    api.runMatch.mockResolvedValue({ roundId: 'saved-round' });
-    const { wrapper, router } = await operatorPage();
-    router.beforeEach(to => to.path.startsWith('/rounds/') ? false : true);
-    await button(wrapper, 'Run matching round').trigger('click'); await flushPromises();
-    expect(wrapper.text()).toContain('Matching completed and was saved, but the results page could not open');
-    expect(wrapper.text()).not.toContain('Could not run this matching round');
-    expect(wrapper.get('a[href="/rounds/saved-round?concertId=first"]').text()).toBe('Open saved matching round');
-    expect(button(wrapper, 'Run matching round').element.disabled).toBe(true);
-    expect(api.runMatch).toHaveBeenCalledTimes(1);
-    await button(wrapper, 'Prepare new batch').trigger('click'); await flushPromises();
-    expect(button(wrapper, 'Run matching round').element.disabled).toBe(false);
-    expect(wrapper.find('a[href="/rounds/saved-round?concertId=first"]').exists()).toBe(false);
-  });
-
-  it('does not navigate after its concert page unmounts while matching completes', async () => {
-    const round = deferred(); api.runMatch.mockReturnValue(round.promise);
-    const { wrapper, router } = await operatorPage();
-    await button(wrapper, 'Run matching round').trigger('click');
-    const navigate = vi.spyOn(router, 'push'); wrapper.unmount();
-    round.resolve({ roundId: 'old-round' }); await flushPromises();
-    expect(navigate).not.toHaveBeenCalled();
+  it('carries no run controls and asks the server for nothing', async () => {
+    const { wrapper } = await operatorPage();
+    for (const label of ['Preview matching', 'Prepare new batch', 'Run matching round']) {
+      expect(wrapper.findAll('button').some(item => item.text().includes(label))).toBe(false);
+    }
+    expect(wrapper.findAll('a').some(item => item.text().includes('Watch it run'))).toBe(false);
+    expect(api.preview).not.toHaveBeenCalled();
+    expect(api.runMatch).not.toHaveBeenCalled();
   });
 });
