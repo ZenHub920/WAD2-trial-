@@ -14,13 +14,10 @@
  * thing worse than not having it.
  */
 import { computed, onUnmounted, ref, watch } from 'vue';
-import SetlistString from './SetlistString.vue';
 
 const props = defineProps({
   artist: { type: String, required: true },
   setlist: { type: Object, default: null },
-  /** The concert's colour theme; the string lights in it. */
-  palette: { type: Object, default: null },
 });
 
 /** Long enough to read a title and decide, short enough to feel alive. */
@@ -89,15 +86,6 @@ const STATUS_TEXT = {
       </div>
       <p v-if="paused && tracks.length > 1" class="reel__held group-muted">Paused</p>
     </header>
-
-    <SetlistString
-      :tracks="tracks"
-      :active-index="index"
-      :playing="playing"
-      :accent="palette?.accent ?? 'var(--mint-400)'"
-      :muted="palette?.muted ?? 'var(--ink-600)'"
-      @select="selectSong"
-    />
 
     <div
       class="reel__stage"

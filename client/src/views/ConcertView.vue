@@ -7,6 +7,7 @@ import '../assets/groups.css';
 import MatchProposalCard from '../components/MatchProposalCard.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import BackLink from '../components/BackLink.vue';
+import ArtistWaveBackdrop from '../components/market/ArtistWaveBackdrop.vue';
 import SetlistReel from '../components/market/SetlistReel.vue';
 import SetlistEditor from '../components/market/SetlistEditor.vue';
 import { useConcertEligibility } from '../composables/useConcertEligibility.js';
@@ -245,7 +246,10 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
 </script>
 
 <template>
-  <div class="container section" :style="paletteVars">
+  <div class="container section concert-page" :style="paletteVars">
+    <!-- Behind everything, and coloured by the palette vars set just above. -->
+    <ArtistWaveBackdrop />
+
     <BackLink fallback="/concerts" fallback-label="Back to All concerts" />
 
     <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading concert details…</p>
@@ -314,7 +318,7 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
       </header>
 
       <!-- Directly under group matching, as the running order for this show. -->
-      <SetlistReel :artist="concert.concert.artist" :setlist="setlist" :palette="concert.palette" />
+      <SetlistReel :artist="concert.concert.artist" :setlist="setlist" />
       <SetlistEditor
         v-if="sessionReady && currentUser?.isOperator"
         :concert-id="id"
@@ -435,6 +439,13 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
 </template>
 
 <style scoped>
+/* The backdrop sits at z-index -1. Without a stacking context of its own here
+   it would fall behind the page background and never be seen at all; with one
+   it lands between that background and everything on this page. */
+.concert-page {
+  isolation: isolate;
+}
+
 .my-result {
   display: grid;
   gap: var(--space-3);
