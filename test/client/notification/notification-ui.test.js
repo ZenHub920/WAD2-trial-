@@ -3,6 +3,7 @@ import { flushPromises } from '@vue/test-utils';
 import ProfileNotifications from '../../../client/src/components/ProfileNotifications.vue';
 import NotificationBell from '../../../client/src/components/NotificationBell.vue';
 import { api } from '../../../client/src/api.js';
+import { currentUser } from '../../../client/src/auth.js';
 import { browserPushStatus, enableBrowserPush } from '../../../client/src/browserPush.js';
 import { button, field, mountPage } from '../helpers.js';
 vi.mock('../../../client/src/api.js', async original => ({ ...await original(), api: {
@@ -11,6 +12,7 @@ vi.mock('../../../client/src/api.js', async original => ({ ...await original(), 
 vi.mock('../../../client/src/browserPush.js', () => ({ browserPushStatus: vi.fn(), enableBrowserPush: vi.fn(), disableBrowserPush: vi.fn() }));
 beforeEach(() => {
   vi.resetAllMocks();
+  currentUser.value = { id: 'notification-user' };
   api.notificationSettings.mockResolvedValue({ preferences: { chat: true, group: true, match: true, meetup: true, feedback: true } });
   api.saveNotificationSettings.mockResolvedValue({});
   browserPushStatus.mockResolvedValue({ supported: true, configured: true, enabled: false });

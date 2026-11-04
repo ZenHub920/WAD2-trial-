@@ -127,9 +127,11 @@ export function registerCommunityRoutes(
   route("post", "/meetups", "meetup", (r) =>
     repos.meetups.create(r.user.id, r.body),
   );
-  route("get", "/meetups/:id", "meetup", (r) =>
-    repos.meetups.detail(r.user.id, r.params.id),
-  );
+  route("get", "/meetups/:id", "meetup", (r) => {
+    if (r.query.shelteredOnly !== undefined && !['true', 'false'].includes(r.query.shelteredOnly))
+      throw Object.assign(new Error('invalid_travel_options'), { status: 400 });
+    return repos.meetups.detail(r.user.id, r.params.id, { shelteredOnly: r.query.shelteredOnly === 'true' });
+  });
   route("put", "/meetups/:id/availability", "result", (r) =>
     repos.meetups.availability(r.user.id, r.params.id, r.body?.windows, r.body?.version),
   );
@@ -138,6 +140,15 @@ export function registerCommunityRoutes(
   );
   route("put", "/meetups/:id/vote", "result", (r) =>
     repos.meetups.vote(r.user.id, r.params.id, r.body?.placeId, r.body?.version),
+  );
+  route('delete', '/meetups/:id/vote', 'result', (r) =>
+    repos.meetups.removeVote(r.user.id, r.params.id, r.body?.version),
+  );
+  route('put', '/meetups/:id/places/:placeId', 'place', (r) =>
+    repos.meetups.updatePlace(r.user.id, r.params.id, r.params.placeId, r.body),
+  );
+  route('delete', '/meetups/:id/places/:placeId', 'result', (r) =>
+    repos.meetups.removePlace(r.user.id, r.params.id, r.params.placeId, r.body?.version),
   );
   route("post", "/meetups/:id/comments", "comment", (r) =>
     repos.meetups.comment(r.user.id, r.params.id, r.body?.body),

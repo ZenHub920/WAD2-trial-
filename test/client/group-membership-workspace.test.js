@@ -77,11 +77,12 @@ describe('group settings disclosure and validation', () => {
   });
 
   it.each([
-    ['Publish group', 'publishGroup', 'Group published.'],
+    ['Save publication settings', 'publishGroup', 'Publication settings saved.'],
     ['Create single-use friend link', 'friendInvite', 'Invitation link created.'],
   ])('announces %s once without an extra literal success checkmark', async (label, method, message) => {
     api[method].mockResolvedValue(method === 'friendInvite' ? { invitation: { path: '/groups/join/synthetic-invite' } } : {});
     const { wrapper } = await mountPage(GroupMembershipView, { props: { id: 'group-1' } });
+    if (method === 'publishGroup') await wrapper.get('input[type="checkbox"]').setValue(true);
     await button(wrapper, label).trigger('click'); await flushPromises();
     expect(wrapper.findAll('.group-success')).toHaveLength(1);
     expect(wrapper.get('.group-success').text()).toBe(message);
@@ -91,9 +92,10 @@ describe('group settings disclosure and validation', () => {
   it('keeps a persisted publish successful if its following refresh fails, and retries only the read', async () => {
     api.publishGroup.mockResolvedValue({});
     const { wrapper } = await mountPage(GroupMembershipView, { props: { id: 'group-1' } });
+    await wrapper.get('input[type="checkbox"]').setValue(true);
     api.groupMembership.mockRejectedValueOnce(new Error('offline'));
-    await button(wrapper, 'Publish group').trigger('click'); await flushPromises();
-    expect(wrapper.get('.group-success').text()).toBe('Group published.');
+    await button(wrapper, 'Save publication settings').trigger('click'); await flushPromises();
+    expect(wrapper.get('.group-success').text()).toBe('Publication settings saved.');
     expect(wrapper.find('[role="alert"]').exists()).toBe(false);
     expect(wrapper.text()).toContain('The change was saved, but the latest group details could not be loaded');
     await button(wrapper, 'Retry refresh').trigger('click'); await flushPromises();
@@ -156,7 +158,9 @@ describe('group settings disclosure and validation', () => {
     const data = await api.groupMembership();
     api.groupMembership.mockResolvedValue({ group: { ...data.group, eventDate: '2026-11-04', eventTime: '08:00:00' } });
     const { wrapper } = await mountPage(GroupMembershipView, { path: '/groups/group-1/members', props: { id: 'group-1' } });
-    expect(button(wrapper, 'Publish group').element.disabled).toBe(false);
+    expect(button(wrapper, 'Save publication settings').element.disabled).toBe(true);
+    await wrapper.get('input[type="checkbox"]').setValue(true);
+    expect(button(wrapper, 'Save publication settings').element.disabled).toBe(false);
     expect(wrapper.findAll('a').some(item => item.text() === 'Connect with other groups')).toBe(true);
     expect(wrapper.findAll('button').some(item => item.text() === 'Plan meetup')).toBe(false);
     plans.value = [{ id: 'existing-plan', scope: { partyId: 'group-1' }, status: 'confirmed', endsAt: Date.now() - 1000 }]; await flushPromises();
@@ -166,7 +170,8 @@ describe('group settings disclosure and validation', () => {
   it('explains a server-side concert cutoff without clearing host settings', async () => {
     api.publishGroup.mockRejectedValue(Object.assign(new Error('concert_finished'), { status: 409 }));
     const { wrapper } = await mountPage(GroupMembershipView, { props: { id: 'group-1' } });
-    await button(wrapper, 'Publish group').trigger('click'); await flushPromises();
+    await wrapper.get('input[type="checkbox"]').setValue(true);
+    await button(wrapper, 'Save publication settings').trigger('click'); await flushPromises();
     expect(wrapper.get('[role="alert"]').text()).toContain('This concert day has ended');
     expect(wrapper.get('input[maxlength="60"]').element.value).toBe('Front Row Crew');
     expect(wrapper.find('.group-success').exists()).toBe(false);

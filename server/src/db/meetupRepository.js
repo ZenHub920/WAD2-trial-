@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { communityError } from "./membershipRepository.js";
-import { rankMeetupOptions, SLOT_MS } from "../services/meetupPlanning.js";
+import { meetupRankingContext, rankMeetupOptions, SLOT_MS } from "../services/meetupPlanning.js";
 import { meetupDatePolicy, parseMeetupTimestamp } from '../../../shared/meetupDates.mjs';
 import { meetupActionError, meetupCapabilities, requiredMeetupApprovers } from '../services/meetupPolicy.js';
 import { normalizeMeetupAvailability, normalizeMeetupPlace, normalizeMeetupTitle, requireMeetupWindow } from '../services/meetupValidation.js';
@@ -123,6 +123,15 @@ export function createMeetupRepo(db, repos) {
   const writable = m => enforcePolicy('contribute', m);
   const checkVersion = (m, version) => {
     if (version !== undefined && m.version !== version) throw communityError('stale_meetup_version');
+  };
+  const requireVersion = (m, version) => {
+    if (!Number.isInteger(version) || m.version !== version) throw communityError('stale_meetup_version');
+  };
+  const ownedPlace = (user, id, placeId) => {
+    const place = typeof placeId === 'string' ? db.prepare('SELECT * FROM meetup_places WHERE id=? AND meetup_id=?').get(placeId, id) : null;
+    if (!place) throw communityError('place_not_found', 404);
+    if (place.proposed_by !== user) throw communityError('place_owner_required', 403);
+    return place;
   };
   const revision = (m, user, event) => {
     writable(m);
@@ -334,12 +343,15 @@ export function createMeetupRepo(db, repos) {
       notify(row(id), user, "created", "A meetup planning board was created");
       return { id };
     }).immediate,
-    detail(user, id) {
+    detail(user, id, { shelteredOnly = false } = {}) {
+      if (typeof shelteredOnly !== 'boolean') throw communityError('invalid_travel_options', 400);
       const m = access(user, id),
         ids = participants(m);
       const { availability, places } = planningData(id, ids);
       const { requiredApprovers, approvals } = currentApprovals(m), hasApproved = approvals.includes(user);
       const permissions = capabilities(m, user);
+      const suggestions = rankMeetupOptions({ startsAt: m.starts_at, endsAt: m.ends_at,
+        availability, places, participantCount: ids.length, shelteredOnly });
       return {
         ...m,
         ...scopeMetadata(m, user),
@@ -348,7 +360,9 @@ export function createMeetupRepo(db, repos) {
         capabilities: { ...permissions, canApprove: permissions.canApprove && !hasApproved },
         participantCount: ids.length,
         requiredApprovers, approvals, hasApproved,
-        places,
+        places: places.map(place => ({ ...place,
+          canEdit: permissions.canContribute && place.proposed_by === user,
+          canRemove: permissions.canContribute && place.proposed_by === user })),
         currentVotePlaceId: db.prepare('SELECT place_id FROM meetup_votes WHERE meetup_id=? AND user_id=?').get(id, user)?.place_id ?? null,
         availability: availability.filter((a) => a.user_id === user),
         grid: Array.from(
@@ -367,13 +381,7 @@ export function createMeetupRepo(db, repos) {
             };
           },
         ),
-        suggestions: rankMeetupOptions({
-          startsAt: m.starts_at,
-          endsAt: m.ends_at,
-          availability,
-          places,
-          participantCount: ids.length,
-        }),
+        suggestions, suggestionsShelteredOnly: shelteredOnly, ...meetupRankingContext(suggestions),
         comments: db
           .prepare(
             `SELECT c.id,c.body,c.created_at AS createdAt,u.display_name AS name FROM meetup_comments c JOIN users u ON u.id=c.user_id WHERE meetup_id=? ORDER BY c.rowid LIMIT 500`,
@@ -445,12 +453,50 @@ export function createMeetupRepo(db, repos) {
       )
         throw communityError("place_not_found", 404);
       if (db.prepare('SELECT place_id FROM meetup_votes WHERE meetup_id=? AND user_id=?').get(id, user)?.place_id === place)
-        return { voted: true, unchanged: true };
+        return { voted: true, unchanged: true, version: m.version };
       revision(m, user, "vote");
       db.prepare(
         "INSERT INTO meetup_votes VALUES(?,?,?) ON CONFLICT(meetup_id,user_id) DO UPDATE SET place_id=excluded.place_id",
       ).run(id, place, user);
-      return { voted: true };
+      return { voted: true, version: m.version + 1 };
+    }).immediate,
+    removeVote: db.transaction((user, id, expectedVersion) => {
+      const m = access(user, id);
+      requireVersion(m, expectedVersion);
+      writable(m);
+      if (!db.prepare('SELECT 1 FROM meetup_votes WHERE meetup_id=? AND user_id=?').get(id, user))
+        return { voted: false, unchanged: true, version: m.version };
+      revision(m, user, 'vote');
+      db.prepare('DELETE FROM meetup_votes WHERE meetup_id=? AND user_id=?').run(id, user);
+      return { voted: false, version: m.version + 1 };
+    }).immediate,
+    updatePlace: db.transaction((user, id, placeId, input = {}) => {
+      const m = access(user, id);
+      requireVersion(m, input?.version);
+      writable(m);
+      const saved = ownedPlace(user, id, placeId), place = normalizeMeetupPlace(input);
+      if (['label', 'latitude', 'longitude', 'sheltered'].every(key => saved[key] === place[key]))
+        return { id: placeId, unchanged: true, version: m.version, votesCleared: 0 };
+      if (db.prepare('SELECT 1 FROM meetup_places WHERE meetup_id=? AND id<>? AND lower(trim(label))=lower(?) AND latitude=? AND longitude=? AND sheltered=?')
+        .get(id, placeId, place.label, place.latitude, place.longitude, place.sheltered)) throw communityError('place_already_suggested');
+      revision(m, user, 'place');
+      // Votes expressed support for the saved destination. A corrected input
+      // must be reviewed rather than silently inheriting that support.
+      const votesCleared = db.prepare('DELETE FROM meetup_votes WHERE meetup_id=? AND place_id=?').run(id, placeId).changes;
+      db.prepare('UPDATE meetup_places SET label=?,latitude=?,longitude=?,sheltered=? WHERE id=? AND meetup_id=?')
+        .run(place.label, place.latitude, place.longitude, place.sheltered, placeId, id);
+      return { id: placeId, version: m.version + 1, votesCleared };
+    }).immediate,
+    removePlace: db.transaction((user, id, placeId, expectedVersion) => {
+      const m = access(user, id);
+      requireVersion(m, expectedVersion);
+      writable(m);
+      ownedPlace(user, id, placeId);
+      if (m.selected_place_id === placeId) throw communityError('meetup_reopen_required');
+      revision(m, user, 'place');
+      const votesCleared = db.prepare('DELETE FROM meetup_votes WHERE meetup_id=? AND place_id=?').run(id, placeId).changes;
+      db.prepare('DELETE FROM meetup_places WHERE id=? AND meetup_id=?').run(placeId, id);
+      return { removed: true, id: placeId, version: m.version + 1, votesCleared };
     }).immediate,
     comment: db.transaction((user, id, body) => {
       const m = access(user, id);
@@ -528,7 +574,7 @@ export function createMeetupRepo(db, repos) {
           "Meetup time and place confirmed",
         );
       }
-      return { confirmed, version };
+      return { confirmed, version, approvals: approved, requiredApprovers: required };
     }).immediate,
     reopen: db.transaction((user, id, version) => {
       const m = access(user, id);

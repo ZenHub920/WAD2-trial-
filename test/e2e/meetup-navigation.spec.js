@@ -47,8 +47,8 @@ test('meetup navigation: chat status, duplicate protection, private origins, ove
     const hostCard = host.page.getByRole('region', { name: 'Meetup planner for this group', exact: true });
     await hostCard.getByRole('link', { name: 'Create meetup plan', exact: true }).click();
     await host.page.getByLabel('Title', { exact: true }).fill(window.title);
-    await host.page.getByLabel('Earliest meeting time (Singapore time)', { exact: true }).fill('2030-01-01T16:00');
-    await host.page.getByLabel('Latest meeting time (Singapore time)', { exact: true }).fill('2030-01-01T17:30');
+    await host.page.getByLabel('Earliest meeting time', { exact: true }).fill('2030-01-01T16:00');
+    await host.page.getByLabel('Latest meeting time', { exact: true }).fill('2030-01-01T17:30');
     const saved = host.page.waitForResponse(response => response.url().endsWith('/api/meetups') && response.request().method() === 'POST');
     await host.page.getByRole('button', { name: 'Create planning board', exact: true }).evaluate(element => { element.click(); element.click(); });
     const created = await saved;
@@ -66,16 +66,15 @@ test('meetup navigation: chat status, duplicate protection, private origins, ove
     expect(own.availability).toEqual([]);
     expect(JSON.stringify(own)).not.toContain('private-origin-marker');
     expect(JSON.stringify((await api(member.context, '/me/meetups')).meetups)).not.toContain('private-origin-marker');
-    // Preparation writes availability and then a place. Observe the final
-    // contribution too, so the member saves against the fully refreshed plan.
-    await member.page.getByRole('tab', { name: /Choose a place/ }).click();
-    await expect(member.page.locator('.meetup-suggested-places').getByRole('heading', { name: place.label, exact: true })).toBeVisible();
-    await member.page.getByRole('tab', { name: /Find a time/ }).click();
+    // Only the member's own saved availability opens step 2; the host's
+    // contribution still appears live in the aggregate grid without exposing origins.
+    await expect(member.page.getByRole('tab', { name: /Choose a place/ })).toHaveAttribute('aria-disabled', 'true');
     await expect(member.page.locator('[data-availability-start]').first()).toHaveAttribute('aria-label', /1 of 2 available/);
     await member.page.locator('[data-availability-start]').first().click();
     await member.page.getByRole('button', { name: 'Save my times', exact: true }).click();
     await expect(member.page.getByText('Your availability and journey have been saved.', { exact: true })).toBeVisible();
     await member.page.getByRole('tab', { name: /Choose a place/ }).click();
+    await expect(member.page.locator('.meetup-suggested-places').getByRole('heading', { name: place.label, exact: true })).toBeVisible();
     await expect(member.page).toHaveURL(/#meetup-places$/);
     await member.page.reload();
     await expect(member.page.locator('#meetup-places')).toBeVisible();

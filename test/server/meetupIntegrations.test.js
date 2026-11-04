@@ -203,3 +203,65 @@ test('meetup integration routes enforce authentication and scope before external
   assert.equal((await fetch(url, { headers: { 'x-test-user': 'outsider' } })).status, 404); assert.equal(calls, 0);
   const response = await fetch(url, { headers: { 'x-test-user': 'host' } }); assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'private, no-store'); assert.equal(calls, 1);
 });
+
+test('bounded route shortlist sees all eligible places and includes voted alternatives beyond the old truncated baseline', async () => {
+  const input = { id: 'meet', version: 1, status: 'planning', starts_at: now, ends_at: now + 336 * 1800000,
+    participantCount: 2, availability: ['a', 'b'].map(user_id => ({ user_id, starts_at: now, ends_at: now + 336 * 1800000, ...origin })),
+    places: Array.from({ length: 7 }, (_, i) => ({ id: `p${i}`, label: `Place ${i}`, latitude: 1.3 + i / 100,
+      longitude: 103.8 + i / 100, votes: i === 6 ? 2 : 0 })) };
+  let calls = 0, active = 0, maximum = 0;
+  const service = createMeetupIntegrations({ now: () => now, repos: { meetups: { planningInput: () => input, access: () => input } },
+    travel: { configured: true, route: async ({ destination }) => {
+      calls++; active++; maximum = Math.max(maximum, active); await new Promise(resolve => setTimeout(resolve, 1)); active--;
+      return { status: 'available', durationMinutes: destination.id === 'p6' ? 1 : 30 };
+    } } });
+  const result = await service.suggestions('a', 'meet');
+  assert.equal(result.eligiblePlaces, 7); assert.equal(result.eligibleOptions, 2352);
+  assert.equal(result.shortlistedPlaces, 6); assert.equal(result.options.length, 12);
+  assert.equal(calls, 24); assert.equal(result.routesRequested, 24); assert.ok(maximum <= 4);
+  assert.equal(result.options[0].placeId, 'p6', 'route-aware result may beat a closer baseline place, without raising the provider budget');
+  assert.match(result.message, /shortlist.*not a global route optimization/);
+  assert.doesNotMatch(JSON.stringify(result), /user_id|latitude|longitude/);
+});
+
+test('partial origin and route coverage stay explicit and cannot claim group-wide method-aware ranking', async () => {
+  const input = { id: 'meet', version: 1, status: 'planning', starts_at: now, ends_at: now + 1800000, participantCount: 2,
+    availability: [{ user_id: 'a', starts_at: now, ends_at: now + 1800000, ...origin, travel_mode: 'drive' },
+      { user_id: 'b', starts_at: now, ends_at: now + 1800000 }], places: [{ id: 'a', label: 'A', ...destination }] };
+  const modes = [];
+  const service = createMeetupIntegrations({ now: () => now, repos: { meetups: { planningInput: () => input, access: () => input } },
+    travel: { configured: true, route: async ({ mode }) => { modes.push(mode); return { status: 'available', durationMinutes: 10 }; } } });
+  const result = await service.suggestions('a', 'meet');
+  assert.equal(result.rankingBasis, 'straight_line_distance'); assert.deepEqual(modes, ['drive']);
+  assert.equal(result.options[0].locationRespondents, 1); assert.equal(result.options[0].routedRespondents, 1);
+  assert.equal(result.options[0].missingLocationCount, 1); assert.equal(result.options[0].missingRouteLocationCount, 1);
+  assert.match(result.message, /straight-line distances do not use transport methods/);
+});
+
+test('different slot origins and transport methods are used for their own time-specific routes', async () => {
+  const input = { id: 'meet', version: 1, status: 'planning', starts_at: now, ends_at: now + 2 * 1800000,
+    participantCount: 1, availability: [{ user_id: 'a', starts_at: now, ends_at: now + 1800000, ...origin, travel_mode: 'drive' },
+      { user_id: 'a', starts_at: now + 1800000, ends_at: now + 2 * 1800000, ...destination, travel_mode: 'transit' }],
+    places: [{ id: 'a', label: 'A', ...destination }] };
+  const requests = [];
+  const service = createMeetupIntegrations({ now: () => now, repos: { meetups: { planningInput: () => input, access: () => input } },
+    travel: { configured: true, route: async request => { requests.push(request);
+      return { status: 'available', durationMinutes: request.mode === 'drive' ? 30 : 10 }; } } });
+  const result = await service.suggestions('a', 'meet');
+  assert.equal(result.rankingBasis, 'route_times'); assert.equal(result.options[0].startsAt, now + 1800000);
+  assert.deepEqual(requests.map(r => [r.origin.latitude, r.mode, r.startsAt]).sort((a, b) => a[2] - b[2]),
+    [[origin.latitude, 'drive', now - 3600000], [destination.latitude, 'transit', now + 1800000 - 3600000]]);
+});
+
+test('large groups report only the places actually evaluated within the route budget', async () => {
+  const input = { id: 'meet', version: 1, status: 'planning', starts_at: now, ends_at: now + 1800000, participantCount: 13,
+    availability: Array.from({ length: 13 }, (_, i) => ({ user_id: `u${i}`, starts_at: now, ends_at: now + 1800000, ...origin })),
+    places: Array.from({ length: 6 }, (_, i) => ({ id: `p${i}`, label: `Place ${i}`, latitude: 1.3 + i / 100, longitude: 103.8 })) };
+  let calls = 0;
+  const service = createMeetupIntegrations({ now: () => now, repos: { meetups: { planningInput: () => input, access: () => input } },
+    travel: { configured: true, route: async () => { calls++; return { status: 'available', durationMinutes: 10 }; } } });
+  const result = await service.suggestions('u0', 'meet');
+  assert.equal(result.eligiblePlaces, 6); assert.equal(result.shortlistedPlaces, 1);
+  assert.equal(result.options.length, 1); assert.equal(calls, 13); assert.equal(result.routesRequested, 13);
+  assert.match(result.message, /across 1 of 6 eligible places/);
+});

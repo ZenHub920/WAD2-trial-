@@ -92,7 +92,7 @@ describe('automatic approvals and arrival queue', () => {
   it('saves seeker approval while still requiring host approval', async () => {
     api.acceptProposal.mockResolvedValue({});
     const wrapper = mount(MatchProposalCard, { props: { proposal: proposal() } });
-    expect(wrapper.text()).toContain('Both approvals confirm the group place.');
+    expect(wrapper.text()).toContain('Both approvals confirm the group spot.');
     await button(wrapper, 'Accept group offer').trigger('click');
     await flushPromises();
     expect(api.acceptProposal).toHaveBeenCalledExactlyOnceWith('offer-1');
@@ -102,7 +102,7 @@ describe('automatic approvals and arrival queue', () => {
     expect(wrapper.text()).toContain('The host still needs to approve.');
     expect(wrapper.findAll('button').some(item => item.text() === 'Accept group offer')).toBe(false);
     await wrapper.setProps({ proposal: proposal({ seekerApproved: true, hostApproved: true, status: 'confirmed', eventDate: '2099-01-01' }) });
-    expect(wrapper.text()).toContain('Your group place is confirmed.');
+    expect(wrapper.text()).toContain('Your group spot is confirmed.');
   });
   it('blocks accepting a queued offer but lets its seeker decline', async () => {
     api.declineProposal.mockResolvedValue({});
@@ -110,7 +110,7 @@ describe('automatic approvals and arrival queue', () => {
       queueStatus: 'waiting', canHostRespond: false, seatReserved: false, queuePosition: 2,
     }) } });
     expect(wrapper.text()).toContain('Waiting in queue');
-    expect(wrapper.text()).toContain('Waiting for a place');
+    expect(wrapper.text()).toContain('Waiting for a spot');
     expect(button(wrapper, 'Accept group offer').element.disabled).toBe(true);
     await button(wrapper, 'Decline proposal').trigger('click');
     await flushPromises();

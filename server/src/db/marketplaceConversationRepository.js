@@ -49,7 +49,7 @@ export function createConversationRepo(db) {
       const id = `m_${randomUUID().slice(0, 8)}`;
       db.prepare('INSERT INTO ticket_messages (id, conversation_id, sender_user_id, body) VALUES (?, ?, ?, ?)')
         .run(id, conversationId, senderUserId, body);
-      return db.prepare('SELECT * FROM ticket_messages WHERE id = ?').get(id);
+      return db.prepare('SELECT rowid AS seq, * FROM ticket_messages WHERE id = ?').get(id);
     },
   };
 }

@@ -1,6 +1,6 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, onUnmounted, ref, watch } from 'vue';
+import { isNavigationFailure, useRouter } from 'vue-router';
 import { api, formatDate } from '../api.js';
 import { currentUser } from '../auth.js';
 import { flashListing, listingTitle, sectionLabel, sectionOptions, useTicket } from '../market.js';
@@ -25,16 +25,24 @@ const sectionChoices = computed(() => sectionOptions(listing.value ? sectionLabe
 const newImage = ref('');
 const saving = ref(false);
 const saveError = ref('');
+const saveNotice = ref('');
+let savedDraft = '';
+let alive = true, scopeVersion = 0;
+const fillDraft = current => {
+  draft.value = { price: current.priceCents / 100, quantity: current.quantity, section: sectionLabel(current.section), description: current.description ?? '' };
+};
+watch([() => props.id, () => currentUser.value?.id], () => {
+  scopeVersion++; saving.value = false; savedDraft = ''; newImage.value = ''; saveError.value = ''; saveNotice.value = '';
+  if (listing.value?.id === props.id) fillDraft(listing.value);
+}, { flush: 'sync' });
+onUnmounted(() => { alive = false; scopeVersion++; });
 
 // Prefill the form from the listing as soon as it arrives.
 watch(listing, (current) => {
   if (!current) return;
-  draft.value = {
-    price: current.priceCents / 100,
-    quantity: current.quantity,
-    section: sectionLabel(current.section),
-    description: current.description ?? '',
-  };
+  savedDraft = '';
+  saveNotice.value = '';
+  fillDraft(current);
 }, { immediate: true });
 
 const ERROR_COPY = {
@@ -52,28 +60,42 @@ const ERROR_COPY = {
  */
 function leave() {
   const listingPath = router.resolve({ name: 'ticket-detail', params: { id: props.id } }).fullPath;
-  if (window.history.state?.back === listingPath) router.back();
-  else router.replace(listingPath);
+  if (window.history.state?.back === listingPath) return router.back();
+  return router.replace(listingPath);
 }
 
 async function save() {
+  if (saving.value || loading.value || !isOwnListing.value) return;
   saving.value = true;
   saveError.value = '';
+  saveNotice.value = '';
+  const id = props.id, userId = currentUser.value?.id, version = scopeVersion;
+  const current = () => alive && version === scopeVersion && id === props.id && userId === currentUser.value?.id;
+  const changes = {
+    priceCents: Math.round(Number(draft.value.price) * 100),
+    quantity: Number(draft.value.quantity),
+    // Preserve legacy sections when the seller is only changing other fields.
+    ...(draft.value.section !== sectionLabel(listing.value.section) ? { section: draft.value.section } : {}),
+    description: draft.value.description,
+    ...(newImage.value ? { imageData: newImage.value } : {}),
+  };
+  const snapshot = JSON.stringify(changes);
   try {
-    await api.updateTicket(props.id, {
-      priceCents: Math.round(Number(draft.value.price) * 100),
-      quantity: Number(draft.value.quantity),
-      // Only a changed section is sent, so an older listing's unlisted section never blocks other edits.
-      ...(draft.value.section !== sectionLabel(listing.value.section) ? { section: draft.value.section } : {}),
-      description: draft.value.description,
-      ...(newImage.value ? { imageData: newImage.value } : {}),
-    });
-    flashListing(props.id, 'Listing updated.');
-    leave();
+    if (savedDraft !== snapshot) await api.updateTicket(id, changes);
+    if (!current()) return;
+    savedDraft = snapshot;
+    flashListing(id, 'Listing updated.');
+    saveNotice.value = 'Listing updated.';
+    try {
+      const result = await leave();
+      if (current() && isNavigationFailure(result)) saveNotice.value = 'Listing updated, but its page could not open. Use Back to listing to open the saved result.';
+    } catch {
+      if (current()) saveNotice.value = 'Listing updated, but its page could not open. Use Back to listing to open the saved result.';
+    }
   } catch (err) {
-    saveError.value = ERROR_COPY[err.body?.error] ?? 'Could not save this listing. Check the details and try again.';
+    if (current()) saveError.value = ERROR_COPY[err.body?.error] ?? 'Could not save this listing. Check the details and try again.';
   } finally {
-    saving.value = false;
+    if (current()) saving.value = false;
   }
 }
 </script>
@@ -128,6 +150,7 @@ async function save() {
           </label>
 
           <p v-if="saveError" class="edit-form__error edit-form__wide" role="alert">{{ saveError }}</p>
+          <p v-if="saveNotice" class="edit-form__wide" role="status">{{ saveNotice }}</p>
           <div class="edit-form__actions edit-form__wide">
             <button type="button" class="btn btn--ghost" @click="leave">Cancel</button>
             <button class="btn btn--primary" type="submit" :disabled="saving">

@@ -25,6 +25,8 @@ export function meetupErrorMessage(code) {
     invalid_place: 'Enter a place name and both valid latitude and longitude values, or select a search result.',
     place_limit_reached: 'This plan already has 50 places. Compare the existing suggestions.',
     place_not_found: 'This place is no longer available. Refresh the planner and choose another.',
+    place_owner_required: 'Only the participant who suggested this place can correct or remove it.',
+    place_already_suggested: 'That place is already suggested. Use its existing entry to vote, or choose a different correction.',
     invalid_availability: 'Check selected times and enter both valid coordinates for each optional starting location.',
     overlapping_availability: 'Your availability periods overlap. Refresh the planner and select them again.',
     invalid_meetup_choice: 'Choose a suggested place and a time within this availability window.',

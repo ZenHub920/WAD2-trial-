@@ -219,8 +219,9 @@ for (const theme of ['light', 'dark']) test(`responsive visual audit: ${theme} l
     await api(host.context, '/tickets', 'POST', { concertId: data.concertId, priceCents: 15000, quantity: 2, section: 'Cat 2', description: 'Two seats together. Message to arrange transfer.' });
     for (const person of [seeker, other]) await api(person.context, `/concerts/${data.concertId}/participation`, 'POST', { sectionPref: 'ga_standing', arrivalPref: 'doors' });
     const { meetup } = await api(host.context, '/meetups', 'POST', { partyId: data.parties.a, title: 'Find our time before the show', startsAt: '2030-01-01T15:00:00+08:00', endsAt: '2030-01-01T18:00:00+08:00' });
-    await api(host.context, `/meetups/${meetup.id}/places`, 'POST', { label: 'Stadium MRT entrance', latitude: 1.3028, longitude: 103.875, sheltered: true });
+    const { place } = await api(host.context, `/meetups/${meetup.id}/places`, 'POST', { label: 'Stadium MRT entrance', latitude: 1.3028, longitude: 103.875, sheltered: true });
     await api(host.context, `/meetups/${meetup.id}/availability`, 'PUT', { windows: [{ startsAt: '2030-01-01T16:00:00+08:00', endsAt: '2030-01-01T17:00:00+08:00', travelMode: 'transit' }] });
+    await api(host.context, `/meetups/${meetup.id}/vote`, 'PUT', { placeId: place.id });
     await api(host.context, '/meetups', 'POST', { partyId: data.parties.a, title: 'Share your time with the crew', startsAt: '2030-01-01T14:00:00+08:00', endsAt: '2030-01-01T15:00:00+08:00', createAnother: true });
     const screens = {
       concerts: [host, '/concerts', 'Concerts'],

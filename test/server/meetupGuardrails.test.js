@@ -146,8 +146,12 @@ test('proposed and confirmed plans lock substantive contributions while preservi
     assert.equal(repos.meetups.detail('friend', id).currentVotePlaceId, placeId);
     assert.equal(repos.meetups.detail('friend', id).capabilities.canContribute, false);
     if (status === 'proposed') {
-      assert.equal(repos.meetups.approve('host', id, proposal.version).confirmed, false);
-      assert.equal(repos.meetups.approve('host2', id, proposal.version).confirmed, true);
+      const first = repos.meetups.approve('host', id, proposal.version);
+      assert.equal(first.confirmed, false); assert.deepEqual(first.approvals, ['host']);
+      assert.deepEqual(new Set(first.requiredApprovers), new Set(['host', 'host2']));
+      const final = repos.meetups.approve('host2', id, proposal.version);
+      assert.equal(final.confirmed, true); assert.equal(final.version, proposal.version);
+      assert.deepEqual(new Set(final.approvals), new Set(final.requiredApprovers));
     }
   }
   assert.equal(db.prepare('SELECT COUNT(*) n FROM meetup_places WHERE meetup_id=?').get(id).n, 1);

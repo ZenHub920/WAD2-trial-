@@ -38,6 +38,11 @@ async function plannerSnippet(locator, name) {
   // overlap the middle of a taller-than-viewport screenshot.
   await locator.screenshot({ path: test.info().outputPath(name), style: '.header { visibility: hidden !important; }' });
 }
+async function submitReviewedProposal(page, immediate = false) {
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText(/participants marked themselves available/);
+  await dialog.getByRole('button', { name: immediate ? 'Confirm meetup now' : 'Submit proposal for approval', exact: true }).click();
+}
 
 test('direct search: comparing sends no request; applying waits for host approval and persists membership', async ({ browser, request }) => {
   const data = await fixture(request);
@@ -54,6 +59,7 @@ test('direct search: comparing sends no request; applying waits for host approva
     // A local comparison may have skipped that card; restarting restores the list.
     if (!await card.count()) await seeker.page.getByRole('button', { name: 'Review this page again', exact: true }).click();
     await seeker.page.locator('[data-comparison-slot]').filter({ hasText: `Supper crew ${data.suffix}` }).getByRole('button', { name: 'Request to join', exact: true }).click();
+    await seeker.page.getByRole('dialog', { name: `Ask to join Supper crew ${data.suffix}?`, exact: true }).getByRole('button', { name: 'Send request', exact: true }).click();
     await expect(seeker.page.getByText(/Request sent\./).first()).toBeVisible();
     const requests = (await api(seeker.context, '/me/group-join-requests?scope=own')).requests;
     expect(requests).toHaveLength(1);
@@ -141,12 +147,14 @@ test('automatic matching: joining pool produces an offer; both approvals are req
   const hosts = {};
   try {
     await seeker.page.goto(`/groups?concertId=${data.concertId}&mode=algorithm`);
-    await seeker.page.getByRole('button', { name: 'Find my match', exact: true }).click();
+    expect((await api(seeker.context, `/me/concerts/${data.concertId}/matching`)).matching.optedIn).toBe(false);
+    await seeker.page.getByRole('button', { name: 'Switch and join the match list', exact: true }).click();
     await expect(seeker.page.getByRole('button', { name: 'Leave the match list', exact: true })).toBeVisible();
+    expect((await api(seeker.context, `/me/concerts/${data.concertId}/matching`)).matching.optedIn).toBe(true);
     const round = await request.post('http://127.0.0.1:3105/__test/round', { data: { concertId: data.concertId } });
     expect(round.ok(), await round.text()).toBeTruthy();
     await seeker.page.getByRole('button', { name: 'Check for updates', exact: true }).click();
-    await expect(seeker.page.getByText('Both approvals confirm the group place. Either person can approve first.')).toBeVisible();
+    await expect(seeker.page.getByText('Both approvals confirm the group spot. Either person can approve first.')).toBeVisible();
     await seeker.page.getByRole('button', { name: 'Accept group offer', exact: true }).click();
     expect((await api(seeker.context, '/me/current-group-memberships')).groups).toHaveLength(0);
     const proposal = (await api(seeker.context, '/me/proposals')).proposals.find(p => p.status === 'proposed');
@@ -211,7 +219,7 @@ test('shared chat: send, cross-user reply, edit and deletion survive reload', as
   } finally { await Promise.all([a, b, hostB].map(p => p.context.close())); }
 });
 
-test('meeting planner: create, save car availability, suggest a place, fallback travel and require both hosts', async ({ browser, request }) => {
+test('meeting planner: save car availability, choose a time and place, and require both hosts', async ({ browser, request }) => {
   const data = await fixture(request);
   const a = await person(browser, data, 'hostA'), b = await person(browser, data, 'hostB');
   try {
@@ -239,14 +247,20 @@ test('meeting planner: create, save car availability, suggest a place, fallback 
     expect(saved.availability[0]).toMatchObject({ travel_mode: 'drive', latitude: 1.293, longitude: 103.852, starts_at: Date.parse('2030-01-01T08:00:00Z') });
     await a.page.locator('[data-planner-step="places"]').click();
     await a.page.getByLabel('Place name', { exact: true }).fill('Stadium sheltered entrance');
-    const placeForm = a.page.locator('form').filter({ has: a.page.getByRole('heading', { name: 'Suggest a meeting place', exact: true }) });
+    const placeForm = a.page.locator('form').filter({ has: a.page.getByRole('heading', { name: 'Where should everyone meet?', exact: true }) });
     await placeForm.locator('.meetup-manual-entry > summary').click();
     await placeForm.getByLabel('Latitude', { exact: true }).fill('1.3028');
     await placeForm.getByLabel('Longitude', { exact: true }).fill('103.8743');
     await a.page.getByRole('button', { name: 'Add place', exact: true }).click();
-    await a.page.getByRole('button', { name: 'Compare travel options', exact: true }).click();
-    await expect(a.page.getByText('Straight-line distance estimate. Fresh route times are unavailable for this option.').first()).toBeVisible();
-    await a.page.getByRole('button', { name: 'Propose this time & place', exact: true }).first().click();
+    await expect(a.page.locator('.meetup-ranking-context')).toContainText(/straight-line|insufficient/i);
+    await expect(a.page.locator('.meetup-option')).toHaveCount(1);
+    await expect(a.page.locator('.meetup-option')).toContainText(/distance|journey/i);
+    const { meetup: withPlace } = await api(a.context, path);
+    await expect(a.page.locator('.meetup-picker').getByLabel('Place', { exact: true })).toHaveValue(withPlace.places[0].id);
+    await expect(a.page.locator('.meetup-picker').getByLabel('Time', { exact: true })).toHaveValue(String(saved.availability[0].starts_at));
+    await expect(a.page.getByRole('button', { name: 'Compare travel options', exact: true })).toHaveCount(0);
+    await a.page.getByRole('button', { name: 'Propose this time & place', exact: true }).click();
+    await submitReviewedProposal(a.page);
     await a.page.locator('[data-planner-step="review"]').click();
     await a.page.getByRole('button', { name: 'Approve plan', exact: true }).click();
     await expect(a.page.locator('.meetup-context').getByText('Awaiting required approvals', { exact: true })).toBeVisible();
@@ -291,6 +305,11 @@ test('availability heatmap: drag paints/erases and updates another member live w
       connectionId, title: 'Live heatmap plan', startsAt: '2030-01-01T08:00:00Z', endsAt: '2030-01-01T09:30:00Z',
     });
     const path = `/meetups/${meetup.id}`;
+    // Later stages require the viewer's own saved times. Seed existing time
+    // and place contributions before making a new unsaved draft.
+    await api(b.context, `${path}/availability`, 'PUT', { windows: [{ startsAt: '2030-01-01T09:00:00Z', endsAt: '2030-01-01T09:30:00Z' }] });
+    const { place } = await api(a.context, `${path}/places`, 'POST', { label: 'Shared public entrance', latitude: 1.3, longitude: 103.85, sheltered: true });
+    await api(b.context, `${path}/vote`, 'PUT', { placeId: place.id });
     await a.page.goto(`/groups/connections/${connectionId}/channel`);
     await a.page.getByRole('region', { name: 'Meetup planner for both connected groups' }).getByRole('link', { name: 'Share availability', exact: true }).click();
     await expect(a.page).toHaveURL(new RegExp(path));
@@ -319,7 +338,7 @@ test('availability heatmap: drag paints/erases and updates another member live w
     await a.page.getByRole('button', { name: 'Save my times', exact: true }).click();
     await expect(other.first()).toHaveAttribute('aria-label', /0 of 4 available/);
     await expect(other.nth(1)).toHaveAttribute('aria-pressed', 'true');
-    await expect(b.page.getByLabel('Message', { exact: true })).toHaveValue('My unsaved discussion');
+    await expect(b.page.locator('#meetup-review').getByLabel('Message', { exact: true })).toHaveValue('My unsaved discussion');
     await expect(b.page.getByText('Unsaved changes', { exact: true })).toBeVisible();
     await a.page.reload();
     await expect(a.page.locator('[data-availability-start][aria-pressed="true"]')).toHaveCount(2);
@@ -388,10 +407,17 @@ test('meetup guardrails: members contribute, places stay visible and only the ho
     await member.page.goto(path);
     expect((await api(member.context, path)).meetup.availability).toHaveLength(0);
 
-    // Suggested places are persistent contributions, independently of ranked
-    // recommendations (which correctly remain empty without availability).
+    // Persistent places exist independently of recommendations even before
+    // anyone has saved availability; the current UI intentionally gates step 2.
+    const initial = (await api(member.context, `${path}/places`, 'POST', { label: 'Initial public entrance', latitude: 1.3, longitude: 103.85 })).place;
+    let saved = (await api(host.context, path)).meetup;
+    expect(saved.places).toHaveLength(1); expect(saved.suggestions).toHaveLength(0);
+    await api(member.context, `${path}/places/${initial.id}`, 'DELETE', { version: saved.version });
+    await member.page.locator('[data-availability-start]').last().click();
+    await member.page.getByRole('button', { name: 'Save my times', exact: true }).click();
+    await expect(member.page.getByText('Your availability and journey have been saved.', { exact: true })).toBeVisible();
     await member.page.locator('[data-planner-step="places"]').click();
-    const placeForm = member.page.locator('form').filter({ has: member.page.getByRole('heading', { name: 'Suggest a meeting place', exact: true }) });
+    const placeForm = member.page.locator('form').filter({ has: member.page.getByRole('heading', { name: 'Where should everyone meet?', exact: true }) });
     await placeForm.locator('.meetup-location-search input').fill('Indoor Stadium');
     await placeForm.getByRole('button', { name: 'Search OneMap', exact: true }).click();
     await placeForm.getByRole('button', { name: /SINGAPORE INDOOR STADIUM.*2 STADIUM WALK/ }).click();
@@ -400,9 +426,9 @@ test('meetup guardrails: members contribute, places stay visible and only the ho
     const suggested = member.page.locator('section').filter({ has: member.page.getByRole('heading', { name: 'Suggested meeting places', exact: true }) });
     await expect(suggested.getByText('SINGAPORE INDOOR STADIUM', { exact: true })).toBeVisible();
     await expect(member.page.getByRole('button', { name: 'Propose this time & place', exact: true })).toHaveCount(0);
-    let saved = (await api(host.context, path)).meetup;
+    saved = (await api(host.context, path)).meetup;
     expect(saved.places).toHaveLength(1);
-    expect(saved.suggestions).toHaveLength(0);
+    expect(saved.suggestions).toHaveLength(1);
     await plannerSnippet(member.page.locator('#meetup-places'), 'meetup-place-before-availability.png');
 
     // Actual pointer dragging paints all three intervals. Applying a journey
@@ -416,7 +442,7 @@ test('meetup guardrails: members contribute, places stay visible and only the ho
     await host.page.mouse.move(last.x + last.width / 2, last.y + last.height / 2, { steps: 8 });
     await host.page.mouse.up();
     await expect(host.page.locator('[data-availability-start][aria-pressed="true"]')).toHaveCount(3);
-    const journey = host.page.locator('details').filter({ has: host.page.locator('summary').filter({ hasText: 'Where are you coming from?' }) }).first();
+    const journey = host.page.locator('.meetup-journey');
     await journey.locator('summary').first().click();
     await journey.getByRole('combobox').first().selectOption('drive');
     await journey.locator('.meetup-location-search input').fill('Indoor Stadium');
@@ -444,7 +470,8 @@ test('meetup guardrails: members contribute, places stay visible and only the ho
     await expect(member.page.getByText('Your availability and journey have been saved.', { exact: true })).toBeVisible();
     await host.page.reload();
     await host.page.locator('[data-planner-step="places"]').click();
-    await host.page.getByRole('button', { name: 'Confirm this time & place', exact: true }).first().click();
+    await host.page.getByRole('button', { name: 'Confirm this time & place', exact: true }).click();
+    await submitReviewedProposal(host.page, true);
     await host.page.locator('[data-planner-step="review"]').click();
     await expect(host.page.getByRole('button', { name: 'Approve plan', exact: true })).toHaveCount(0);
     await expect(host.page.locator('.meetup-context').getByText('Meetup confirmed', { exact: true })).toBeVisible();
@@ -489,7 +516,8 @@ test('meetup guardrails: members contribute, places stay visible and only the ho
     expect(saved.selected_place_id).toBeNull();
     expect(saved.approvals).toHaveLength(0);
     await host.page.locator('[data-planner-step="places"]').click();
-    await host.page.getByRole('button', { name: 'Confirm this time & place', exact: true }).first().click();
+    await host.page.getByRole('button', { name: 'Confirm this time & place', exact: true }).click();
+    await submitReviewedProposal(host.page, true);
     await expect(host.page.locator('.meetup-context').getByText('Meetup confirmed', { exact: true })).toBeVisible();
     saved = (await api(host.context, path)).meetup;
     expect(saved.status).toBe('confirmed');
