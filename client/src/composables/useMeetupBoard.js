@@ -48,16 +48,37 @@ export function useMeetupBoard(props) {
     && Math.abs(Number(point.latitude)) <= 90 && Math.abs(Number(point.longitude)) <= 180;
   const hasOriginDraft = computed(() => Boolean(position.label.trim()) || coordinate(position.latitude) || coordinate(position.longitude));
   const selectedOrigins = computed(() => Object.values(slots.value).filter(slot => slot.selected && validCoordinates(slot)).length);
+  const timestamp = value => typeof value === 'number' ? value
+    : typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : typeof value === 'string' ? Date.parse(value) : NaN;
   const recommendedOptions = computed(() => (recommendationsLoading.value || recommendationsInvalid.value ? [] : travelRecommendations.value?.options ?? board.value?.suggestions ?? [])
-    .filter(option => !travelOptions.shelteredOnly || board.value?.places.some(p => p.id === option.placeId && p.sheltered)));
-  const recommendationGroups = computed(() => {
+    .map(option => ({ ...option, startsAt: timestamp(option.startsAt) }))
+    .filter(option => Number.isFinite(option.startsAt) && Number.isFinite(new Date(option.startsAt).getTime()) && option.availableCount > 0
+      && board.value?.places.some(p => p.id === option.placeId && (!travelOptions.shelteredOnly || p.sheltered))));
+  const pickedPlaceId = ref(''), pickedStartsAt = ref(''), selectionTouched = ref(false);
+  const placeChoices = computed(() => {
     const grouped = new Map();
     recommendedOptions.value.forEach((option, index) => {
-      if (!grouped.has(option.placeId)) grouped.set(option.placeId, { placeId: option.placeId, label: option.label, options: [] });
-      grouped.get(option.placeId).options.push({ ...option, rank: index + 1 });
+      const ranked = { ...option, rank: index + 1 };
+      if (!grouped.has(option.placeId)) grouped.set(option.placeId, { placeId: option.placeId, label: option.label,
+        best: ranked, maximumAvailable: option.availableCount, times: [] });
+      const choice = grouped.get(option.placeId);
+      choice.maximumAvailable = Math.max(choice.maximumAvailable, option.availableCount);
+      choice.times.push(ranked);
     });
     return [...grouped.values()];
   });
+  const pickedPlace = computed(() => placeChoices.value.find(choice => choice.placeId === pickedPlaceId.value) ?? null);
+  const pickedOption = computed(() => pickedPlace.value?.times.find(option => String(option.startsAt) === pickedStartsAt.value) ?? null);
+  const pickedVotes = computed(() => board.value?.places.find(candidate => candidate.id === pickedPlaceId.value)?.votes ?? pickedOption.value?.votes ?? 0);
+  function pickPlace(placeId) {
+    const choice = placeChoices.value.find(option => option.placeId === placeId);
+    if (!choice) return;
+    selectionTouched.value = true; pickedPlaceId.value = placeId; pickedStartsAt.value = String(choice.best.startsAt);
+  }
+  function pickTime(startsAt) {
+    if (!pickedPlace.value?.times.some(option => String(option.startsAt) === String(startsAt))) return;
+    selectionTouched.value = true; pickedStartsAt.value = String(startsAt);
+  }
   const rankingMessage = computed(() => travelRecommendations.value?.rankingMessage ?? board.value?.rankingMessage
     ?? 'Ranked by attendance, combined journey burden, longest individual journey, then place votes. Votes break journey ties; earlier times break remaining ties.');
   const recommendationMethod = computed(() => {
@@ -125,6 +146,17 @@ export function useMeetupBoard(props) {
   const activeStep = ref(stepFromHash());
   watch(() => route.hash, () => { activeStep.value = stepFromHash(); });
   const savedSlots = ref('[]'), refreshing = ref(false), syncNote = ref('');
+  watch([placeChoices, () => loading.value || busy.value || refreshing.value || recommendationsLoading.value || recommendationsInvalid.value], ([choices, pending]) => {
+    if (!choices.length) {
+      if (!pending) { pickedPlaceId.value = ''; pickedStartsAt.value = ''; }
+      return;
+    }
+    const retainedPlace = choices.find(choice => choice.placeId === pickedPlaceId.value);
+    const choice = selectionTouched.value && retainedPlace ? retainedPlace : choices[0];
+    const retainedTime = selectionTouched.value && retainedPlace && choice.times.find(option => String(option.startsAt) === pickedStartsAt.value);
+    pickedPlaceId.value = choice.placeId;
+    pickedStartsAt.value = String((retainedTime || choice.best).startsAt);
+  }, { immediate: true, flush: 'sync' });
   const selectionSnapshot = rows => JSON.stringify(Object.entries(rows).filter(([, slot]) => slot.selected)
     .map(([start, slot]) => [Number(start), slot.travelMode, slot.latitude, slot.longitude, slot.label]));
   const availabilityDirty = computed(() => selectionSnapshot(slots.value) !== savedSlots.value);
@@ -193,12 +225,6 @@ export function useMeetupBoard(props) {
   const invalidateJourney = () => invalidateLocation(position, journeyLookup);
   const editPlace = field => editLocation(place, placeLookup, placeSearchKey, field);
   const editJourney = field => editLocation(position, journeyLookup, journeySearchKey, field);
-  function editSlotLocation(start, field) {
-    const previous = slotLookups.get(String(start)), slot = slots.value[start];
-    if (!previous) return;
-    if (field === 'label') { slot.latitude = null; slot.longitude = null; }
-    slotLookups.delete(String(start));
-  }
   const liveLabel = computed(() => connectionState.value === 'live' ? 'Live with your group' : 'Keeping your group in sync');
   let alive = true, loadRequest = 0, refreshTimer, pollTimer, stopEvents, refreshQueued = false;
   const context = () => `${props.id ?? ''}:${currentUser.value?.id ?? ''}:${JSON.stringify(scope.value)}`;
@@ -270,6 +296,7 @@ export function useMeetupBoard(props) {
       error.value = "";
       creationContext.value = null; confirmAction.value = null;
       proposalReview.value = null; removingPlace.value = null; editingPlaceId.value = null;
+      pickedPlaceId.value = ''; pickedStartsAt.value = ''; selectionTouched.value = false;
       recommendationsLoading.value = false; recommendationsInvalid.value = false;
       createdAttempt = null; slotLookups.clear();
       creatingAdditional.value = false;
@@ -570,7 +597,8 @@ export function useMeetupBoard(props) {
     });
   }
   function requestProposal(option) {
-    if (busy.value || !capabilities.value.canPropose) return;
+    if (busy.value || refreshing.value || recommendationsLoading.value || recommendationsInvalid.value || !capabilities.value.canPropose || !recommendedOptions.value.some(candidate => candidate.placeId === option?.placeId
+      && String(candidate.startsAt) === String(option?.startsAt))) return;
     proposalReview.value = { ...option, version: board.value.version, immediate: isSoleApprover.value,
       votes: board.value.places.find(candidate => candidate.id === option.placeId)?.votes ?? option.votes ?? 0,
       preferred: board.value.currentVotePlaceId === option.placeId };
@@ -578,6 +606,12 @@ export function useMeetupBoard(props) {
   async function propose() {
     const option = proposalReview.value, key = context();
     if (!option) return;
+    if (board.value?.version !== option.version || !capabilities.value.canPropose
+      || !recommendedOptions.value.some(candidate => candidate.placeId === option.placeId && String(candidate.startsAt) === String(option.startsAt))) {
+      proposalReview.value = null;
+      failures.recommendations = 'This recommendation or plan has changed. Review the current time and place before submitting again.';
+      return;
+    }
     const ok = await act(() => api.proposeMeetupPlan(props.id, { placeId: option.placeId,
       startsAt: iso(option.startsAt), version: option.version }), { area: 'review',
       onSaved: result => {
@@ -697,9 +731,9 @@ export function useMeetupBoard(props) {
     feedback, failures, placeSearchKey, journeySearchKey, confirmAction, capabilities, contributionsLocked, selectedOrigins,
     editingPlaceId, removingPlace, proposalReview, proposalReviewBody, recommendationsLoading,
     leavePrompt, settleLeave, hasUnsavedDrafts, journeyDirty, placeDirty,
-    selectPlace, selectJourney, invalidatePlace, invalidateJourney, editPlace, editJourney, editSlotLocation,
+    selectPlace, selectJourney, invalidatePlace, invalidateJourney, editPlace, editJourney,
     selectedSlotCount, bestSavedOverlap, selectedTimes, activeStep, availabilityDirty, refreshing, syncNote,
-    liveLabel, statuses, time, validCoordinates, recommendedOptions, recommendationGroups, rankingMessage, recommendationMethod, recommendationScope, journeySummary, hasSavedAvailability, recommendationEmpty,
+    liveLabel, statuses, time, validCoordinates, recommendedOptions, placeChoices, pickedPlace, pickedOption, pickedVotes, pickedStartsAt, pickPlace, pickTime, rankingMessage, recommendationMethod, recommendationScope, journeySummary, hasSavedAvailability, recommendationEmpty,
     refreshPlanner, showStep, stepUnlocked, navigateSteps, create, saveAvailability, discardAvailability, assignJourney,
     addPlace, resetPlaceDraft, correctPlace, requestRemovePlace, removePlace, vote, requestProposal, propose, approve, requestOrganizerAction, organizerAction, postComment, getWeather, getTravelSuggestions, getParking, changeShelterFilter,
    };

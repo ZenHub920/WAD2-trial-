@@ -122,7 +122,7 @@ for (const scope of ['hosted', 'connected', 'kaki']) test(`${scope} planning: ex
     await a.page.goto(`${path}#meetup-places`); await b.page.goto(`${path}#meetup-review`);
     const before = await read(a, meetup.id);
     expect(before.status).toBe('planning');
-    await a.page.getByRole('button', { name: scope === 'hosted' ? 'Confirm this time & place' : 'Propose this time & place', exact: true }).first().click();
+    await a.page.getByRole('button', { name: scope === 'hosted' ? 'Confirm this time & place' : 'Propose this time & place', exact: true }).click();
     await submitReviewedProposal(a.page, scope === 'hosted');
     await expect(a.page.locator('#meetup-review')).toBeVisible();
     let proposal = await read(a, meetup.id);
@@ -148,7 +148,7 @@ for (const scope of ['hosted', 'connected', 'kaki']) test(`${scope} planning: ex
     const stale = await a.context.request.post(`${origin}/api${path}/approve`, { headers: { Origin: origin }, data: { version: proposal.version } });
     expect(stale.status()).toBe(409);
     await stage(a.page, 'places');
-    await a.page.getByRole('button', { name: scope === 'hosted' ? 'Confirm this time & place' : 'Propose this time & place', exact: true }).first().click();
+    await a.page.getByRole('button', { name: scope === 'hosted' ? 'Confirm this time & place' : 'Propose this time & place', exact: true }).click();
     await submitReviewedProposal(a.page, scope === 'hosted');
     await expect(a.page.locator('#meetup-review')).toBeVisible();
     proposal = await read(a, meetup.id);

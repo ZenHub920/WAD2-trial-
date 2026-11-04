@@ -219,7 +219,7 @@ test('shared chat: send, cross-user reply, edit and deletion survive reload', as
   } finally { await Promise.all([a, b, hostB].map(p => p.context.close())); }
 });
 
-test('meeting planner: create, save car availability, suggest a place, fallback travel and require both hosts', async ({ browser, request }) => {
+test('meeting planner: save car availability, choose a time and place, and require both hosts', async ({ browser, request }) => {
   const data = await fixture(request);
   const a = await person(browser, data, 'hostA'), b = await person(browser, data, 'hostB');
   try {
@@ -252,10 +252,14 @@ test('meeting planner: create, save car availability, suggest a place, fallback 
     await placeForm.getByLabel('Latitude', { exact: true }).fill('1.3028');
     await placeForm.getByLabel('Longitude', { exact: true }).fill('103.8743');
     await a.page.getByRole('button', { name: 'Add place', exact: true }).click();
-    await a.page.getByRole('button', { name: 'Compare travel options', exact: true }).click();
     await expect(a.page.locator('.meetup-ranking-context')).toContainText(/straight-line|insufficient/i);
-    await expect(a.page.locator('.meetup-time-option').first()).toContainText(/distance|journey/i);
-    await a.page.getByRole('button', { name: 'Propose this time & place', exact: true }).first().click();
+    await expect(a.page.locator('.meetup-option')).toHaveCount(1);
+    await expect(a.page.locator('.meetup-option')).toContainText(/distance|journey/i);
+    const { meetup: withPlace } = await api(a.context, path);
+    await expect(a.page.locator('.meetup-picker').getByLabel('Place', { exact: true })).toHaveValue(withPlace.places[0].id);
+    await expect(a.page.locator('.meetup-picker').getByLabel('Time', { exact: true })).toHaveValue(String(saved.availability[0].starts_at));
+    await expect(a.page.getByRole('button', { name: 'Compare travel options', exact: true })).toHaveCount(0);
+    await a.page.getByRole('button', { name: 'Propose this time & place', exact: true }).click();
     await submitReviewedProposal(a.page);
     await a.page.locator('[data-planner-step="review"]').click();
     await a.page.getByRole('button', { name: 'Approve plan', exact: true }).click();
@@ -466,7 +470,7 @@ test('meetup guardrails: members contribute, places stay visible and only the ho
     await expect(member.page.getByText('Your availability and journey have been saved.', { exact: true })).toBeVisible();
     await host.page.reload();
     await host.page.locator('[data-planner-step="places"]').click();
-    await host.page.getByRole('button', { name: 'Confirm this time & place', exact: true }).first().click();
+    await host.page.getByRole('button', { name: 'Confirm this time & place', exact: true }).click();
     await submitReviewedProposal(host.page, true);
     await host.page.locator('[data-planner-step="review"]').click();
     await expect(host.page.getByRole('button', { name: 'Approve plan', exact: true })).toHaveCount(0);
@@ -512,7 +516,7 @@ test('meetup guardrails: members contribute, places stay visible and only the ho
     expect(saved.selected_place_id).toBeNull();
     expect(saved.approvals).toHaveLength(0);
     await host.page.locator('[data-planner-step="places"]').click();
-    await host.page.getByRole('button', { name: 'Confirm this time & place', exact: true }).first().click();
+    await host.page.getByRole('button', { name: 'Confirm this time & place', exact: true }).click();
     await submitReviewedProposal(host.page, true);
     await expect(host.page.locator('.meetup-context').getByText('Meetup confirmed', { exact: true })).toBeVisible();
     saved = (await api(host.context, path)).meetup;
