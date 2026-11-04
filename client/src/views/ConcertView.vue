@@ -34,6 +34,24 @@ const matchingError = ref('');
 const completedRound = ref(null);
 let roundRequest = 0, previewRequest = 0;
 const setlist = ref(null);
+
+/**
+ * The concert's colour theme, as CSS variables for the whole page.
+ *
+ * Only the hue varies: the server fixes lightness and saturation so a page
+ * themed from a pale sleeve and one themed from a neon sleeve are equally
+ * readable. Absent while loading, which simply leaves the defaults in place.
+ */
+const paletteVars = computed(() => {
+  const palette = concert.value?.palette;
+  if (!palette) return {};
+  return {
+    '--art-accent': palette.accent,
+    '--art-muted': palette.muted,
+    '--art-surface': palette.surface,
+    '--art-surface-end': palette.surfaceEnd,
+  };
+});
 const participation = ref(null);
 const participationLoading = ref(false);
 const participationBusy = ref(false);
@@ -328,7 +346,7 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
 </script>
 
 <template>
-  <div class="container section">
+  <div class="container section" :style="paletteVars">
     <BackLink fallback="/concerts" fallback-label="Back to All concerts" />
 
     <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading concert details…</p>
@@ -435,7 +453,7 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
       </header>
 
       <!-- Directly under group matching, as the running order for this show. -->
-      <SetlistReel :artist="concert.concert.artist" :setlist="setlist" />
+      <SetlistReel :artist="concert.concert.artist" :setlist="setlist" :palette="concert.palette" />
       <SetlistEditor
         v-if="sessionReady && currentUser?.isOperator"
         :concert-id="id"
@@ -721,8 +739,15 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
   min-height: 360px;
   overflow: hidden;
   border-radius: var(--radius-xl);
-  background: linear-gradient(120deg, #2f195f, #5b2a86 50%, #9c3d8f);
-  box-shadow: 0 30px 60px -34px #5b2a86;
+  /* The artist's own hue when the page has one, the house purple otherwise.
+     Both are dark by construction, so the white text over them always holds. */
+  background: linear-gradient(
+    120deg,
+    var(--art-surface, #2f195f),
+    var(--art-surface-end, #5b2a86) 55%,
+    color-mix(in oklab, var(--art-accent, #9c3d8f) 55%, #000)
+  );
+  box-shadow: 0 30px 60px -34px var(--art-surface-end, #5b2a86);
   color: #fff;
   animation: cover-in var(--dur-slower) var(--ease-settle) both;
 }

@@ -14,10 +14,13 @@
  * thing worse than not having it.
  */
 import { computed, onUnmounted, ref, watch } from 'vue';
+import SetlistString from './SetlistString.vue';
 
 const props = defineProps({
   artist: { type: String, required: true },
   setlist: { type: Object, default: null },
+  /** The concert's colour theme; the string lights in it. */
+  palette: { type: Object, default: null },
 });
 
 /** Long enough to read a title and decide, short enough to feel alive. */
@@ -53,6 +56,13 @@ function go(delta) {
   start();
 }
 
+/** Choosing a song from the string is the same move as pressing an arrow. */
+function selectSong(next) {
+  index.value = next;
+  playing.value = false;
+  engaged.value = true;
+}
+
 /** Pressing play mounts the frame and stops the reel moving for this visit. */
 function play() {
   playing.value = true;
@@ -79,6 +89,15 @@ const STATUS_TEXT = {
       </div>
       <p v-if="paused && tracks.length > 1" class="reel__held group-muted">Paused</p>
     </header>
+
+    <SetlistString
+      :tracks="tracks"
+      :active-index="index"
+      :playing="playing"
+      :accent="palette?.accent ?? 'var(--mint-400)'"
+      :muted="palette?.muted ?? 'var(--ink-600)'"
+      @select="selectSong"
+    />
 
     <div
       class="reel__stage"
@@ -142,7 +161,7 @@ const STATUS_TEXT = {
             type="button"
             class="reel__jump"
             :aria-current="track.id === current?.id ? 'true' : undefined"
-            @click="index = track.position - 1; playing = false; engaged = true"
+            @click="selectSong(track.position - 1)"
           >
             <span class="mono">{{ track.position }}</span>
             <span>{{ track.title }}</span>
@@ -168,9 +187,13 @@ const STATUS_TEXT = {
   gap: var(--space-3);
   min-height: 160px;
   padding: var(--space-4);
-  border: var(--border-soft);
+  /* Tinted by the concert's hue where the page has one. Border and glow only:
+     the fill stays a theme surface, so light and dark mode both keep their
+     own contrast rather than inheriting an artist's. */
+  border: 1px solid color-mix(in oklab, var(--art-accent, var(--ink-600)) 32%, transparent);
   border-radius: var(--radius-md);
   background: var(--ink-850);
+  box-shadow: inset 0 0 40px -24px var(--art-accent, transparent);
 }
 
 .reel__arrow {

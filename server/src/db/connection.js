@@ -81,6 +81,11 @@ const ADDED_COLUMNS = [
   ['concerts', 'official_url', 'TEXT'],
   ['concerts', 'image_attribution', 'TEXT'],
   ['concerts', 'seatmap_url', 'TEXT'],
+  // The dominant hue of the poster, read once during the sync. Only a hue:
+  // lightness and saturation are fixed in services/concertPalette.js so the
+  // page stays readable whatever the artwork looks like.
+  ['concerts', 'palette_hue', 'INTEGER'],
+  ['concerts', 'palette_source', 'TEXT'],
   ['parties', 'min_size', 'INTEGER'],
   ['seeker_requests', 'linked_request_id', 'TEXT'],
   ['seeker_requests', 'matching_opt_in', 'INTEGER NOT NULL DEFAULT 0 CHECK (matching_opt_in IN (0,1))'],
