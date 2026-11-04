@@ -14,7 +14,7 @@ Current documentation:
 | [Team credentials](docs/TEAM_CREDENTIALS_SETUP.md) | Secure local/shared development setup |
 | [Web Push deployment](docs/WEB_PUSH_COST_AND_DEPLOYMENT.md) | Delivery, hosting, backups and device verification |
 | [Backend structure](docs/BACKEND_STRUCTURE.md) | Repository organisation and refactoring |
-| [Feature testing](docs/SCOPED_FEATURE_TESTING.md) | Test scope, results and commands |
+| [Testing](test/README.md) | Test layout, commands, reports and renamed suites |
 
 People miss shows when their friends do not share their taste in music. Ticket
 resale addresses ticket supply, while first-come-first-served forums pair people
@@ -317,11 +317,23 @@ controls, tests, and this documentation were generated with AI assistance.
 The IS216 briefing restricts AI use for core backend implementation; review
 these contributions against your course rules before submitting them.
 
+## Testing
+
+All test suites, configurations, helpers, benchmarks and generated reports are
+under [`test/`](test/README.md). Install the existing server/client dependencies
+using the quick-start instructions; no separate test dependency install is needed.
+
 ```bash
-cd server
-npm test              # backend unit and API tests
-npm run bench         # algorithm comparison against baselines
-npm run bench:scale   # runtime scaling study
+# From the repository root
+npm test              # backend + client tests
+npm run test:e2e      # complete Chromium workflows
+npm run test:all      # backend, client and Chromium
+
+# Existing package commands still work
+npm --prefix server test
+npm --prefix client test
+npm --prefix server run bench
+npm --prefix server run bench:scale
 ```
 
 
@@ -460,13 +472,23 @@ server/
   src/services/       round orchestration, explanations, provider and session logic
   src/controllers/    HTTP validation, request handling, response shaping
   src/routes/         endpoint-to-controller mappings
-  test/               backend unit and HTTP API tests
-  bench/              synthetic data generator + evaluation harness
 
 client/
   src/assets/         design tokens and base stylesheet
   src/components/     navigation, cards, forms, chat and matching visualisations
   src/views/          concerts/tickets, companions, groups, messages, planning and accounts
+
+test/
+  server/             backend unit and HTTP API tests
+  client/             Vue component and frontend integration tests
+  client-node/        pure comparison logic tested with Node
+  e2e/                authenticated Chromium workflows
+  config/             Vitest and Playwright configuration
+  support/            shared fixtures, dependency adapters and disposable API
+  scripts/            complete and scoped test runners
+  bench/              synthetic matching generator and evaluation
+  docs/               detailed feature-testing notes
+  results/            ignored logs, reports, traces and recordings
 
 docs/ALGORITHM.md     the specification
 ```

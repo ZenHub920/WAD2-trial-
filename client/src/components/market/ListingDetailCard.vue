@@ -1,12 +1,13 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted } from 'vue';
-import { formatShortDate } from '../../api.js';
+import { formatDate } from '../../api.js';
 import { listingTitle, priceParts, sectionLabel } from '../../market.js';
 import MarketIcon from './MarketIcon.vue';
 import TicketPoster from './TicketPoster.vue';
 import VerifiedBadge from './VerifiedBadge.vue';
 import UserAvatar from './UserAvatar.vue';
 import LoadingSpinner from '../LoadingSpinner.vue';
+import TicketFacts from './TicketFacts.vue';
 
 /**
  * The full listing card: poster, title, verification, price, description and the
@@ -32,11 +33,11 @@ const available = computed(() => props.listing.status === 'active');
 const facts = computed(() => {
   const l = props.listing;
   return [
-    sectionLabel(l.section),
-    formatShortDate(l.concert.event_date),
-    l.concert.venue,
-    `${l.quantity} ticket${l.quantity === 1 ? '' : 's'}`,
-  ].filter(Boolean);
+    ['Section', sectionLabel(l.section)],
+    ['Date', formatDate(l.concert.event_date)],
+    ['Venue', l.concert.venue],
+    ['No. of tickets', l.quantity],
+  ];
 });
 
 // ---- Description: clamp, and offer "Read more" only if it actually overflows.
@@ -113,9 +114,7 @@ function copyLink() {
     </p>
     <p class="dcard__price-note">Total listing price · SGD</p>
 
-    <ul class="dcard__facts" aria-label="Ticket details">
-      <li v-for="fact in facts" :key="fact">{{ fact }}</li>
-    </ul>
+    <TicketFacts class="dcard__facts" :facts="facts" />
 
     <div class="dcard__seller">
       <UserAvatar :user="listing.seller" :size="32" />
@@ -300,20 +299,7 @@ function copyLink() {
 }
 
 .dcard__facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
   margin-top: var(--space-4);
-  padding: 0;
-  list-style: none;
-}
-
-.dcard__facts li {
-  padding: 2px var(--space-3);
-  border-radius: var(--radius-pill);
-  border: var(--border-hairline);
-  font-size: var(--step--2);
-  color: var(--text-300);
 }
 
 .dcard__desc {

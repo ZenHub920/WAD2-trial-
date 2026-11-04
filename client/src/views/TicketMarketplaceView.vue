@@ -38,13 +38,6 @@ const concertId = ref(String(route.query.concert ?? ''));
 const sort = ref('soonest');
 const verifiedOnly = ref(false);
 const savedOnly = ref(false);
-const saveNotice = ref('');
-function toggleSaved(id) {
-  const result = toggle(id);
-  saveNotice.value = result.saved
-    ? result.persisted ? 'Listing saved in this browser.' : 'Listing selected for this visit. Browser storage is unavailable.'
-    : 'Listing removed from your saved selection.';
-}
 
 // Keep the concert filter and the URL in step, both ways.
 watch(concertId, (id) => {
@@ -113,7 +106,6 @@ function clearFilters() {
       </header>
 
       <section class="market-filters row g-3 align-items-end" aria-label="Filter tickets">
-        <div class="market-filters__context col-12"><MarketIcon name="filters" :size="18" /><div><strong>Find the right ticket</strong><span>Choose a show, compare the total price, then message the seller.</span></div></div>
         <label class="market-filters__search col-12 col-lg-6">
           <span>Search</span>
           <span class="market-filters__input">
@@ -159,7 +151,6 @@ function clearFilters() {
           <p role="status" aria-live="polite" aria-atomic="true">{{ ticketTotal }} {{ ticketTotal === 1 ? 'ticket' : 'tickets' }}{{ hasFilters ? ' matching your filters' : ' for sale' }}</p>
           <button v-if="hasFilters" type="button" class="btn btn--ghost" @click="clearFilters">Clear filters</button>
         </header>
-        <p v-if="saveNotice" class="market-save-feedback" role="status">{{ saveNotice }}</p>
 
         <MarketNotice v-if="!results.length" :title="hasFilters ? 'No tickets match your filters' : 'No tickets for sale yet'">
           <p v-if="hasFilters">Try another search or clear your filters.</p>
@@ -173,7 +164,7 @@ function clearFilters() {
               class="flex-fill"
               :listing="listing"
               :saved="isSaved(listing.id)"
-              @toggle-save="toggleSaved"
+              @toggle-save="toggle"
             />
           </div>
         </div>
@@ -215,12 +206,6 @@ function clearFilters() {
   background: var(--surface-interactive, var(--ink-800));
   box-shadow: inset 0 1px 0 var(--panel-highlight), var(--shadow-sm);
 }
-.market-filters__context { display: flex; align-items: center; gap: var(--space-3); padding-bottom: var(--space-3); border-bottom: 1px solid var(--panel-edge); }
-.market-filters__context > svg { color: var(--accent-400); flex: none; }
-.market-filters__context > div { display: grid; gap: var(--space-1); }
-.market-filters__context strong { color: var(--text-100); font-size: var(--step--1); }
-.market-filters__context span { color: var(--text-300); font-size: var(--step--2); }
-.market-save-feedback { padding: var(--space-3) var(--space-4); margin-bottom: var(--space-4); border: 1px solid var(--panel-edge); border-left: 3px solid var(--accent-400); background: var(--surface-interactive, var(--ink-800)); border-radius: var(--radius-sm); color: var(--text-200); }
 .market-filters label {
   display: grid;
   gap: var(--space-2);

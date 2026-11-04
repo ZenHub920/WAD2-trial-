@@ -3,6 +3,8 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, LABELS, SECTION_OPTIONS, ARRIVAL_OPTIONS } from '../api.js';
 import { useMeetupSummaries } from '../composables/useMeetupSummaries.js';
+import { useConcertEligibility } from '../composables/useConcertEligibility.js';
+import { concertParticipationEligibility } from '../../../shared/concertEligibility.mjs';
 import { meetupDestination, meetupActionForScope } from '../utils/meetupSummaries.js';
 import { currentUser, sessionReady } from '../auth.js';
 import GroupFilters from '../components/GroupFilters.vue';
@@ -23,7 +25,7 @@ const meetupLabel = scope => meetupActionForScope(meetupPlans.value, scope);
 const concerts = ref([]), groups = ref([]), saved = ref([]), seeker = ref(null);
 const concertId = ref(typeof route.query.concertId === 'string' ? route.query.concertId : '');
 const concertsLoading = ref(true), loading = ref(false), busy = ref(false);
-const error = ref(''), message = ref('');
+const error = ref(''), message = ref(''), refreshWarning = ref('');
 const offset = ref(0), total = ref(0), joins = ref([]), memberships = ref([]), proposals = ref([]);
 const matching = ref({ optedIn: false, state: 'idle', request: null, proposal: null });
 const displayedMode = ref('direct'), applicationFor = ref(''), applicationNote = ref('');
@@ -42,9 +44,10 @@ const pendingLegacy = computed(() => ownRequests.value.filter(request => request
 const activeProposals = computed(() => proposals.value.filter(proposal => proposal.status === 'proposed'));
 const modeIsActive = computed(() => Boolean(seeker.value && persistedMode.value === displayedMode.value));
 const selectedConcert = computed(() => concerts.value.find(concert => concert.id === concertId.value));
+const { canCoordinate, isFinished, canPlanMeetup, refreshEligibility } = useConcertEligibility(() => selectedConcert.value);
 const pendingLimit = computed(() => seeker.value?.maxPendingDirectApplications ?? 1);
-const canApply = computed(() => !busy.value && !loading.value && displayedMode.value === 'direct' && seeker.value?.status === 'open' && persistedMode.value === 'direct' && !currentGroup.value && !activeProposals.value.length && !pendingLegacy.value.length && pendingDirect.value.length < pendingLimit.value);
-const canPrefer = computed(() => seeker.value?.status === 'open' && !currentGroup.value && !activeProposals.value.length);
+const canApply = computed(() => canCoordinate.value && !busy.value && !loading.value && displayedMode.value === 'direct' && seeker.value?.status === 'open' && persistedMode.value === 'direct' && !currentGroup.value && !activeProposals.value.length && !pendingLegacy.value.length && pendingDirect.value.length < pendingLimit.value);
+const canPrefer = computed(() => canCoordinate.value && seeker.value?.status === 'open' && !currentGroup.value && !activeProposals.value.length);
 const modeLabels = { direct: 'Browse and choose', algorithm: 'Match me with a group' };
 const modeOptions = [
   { mode: 'direct', kicker: 'Pick yourself', title: 'Browse and choose', description: 'See every group and ask to join the one you like.', action: 'Browse groups' },
@@ -61,6 +64,8 @@ const canQueueFor = group => group.canJoinQueue ?? group.remainingCapacity > 0;
 
 function failureMessage(err) {
   const explanations = {
+    concert_finished: 'This concert has finished. New matching is closed; your requests, group and conversations remain available.',
+    concert_date_unavailable: 'This concert needs a valid date before new matching can start.',
     open_seeker_request_required: 'Tell us a bit about your plans for this show first.',
     direct_joining_mode_required: 'Switch to “Browse and choose” before asking to join a group.',
     pending_application_limit_reached: 'You’ve already asked one group. Cancel that request if you’d rather try another.',
@@ -91,6 +96,7 @@ async function load() {
     comparisonSession.value = ''; loadedDataContext = key;
   }
   error.value = '';
+  refreshWarning.value = '';
   if (!id || !currentUser.value || !sessionReady.value) { loading.value = false; return; }
   loading.value = true;
   try {
@@ -99,7 +105,7 @@ async function load() {
       api.groupPreferences(id), api.seekerRequest(id),
       api.groupJoinRequests({ scope: 'own', concertId: id }), api.groupMatching(id), api.currentGroupMemberships(), api.myProposals(),
     ]);
-    if (!isCurrent(key) || current !== generation) return;
+    if (!isCurrent(key) || current !== generation) return false;
     groups.value = listing.groups; total.value = listing.total; saved.value = preferences.preferences;
     comparisonSession.value = listingKey;
     seeker.value = request.request; joins.value = applications.requests;
@@ -109,11 +115,13 @@ async function load() {
       displayedMode.value = ['direct', 'algorithm'].includes(route.query.mode) ? route.query.mode : seeker.value ? persistedMode.value : 'direct';
       loadedContext = key;
     }
+    return true;
   } catch (err) {
     if (isCurrent(key) && current === generation) {
       if (comparisonSession.value !== listingKey) { groups.value = []; comparisonSession.value = listingKey; }
       error.value = err.status === 401 ? 'Sign in to see the groups going to this show.' : 'We couldn’t load the groups. Please try again.';
     }
+    return false;
   } finally { if (isCurrent(key) && current === generation) loading.value = false; }
 }
 watch(concertId, id => {
@@ -130,37 +138,52 @@ watch([() => currentUser.value?.id, sessionReady, preferencesReady], () => { mes
 onMounted(async () => {
   try {
     const response = await api.concerts(); if (!alive) return; concerts.value = response.concerts;
-    if (!concertId.value && concerts.value.length) concertId.value = concerts.value[0].id; else await load();
+    if (!concertId.value && concerts.value.length) concertId.value = (concerts.value.find(concert => concertParticipationEligibility(concert).eligible) ?? concerts.value[0]).id; else await load();
   } catch { if (alive) error.value = 'We couldn’t load concerts. Please try again.'; }
   finally { if (alive) concertsLoading.value = false; }
 });
 onUnmounted(() => { alive = false; generation++; clearTimeout(filterTimer); });
 async function act(operation, success) {
   if (busy.value) return false;
-  const key = context(); busy.value = true; error.value = ''; message.value = '';
+  const key = context(); busy.value = true; error.value = ''; message.value = ''; refreshWarning.value = '';
   try {
     await operation();
     if (!isCurrent(key)) return false;
-    await load();
+    const refreshed = await load();
     if (!isCurrent(key)) return false;
     message.value = typeof success === 'function' ? success() : success;
+    if (!refreshed) { error.value = ''; refreshWarning.value = 'Your change was saved. The latest group details could not be loaded. Refresh the details before making another choice.'; }
     return true;
   }
-  catch (err) { if (isCurrent(key)) { await load(); if (isCurrent(key)) error.value = failureMessage(err); } return false; }
+  catch (err) { if (isCurrent(key)) { refreshEligibility(); error.value = failureMessage(err); } return false; }
   finally { busy.value = false; }
 }
 async function enroll(reopen = false) { await act(() => reopen ? api.reopenSeekerRequest(concertId.value) : api.createRequest(concertId.value, { ...form, joining_mode: displayedMode.value }), 'Your answers are saved. Choose how you’d like to find a group.'); }
 async function activateMode() { const target = displayedMode.value; await act(() => api.setJoiningMode(concertId.value, target), target === 'direct' ? 'Browse the groups below and ask to join one at a time.' : 'Mark groups you like and join the match list.'); }
 async function join(id, note = applicationNote.value.trim()) {
+  const key = context(), showId = concertId.value, userId = currentUser.value?.id;
+  const group = groups.value.find(item => item.id === id);
   let application;
   return act(async () => {
     application = (await api.requestGroupJoin(id, { note })).request;
+    if (!isCurrent(key)) return;
+    if (application) joins.value = [...joins.value.filter(item => item.id !== application.id), {
+      ...application, userId, concertId: showId, partyId: id, hostName: group?.hostName,
+      artist: selectedConcert.value?.artist, applicationNote: note,
+    }];
     applicationFor.value = ''; applicationNote.value = '';
   }, () => application?.seatReserved
     ? 'Request sent. A spot is held while the host reviews it. Check the expiry time below.'
     : `Request sent. You’re ${application?.queuePosition ? `number ${application.queuePosition} ` : ''}in line without a held spot. Check the expiry time below.`);
 }
 async function preference(id, remove) { await act(() => remove ? api.removeGroupPreference(id) : api.preferGroup(id), remove ? 'Removed from the groups you like.' : 'Added to the groups you like.'); }
+async function withdraw(id) {
+  const key = context();
+  await act(async () => {
+    await api.withdrawGroupJoin(id);
+    if (isCurrent(key)) joins.value = joins.value.map(request => request.id === id ? { ...request, status: 'withdrawn' } : request);
+  }, 'Request cancelled. Any held spot is released to the next eligible request.');
+}
 async function joinPool() { await act(() => api.findMyGroup(concertId.value, crypto.randomUUID()), 'You’re waiting for the next operator-run matching round. Check here for a proposal.'); }
 async function leavePool() { await act(() => api.leaveGroupMatching(concertId.value), 'You’ve left matching. Your saved preferences and match history remain available.'); }
 function dateLabel(value) { if (!value) return ''; const date = new Date(typeof value === 'number' ? value : value.includes('T') ? value : `${value.replace(' ', 'T')}Z`); return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('en-SG'); }
@@ -190,6 +213,8 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
 
     <p v-if="error" class="group-error" role="alert">{{ error }} <button type="button" class="btn btn--ghost" :disabled="busy || loading" @click="load">Try again</button></p>
     <p v-if="message" class="group-success" role="status">{{ message }}</p>
+    <p v-if="refreshWarning" class="group-error" role="alert">{{ refreshWarning }} <button type="button" class="btn btn--ghost" :disabled="loading || busy" @click="load">Refresh details</button></p>
+    <p v-if="selectedConcert && !canCoordinate" class="group-status" role="status">{{ isFinished ? 'This concert has finished. New group matching is closed. Your existing group, requests and conversations remain available.' : 'A valid concert date is needed before new group matching can start.' }}</p>
     <p v-if="concertsLoading" class="loading-state" role="status"><LoadingSpinner />Loading concerts…</p>
     <p v-if="busy" class="loading-state" role="status"><LoadingSpinner />Saving…</p>
     <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Finding groups…</p>
@@ -207,11 +232,11 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
         <p class="group-muted">{{ originLabels[currentGroup.assignmentOrigin] ?? 'You’re in' }} · {{ currentGroup.remainingCapacity }} {{ currentGroup.remainingCapacity === 1 ? 'spot' : 'spots' }} still open. You can be in one group per concert.</p>
         <div class="group-actions">
           <RouterLink :to="`/groups/${encodeURIComponent(currentGroup.partyId ?? currentGroup.id)}/members`" class="btn btn--primary">See your group</RouterLink>
-          <button type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: currentGroup.partyId ?? currentGroup.id }))">{{ meetupLabel({ partyId: currentGroup.partyId ?? currentGroup.id }) }}</button>
+          <button v-if="canPlanMeetup || meetupPlans.some(plan => plan.scope?.partyId === (currentGroup.partyId ?? currentGroup.id))" type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: currentGroup.partyId ?? currentGroup.id }))">{{ meetupLabel({ partyId: currentGroup.partyId ?? currentGroup.id }) }}</button>
         </div>
       </section>
 
-      <section v-else-if="!seeker" class="card group-panel next-step">
+      <section v-else-if="!seeker && canCoordinate" class="card group-panel next-step">
         <div class="group-setup__heading">
           <div>
             <p class="next-step__label">Next step</p>
@@ -230,7 +255,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
         </fieldset></form>
       </section>
 
-      <section v-else-if="seeker.status === 'withdrawn'" class="card group-panel next-step">
+      <section v-else-if="seeker?.status === 'withdrawn' && canCoordinate" class="card group-panel next-step">
         <p class="next-step__label">Next step</p>
         <h2>You stepped away from this show</h2>
         <p class="group-muted">Changed your mind? Pick up where you left off.</p>
@@ -249,7 +274,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
           </article>
         </div>
         <p v-if="seeker" class="group-muted">You’re currently using: <strong>{{ modeLabels[persistedMode] }}</strong></p>
-        <button v-if="seeker?.status === 'open' && !currentGroup && !modeIsActive" type="button" class="btn btn--primary" :disabled="busy" @click="activateMode">{{ displayedMode === 'direct' ? 'Switch to browsing' : 'Switch to matching' }}</button>
+        <button v-if="canCoordinate && seeker?.status === 'open' && !currentGroup && !modeIsActive" type="button" class="btn btn--primary" :disabled="busy" @click="activateMode">{{ displayedMode === 'direct' ? 'Switch to browsing' : 'Switch to matching' }}</button>
         <p v-if="!modeIsActive && (seeker?.status === 'open' || pendingDirect.length || activeProposals.length || pendingLegacy.length)" class="group-muted">Just looking? That’s fine. Nothing changes until you switch, and open requests stay as they are.</p>
         <p v-if="pendingDirect.length" class="group-status" role="status">
           {{ pendingDirect[0].seatReserved ? 'We’re saving you a spot.' : `You’re number ${pendingDirect[0].queuePosition ?? '?'} in line.` }}
@@ -278,7 +303,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
         <p v-else-if="matching.optedIn || matching.state === 'queued'" role="status">You’re on the match list. Keep marking groups you like, and check back soon.</p>
         <p v-else>You’re not on the match list yet.</p>
         <div class="group-actions">
-          <button v-if="!matching.optedIn && !activeProposals.length && !pendingLegacy.length && modeIsActive && seeker.status === 'open'" type="button" class="btn btn--primary" :disabled="busy" @click="joinPool">Join the match list</button>
+          <button v-if="canCoordinate && !matching.optedIn && !activeProposals.length && !pendingLegacy.length && modeIsActive && seeker.status === 'open'" type="button" class="btn btn--primary" :disabled="busy" @click="joinPool">Join the match list</button>
           <button type="button" class="btn btn--ghost" :disabled="busy" @click="load">Check for updates</button>
           <button v-if="matching.optedIn" type="button" class="btn btn--danger-ghost" :disabled="busy || activeProposals.length > 0 || pendingLegacy.length > 0" @click="leavePool">Leave the match list</button>
           <RouterLink :to="`/concerts/${encodeURIComponent(concertId)}#my-result-title`">Past matches</RouterLink>
@@ -345,7 +370,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
           </div>
           <div class="group-actions">
             <button type="button" class="btn btn--ghost" :disabled="busy" @click="load">Check for updates</button>
-            <button type="button" class="btn btn--danger-ghost" :disabled="busy" @click="act(() => api.withdrawGroupJoin(application.id), 'Request cancelled. Any held spot is released to the next eligible request.')">Cancel request</button>
+            <button type="button" class="btn btn--danger-ghost" :disabled="busy" @click="withdraw(application.id)">Cancel request</button>
           </div>
         </article>
         <details v-if="ownRequests.some(request => request.status !== 'pending')">

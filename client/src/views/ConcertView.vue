@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api, LABELS, SECTION_OPTIONS, ARRIVAL_OPTIONS, formatDate } from '../api.js';
 import { currentUser, sessionReady } from '../auth.js';
@@ -11,11 +11,14 @@ import LoadingSpinner from '../components/LoadingSpinner.vue';
 import BackLink from '../components/BackLink.vue';
 import SetlistReel from '../components/market/SetlistReel.vue';
 import SetlistEditor from '../components/market/SetlistEditor.vue';
+import { useConcertEligibility } from '../composables/useConcertEligibility.js';
 
 const props = defineProps({ id: { type: String, required: true } });
 const router = useRouter();
 
 const concert = ref(null);
+const { canCoordinate, isFinished, canCreateGroup, refreshEligibility } = useConcertEligibility(() => concert.value?.concert);
+let alive = true, concertRequest = 0;
 // Ticketmaster image URLs occasionally 404; the cover then falls back to a gradient.
 const coverBroken = ref(false);
 const coverImage = computed(() => (!coverBroken.value && concert.value?.concert?.hero_image_url) || null);
@@ -28,6 +31,8 @@ const error = ref(null);
 const runError = ref('');
 const runNotice = ref('');
 const matchingError = ref('');
+const completedRound = ref(null);
+let roundRequest = 0, previewRequest = 0;
 const setlist = ref(null);
 const participation = ref(null);
 const participationLoading = ref(false);
@@ -131,6 +136,8 @@ watch(
 
 async function saveParticipation() {
   if (participationBusy.value || participationLoading.value) return;
+  refreshEligibility();
+  if (!canCoordinate.value) { participationError.value = isFinished.value ? 'This concert has finished. Your existing participation and conversations remain available.' : 'A valid concert date is needed to join the companion finder.'; return; }
   const requestId = participationRequest;
   participationBusy.value = true;
   participationError.value = '';
@@ -145,7 +152,9 @@ async function saveParticipation() {
       participationNeedsSignIn.value = err.status === 401;
       participationError.value = err.status === 401
         ? 'Your session has expired. Sign in to join.'
-        : 'Could not save your companion-finder preferences. Please try again.';
+        : err.message === 'concert_finished' ? 'This concert has finished. Your existing participation and conversations remain available.'
+          : 'Could not save your companion-finder preferences. Please try again.';
+      if (err.message === 'concert_finished') refreshEligibility();
     }
   } finally {
     if (requestId === participationRequest) participationBusy.value = false;
@@ -173,26 +182,32 @@ async function leaveParticipation() {
 }
 
 async function load() {
+  const requestId = ++concertRequest, id = props.id;
+  const current = () => alive && requestId === concertRequest && props.id === id;
   loading.value = true;
   error.value = null;
   runError.value = '';
   runNotice.value = '';
   matchingError.value = '';
+  roundRequest++; previewRequest++; running.value = false; previewLoading.value = false;
+  if (completedRound.value?.concertId !== id) completedRound.value = null;
   parties.value = [];
   requests.value = [];
+  concert.value = null; setlist.value = null; coverBroken.value = false;
   // Its own request, deliberately: a setlist is an extra, so a failure here
   // must never take the concert page down with it.
-  api.concertSetlist(props.id)
-    .then((result) => { setlist.value = result.setlist; })
-    .catch(() => { setlist.value = null; });
+  api.concertSetlist(id)
+    .then((result) => { if (current()) setlist.value = result.setlist; })
+    .catch(() => { if (current()) setlist.value = null; });
   try {
     const [detail, matching] = await Promise.all([
-      api.concert(props.id),
-      Promise.all([api.parties(props.id), api.requests(props.id)]).catch(() => {
-        matchingError.value = 'Could not load group-matching availability. Ticket availability is still shown below.';
+      api.concert(id),
+      Promise.all([api.parties(id), api.requests(id)]).catch(() => {
+        if (current()) matchingError.value = 'Could not load group-matching availability. Ticket availability is still shown below.';
         return null;
       }),
     ]);
+    if (!current()) return;
     concert.value = detail;
     if (matching) {
       parties.value = matching[0].parties;
@@ -201,33 +216,50 @@ async function load() {
 
     preview.value = null;
   } catch (err) {
-    error.value = err;
+    if (current()) error.value = err;
   } finally {
-    loading.value = false;
+    if (current()) loading.value = false;
   }
 }
 
 onMounted(load);
 watch(() => props.id, load);
+watch([() => currentUser.value?.id, () => currentUser.value?.isOperator, sessionReady], () => {
+  roundRequest++; previewRequest++; running.value = false; previewLoading.value = false;
+  preview.value = null; completedRound.value = null; runError.value = ''; runNotice.value = '';
+});
+onUnmounted(() => { alive = false; concertRequest++; participationRequest++; resultRequest++; ticketRequest++; roundRequest++; previewRequest++; });
 
 async function runRound() {
+  refreshEligibility();
   if (!canRun.value) return;
+  const id = props.id, user = currentUser.value?.id, page = concertRequest, requestId = ++roundRequest;
+  const current = () => alive && requestId === roundRequest && page === concertRequest && props.id === id && currentUser.value?.id === user && currentUser.value?.isOperator && sessionReady.value;
   runError.value = '';
+  runNotice.value = '';
   running.value = true;
   try {
     // Keep the same key for retries, including after a page refresh.
-    const storageKey = `encore-batch:${props.id}`;
+    const storageKey = `encore-batch:${id}`;
     let batchKey = sessionStorage.getItem(storageKey);
     if (!batchKey) {
       batchKey = crypto.randomUUID();
       sessionStorage.setItem(storageKey, batchKey);
     }
-    const outcome = await api.runMatch(props.id, batchKey);
-    await router.push({
-      path: `/rounds/${outcome.roundId}`,
-      query: { concertId: props.id },
-    });
+    const outcome = await api.runMatch(id, batchKey);
+    if (!current()) return;
+    completedRound.value = { id: outcome.roundId, concertId: id };
+    runNotice.value = 'Matching completed. Your round is saved.';
+    // The matching transaction has succeeded. A blocked/failed navigation must
+    // retain that result, rather than telling the operator matching failed.
+    try {
+      const failure = await router.push({ path: `/rounds/${outcome.roundId}`, query: { concertId: id } });
+      if (failure && current()) runNotice.value = 'Matching completed and was saved, but the results page could not open. Open the saved matching round below.';
+    } catch {
+      if (current()) runNotice.value = 'Matching completed and was saved, but the results page could not open. Open the saved matching round below.';
+    }
   } catch (err) {
+    if (!current()) return;
     runError.value = err.status === 403
       ? 'Only an operator can run matching rounds.'
       : err.status === 401
@@ -236,7 +268,7 @@ async function runRound() {
           ? 'Matching cannot run yet. Check availability and existing assignments.'
           : 'Could not run this matching round. Please try again.';
   } finally {
-    running.value = false;
+    if (current()) running.value = false;
   }
 }
 
@@ -244,21 +276,26 @@ function newMatchingBatch() {
   // Only an explicit new operation replaces the retry key.
   sessionStorage.setItem(`encore-batch:${props.id}`, crypto.randomUUID());
   runError.value = '';
+  completedRound.value = null;
   runNotice.value = 'New matching batch prepared. You can run matching now.';
 }
 
 const previewLoading = ref(false);
 
 async function loadPreview() {
-  if (previewLoading.value) return;
+  refreshEligibility();
+  if (previewLoading.value || running.value || !canCoordinate.value || !sessionReady.value || !currentUser.value?.isOperator) return;
+  const id = props.id, user = currentUser.value.id, page = concertRequest, requestId = ++previewRequest;
+  const current = () => alive && requestId === previewRequest && page === concertRequest && props.id === id && currentUser.value?.id === user && currentUser.value?.isOperator && sessionReady.value;
   previewLoading.value = true;
   runError.value = '';
   try {
-    preview.value = await api.preview(props.id, { baselines: false, trace: false });
+    const result = await api.preview(id, { baselines: false, trace: false });
+    if (current()) preview.value = result;
   } catch (err) {
-    runError.value = 'Could not calculate a matching preview. Please try again.';
+    if (current()) runError.value = 'Could not calculate a matching preview. Please try again.';
   } finally {
-    previewLoading.value = false;
+    if (current()) previewLoading.value = false;
   }
 }
 
@@ -266,7 +303,7 @@ const totalPlaces = computed(() => parties.value.reduce((sum, party) => sum + pa
 
 const canRun = computed(
   () => sessionReady.value && currentUser.value?.isOperator === true
-    && parties.value.length > 0 && requests.value.length > 0 && !running.value,
+    && canCoordinate.value && parties.value.length > 0 && requests.value.length > 0 && !running.value && !completedRound.value,
 );
 
 
@@ -288,7 +325,7 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
 
 <template>
   <div class="container section">
-    <BackLink fallback="/concerts" fallback-label="All concerts" />
+    <BackLink fallback="/concerts" fallback-label="Back to All concerts" />
 
     <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading concert details…</p>
 
@@ -356,13 +393,13 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
             <button
               type="button"
               class="btn btn--ghost"
-              :disabled="previewLoading || running"
+              :disabled="previewLoading || running || !canCoordinate"
               @click="loadPreview"
             >
               <LoadingSpinner v-if="previewLoading" />
               {{ previewLoading ? 'Calculating…' : 'Preview matching' }}
             </button>
-            <button type="button" class="btn btn--ghost" :disabled="running" @click="newMatchingBatch">
+            <button type="button" class="btn btn--ghost" :disabled="running || !canCoordinate" @click="newMatchingBatch">
               Prepare new batch
             </button>
             <button type="button" class="btn btn--primary" :disabled="!canRun" @click="runRound">
@@ -375,6 +412,7 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
           </div>
           <p v-if="runError" class="kaki-join__error" role="alert">{{ runError }}</p>
           <p v-if="runNotice" class="group-success" role="status">{{ runNotice }}</p>
+          <RouterLink v-if="completedRound" :to="{ path: `/rounds/${completedRound.id}`, query: { concertId: completedRound.concertId } }" class="btn btn--ghost">Open saved matching round</RouterLink>
 
           <RouterLink
             v-if="concert.latestRound && sessionReady && currentUser?.isOperator"
@@ -419,9 +457,10 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
           <button type="button" class="btn btn--ghost" @click="refreshMyProposals">Try again</button>
         </div>
         <div v-else-if="!myProposals.length" class="my-result__empty">
-          <h3>No group offer yet</h3>
-          <p>Join matching and we’ll offer you a group. It’s confirmed once <strong>you and the host</strong> both approve.</p>
-          <RouterLink :to="{ path: '/groups', query: { concertId: id, mode: 'algorithm' } }" class="btn btn--primary">Find my group</RouterLink>
+          <h3>{{ canCoordinate ? 'No group offer yet' : 'No matching history' }}</h3>
+          <p v-if="canCoordinate">Join matching and we’ll offer you a group. It’s confirmed once <strong>you and the host</strong> both approve.</p>
+          <p v-else>There are no previous group offers for this concert. Existing conversations and group history remain available.</p>
+          <RouterLink v-if="canCoordinate" :to="{ path: '/groups', query: { concertId: id, mode: 'algorithm' } }" class="btn btn--primary">Find my group</RouterLink>
         </div>
         <template v-else>
           <p v-if="needsReplyCount" class="my-result__summary" role="status">{{ needsReplyCount === 1 ? 'One match is ready for your reply.' : `${needsReplyCount} matches are ready for your reply.` }}</p>
@@ -441,20 +480,23 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
 
       <section id="concert-groups" class="card group-panel companion-options">
         <h2>Go with a group</h2>
-        <p>Already have a ticket? Join an existing group or create your own. Group places do not include concert tickets.</p>
+        <p v-if="canCoordinate">Already have a ticket? Join an existing group or create your own. Group places do not include concert tickets.</p>
+        <p v-else-if="isFinished" role="status">This concert has finished. Existing groups, conversations and matching history remain available.</p>
+        <p v-else role="status">New coordination is unavailable until this concert has a valid date.</p>
         <p v-if="!currentUser">
           <RouterLink :to="{ path: '/login', query: { redirect: $route.fullPath } }" class="btn btn--primary">Sign in to go with a group</RouterLink>
         </p>
         <nav v-else class="group-actions" aria-label="Group workflows">
-          <RouterLink :to="{ path: '/groups', query: { concertId: id } }" class="btn btn--primary">Join a group</RouterLink>
-          <RouterLink :to="{ path: '/groups/connect', query: { concertId: id, view: 'create' } }" class="btn btn--ghost">Create a group</RouterLink>
+          <RouterLink v-if="canCoordinate" :to="{ path: '/groups', query: { concertId: id } }" class="btn btn--primary">Join a group</RouterLink>
+          <RouterLink v-if="canCreateGroup" :to="{ path: '/groups/connect', query: { concertId: id, view: 'create' } }" class="btn btn--ghost">Create a group</RouterLink>
           <RouterLink :to="{ path: '/groups/connect', query: { concertId: id } }" class="btn btn--ghost">My groups</RouterLink>
         </nav>
       </section>
       <section class="kaki-join card" aria-labelledby="kaki-join-title">
         <div class="kaki-join__intro">
           <h2 id="kaki-join-title">Find a companion</h2>
-          <p>Join this concert's companion finder. Messaging opens after a mutual like; this is separate from group matching.</p>
+          <p v-if="canCoordinate">Join this concert's companion finder. Messaging opens after a mutual like; this is separate from group matching.</p>
+          <p v-else-if="isFinished">This concert has finished. Your previous participation and companion conversations are kept.</p>
         </div>
         <p v-if="!currentUser" class="kaki-join__state">
           <RouterLink :to="{ path: '/login', query: { redirect: $route.fullPath } }" class="btn btn--primary">Sign in to find companions</RouterLink>
@@ -469,18 +511,18 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
           <button class="btn btn--ghost" type="button" @click="participationRetry++">Retry loading participation</button>
         </div>
         <form v-else class="kaki-join__form" @submit.prevent="saveParticipation">
-          <p v-if="participation" class="kaki-join__joined group-success">You are in the companion finder for this concert.</p>
+          <p v-if="participation" class="kaki-join__joined" :class="canCoordinate ? 'group-success' : 'group-muted'">{{ canCoordinate ? 'You are in the companion finder for this concert.' : 'Your participation is saved as part of this concert’s history.' }}</p>
           <div class="kaki-join__fields">
             <label>
               Preferred section
-              <select v-model="sectionPref" :disabled="participationBusy" required>
+              <select v-model="sectionPref" :disabled="participationBusy || !canCoordinate" required>
                 <option v-if="!Object.hasOwn(SECTION_OPTIONS, sectionPref)" :value="sectionPref" disabled>Previously selected: {{ LABELS.section[sectionPref] ?? sectionPref }}</option>
                 <option v-for="(label, value) in SECTION_OPTIONS" :key="value" :value="value">{{ label }}</option>
               </select>
             </label>
             <label>
               Arrival plan
-              <select v-model="arrivalPref" :disabled="participationBusy" required>
+              <select v-model="arrivalPref" :disabled="participationBusy || !canCoordinate" required>
                 <option v-if="!Object.hasOwn(ARRIVAL_OPTIONS, arrivalPref)" :value="arrivalPref" disabled>Previously selected: {{ LABELS.arrival[arrivalPref] ?? arrivalPref }}</option>
                 <option v-for="(label, value) in ARRIVAL_OPTIONS" :key="value" :value="value">{{ label }}</option>
               </select>
@@ -489,8 +531,9 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
           <p v-if="participationError" class="kaki-join__error" role="alert">{{ participationError }}</p>
           <div class="kaki-join__actions">
             <span v-if="participationBusy" class="loading-state" role="status"><LoadingSpinner />Working…</span>
-            <RouterLink v-if="participation" :to="{ path: '/kaki', query: { concertId: id } }" class="btn btn--ghost">Browse companions</RouterLink>
-            <button type="submit" class="btn btn--primary" :disabled="participationBusy">
+            <RouterLink v-if="participation && canCoordinate" :to="{ path: '/kaki', query: { concertId: id } }" class="btn btn--ghost">Browse companions</RouterLink>
+            <RouterLink v-if="isFinished" to="/messages" class="btn btn--ghost">Existing conversations</RouterLink>
+            <button v-if="canCoordinate" type="submit" class="btn btn--primary" :disabled="participationBusy">
               {{ participationBusy ? 'Working…' : participation ? 'Save preferences' : 'Join companion finder' }}
             </button>
             <button v-if="participation" type="button" class="btn btn--danger-ghost" :disabled="participationBusy" @click="leaveParticipation">Leave companion finder</button>

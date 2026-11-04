@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { currentUser, setCurrentUser } from '../auth.js';
+import BackArrow from '../components/BackArrow.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -104,7 +105,7 @@ function revokeSessions() {
 
 <template>
   <main class="account-security container">
-    <RouterLink class="back-link" :to="currentUser ? '/profile' : '/login'">&larr; {{ currentUser ? 'Your profile' : 'Sign in' }}</RouterLink>
+    <BackArrow class="back-link" :to="currentUser ? '/profile' : '/login'" :label="currentUser ? 'Back to your profile' : 'Back to sign in'" />
     <header class="page-banner account-security__banner">
       <h1>{{ hasLink && mode === 'verify' ? 'Verify your email' : hasLink ? 'Choose a new password' : 'Account security' }}</h1>
       <p>Keep your sign-in details and email up to date.</p>
@@ -187,7 +188,7 @@ function revokeSessions() {
 .security-card .btn {
   justify-self: start;
 }
-.muted, .back-link {
+.muted {
   color: var(--text-300);
 }
 </style>

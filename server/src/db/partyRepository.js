@@ -1,31 +1,43 @@
 import { randomUUID } from 'node:crypto';
 import { mapParty, USER_COLUMNS } from './rowMappers.js';
 import { availableCapacitySql, reservedPlacesSql, queueablePlacesSql } from './capacity.js';
+import { concertGroupCreationEligibility } from '../../../shared/concertEligibility.mjs';
+
+const fail = (message, status) => Object.assign(new Error(message), { status });
 
 export function createPartyRepo(db) {
   return {
     create(data) {
-      const id = data.id ?? `p_${randomUUID().slice(0, 8)}`;
-      db.prepare(`
-        INSERT INTO parties (id, host_user_id, concert_id, capacity, section, spend_band,
-                             arrival_plan, plans_json, strict_age_policy, min_age_band, notes, name)
-        VALUES (@id, @host_user_id, @concert_id, @capacity, @section, @spend_band,
-                @arrival_plan, @plans_json, @strict_age_policy, @min_age_band, @notes, @name)
-      `).run({
-        id,
-        host_user_id: data.host_user_id,
-        concert_id: data.concert_id,
-        capacity: data.capacity,
-        section: data.section,
-        spend_band: data.spend_band,
-        arrival_plan: data.arrival_plan,
-        plans_json: JSON.stringify(data.plans ?? {}),
-        strict_age_policy: data.strict_age_policy ? 1 : 0,
-        min_age_band: data.min_age_band ?? null,
-        notes: data.notes ?? null,
-        name: data.name ?? null,
-      });
-      return this.findById(id);
+      return db.transaction(() => {
+        // The authoritative row and insert share the write transaction. Neither
+        // stale browser dates nor a direct repository caller can bypass this.
+        const concert = db.prepare('SELECT * FROM concerts WHERE id=?').get(data.concert_id);
+        if (!concert) throw fail('concert_not_found', 404);
+        const eligibility = concertGroupCreationEligibility(concert);
+        if (eligibility.reason === 'concert_date_unavailable') throw fail(eligibility.reason, 400);
+        if (!eligibility.eligible) throw fail('concert_no_longer_upcoming', 409);
+        const id = data.id ?? `p_${randomUUID().slice(0, 8)}`;
+        db.prepare(`
+          INSERT INTO parties (id, host_user_id, concert_id, capacity, section, spend_band,
+                               arrival_plan, plans_json, strict_age_policy, min_age_band, notes, name)
+          VALUES (@id, @host_user_id, @concert_id, @capacity, @section, @spend_band,
+                  @arrival_plan, @plans_json, @strict_age_policy, @min_age_band, @notes, @name)
+        `).run({
+          id,
+          host_user_id: data.host_user_id,
+          concert_id: data.concert_id,
+          capacity: data.capacity,
+          section: data.section,
+          spend_band: data.spend_band,
+          arrival_plan: data.arrival_plan,
+          plans_json: JSON.stringify(data.plans ?? {}),
+          strict_age_policy: data.strict_age_policy ? 1 : 0,
+          min_age_band: data.min_age_band ?? null,
+          notes: data.notes ?? null,
+          name: data.name ?? null,
+        });
+        return this.findById(id);
+      }).immediate();
     },
 
     setName(id, name) {

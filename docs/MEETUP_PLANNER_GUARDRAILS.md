@@ -94,7 +94,7 @@ Start the server and client with their normal development commands. Use separate
 
 The following list includes source, tests and this report; temporary folders are excluded because they are ignored by Git.
 
-- `client/e2e/community-features.spec.js`
+- `test/e2e/community-workflows.spec.js`
 - `client/src/api.js`
 - `client/src/components/MeetupAvailabilityGrid.vue`
 - `client/src/components/MeetupCreationForm.vue`
@@ -112,12 +112,12 @@ The following list includes source, tests and this report; temporary folders are
 - `client/src/views/GroupMembershipView.vue`
 - `client/src/views/KakiChatView.vue`
 - `client/src/views/MeetupView.vue`
-- `client/tests/meetup-form-panels.test.js`
-- `client/tests/meetup-location-search.test.js`
-- `client/tests/meetup-navigation.test.js`
-- `client/tests/meetup-planner.test.js`
-- `client/tests/meetup-time.test.js`
-- `client/tests/nearby-transport.test.js`
+- `test/client/meetup-form-panels.test.js`
+- `test/client/meetup-location-search.test.js`
+- `test/client/meetup-navigation.test.js`
+- `test/client/meetup-planner.test.js`
+- `test/client/meetup-time.test.js`
+- `test/client/nearby-transport.test.js`
 - `docs/MEETUP_PLANNER_GUARDRAILS.md`
 - `server/src/db/concertRepository.js`
 - `server/src/db/meetupRepository.js`
@@ -126,12 +126,12 @@ The following list includes source, tests and this report; temporary folders are
 - `server/src/services/meetupPlanning.js`
 - `server/src/services/meetupPolicy.js`
 - `server/src/services/meetupValidation.js`
-- `server/test/community.test.js`
-- `server/test/communityApi.test.js`
-- `server/test/connectionChannel.test.js`
-- `server/test/meetupCarPlanning.test.js`
-- `server/test/meetupDomain.test.js`
-- `server/test/meetupGuardrails.test.js`
-- `server/test/meetupRealtime.test.js`
-- `server/test/meetupTransport.test.js`
+- `test/server/community-domain-workflows.test.js`
+- `test/server/community-http-workflows.test.js`
+- `test/server/connectionChannel.test.js`
+- `test/server/meetupCarPlanning.test.js`
+- `test/server/meetupDomain.test.js`
+- `test/server/meetupGuardrails.test.js`
+- `test/server/meetupRealtime.test.js`
+- `test/server/meetupTransport.test.js`
 - `shared/meetupDates.mjs`

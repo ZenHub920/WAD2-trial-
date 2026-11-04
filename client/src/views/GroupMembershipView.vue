@@ -3,7 +3,8 @@ import { computed, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "../api.js";
 import { useMeetupSummaries } from '../composables/useMeetupSummaries.js';
-import { meetupDestination, meetupActionForScope } from '../utils/meetupSummaries.js';
+import { meetupDestination, meetupActionForScope, meetupsForScope } from '../utils/meetupSummaries.js';
+import { useConcertEligibility } from '../composables/useConcertEligibility.js';
 import { currentUser } from "../auth.js";
 import LoadingSpinner from "../components/LoadingSpinner.vue";
 import GroupNavigation from "../components/GroupNavigation.vue";
@@ -16,12 +17,13 @@ import "../assets/groups.css";
 const props = defineProps({ id: String, token: String });
 const router = useRouter();
 const { plans: meetupPlans } = useMeetupSummaries();
-const meetupLink = scope => meetupDestination(meetupPlans.value, scope);
+const meetupLink = scope => meetupDestination(meetupPlans.value, scope, { from: 'manage-group' });
 const meetupLabel = scope => meetupActionForScope(meetupPlans.value, scope);
 const settingsPanel = ref(null);
 const group = ref(null),
   error = ref(""),
   notice = ref(""),
+  refreshWarning = ref(""),
   busy = ref(false),
   saving = ref(false),
   loading = ref(false),
@@ -35,12 +37,15 @@ const group = ref(null),
   // Highlight missing fields only after the first save attempt.
   attempted = ref(false);
 const isHost = computed(() => group.value?.hostId === currentUser.value?.id);
+const { canCoordinate, isFinished, canPlanMeetup } = useConcertEligibility(() => group.value);
+const canStartCoordination = computed(() => canCoordinate.value && group.value?.status !== 'cancelled');
+const canOpenMeetup = computed(() => meetupsForScope(meetupPlans.value, { partyId: props.id }).length > 0 || canPlanMeetup.value && group.value?.status !== 'cancelled');
 const savedFriends = computed(() => group.value?.settings?.expected_friends ?? 0);
 const savedPlaces = computed(() => group.value?.settings?.stranger_slots ?? group.value?.strangerPlaces);
 const validCount = (value) => Number.isInteger(value) && value >= 0;
 const nameMissing = computed(() => !groupNameDraft.value.trim());
 const nameChanged = computed(() => Boolean(group.value) && groupNameDraft.value.trim() !== (group.value.name ?? ""));
-const sizeChanged = computed(() => Boolean(group.value) && (friends.value !== savedFriends.value || strangerPlaces.value !== savedPlaces.value));
+const sizeChanged = computed(() => Boolean(group.value) && (!group.value.settings || friends.value !== savedFriends.value || strangerPlaces.value !== savedPlaces.value));
 const dirty = computed(() => nameChanged.value || pendingImage.value !== undefined || sizeChanged.value);
 const invalid = computed(() => nameMissing.value || !validCount(friends.value) || !validCount(strangerPlaces.value));
 watch(invalid, (value) => {
@@ -74,6 +79,7 @@ watch(
     onCleanup(() => { stale = true; });
     group.value = null;
     error.value = "";
+    notice.value = ""; refreshWarning.value = "";
     loading.value = Boolean(props.id);
     try {
       await load();
@@ -89,15 +95,20 @@ watch(
 onUnmounted(() => { alive = false; loadVersion++; });
 async function act(fn, done = "Saved.") {
   if (busy.value) return false;
+  const id = props.id, userId = currentUser.value?.id;
+  const current = () => alive && props.id === id && currentUser.value?.id === userId;
   busy.value = true;
   error.value = "";
-  notice.value = "";
+  notice.value = ""; refreshWarning.value = "";
   try {
     await fn();
-    await load();
+    if (!current()) return false;
     notice.value = done;
+    try { await load(); }
+    catch { if (current()) refreshWarning.value = "The change was saved, but the latest group details could not be loaded. Retry the refresh before making another change."; }
     return true;
   } catch (e) {
+    if (!current()) return false;
     error.value = ({
       members_or_preferences_incomplete: "Every expected friend must join, and every member, including the host, must save their preferences in Profile before publishing.",
       expected_friends_below_current_members: "The number of friends can't be lower than the friends already in your group.",
@@ -109,11 +120,26 @@ async function act(fn, done = "Saved.") {
       save_group_preferences_first: "Save your private preferences in Profile before joining.",
       invalid_group_name: "Group names can be up to 60 characters.",
       invalid_image: "That file is not a readable image.",
+      concert_finished: "This concert day has ended. Existing group information, conversations and meetup history remain available; new publishing and connections are closed.",
+      concert_date_unavailable: "A valid concert date is needed before publishing or starting new connections. Your existing group is still available.",
     })[e.message] ?? (e.status === 401 ? "Sign in to manage your group." : "Could not save this change. Review your group and try again.");
     return false;
   } finally {
     busy.value = false;
   }
+}
+const draftSnapshot = () => JSON.stringify([friends.value, strangerPlaces.value, groupNameDraft.value, pendingImage.value]);
+async function retryRefresh() {
+  if (busy.value) return;
+  const snapshot = draftSnapshot(), id = props.id, userId = currentUser.value?.id;
+  busy.value = true;
+  try {
+    await load();
+    if (!alive || props.id !== id || currentUser.value?.id !== userId) return;
+    refreshWarning.value = "";
+    if (draftSnapshot() === snapshot) fillDrafts();
+  } catch { /* Keep the saved outcome and the contextual refresh warning. */ }
+  finally { busy.value = false; }
 }
 async function saveAll() {
   attempted.value = true;
@@ -131,7 +157,7 @@ async function saveAll() {
     if (sizeChanged.value) await api.configureGroup(props.id, { expectedFriends: friends.value, strangerPlaces: strangerPlaces.value });
   }, "All changes saved.");
   saving.value = false;
-  if (ok) fillDrafts();
+  if (ok && !refreshWarning.value) fillDrafts();
 }
 async function accept() {
   await act(async () => {
@@ -147,7 +173,7 @@ async function invite() {
 }
 async function leave() {
   if (busy.value) return;
-  busy.value = true; error.value = '';
+  busy.value = true; error.value = ''; notice.value = ''; refreshWarning.value = '';
   try {
     const concertId = group.value.concertId;
     await api.leaveGroup(props.id);
@@ -175,17 +201,18 @@ async function leave() {
     <GroupPreferencesGate @saved="load">
       <template #before><GroupNavigation /></template>
       <section v-if="group" class="member-workspace" aria-label="Selected group links">
-        <div class="member-workspace__context"><p class="member-eyebrow">Your group workspace</p><strong>From meeting the group to making a plan.</strong><p>Compare availability, choose a meeting point and coordinate your concert day.</p></div>
+        <div class="member-workspace__context"><p class="member-eyebrow">Your group workspace</p><strong>{{ canStartCoordination ? 'From meeting the group to making a plan.' : 'Your group, conversations and previous plans.' }}</strong><p>{{ canStartCoordination ? 'Compare availability, choose a meeting point and coordinate your concert day.' : 'Return to your group conversation or review an existing meetup. Your saved group information remains available.' }}</p></div>
         <div class="member-workspace__primary">
-          <button type="button" class="btn btn--primary" @click="router.push(meetupLink({ partyId: id }))">{{ meetupLabel({ partyId: id }) }}</button>
-          <RouterLink class="btn btn--ghost" :to="{path:'/messages',query:{tab:'groups'}}">Group messages</RouterLink>
+          <button v-if="canOpenMeetup" type="button" class="btn btn--primary" @click="router.push(meetupLink({ partyId: id }))">{{ canPlanMeetup ? meetupLabel({ partyId: id }) : 'View meetup history' }}</button>
+          <RouterLink class="btn btn--ghost" :to="`/groups/${encodeURIComponent(id)}/channel`">Group messages</RouterLink>
         </div>
         <nav class="member-workspace__links" aria-label="Group management links">
           <RouterLink :to="`/concerts/${encodeURIComponent(group.concertId)}`">Concert details</RouterLink>
-          <RouterLink v-if="isHost" :to="{path:'/groups/connect',query:{view:'connections',groupId:id,concertId:group.concertId}}">Connect with other groups</RouterLink>
+          <RouterLink v-if="isHost && canStartCoordination" :to="{path:'/groups/connect',query:{view:'connections',groupId:id,concertId:group.concertId}}">Connect with other groups</RouterLink>
           <RouterLink v-if="isHost" :to="{path:'/groups/connect',query:{concertId:group.concertId},hash:'#join-requests'}">Review join applications</RouterLink>
         </nav>
       </section>
+      <p v-if="group && isHost && !group.settings" class="group-muted" role="status">Your draft group exists. Save its settings below to finish setup before inviting friends or publishing.</p>
       <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading your group…</p>
       <section v-if="token && !group" class="card group-panel">
         <p>Join your friend's group using this invitation. Your saved profile preferences contribute to the group's shared preferences; your individual answers stay private.</p>
@@ -197,10 +224,13 @@ async function leave() {
         <section class="card group-panel member-roster">
           <div class="section-row">
             <h2>Members ({{ group.members.length }})</h2>
-            <span class="group-state" :class="{ 'group-state--published': group.settings?.published }">{{ group.settings?.published ? "Published" : "Draft" }}</span>
+            <span class="group-state" :class="{ 'group-state--published': group.settings?.published && canStartCoordination }">{{ group.status === 'cancelled' ? 'Cancelled' : isFinished ? 'Past concert' : group.settings?.published ? "Published" : "Draft" }}</span>
           </div>
-          <p class="group-muted">{{ group.settings?.published ? "Your group is visible to people looking for a group." : "Only members can see this group until it's published." }}</p>
-          <p v-if="group.remainingCapacity != null" class="group-muted">{{ group.remainingCapacity }} companion places remaining</p>
+          <p v-if="group.status === 'cancelled'" class="group-muted" role="status">This group was cancelled. Available group history remains here; new publishing, connections and planning are closed.</p>
+          <p v-else-if="isFinished" class="group-muted" role="status">This concert day has ended. Your group information, conversations and previous meetup plans remain available. New publishing and group connections are closed.</p>
+          <p v-else-if="!canCoordinate" class="group-muted" role="status">A valid concert date is needed before publishing or starting new connections. Existing group information remains available.</p>
+          <p v-else class="group-muted">{{ group.settings?.published ? "Your group is visible to people looking for a group." : "Only members can see this group until it's published." }}</p>
+          <p v-if="group.remainingCapacity != null && canStartCoordination" class="group-muted">{{ group.remainingCapacity }} companion places remaining</p>
           <ul class="member-roster__list">
             <li v-for="m in group.members" :key="m.id"><div><RouterLink :to="`/people/${encodeURIComponent(m.id)}`">{{ m.name }}</RouterLink><span class="group-muted">{{ memberSource[m.source] ?? 'Member' }}</span></div><span class="member-roster__readiness" :class="{'member-roster__readiness--missing':!m.answered}">{{ m.answered ? 'Preferences saved' : 'Preferences missing' }}</span></li>
           </ul>
@@ -255,7 +285,7 @@ async function leave() {
                 <button type="button" class="stepper__btn" :disabled="busy || strangerPlaces >= 1000" aria-label="One more spot" @click="strangerPlaces = (validCount(strangerPlaces) ? strangerPlaces : 0) + 1">+</button>
               </div>
             </div>
-            <p v-if="group.settings?.published && sizeChanged" class="size-warning" role="note">
+            <p v-if="group.settings?.published && sizeChanged && canStartCoordination" class="size-warning" role="note">
               Your group is published. Saving a new size hides it until you publish again.
             </p>
           </section>
@@ -263,18 +293,18 @@ async function leave() {
           </details>
 
           <section class="card group-panel member-publish">
-            <h2>Invite friends &amp; publish</h2>
+            <h2>{{ canStartCoordination ? 'Invite friends & publish' : 'Friend invitations & group management' }}</h2>
             <details class="member-invite-tools">
               <summary>Create a friend invitation <span>Single-use link</span></summary>
               <div class="member-invite-tools__content">
-            <button class="btn btn--ghost" :disabled="busy || !group.settings || dirty" @click="invite">Create single-use friend link</button>
+            <button class="btn btn--ghost" :disabled="busy || !group.settings || dirty || group.status === 'cancelled'" @click="invite">Create single-use friend link</button>
             <label v-if="link">Copy and share privately<input :value="link" readonly @focus="$event.target.select()" /></label>
               </div>
             </details>
-            <label class="group-check"><input v-model="connect" type="checkbox" />Open to meeting other groups</label>
+            <label v-if="canStartCoordination" class="group-check"><input v-model="connect" type="checkbox" />Open to meeting other groups</label>
             <p v-if="dirty" class="group-muted">Save your changes first.</p>
             <div class="group-actions">
-              <button class="btn btn--primary" :disabled="busy || !group.settings || dirty" @click="act(() => api.publishGroup(id, { connectOpen: connect }), 'Group published.')">Publish group</button>
+              <button v-if="canStartCoordination" class="btn btn--primary" :disabled="busy || !group.settings || dirty" @click="act(() => api.publishGroup(id, { connectOpen: connect }), 'Group published.')">Publish group</button>
               <button class="btn btn--danger" :disabled="busy" @click="act(() => api.cancelGroup(id), 'Group cancelled.')">Cancel group</button>
             </div>
           </section>
@@ -283,7 +313,7 @@ async function leave() {
                is always in reach. -->
           <div class="save-bar" :class="{ 'save-bar--dirty': dirty }">
             <p v-if="error" class="group-error" role="alert">{{ error }}</p>
-            <p v-else-if="notice" class="group-success" role="status">✓ {{ notice }}</p>
+            <p v-else-if="notice" class="group-success" role="status">{{ notice }}</p>
             <p v-else-if="dirty" class="group-muted">You have unsaved changes.</p>
             <p v-else class="group-muted">No unsaved changes.</p>
             <button v-if="dirty" type="button" class="btn btn--ghost" :disabled="busy" @click="fillDrafts">Discard</button>
@@ -291,6 +321,7 @@ async function leave() {
               <LoadingSpinner v-if="saving" />{{ saving ? "Saving…" : "Save changes" }}
             </button>
           </div>
+          <p v-if="refreshWarning" class="group-muted" role="status">{{ refreshWarning }} <button type="button" class="btn btn--ghost" :disabled="busy" @click="retryRefresh">Retry refresh</button></p>
         </template>
         <button v-else class="btn btn--danger-ghost" :disabled="busy" @click="leave">Leave group</button>
       </template>

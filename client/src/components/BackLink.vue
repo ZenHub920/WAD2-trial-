@@ -1,6 +1,7 @@
 <script setup>
 /**
- * "← Back" that returns to the page the user actually came from.
+ * The back arrow that returns to the page the user actually came from; its
+ * label ("Back to My groups") is the accessible name and tooltip.
  *
  * Vue Router records the previous in-app path in history.state.back. When it
  * exists we go back through history, so a concert opened from Manage group
@@ -9,6 +10,7 @@
  */
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
+import BackArrow from './BackArrow.vue';
 
 const props = defineProps({
   fallback: { type: [String, Object], required: true },
@@ -49,33 +51,11 @@ function go() {
 </script>
 
 <template>
-  <button type="button" class="back-link" @click="go"><span aria-hidden="true">←</span> {{ label }}</button>
+  <BackArrow class="back-link" :label="label" @click="go" />
 </template>
 
 <style scoped>
 .back-link {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: fit-content;
   margin-bottom: var(--space-4);
-  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-300);
-  font: inherit;
-  font-size: var(--step--1);
-  font-weight: 600;
-  cursor: pointer;
-  transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
-}
-.back-link:hover {
-  color: var(--accent-400);
-  background: var(--ink-700);
-}
-.back-link:focus-visible {
-  outline: 2px solid var(--accent-400);
-  outline-offset: 2px;
 }
 </style>

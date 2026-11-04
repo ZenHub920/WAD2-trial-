@@ -2,10 +2,16 @@ import { randomUUID } from 'node:crypto';
 import { checkFeasibility, scorePair } from '../matching/compatibility.js';
 import { groupImageUrl } from '../presentation/groupIdentity.js';
 import { preferenceEligibility } from '../services/preferenceEligibility.js';
+import { concertParticipationEligibility } from '../../../shared/concertEligibility.mjs';
 
 const fail = (error, status = 409) => ({ error, status });
 
 export function createGroupDiscoveryRepo(db, repos) {
+  const coordinationError = concertId => {
+    const eligibility = concertParticipationEligibility(repos.concerts.findById(concertId));
+    return eligibility.eligible ? null : fail(eligibility.reason,
+      eligibility.reason === 'concert_date_unavailable' ? 400 : 409);
+  };
   const seeker = (userId, concertId) => {
     const row = db.prepare('SELECT id FROM seeker_requests WHERE user_id = ? AND concert_id = ?').get(userId, concertId);
     return row ? repos.seekers.findById(row.id) : null;
@@ -18,7 +24,7 @@ export function createGroupDiscoveryRepo(db, repos) {
     return {
       id: party.id, concertId: party.concert_id, artist: concert.artist,
       name: party.name, imageUrl: groupImageUrl(party.image_path),
-      tourName: concert.tour_name, eventDate: concert.event_date,
+      tourName: concert.tour_name, eventDate: concert.event_date, eventTimezone: concert.event_timezone, eventTime: concert.event_time,
       hostName: party.host.display_name, capacity: party.capacity,
       memberCount: db.prepare(`SELECT COUNT(*) n FROM (SELECT host_user_id AS user_id FROM parties WHERE id=@id
         UNION SELECT user_id FROM group_memberships WHERE party_id=@id AND status='active')`).get({id:party.id}).n,
@@ -26,7 +32,7 @@ export function createGroupDiscoveryRepo(db, repos) {
       queueablePlaces: party.queueable_places ?? 0,
       queueLength: db.prepare(`SELECT COUNT(*) n FROM active_seat_claims WHERE party_id=?
         AND status='proposed' AND expires_at>unixepoch('subsec')*1000`).get(party.id).n,
-      canJoinQueue: party.status !== 'cancelled' && (party.queueable_places ?? 0)>0,
+      canJoinQueue: concertParticipationEligibility(concert).eligible && party.status !== 'cancelled' && (party.queueable_places ?? 0)>0,
       spendBand: party.spend_band, arrivalPlan: party.arrival_plan,
       plans: party.plans, vibe: party.host.vibe, notes: party.notes, status: party.status,
     };
@@ -38,6 +44,8 @@ export function createGroupDiscoveryRepo(db, repos) {
     if (from.host_user_id !== userId) return fail('group_owner_required', 403);
     if (from.id === to.id || from.host_user_id === to.host_user_id) return fail('cannot_connect_own_groups', 400);
     if (from.concert_id !== to.concert_id) return fail('different_concert', 400);
+    const historical = coordinationError(from.concert_id);
+    if (historical) return historical;
     if ([from, to].some(p => p.status === 'cancelled' || isTicket(p.id))) return fail('group_unavailable');
     const blocklist = repos.users.blocklist();
     if (blocked(from.host_user_id, to.host_user_id, blocklist)) return fail('blocked_pair', 403);
@@ -64,6 +72,7 @@ export function createGroupDiscoveryRepo(db, repos) {
   return {
     seeker,
     automaticPlacementEligible(userId, party) {
+      if (coordinationError(party.concert_id)) return false;
       const request = seeker(userId, party.concert_id);
       if (!repos.recommendations.visible(party) || !['open','matched'].includes(party.status) || party.queueable_places < 1
         || !request || request.status !== 'open' || isTicket(party.id)) return false;
@@ -93,6 +102,7 @@ export function createGroupDiscoveryRepo(db, repos) {
           section: r.section, status: r.status, createdAt: r.created_at }));
     },
     discover(userId, concertId) {
+      if (coordinationError(concertId)) return [];
       repos.proposals.expire();
       const request = seeker(userId, concertId);
       const blocklist = repos.users.blocklist();
@@ -109,6 +119,8 @@ export function createGroupDiscoveryRepo(db, repos) {
       repos.proposals.expire();
       const party = repos.parties.findById(partyId);
       if (!party) return fail('group_not_found', 404);
+      const historical = coordinationError(party.concert_id);
+      if (historical) return historical;
       const request = seeker(userId, party.concert_id);
       if (!request || request.status !== 'open') return fail('open_seeker_request_required');
       const available = repos.parties.queueableForConcert(party.concert_id).find(p => p.id === partyId);
@@ -135,6 +147,8 @@ export function createGroupDiscoveryRepo(db, repos) {
       repos.proposals.expire();
       const request = seeker(userId, concertId);
       if (!request) return fail('seeker_request_not_found', 404);
+      const historical = coordinationError(concertId);
+      if (historical) return historical;
       if (request.status !== 'withdrawn') return fail('request_not_withdrawn');
       if (db.prepare("SELECT 1 FROM match_proposals WHERE seeker_request_id = ? AND status IN ('proposed','confirmed')").get(request.id)) return fail('active_proposal_exists');
       try {
@@ -157,6 +171,7 @@ export function createGroupDiscoveryRepo(db, repos) {
       if (!from) return fail('group_not_found', 404);
       if (from.host_user_id !== userId) return fail('group_owner_required', 403);
       if (from.concert_id !== concertId) return fail('different_concert', 400);
+      if (coordinationError(concertId)) return [];
       if (from.status === 'cancelled' || isTicket(from.id)) return fail('group_unavailable');
       const settings = repos.membership.settings(fromId);
       if (!settings || !settings.published || !settings.connect_open) return [];

@@ -1,5 +1,7 @@
 import { mapUser, prefixed } from './rowMappers.js';
 import { createKakiPreferenceGate } from '../services/kakiPreferenceGate.js';
+import { concertParticipationEligibility } from '../../../shared/concertEligibility.mjs';
+import { requireConcertCoordination } from './concertEligibility.js';
 
 const kakiJoined = (user, concert) => `EXISTS (
   SELECT 1 FROM concert_participants joined
@@ -88,7 +90,10 @@ export function createKakiRepo(db) {
       return people.all({ viewer }).map(toPerson);
     },
     pool(viewer) {
-      return { concerts: concerts.all({ viewer }), people: this.people(viewer) };
+      const eligibleConcerts = concerts.all({ viewer }).filter(concert => concertParticipationEligibility(concert).eligible);
+      const eligibleIds = new Set(eligibleConcerts.map(concert => concert.id));
+      // people() also serves saved matches/decisions; keep those historical reads.
+      return { concerts: eligibleConcerts, people: this.people(viewer).filter(person => eligibleIds.has(person.concertId)) };
     },
     decisions(viewer, visiblePeople) {
       const visible = new Set(visiblePeople.map((person) => person.id));
@@ -108,6 +113,7 @@ export function createKakiRepo(db) {
     setDecision: db.transaction((actor, concert, target, decision) => {
       const pair = { actor, concert, target };
       if (!eligible.get(pair)) return null;
+      requireConcertCoordination(db, concert);
       // Passing and withdrawing remain available even after a preference change.
       if (decision === 'like' && !preferenceEligible(actor, target)) return null;
       const at = Date.now();

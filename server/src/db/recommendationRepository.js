@@ -12,6 +12,8 @@ import {
 import { checkFeasibility, scorePair } from "../matching/compatibility.js";
 import { groupImageUrl } from "../presentation/groupIdentity.js";
 import { preferenceEligibility } from "../services/preferenceEligibility.js";
+import { concertParticipationEligibility } from '../../../shared/concertEligibility.mjs';
+import { requireConcertCoordination } from './concertEligibility.js';
 export function createRecommendationRepo(db, repos) {
   const maxPendingDirectApplications = 1;
   const EMPTY = '{"about":[],"wants":[],"avoid":[]}';
@@ -143,6 +145,7 @@ export function createRecommendationRepo(db, repos) {
       return answers;
     }).immediate,
     individual(user, concert) {
+      if (!concertParticipationEligibility(repos.concerts.findById(concert)).eligible) return [];
       repos.proposals.expire();
       repos.recommendations.expire();
       const request = repos.groups.seeker(user, concert);
@@ -206,6 +209,9 @@ export function createRecommendationRepo(db, repos) {
     setJoiningMode: db.transaction((user, concert, mode) => {
       if (!["direct", "algorithm"].includes(mode)) throw communityError("invalid_joining_mode", 400);
       if (!repos.concerts.findById(concert)) throw communityError("concert_not_found", 404);
+      // Switching to direct can stop an old automatic enrollment. Starting or
+      // renewing automatic enrollment is prospective and needs a current event.
+      if (mode === "algorithm") requireConcertCoordination(db, concert);
       repos.proposals.expire();
       repos.recommendations.expire();
       const seeker = repos.groups.seeker(user, concert);
@@ -244,6 +250,7 @@ export function createRecommendationRepo(db, repos) {
       repos.proposals.expire();
       repos.recommendations.expire();
       const p = repos.membership.party(id);
+      requireConcertCoordination(db, p.concert_id);
       // A pending application owns a queue position and marks enrollment matched.
       // Report that application before checking general assignments.
       const pending = db.prepare(`SELECT j.party_id FROM group_join_requests j JOIN parties p ON p.id=j.party_id
@@ -313,7 +320,7 @@ export function createRecommendationRepo(db, repos) {
       return db
         .prepare(
           `SELECT j.id,j.party_id AS partyId,j.user_id AS userId,u.display_name AS seekerName,p.host_user_id AS hostId,
-        p.concert_id AS concertId,c.artist,h.display_name AS hostName,p.name AS groupName,p.image_path AS imagePath,p.section,j.status,j.expires_at AS expiresAt,
+        p.concert_id AS concertId,c.artist,c.event_date AS eventDate,c.event_timezone AS eventTimezone,h.display_name AS hostName,p.name AS groupName,p.image_path AS imagePath,p.section,j.status,j.expires_at AS expiresAt,
         j.created_at AS createdAt,j.responded_at AS respondedAt,j.matching_round_id AS matchingRoundId,
         j.application_note AS applicationNote,j.responded_by AS respondedBy,j.resolution_reason AS resolutionReason,j.preferences_json FROM group_join_requests j
         JOIN parties p ON p.id=j.party_id JOIN users u ON u.id=j.user_id JOIN users h ON h.id=p.host_user_id JOIN concerts c ON c.id=p.concert_id
@@ -386,6 +393,7 @@ export function createRecommendationRepo(db, repos) {
       if (action !== "withdraw" && !queueInfo(db, { joinRequestId: j.id }).canHostRespond)
         throw communityError("request_waiting_in_queue");
       if (action === "accept") {
+        requireConcertCoordination(db, p.concert_id);
         if (
           j.group_version == null ||
           !j.preferences_json ||

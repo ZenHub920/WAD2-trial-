@@ -10,13 +10,13 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test",
-    "test:community": "node scripts/scoped-feature-tests.mjs",
+    "test": "node ../test/scripts/run-node-tests.mjs server",
+    "test:community": "node ../test/scripts/scoped-feature-tests.mjs",
     "operator:grant": "node src/db/grantOperator.js",
     "sync:concerts": "node src/db/syncTicketmaster.js",
     "push:keys": "node src/config/generatePushKeys.js",
-    "bench": "node bench/evaluate.js",
-    "bench:scale": "node bench/evaluate.js --scale"
+    "bench": "node ../test/bench/evaluate.js",
+    "bench:scale": "node ../test/bench/evaluate.js --scale"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

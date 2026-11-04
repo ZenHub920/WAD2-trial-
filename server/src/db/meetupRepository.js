@@ -483,16 +483,21 @@ export function createMeetupRepo(db, repos) {
         throw communityError("invalid_meetup_choice", 400);
       writable(m);
       requireMeetupWindow(input.startsAt, new Date(start + SLOT_MS).toISOString(), concertFor(m));
+      const required = approvers(m), confirmed = required.length === 1 && required[0] === user;
+      const version = m.version + 1;
       db.prepare(
-        "UPDATE meetups SET selected_place_id=?,selected_start=?,status='proposed',version=version+1 WHERE id=?",
-      ).run(input.placeId, start, id);
+        'UPDATE meetups SET selected_place_id=?,selected_start=?,status=?,version=version+1 WHERE id=?',
+      ).run(input.placeId, start, confirmed ? 'confirmed' : 'proposed', id);
+      // Deliberately submitting the final plan is the sole organizer's approval.
+      // Multiple organizers must still each use their own explicit approval.
+      if (confirmed) db.prepare('INSERT INTO meetup_approvals VALUES(?,?,?)').run(id, version, user);
       notify(
         m,
         user,
-        `proposal:${m.version + 1}`,
-        "A meetup time and place need approval",
+        `${confirmed ? 'confirmed' : 'proposal'}:${version}`,
+        confirmed ? 'Meetup time and place confirmed' : 'A meetup time and place need approval',
       );
-      return { version: m.version + 1 };
+      return { version, confirmed };
     }).immediate,
     approve: db.transaction((user, id, version) => {
       const m = access(user, id);

@@ -1,7 +1,7 @@
-import { createApp, watch } from 'vue';
+import { createApp } from 'vue';
 import { createRouter, createWebHistory } from 'vue-router';
 
-import { currentUser, sessionReady } from './auth.js';
+import { guardRoute } from './routeGuards.js';
 
 import App from './App.vue';
 // Bootstrap's responsive grid and utility classes only. Its component styles
@@ -23,6 +23,7 @@ const ListingView = () => import('./views/ListingView.vue');
 const WelcomeView = () => import('./views/WelcomeView.vue');
 const MyListingsView = () => import('./views/MyListingsView.vue');
 const TicketDetailView = () => import('./views/TicketDetailView.vue');
+const EditListingView = () => import('./views/EditListingView.vue');
 const TicketMarketplaceView = () => import('./views/TicketMarketplaceView.vue');
 const CheckoutView = () => import('./views/CheckoutView.vue');
 const OrderConfirmationView = () => import('./views/OrderConfirmationView.vue');
@@ -64,6 +65,7 @@ const router = createRouter({
     { path: '/my-listings', name: 'my-listings', component: MyListingsView, meta: { title: 'My listings', requiresAuth: true } },
     { path: '/tickets', name: 'tickets', component: TicketMarketplaceView, meta: { title: 'Tickets' } },
     { path: '/tickets/:id', name: 'ticket-detail', component: TicketDetailView, props: true, meta: { title: 'Ticket details' } },
+    { path: '/tickets/:id/edit', name: 'ticket-edit', component: EditListingView, props: true, meta: { title: 'Edit listing', requiresAuth: true } },
     // Checkout stays unavailable until a real payment provider is configured.
     { path: '/tickets/:id/checkout', name: 'checkout', component: CheckoutView, props: true, meta: { title: 'Checkout' } },
     { path: '/orders/:id', name: 'order', component: OrderConfirmationView, props: true, meta: { title: 'Historical order' } },
@@ -129,21 +131,8 @@ const router = createRouter({
   },
 });
 
-// Restore the session before deciding whether a protected page can open.
-router.beforeEach(async (to) => {
-  if (!to.meta?.requiresAuth) return true;
-  if (!sessionReady.value) {
-    await new Promise((resolve) => {
-      const stop = watch(sessionReady, (ready) => {
-        if (!ready) return;
-        stop();
-        resolve();
-      }, { immediate: true });
-    });
-  }
-  if (currentUser.value) return true;
-  return { path: '/login', query: { redirect: to.fullPath } };
-});
+// Sign-in for protected pages, then saved preferences before anything else.
+router.beforeEach(guardRoute);
 
 router.afterEach((to) => {
   const title = to.name === 'group-connections'

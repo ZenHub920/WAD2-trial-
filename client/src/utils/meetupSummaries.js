@@ -36,9 +36,9 @@ export function meetupSelectedDetails(plan) {
   return parts.filter(Boolean).join(' · ');
 }
 
-export function meetupDestination(plans, scope) {
+export function meetupDestination(plans, scope, { from } = {}) {
   const plan = preferredMeetup(meetupsForScope(plans, scope));
-  return plan ? meetupRouteForBoard(plan, { stage: meetupPresentation(plan).stage }) : meetupRouteForScope(scope);
+  return plan ? meetupRouteForBoard(plan, { from, stage: meetupPresentation(plan).stage }) : meetupRouteForScope(scope, { from });
 }
 
 export function meetupActionForScope(plans, scope) {

@@ -3,10 +3,15 @@ import { computed } from 'vue';
 import { useScopedMeetupSummary } from '../composables/useMeetupSummaries.js';
 import { meetupRouteForBoard, meetupRouteForScope } from '../utils/meetupNavigation.js';
 import { meetupPresentation, meetupSelectedDetails } from '../utils/meetupSummaries.js';
+import { useConcertEligibility } from '../composables/useConcertEligibility.js';
 
-const props = defineProps({ scope: { type: Object, required: true }, label: { type: String, default: 'Meetup planner for this conversation' } });
+const props = defineProps({ scope: { type: Object, required: true }, label: { type: String, default: 'Meetup planner for this conversation' }, from: { type: String, default: 'conversation' } });
 const { plan, context, scope, scopedPlans, statusLoading, statusError, refresh } = useScopedMeetupSummary(() => props.scope);
 const presentation = computed(() => plan.value ? meetupPresentation(plan.value) : null);
+const { canPlanMeetup } = useConcertEligibility(() => context.value?.concert);
+const planningClosed = computed(() => context.value?.policy?.canSchedule === false || Boolean(context.value?.concert) && !canPlanMeetup.value);
+const canStart = computed(() => context.value?.capabilities.canCreate && !planningClosed.value);
+const scopeRoute = computed(() => meetupRouteForScope(scope.value, { from: props.from === 'conversation' ? undefined : props.from }));
 </script>
 
 <template>
@@ -16,14 +21,15 @@ const presentation = computed(() => plan.value ? meetupPresentation(plan.value) 
       <template v-if="plan"><span class="meetup-entry__status">{{ presentation.label }}</span><strong>{{ plan.title }}</strong><p>{{ meetupSelectedDetails(plan) || presentation.detail }}</p><p v-if="plan.status === 'proposed' && meetupSelectedDetails(plan)">{{ presentation.detail }}</p></template>
       <template v-else-if="statusLoading"><strong>Meetup planning</strong><p>Checking this conversation’s plans…</p></template>
       <template v-else-if="statusError"><strong>Meetup status unavailable</strong><p>{{ statusError }}</p></template>
-      <template v-else-if="context?.capabilities.canCreate"><strong>Bring everyone together</strong><p>Find a shared time and place before the concert.</p></template>
+      <template v-else-if="planningClosed"><strong>Pre-concert planning is closed</strong><p>No future meeting window remains. Your conversation and existing plans are kept.</p></template>
+      <template v-else-if="canStart"><strong>Bring everyone together</strong><p>Find a shared time and place before the concert.</p></template>
       <template v-else><strong>Planning has not started</strong><p>Your group host can create a plan. You can then share your availability.</p></template>
     </div>
     <div class="meetup-entry__actions">
-      <RouterLink v-if="plan" class="btn btn--ghost" :to="meetupRouteForBoard(plan, { stage: presentation.stage })">{{ presentation.action }}</RouterLink>
+      <RouterLink v-if="plan" class="btn btn--ghost" :to="meetupRouteForBoard(plan, { from, stage: presentation.stage })">{{ presentation.action }}</RouterLink>
       <button v-else-if="statusError" type="button" class="btn btn--ghost" @click="refresh">Retry meetup status</button>
-      <RouterLink v-else-if="!statusLoading && context?.capabilities.canCreate" class="btn btn--ghost" :to="meetupRouteForScope(scope)">Create meetup plan</RouterLink>
-      <RouterLink v-if="plan" class="meetup-entry__more" :to="meetupRouteForScope(scope)">{{ scopedPlans.length > 1 ? `${scopedPlans.length} plans for this conversation` : 'Plans & options' }}</RouterLink>
+      <RouterLink v-else-if="!statusLoading && canStart" class="btn btn--ghost" :to="scopeRoute">Create meetup plan</RouterLink>
+      <RouterLink v-if="plan" class="meetup-entry__more" :to="scopeRoute">{{ scopedPlans.length > 1 ? `${scopedPlans.length} plans for this conversation` : 'Plans & options' }}</RouterLink>
     </div>
   </section>
 </template>

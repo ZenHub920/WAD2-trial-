@@ -3,8 +3,9 @@
  * Finder stages preserve filters while a frozen deck keeps each cursor stable.
  * A swipe advances only after the server has stored its decision.
  */
-import { ref, computed, onMounted, watch } from 'vue';
-import { RouterLink } from 'vue-router';
+import { ref, computed, onBeforeUnmount, onMounted, watch } from 'vue';
+import BackArrow from '../components/BackArrow.vue';
+import { RouterLink, useRoute } from 'vue-router';
 import SwipeDeck from '../components/SwipeDeck.vue';
 import KakiCard from '../components/kaki/KakiCard.vue';
 import UserAvatar from '../components/UserAvatar.vue';
@@ -28,7 +29,9 @@ const error = ref(null);
 const swipeError = ref(null);
 const swipePending = ref(false);
 const people = ref([]);
+const concerts = ref([]);
 const decisions = ref({});
+const route = useRoute();
 
 const filters = ref({ ...EMPTY_FILTERS });
 const applied = ref({ ...EMPTY_FILTERS });
@@ -44,42 +47,66 @@ const ranked = ref(false);
 const rankingSolver = ref(null);
 const stablePartnerId = ref(null);
 const ranking = ref(false);
+let rankingRequest = 0;
 
 /** The person on the match screen. */
 const matchedWith = ref(null);
 const matchedDecision = ref(null);
 
-onMounted(async () => {
+let alive = true, loadingRequest = false;
+async function loadFinder() {
+  if (loadingRequest) return;
+  loadingRequest = true; loading.value = true; error.value = null;
+  const owner = currentUser.value?.id;
+  const current = () => alive && owner === currentUser.value?.id;
   try {
     const [pool, saved] = await Promise.all([loadPool(), readDecisions()]);
-    // Eligibility and concert context are already joined in the server pool.
-    people.value = pool.people;
+    if (!current()) return;
+    people.value = Array.isArray(pool.people) ? pool.people : [];
+    // These are the viewer's own joined concerts, including shows with no
+    // available profiles. Older responses can still use known public context.
+    const context = Array.isArray(pool.concerts) ? pool.concerts
+      : people.value.map(person => ({ id: person.concertId, artist: person.artist, event_date: person.eventDate }));
+    concerts.value = context.filter(concert => typeof concert.artist === 'string' && concert.artist.trim())
+      .map(concert => ({ id: concert.id, artist: concert.artist, eventDate: concert.event_date ?? concert.eventDate }));
     decisions.value = saved;
   } catch (err) {
-    error.value = err;
+    if (current()) error.value = err;
   } finally {
-    loading.value = false;
+    loadingRequest = false;
+    if (current()) loading.value = false;
   }
-});
+  if (current() && !error.value) selectConcertContext();
+}
+onMounted(loadFinder);
+onBeforeUnmount(() => { alive = false; });
 
-/* ---- Filter options, derived from what is actually in the pool ----------
- * Offering an artist nobody is looking for company at produces an empty deck
- * and reads as a bug, so every option here comes from the loaded data. */
+/* Filter choices describe the viewer's concerts, not other people's presence. */
 
 const artists = computed(() =>
-  [...new Set(people.value.map((p) => p.artist))].sort(),
+  [...new Set(concerts.value.map(concert => concert.artist))].sort(),
 );
 
 /** Dates for the chosen artist — the prototype's date list is artist-scoped. */
 const dates = computed(() => {
   const pool = filters.value.artist
-    ? people.value.filter((p) => p.artist === filters.value.artist)
-    : people.value;
-  return [...new Set(pool.map((p) => p.eventDate))].sort();
+    ? concerts.value.filter(concert => concert.artist === filters.value.artist)
+    : concerts.value;
+  return [...new Set(pool.map(concert => concert.eventDate).filter(Boolean))].sort();
 });
 watch(() => filters.value.artist, () => {
   if (filters.value.date && !dates.value.includes(filters.value.date)) filters.value.date = '';
 });
+function selectConcertContext() {
+  if (loading.value || swipePending.value) return;
+  const id = route.query.concertId;
+  const concert = typeof id === 'string' && concerts.value.find(item => item.id === id);
+  if (!concert) return;
+  rankingRequest++; ranking.value = false;
+  filters.value = { ...filters.value, artist: concert.artist, date: concert.eventDate ?? '' };
+  stage.value = 'filters';
+}
+watch(() => route.query.concertId, selectConcertContext);
 
 const sections = computed(() =>
   [...new Set(people.value.map((p) => p.sectionPref))].sort(),
@@ -106,23 +133,27 @@ const deck = ref([]);
  */
 async function buildDeck() {
   if (ranking.value) return;
+  const request = ++rankingRequest, owner = currentUser.value?.id;
+  const current = () => alive && request === rankingRequest && owner === currentUser.value?.id;
   ranking.value = true;
   deck.value = [];
   stablePartnerId.value = null;
   try {
     const result = await loadRecommendations(applied.value);
+    if (!current()) return;
     ranked.value = result.ranked;
     rankingSolver.value = result.solver ?? null;
     stablePartnerId.value = result.stablePartnerId ?? null;
     const decided = new Set(Object.keys(decisions.value));
     deck.value = result.people.filter((person) => !decided.has(person.id));
   } catch {
+    if (!current()) return;
     // The ranked endpoint is an enhancement; the pool already loaded.
     ranked.value = false;
     const decided = new Set(Object.keys(decisions.value));
     deck.value = applyFilters(people.value, applied.value, decided);
   } finally {
-    ranking.value = false;
+    if (current()) ranking.value = false;
   }
 }
 
@@ -130,6 +161,21 @@ async function buildDeck() {
 const previewCount = computed(() => {
   const decided = new Set(Object.keys(decisions.value));
   return applyFilters(people.value, filters.value, decided).length;
+});
+function emptyState(criteria) {
+  if (!concerts.value.length) return { kind: 'concerts', message: 'Join an upcoming or ongoing concert to see its companion options. Your previous conversations stay in Messages.' };
+  const context = { ...EMPTY_FILTERS, artist: criteria.artist, date: criteria.date };
+  const available = applyFilters(people.value, context);
+  const scope = criteria.artist && criteria.date ? 'this concert' : criteria.artist ? 'this artist’s concerts' : 'your joined concerts';
+  if (!available.length) return { kind: 'available', message: `No companion profiles are currently available for ${scope}. Check again later or choose another concert.` };
+  const decided = new Set(Object.keys(decisions.value));
+  if (!available.some(person => !decided.has(person.id))) return { kind: 'reviewed', message: `You’ve reviewed the currently available profiles for ${scope}. You can revisit your choices in Companion history.` };
+  if (!applyFilters(people.value, criteria, decided).length) return { kind: 'filters', message: 'No unreviewed profiles match these filters. Try widening the section or age range.' };
+  return null;
+}
+const filterEmptyState = computed(() => emptyState(filters.value));
+const deckEmptyState = computed(() => emptyState(applied.value) ?? {
+  kind: 'compatible', message: 'No new compatible profiles were returned for this search. Try different filters or check again later.',
 });
 
 function resetFilters() {
@@ -202,15 +248,12 @@ function backToDeck() {
   <div class="kaki" :class="{ 'kaki--filters': stage === 'filters' }">
     <!-- ------------------------------------------------------------ Head -->
     <header class="kaki__head">
-      <button
+      <BackArrow
         v-if="stage !== 'filters'"
-        class="kaki__back"
-        aria-label="Back"
+        :label="stage === 'matched' ? 'Back to profiles' : 'Back to filters'"
         :disabled="swipePending || ranking"
         @click="stage === 'matched' ? backToDeck() : stage = 'filters'"
-      >
-        ←
-      </button>
+      />
       <div class="kaki__identity"><p class="kaki__eyebrow mono">Kaki finder</p><h1 class="kaki__title">Find a companion</h1></div>
       <div class="kaki__actions">
         <RouterLink
@@ -249,6 +292,7 @@ function backToDeck() {
       <h3>{{ error.status === 401 ? 'Sign in to find a companion' : 'Could not load the finder' }}</h3>
       <p v-if="error.status !== 401">Companion profiles could not be loaded. Please refresh and try again.</p>
       <RouterLink v-if="error.status === 401" to="/login" class="btn btn--primary">Sign in</RouterLink>
+      <button v-else type="button" class="btn btn--ghost" @click="loadFinder">Try again</button>
     </div>
     <!-- --------------------------------------------------------- Filters -->
     <section v-else-if="stage === 'filters'" class="kaki__panel kaki__filter-workspace" aria-labelledby="kaki-filter-heading">
@@ -260,7 +304,7 @@ function backToDeck() {
       <div class="kaki__concert-fields">
       <label class="field">
         <span>Artist</span>
-        <select v-model="filters.artist">
+        <select v-model="filters.artist" :disabled="!artists.length">
           <option value="">All artists</option>
           <option v-for="artist in artists" :key="artist" :value="artist">{{ artist }}</option>
         </select>
@@ -268,7 +312,7 @@ function backToDeck() {
 
       <label class="field">
         <span>Concert date</span>
-        <select v-model="filters.date">
+        <select v-model="filters.date" :disabled="!dates.length">
           <option value="">All concert dates</option>
           <option v-for="date in dates" :key="date" :value="date">{{ formatDate(date) }}</option>
         </select>
@@ -311,7 +355,8 @@ function backToDeck() {
       </details>
 
       <div class="kaki__filter-footer">
-        <p class="kaki__count" aria-live="polite"><strong class="key-figure">{{ previewCount }}</strong> {{ previewCount === 1 ? 'person matches' : 'people match' }} these filters<span v-if="!people.length">. Join a concert from <RouterLink to="/concerts">Concerts</RouterLink> to find eligible companions.</span></p>
+        <p class="kaki__count" aria-live="polite"><strong class="key-figure">{{ previewCount }}</strong> {{ previewCount === 1 ? 'person matches' : 'people match' }} these filters</p>
+        <p v-if="filterEmptyState" class="kaki__hint kaki__empty-note" role="status">{{ filterEmptyState.message }} <RouterLink v-if="filterEmptyState.kind === 'concerts'" to="/concerts">Browse concerts</RouterLink><RouterLink v-else-if="filterEmptyState.kind === 'reviewed'" to="/kaki/history">Review your choices</RouterLink></p>
 
       <div class="kaki__buttons">
         <button class="btn btn--ghost" @click="resetFilters">Reset</button>
@@ -346,16 +391,18 @@ function backToDeck() {
       </p>
 
       <div v-if="swipeError" class="notice notice--error" role="alert">
-        <p>Could not save this change. Please try again.</p>
+        <p>{{ swipeError.message === 'concert_finished' ? 'Matching is closed for this concert.' : 'Could not save this change. Please try again.' }}</p>
         <RouterLink v-if="swipeError.status === 401" to="/login">Sign in</RouterLink>
+        <template v-else-if="swipeError.message === 'concert_finished'"><p>This concert has finished. New likes and skips are closed; your previous choices and conversations are kept.</p><button type="button" class="btn btn--ghost" @click="stage = 'filters'; swipeError = null; loadFinder()">Refresh available concerts</button><RouterLink to="/kaki/history">Companion history</RouterLink></template>
         <p v-else>Your choice has not been saved. Try the same profile again.</p>
       </div>
       <p v-if="!ranking && deck.length === 0" class="kaki__state">
-        No one left under these filters.
+        {{ deckEmptyState.message }}
+        <RouterLink v-if="deckEmptyState.kind === 'reviewed'" to="/kaki/history">Review your choices</RouterLink>
         <button class="btn btn--text" @click="stage = 'filters'">Change filters</button>
       </p>
       <SwipeDeck
-        v-else-if="!ranking"
+        v-else-if="!ranking && swipeError?.message !== 'concert_finished'"
         :items="deck"
         :show-profile="false"
         noun-singular="profile"
@@ -374,7 +421,7 @@ function backToDeck() {
           <KakiCard :person="item" :viewer="currentUser" />
         </template>
         <template #empty>
-          <p>You're all caught up. Check Messages for your matches.</p>
+          <p>You’ve reviewed these profiles. Check Messages for mutual matches, or undo a choice below.</p>
         </template>
       </SwipeDeck>
     </section>
@@ -452,7 +499,6 @@ function backToDeck() {
   overflow-wrap: anywhere;
 }
 
-.kaki__back,
 .kaki__icon-btn {
   display: grid;
   place-items: center;
@@ -468,7 +514,6 @@ function backToDeck() {
   transition: transform var(--dur-fast) var(--ease-settle), background var(--dur-fast) var(--ease-settle), box-shadow var(--dur-fast) var(--ease-settle);
 }
 
-.kaki__back:hover,
 .kaki__icon-btn:hover {
   background: var(--ink-700);
 }
@@ -821,8 +866,8 @@ function backToDeck() {
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-settle), box-shadow var(--dur-fast) var(--ease-settle);
 }
-.btn:active:not(:disabled), .kaki__back:active:not(:disabled), .kaki__icon-btn:active:not(:disabled) { transform: translateY(1px) scale(.98); box-shadow: inset 0 1px 3px color-mix(in srgb, var(--text-100) 14%, transparent); }
-.kaki :where(.btn, .kaki__back, .kaki__icon-btn, summary):focus-visible { outline: 2px solid var(--accent-400); outline-offset: 3px; }
+.btn:active:not(:disabled), .kaki__icon-btn:active:not(:disabled) { transform: translateY(1px) scale(.98); box-shadow: inset 0 1px 3px color-mix(in srgb, var(--text-100) 14%, transparent); }
+.kaki :where(.btn, .kaki__icon-btn, summary):focus-visible { outline: 2px solid var(--accent-400); outline-offset: 3px; }
 
 .btn--primary {
   background: var(--accent-600);
@@ -903,13 +948,13 @@ function backToDeck() {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .btn, .kaki__back, .kaki__icon-btn, .kaki__progress li, .kaki__refine summary svg {
+  .btn, .kaki__icon-btn, .kaki__progress li, .kaki__refine summary svg {
     transition: none;
   }
   .kaki__panel, .kaki__refine-fields { animation: none; }
   .range__track input::-webkit-slider-thumb { transition: none; }
   .range__track input::-moz-range-thumb { transition: none; }
-  .btn:active:not(:disabled), .kaki__back:active:not(:disabled), .kaki__icon-btn:active:not(:disabled) { transform: none; }
+  .btn:active:not(:disabled), .kaki__icon-btn:active:not(:disabled) { transform: none; }
   .range__track input:active::-webkit-slider-thumb { transform: none; }
   .range__track input:active::-moz-range-thumb { transform: none; }
 }

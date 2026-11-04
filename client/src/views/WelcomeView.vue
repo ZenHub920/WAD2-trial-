@@ -1,15 +1,14 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { currentUser } from '../auth.js';
 import PreferenceEditor from '../components/PreferenceEditor.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import { myPreferences, loadMyPreferences, saveMyPreferences } from '../groupPreferences.js';
 
 /**
- * First stop after creating an account. Explains what the matching preferences
- * are for, shows the questionnaire straight away, then reminds the new member
- * that Profile is where they can change it later.
+ * First stop after creating an account. Saving preferences is required before
+ * the rest of Encore opens (see routeGuards.js), so there is no skip. Afterwards
+ * it reminds the new member that Profile is where they can change them later.
  */
 const route = useRoute();
 const router = useRouter();
@@ -24,7 +23,7 @@ const next = computed(() => {
 const loading = ref(true);
 const saving = ref(false);
 const error = ref('');
-// 'editing' → questionnaire; 'saved' or 'skipped' → the closing note.
+// 'editing' → questionnaire; 'saved' → the closing note.
 const step = ref('editing');
 
 onMounted(async () => {
@@ -50,73 +49,30 @@ async function save(answers) {
     saving.value = false;
   }
 }
-
-const uses = [
-  { title: 'Find a companion', text: 'We suggest fans going to the same concert whose style fits yours, so you never have to go alone.' },
-  { title: 'Group recommendations', text: 'Groups are ranked by how well your answers fit with everyone already in them.' },
-  { title: 'Private by default', text: 'Nobody sees your individual answers. Others only see how well you match.' },
-];
-const sections = [
-  ['Finish the sentence', 'Quick picks about how you like to spend a concert.'],
-  ['What I enjoy', 'Things you like doing, such as singing along or queueing early.'],
-  ['What I enjoy in companions', 'What makes someone great to go with.'],
-  ['What I prefer to avoid', 'Things that put you off. Mark up to three as dealbreakers.'],
-];
 </script>
 
 <template>
   <div class="welcome container container--wide">
-    <header class="welcome__head page-banner">
-      <p class="welcome__eyebrow">Step 2 of 2 · Your preferences</p>
-      <h1>Welcome to Encore{{ currentUser?.displayName ? `, ${currentUser.displayName}` : '' }}</h1>
-      <p>Tell us what you enjoy at concerts so we can match you with the right people. It takes about two minutes.</p>
-    </header>
-
-    <div v-if="step === 'editing'" class="row g-4">
-      <aside class="col-12 col-lg-4" aria-labelledby="welcome-why">
-        <div class="welcome__panel welcome__why">
-          <h2 id="welcome-why">What are preferences for?</h2>
-          <ul class="welcome__uses">
-            <li v-for="use in uses" :key="use.title">
-              <strong>{{ use.title }}</strong>
-              <span>{{ use.text }}</span>
-            </li>
-          </ul>
-          <h3>What you'll answer</h3>
-          <ol class="welcome__sections">
-            <li v-for="[name, text] in sections" :key="name"><strong>{{ name }}</strong> {{ text }}</li>
-          </ol>
-          <p class="welcome__hint">Answer as much or as little as you like. Pick at least one thing to save.</p>
-        </div>
-      </aside>
-
-      <section class="col-12 col-lg-8" aria-labelledby="welcome-form">
-        <div class="welcome__panel">
-          <p class="welcome__private">Private · Only you can see your answers</p>
-          <h2 id="welcome-form">Your matching preferences</h2>
-          <p v-if="error" class="welcome__error" role="alert">{{ error }}</p>
-          <p v-if="loading" class="loading-state" role="status"><LoadingSpinner /> Loading the questionnaire…</p>
-          <PreferenceEditor
-            v-else
-            :initial="myPreferences ?? undefined"
-            :busy="saving"
-            :saving="saving"
-            require-one
-            submit-label="Save preferences"
-            @save="save"
-          />
-          <div class="welcome__skip d-flex flex-wrap align-items-center justify-content-between gap-3">
-            <p>Not sure yet? You can browse concerts and join groups without answering.</p>
-            <button type="button" class="btn btn--ghost" :disabled="saving" @click="step = 'skipped'">Skip for now</button>
-          </div>
-        </div>
-      </section>
-    </div>
+    <section v-if="step === 'editing'" class="welcome__panel welcome__form" aria-labelledby="welcome-form">
+      <p class="welcome__private">Private · Only you can see your answers</p>
+      <h1 id="welcome-form">Your matching preferences</h1>
+      <p class="welcome__required">Save your preferences to start using Encore. Pick at least one thing; you can change them anytime.</p>
+      <p v-if="error" class="welcome__error" role="alert">{{ error }}</p>
+      <p v-if="loading" class="loading-state" role="status"><LoadingSpinner /> Loading the questionnaire…</p>
+      <PreferenceEditor
+        v-else
+        :initial="myPreferences ?? undefined"
+        :busy="saving"
+        :saving="saving"
+        require-one
+        submit-label="Save preferences"
+        @save="save"
+      />
+    </section>
 
     <section v-else class="welcome__panel welcome__done" role="status" aria-labelledby="welcome-done">
-      <h2 id="welcome-done">{{ step === 'saved' ? 'Your preferences are saved' : 'No problem, you can do this later' }}</h2>
-      <p v-if="step === 'saved'">Companion suggestions and group recommendations will now use your answers.</p>
-      <p v-else>Companion matching works best once you've added a few preferences.</p>
+      <h1 id="welcome-done">Your preferences are saved</h1>
+      <p>Companion suggestions and group recommendations will now use your answers.</p>
       <p class="welcome__reminder">
         You can change your preferences anytime on your
         <RouterLink :to="{ path: '/profile', hash: '#preferences' }">Profile page</RouterLink>.
@@ -134,19 +90,6 @@ const sections = [
   padding-block: var(--space-6) var(--space-9);
 }
 
-.welcome__head {
-  margin-bottom: var(--space-6);
-}
-
-.welcome__eyebrow {
-  margin-bottom: var(--space-1);
-  font-size: var(--step--2);
-  font-weight: 650;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  opacity: 0.8;
-}
-
 .welcome__panel {
   min-width: 0;
   padding: var(--space-5);
@@ -156,64 +99,18 @@ const sections = [
   box-shadow: var(--panel-shadow);
 }
 
-.welcome__why {
-  display: grid;
-  gap: var(--space-4);
+/* One centred card at a comfortable reading width. */
+.welcome__form {
+  max-width: 760px;
+  margin-inline: auto;
 }
 
-@media (min-width: 992px) {
-  .welcome__why {
-    position: sticky;
-    top: calc(var(--header-height) + var(--space-4));
-  }
+.welcome__panel h1 {
+  font-size: var(--step-2);
 }
 
-.welcome__panel h2 {
-  font-size: var(--step-1);
-}
-
-.welcome__panel h3 {
-  color: var(--text-100);
-  font-size: var(--step-0);
-}
-
-.welcome__uses,
-.welcome__sections {
-  display: grid;
-  gap: var(--space-3);
-  margin: 0;
+.welcome__required {
   color: var(--text-300);
-  font-size: var(--step--1);
-}
-
-.welcome__uses {
-  padding: 0;
-  list-style: none;
-}
-
-.welcome__uses li {
-  display: grid;
-  gap: var(--space-1);
-  padding-left: var(--space-3);
-  border-left: 3px solid var(--accent-400);
-}
-
-.welcome__sections {
-  padding-left: 1.2em;
-}
-
-.welcome__uses strong,
-.welcome__sections strong {
-  color: var(--text-100);
-}
-
-.welcome__sections strong {
-  display: block;
-}
-
-.welcome__hint,
-.welcome__skip p {
-  color: var(--text-400);
   font-size: var(--step--1);
 }
 
@@ -224,7 +121,11 @@ const sections = [
   font-weight: 650;
 }
 
-.welcome__panel > h2 + * {
+.welcome__panel > h1 + * {
+  margin-top: var(--space-2);
+}
+
+.welcome__required + * {
   margin-top: var(--space-4);
 }
 
@@ -232,15 +133,6 @@ const sections = [
   color: var(--rose-400);
 }
 
-.welcome__skip {
-  margin-top: var(--space-5);
-  padding-top: var(--space-4);
-  border-top: var(--border-soft);
-}
-
-.welcome__skip p {
-  max-width: 48ch;
-}
 
 .welcome__done {
   max-width: 640px;

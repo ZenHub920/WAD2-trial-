@@ -5,7 +5,7 @@ import { currentUser } from '../auth.js';
 import { connectionState, onChatEvent } from '../chatLive.js';
 import { meetupErrorMessage } from '../utils/meetupFeedback.js';
 import { formatMeetupDateTime } from '../utils/meetupTime.js';
-import { meetupReturnRoute, meetupRouteForBoard, normalizeMeetupScope } from '../utils/meetupNavigation.js';
+import { meetupReturnLabel, meetupReturnRoute, meetupRouteForBoard, normalizeMeetupOrigin, normalizeMeetupScope } from '../utils/meetupNavigation.js';
 import { isMeetupHistorical } from '../utils/meetupSummaries.js';
 import { invalidateMeetupSummaries } from './useMeetupSummaries.js';
 
@@ -66,11 +66,27 @@ export function useMeetupBoard(props) {
   });
   const scope = computed(() => normalizeMeetupScope(route.query));
   const hasActiveBoards = computed(() => boards.value.some(plan => !isMeetupHistorical(plan)));
-  const showCreation = computed(() => creationContext.value?.capabilities.canCreate && (!hasActiveBoards.value || creatingAdditional.value));
+  const showCreation = computed(() => creationContext.value?.capabilities.canCreate && creationContext.value.policy?.canSchedule !== false
+    && (!hasActiveBoards.value || creatingAdditional.value));
   const returnRoute = computed(() => props.id ? meetupReturnRoute(board.value ?? {}, route.query)
     : Object.keys(scope.value).length ? meetupReturnRoute({ scope: scope.value }, route.query) : '/messages');
-  const returnLabel = computed(() => returnRoute.value === '/meetups' ? 'Back to My meetups'
-    : returnRoute.value === '/messages' ? 'Back to messages' : 'Back to conversation');
+  const returnLabel = computed(() => returnRoute.value === '/messages' ? 'Back to messages'
+    : meetupReturnLabel(board.value ?? { scope: scope.value }, route.query));
+  const isSoleApprover = computed(() => board.value?.requiredApprovers?.length === 1
+    && board.value.requiredApprovers[0] === currentUser.value?.id && capabilities.value.isOrganizer);
+  const proposalLabel = computed(() => isSoleApprover.value ? 'Confirm this time & place' : 'Propose this time & place');
+  const proposalGuidance = computed(() => isSoleApprover.value
+    ? 'You are this group’s only required organizer. Confirming records your approval and fixes the time and place.'
+    : 'Submitting creates a proposal. Both organizers must explicitly approve this version before it is confirmed.');
+  const approvalGuidance = computed(() => {
+    const plan = board.value;
+    if (!plan) return '';
+    if (plan.status === 'confirmed') return 'All required approvals are recorded. This is the agreed time and place.';
+    if (plan.status === 'cancelled') return 'This meetup has ended. Its saved contributions remain available for reference.';
+    if (plan.hasApproved) return 'Your approval is saved. Waiting for the other required organizer.';
+    if (plan.requiredApprovers?.includes(currentUser.value?.id)) return 'Your approval is still needed for this version of the plan.';
+    return 'The required organizers approve the final plan. You can discuss any changes below.';
+  });
   const plannerSteps = ['availability', 'places', 'review'];
   const stepFromHash = () => plannerSteps.find(step => route.hash === `#meetup-${step}`) ?? 'availability';
   const activeStep = ref(stepFromHash());
@@ -363,7 +379,7 @@ export function useMeetupBoard(props) {
       invalidateMeetupSummaries();
       if (!alive || context() !== key) return;
       createdAttempt = { requestId: input.creationRequestId, meetup: r.meetup };
-      const failure = await router.push(meetupRouteForBoard(r.meetup, { from: from === 'overview' ? 'overview' : 'conversation', stage: 'availability' }));
+      const failure = await router.push(meetupRouteForBoard(r.meetup, { from: normalizeMeetupOrigin(from), stage: 'availability' }));
       if (failure && alive && context() === key) failures.creation = 'Your plan was created. Press Open created plan to open it safely.';
     } catch (e) {
       settleAttempt(created ? 'created' : e.status >= 400 && e.status < 500 ? 'rejected' : 'uncertain');
@@ -435,7 +451,8 @@ export function useMeetupBoard(props) {
   }
   async function propose(option) {
     const ok = await act(() => api.proposeMeetupPlan(props.id, { placeId: option.placeId,
-      startsAt: iso(option.startsAt), version: board.value.version }), { area: 'review', success: 'Your plan has been submitted for approval.' });
+      startsAt: iso(option.startsAt), version: board.value.version }), { area: 'review', success: result => result.proposal?.confirmed
+        ? 'The meetup is confirmed. Your organizer approval has been recorded.' : 'Your plan has been submitted for approval.' });
     if (ok) showStep('review');
   }
   const approve = () => act(() => api.approveMeetup(props.id, board.value.version), {
@@ -484,7 +501,7 @@ export function useMeetupBoard(props) {
 
   return {
     route, router, currentUser, context, board, boards, error, busy, loading, creationContext,
-    scope, hasActiveBoards, showCreation, creatingAdditional, returnRoute, returnLabel,
+    scope, hasActiveBoards, showCreation, creatingAdditional, returnRoute, returnLabel, proposalLabel, proposalGuidance, approvalGuidance,
     weather, rainfall, travelRecommendations, transport, comment, slots, place, position, travelOptions,
     feedback, failures, placeSearchKey, journeySearchKey, confirmAction, capabilities, contributionsLocked, selectedOrigins,
     leavePrompt, settleLeave, hasUnsavedDrafts, journeyDirty,

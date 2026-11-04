@@ -451,3 +451,4 @@ client/test-results/
 client/playwright-report/
 client/.vitest/
 server/test-results/
+/test/results/

@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue';
 import { api, formatDate } from '../api.js';
 import { sectionLabel } from '../market.js';
+import TicketFacts from '../components/market/TicketFacts.vue';
 import ProofUpload from '../components/market/ProofUpload.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 
@@ -105,8 +106,7 @@ onMounted(loadListings);
               {{ formatDate(listing.concert.event_date) }}, {{ listing.concert.venue }}
             </p>
             <div class="listing-card__meta">
-              <span>{{ sectionLabel(listing.section) }}</span>
-              <span>{{ listing.quantity }} {{ listing.quantity === 1 ? 'ticket' : 'tickets' }}</span>
+              <TicketFacts :facts="[['Section', sectionLabel(listing.section)], ['No. of tickets', listing.quantity]]" />
               <strong>${{ (listing.priceCents / 100).toFixed(2) }} total</strong>
             </div>
 
@@ -204,18 +204,12 @@ onMounted(loadListings);
 .listing-card__meta {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
   margin-top: var(--space-4);
-  font-size: var(--step--2);
-}
-.listing-card__meta span {
-  padding: 3px 7px;
-  border-radius: var(--radius-pill);
-  background: var(--ink-700);
 }
 .listing-card__meta strong {
-  margin-left: auto;
   color: var(--accent-400);
 }
 .edit-link {

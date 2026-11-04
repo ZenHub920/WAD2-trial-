@@ -66,6 +66,7 @@ export function createRoutes({
     const membershipMutation = /^(?:\/groups\/[^/]+\/(?:leave|cancel|settings|publish|join-requests)|\/group-friend-invites\/[^/]+\/accept|\/group-join-requests\/[^/]+\/respond|\/group-connections|\/proposals\/[^/]+\/(?:accept|decline)|\/users\/[^/]+\/block|\/concerts\/[^/]+\/parties|\/tickets)(?:\/|$)/;
     if (!realtime || !req.user || ['GET', 'HEAD', 'OPTIONS'].includes(req.method) || !membershipMutation.test(req.path)) return next();
     const before = new Map(repos.connectionChannels.audiences(req.user.id).map((room) => [room.connectionId, room.memberIds]));
+    const previousGroups = new Map(repos.groupChannels.audiences(req.user.id).map((room) => [room.partyId, room.memberIds]));
     res.once('finish', () => {
       if (res.statusCode >= 400) return;
       try {
@@ -74,6 +75,12 @@ export function createRoutes({
           const previous = before.get(id) ?? [], current = after.get(id) ?? [];
           if (JSON.stringify(previous) !== JSON.stringify(current))
             realtime.emitTo([...new Set([...previous, ...current])], 'connection-members', { connectionId: id });
+        }
+        const currentGroups = new Map(repos.groupChannels.audiences(req.user.id).map((room) => [room.partyId, room.memberIds]));
+        for (const partyId of new Set([...previousGroups.keys(), ...currentGroups.keys()])) {
+          const previous = previousGroups.get(partyId) ?? [], current = currentGroups.get(partyId) ?? [];
+          if (JSON.stringify(previous) !== JSON.stringify(current))
+            realtime.emitTo([...new Set([...previous, ...current])], 'group-members', { partyId });
         }
       } catch { console.warn('connection_membership_event_failed'); }
     });
@@ -207,7 +214,7 @@ export function createRoutes({
   router.post('/users/:userId/reports', requireUser, kakiChat.report);
 
   router.get('/concerts', concerts.list);
-  router.post('/concerts', concerts.create);
+  router.post('/concerts', requireUser, concerts.create);
   router.get('/concerts/:id', concerts.detail);
   // Reading a setlist is public; entering one is an operator job, because the
   // running order is curated rather than collected.

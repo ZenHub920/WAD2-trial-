@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import { isMeetupHistorical, meetupNeedsAttention, meetupPresentation, meetupSelectedDetails } from '../utils/meetupSummaries.js';
 import { meetupRouteForBoard } from '../utils/meetupNavigation.js';
 
-const props = defineProps({ plans: { type: Array, default: () => [] }, scoped: Boolean });
+const props = defineProps({ plans: { type: Array, default: () => [] }, scoped: Boolean, from: { type: String, default: '' } });
 const sections = computed(() => [
   { id: 'attention', title: 'Needs your attention', hint: 'Share your times or review a proposal.', plans: props.plans.filter(meetupNeedsAttention) },
   { id: 'active', title: 'Upcoming & in progress', hint: 'Keep track of the plans you are making together.', plans: props.plans.filter(plan => !isMeetupHistorical(plan) && !meetupNeedsAttention(plan)) },
@@ -17,7 +17,7 @@ const sections = computed(() => [
     <div class="meetup-overview-list">
       <article v-for="plan in section.plans" :key="plan.id" class="card meetup-overview-plan" :class="`meetup-overview-plan--${plan.status}`">
         <div class="meetup-overview-plan__main"><span class="meetup-overview-plan__status">{{ meetupPresentation(plan).label }}</span><h3>{{ plan.title }}</h3><p class="meetup-overview-plan__concert">{{ plan.concert?.artist ?? 'Concert meetup' }}<span v-if="plan.concert?.event_date"> · {{ plan.concert.event_date }}</span></p><p>{{ plan.scopeLabel }}</p><p v-if="meetupSelectedDetails(plan)" class="meetup-overview-plan__selection">{{ meetupSelectedDetails(plan) }}</p><p>{{ meetupPresentation(plan).detail }}</p></div>
-        <RouterLink class="btn" :class="meetupNeedsAttention(plan) ? 'btn--primary' : 'btn--ghost'" :to="meetupRouteForBoard(plan, { from: scoped ? 'conversation' : 'overview', stage: meetupPresentation(plan).stage })">{{ meetupPresentation(plan).action }}</RouterLink>
+        <RouterLink class="btn" :class="meetupNeedsAttention(plan) ? 'btn--primary' : 'btn--ghost'" :to="meetupRouteForBoard(plan, { from: from || (scoped ? 'conversation' : 'overview'), stage: meetupPresentation(plan).stage })">{{ meetupPresentation(plan).action }}</RouterLink>
       </article>
     </div>
   </section>

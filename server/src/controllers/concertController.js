@@ -20,8 +20,12 @@ export function createConcertController(repos) {
       const artist = typeof req.body?.artist === 'string' ? req.body.artist.trim() : '';
       const venue = typeof req.body?.venue === 'string' ? req.body.venue.trim() : '';
       const eventDate = typeof req.body?.event_date === 'string' ? req.body.event_date.trim() : '';
+      const city = typeof req.body?.city === 'string' && req.body.city.trim() ? req.body.city.trim() : 'Singapore';
       if (!artist) return res.status(400).json({ error: 'concert_title_required' });
       if (!venue) return res.status(400).json({ error: 'venue_required' });
+      if (artist.length > 200) return res.status(400).json({ error: 'concert_title_too_long' });
+      if (venue.length > 200) return res.status(400).json({ error: 'venue_too_long' });
+      if (city.length > 100) return res.status(400).json({ error: 'city_too_long' });
       if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)
         || Number.isNaN(Date.parse(`${eventDate}T00:00:00Z`))
         || new Date(`${eventDate}T00:00:00Z`).toISOString().slice(0, 10) !== eventDate) {
@@ -32,9 +36,7 @@ export function createConcertController(repos) {
         const concert = repos.concerts.create({
           artist,
           venue,
-          city: typeof req.body?.city === 'string' && req.body.city.trim()
-            ? req.body.city.trim()
-            : 'Singapore',
+          city,
           event_date: eventDate,
         });
         res.status(201).json({ concert });
@@ -112,7 +114,9 @@ export function createConcertController(repos) {
           ...req.body, name: groupName(req.body.name), host_user_id: req.user.id, concert_id: req.params.id,
         });
         res.status(201).json({ party });
-      } catch {
+      } catch (error) {
+        if (['concert_not_found', 'concert_date_unavailable', 'concert_no_longer_upcoming', 'already_in_concert_group'].includes(error.message))
+          return res.status(error.status ?? 409).json({ error: error.message });
         res.status(409).json({ error: 'could_not_create_party' });
       }
     },
@@ -139,7 +143,9 @@ export function createConcertController(repos) {
           ...req.body, user_id: req.user.id, concert_id: req.params.id,
         });
         res.status(201).json({ request });
-      } catch {
+      } catch (error) {
+        if (['concert_not_found', 'concert_date_unavailable', 'concert_finished'].includes(error.message))
+          return res.status(error.status).json({ error: error.message });
         res.status(409).json({ error: 'could_not_create_request' });
       }
     },

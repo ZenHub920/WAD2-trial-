@@ -18,7 +18,7 @@
  */
 
 import { ref, watch } from 'vue';
-import { api } from './api.js';
+import { api, notificationRevision } from './api.js';
 import { currentUser } from './auth.js';
 
 /** Unread messages across every visible conversation. Drives the navbar dot. */
@@ -75,28 +75,37 @@ function connect() {
 
   // Same-origin, so the session cookie is sent automatically — no token to
   // pass in the URL, where it would end up in logs and history.
-  source = new EventSource('/api/kaki/stream');
+  const userId = currentUser.value.id;
+  const stream = new EventSource('/api/kaki/stream');
+  source = stream;
+  const current = () => source === stream && currentUser.value?.id === userId;
 
-  source.addEventListener('ready', () => {
+  stream.addEventListener('ready', () => {
+    if (!current()) return;
     connectionState.value = 'live';
     // Anything that happened while disconnected is not replayed, so resync.
     refreshUnread();
+    notificationRevision.value++;
     dispatch('ready', {});
   });
 
-  for (const type of ['message', 'message-updated', 'read', 'group-message', 'group-members', 'connection-message', 'connection-read', 'connection-members', 'meetup-updated']) {
-    source.addEventListener(type, (event) => {
+  for (const type of ['message', 'message-updated', 'read', 'group-message', 'group-read', 'group-members', 'connection-message', 'connection-read', 'connection-members', 'meetup-updated']) {
+    stream.addEventListener(type, (event) => {
+      if (!current()) return;
       let data;
       try { data = JSON.parse(event.data); } catch { return; }
 
       // Each endpoint applies its own room-membership rules before counting.
+      const ownRead = ['read', 'group-read', 'connection-read'].includes(type) && data.readerId === userId;
       if (['message', 'group-message', 'group-members', 'connection-message', 'connection-members'].includes(type)
-        || (['read', 'connection-read'].includes(type) && data.readerId === currentUser.value?.id)) refreshUnread();
+        || ownRead) refreshUnread();
+      if (ownRead) notificationRevision.value++;
       dispatch(type, data);
     });
   }
 
-  source.addEventListener('error', () => {
+  stream.addEventListener('error', () => {
+    if (!current()) return;
     // EventSource retries by itself; reflect the gap rather than intervening.
     connectionState.value = 'connecting';
   });
