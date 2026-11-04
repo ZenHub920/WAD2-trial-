@@ -355,8 +355,8 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
         <div class="group-actions">
           <button v-if="canSwitchMode && !modeIsActive" type="button" class="btn btn--primary" :disabled="busy" @click="activateMode">Switch to matching</button>
           <button v-if="canCoordinate && !matching.optedIn && !activeProposals.length && !pendingLegacy.length && modeIsActive && seeker.status === 'open'" type="button" class="btn btn--primary" :disabled="busy" @click="joinPool">Join the match list</button>
-          <button type="button" class="btn btn--ghost" :disabled="busy" @click="load">Check for updates</button>
           <button v-if="matching.optedIn" type="button" class="btn btn--danger-ghost" :disabled="busy || activeProposals.length > 0 || pendingLegacy.length > 0" @click="leavePool">Leave the match list</button>
+          <button type="button" class="btn btn--ghost" :disabled="busy" @click="load">Check for updates</button>
           <RouterLink :to="`/concerts/${encodeURIComponent(concertId)}#my-result-title`">Past matches</RouterLink>
         </div>
         <p v-if="activeProposals.length" class="group-muted">Answer your match before leaving the list or switching to browsing.</p>
