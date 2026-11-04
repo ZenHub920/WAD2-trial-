@@ -98,7 +98,6 @@ const {
             </details>
             <button type="button" class="btn btn--ghost" :disabled="busy || contributionsLocked || !selectedSlotCount" @click="assignJourney">Apply journey to selected times</button>
             <p v-if="!selectedSlotCount" class="group-muted">Paint or select times in the grid first, then apply your journey.</p>
-            <p v-else class="group-muted">Without a new starting location, this updates the travel method and keeps each selected time's existing location.</p>
             <p v-if="journeyDirty" class="meetup-unsaved" role="status">Journey input has not been applied. Apply it to selected times before saving.</p>
             <p v-if="feedback.journey" class="group-success" role="status">{{ feedback.journey }}</p>
             <p v-if="failures.journey" class="group-error" role="alert">{{ failures.journey }}</p>
