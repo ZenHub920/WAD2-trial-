@@ -1,8 +1,9 @@
 <script setup>
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { api, formatDate } from '../api.js';
-import { SECTION_SUGGESTIONS } from '../market.js';
+import { sectionOptions } from '../market.js';
+import SearchSelect from '../components/SearchSelect.vue';
 import ProofUpload from '../components/market/ProofUpload.vue';
 import ImagePicker from '../components/market/ImagePicker.vue';
 import BackArrow from '../components/BackArrow.vue';
@@ -16,29 +17,41 @@ const proof = ref('');
 
 // Discovery also saves provider events locally, so the selected ID can be listed.
 const concerts = ref([]);
+// Searchable by artist, date or venue in the concert picker.
+const concertOptions = computed(() => concerts.value.map((concert) => ({
+  value: concert.id,
+  label: `${concert.artist}, ${formatDate(concert.event_date)}, ${concert.venue}`,
+})));
 const concertId = ref('');
-const addingConcert = ref(false);
 const loadingConcerts = ref(true);
 const concertError = ref('');
 
-onMounted(async () => {
+/**
+ * Listings are for Ticketmaster concerts only. Live discovery comes first; if it
+ * is unavailable, the Ticketmaster concerts already saved locally are offered.
+ */
+async function loadConcerts() {
+  loadingConcerts.value = true;
+  concertError.value = '';
   try {
     concerts.value = (await api.externalConcerts()).events;
-    if (!concerts.value.length) addingConcert.value = true;
-  } catch (err) {
-    concertError.value = err.body?.error === 'concert_provider_not_configured'
-      ? 'Ticketmaster discovery is not configured. You can enter your concert details instead.'
-      : 'Could not load Ticketmaster concerts. You can enter your concert details instead.';
-    addingConcert.value = true;
-  } finally {
-    loadingConcerts.value = false;
+  } catch {
+    concerts.value = [];
   }
-});
+  if (!concerts.value.length) {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      concerts.value = (await api.concerts()).concerts.filter((concert) => concert.event_date >= today);
+    } catch {
+      concerts.value = [];
+    }
+  }
+  if (!concerts.value.length) concertError.value = 'Could not load concerts right now. Please try again.';
+  loadingConcerts.value = false;
+}
+onMounted(loadConcerts);
 
 const listing = ref({
-  title: '',
-  venue: '',
-  eventDate: '',
   price: '',
   description: '',
   quantity: 1,
@@ -46,12 +59,13 @@ const listing = ref({
 });
 
 const ERROR_COPY = {
-  invalid_concert: () => 'Choose a concert or enter its artist and venue.',
-  invalid_concert_date: () => 'Enter a valid concert date.',
+  concert_not_found: () => 'That concert is no longer available. Choose another.',
+  concert_required: () => 'Choose a concert from the list.',
+  concert_must_be_listed: () => 'Choose a concert from the list.',
   invalid_price: () => 'Enter a valid total listing price.',
-  invalid_quantity: () => 'Enter a valid number of tickets.',
-  invalid_section: () => 'Enter the section printed on the ticket (up to 120 characters).',
-  invalid_description: () => 'Keep the description within 2,000 characters.',
+  invalid_quantity: () => 'Choose between 1 and 10 tickets.',
+  invalid_section: () => 'Choose a section from the list.',
+  invalid_description: () => 'Add a description (up to 2,000 characters).',
   invalid_image: () => 'Choose a supported ticket image within the upload size limit.',
   proof_required: () => 'Upload proof of purchase for this listing.',
   proof_must_be_an_image_or_pdf: () => 'Use a PNG, JPG, WebP or PDF for proof of purchase.',
@@ -63,15 +77,7 @@ async function submitListing() {
   error.value = '';
   try {
     const { listing: created } = await api.createTicket({
-      ...(addingConcert.value
-        ? {
-          concert: {
-            artist: listing.value.title.trim(),
-            venue: listing.value.venue.trim(),
-            event_date: listing.value.eventDate,
-          },
-        }
-        : { concertId: concertId.value }),
+      concertId: concertId.value,
       priceCents: Math.round(Number(listing.value.price) * 100),
       quantity: Number(listing.value.quantity),
       section: listing.value.section,
@@ -112,42 +118,21 @@ async function submitListing() {
           </p>
           <p v-else-if="concertError" class="listing-form__field listing-form__field--wide listing-form__error" role="alert">
             {{ concertError }}
+            <button type="button" class="listing-form__link" @click="loadConcerts">Try again</button>
           </p>
           <ImagePicker v-model="imagePreview" class="listing-form__field--wide" @error="error = $event" />
 
-          <label v-if="!addingConcert" class="listing-form__field listing-form__field--wide">
+          <label class="listing-form__field listing-form__field--wide">
             Ticketmaster concert
-            <select v-model="concertId" :disabled="loadingConcerts" required>
-              <option value="" disabled>Choose the concert</option>
-              <option v-for="concert in concerts" :key="concert.id" :value="concert.id">
-                {{ concert.artist }}, {{ formatDate(concert.event_date) }}, {{ concert.venue }}
-              </option>
-            </select>
-            <button type="button" class="listing-form__link" @click="addingConcert = true">
-              Concert not listed? Add it
-            </button>
+            <SearchSelect
+              v-model="concertId"
+              :options="concertOptions"
+              :disabled="loadingConcerts"
+              required
+              placeholder="Type an artist, venue or date"
+              empty-text="No concerts match. Try another word."
+            />
           </label>
-
-          <template v-else>
-            <label class="listing-form__field listing-form__field--wide">
-              Concert title
-              <input v-model.trim="listing.title" required placeholder="Enter the artist or concert title" />
-            </label>
-
-            <label class="listing-form__field listing-form__field--wide">
-              Venue
-              <input v-model.trim="listing.venue" required placeholder="Enter the concert venue" />
-            </label>
-
-            <label class="listing-form__field">
-              Event date
-              <input v-model="listing.eventDate" type="date" lang="en-GB" required />
-            </label>
-            <p v-if="concerts.length" class="listing-form__field listing-form__field--wide listing-form__hint">
-              Upload proof below if you want your tickets reviewed for verification.
-              <button type="button" class="listing-form__link" @click="addingConcert = false">Choose an existing concert instead</button>
-            </p>
-          </template>
 
           <label class="listing-form__field">
             Total listing price (SGD)
@@ -156,7 +141,7 @@ async function submitListing() {
 
           <label class="listing-form__field listing-form__field--wide">
             Description
-            <textarea v-model.trim="listing.description" rows="4" maxlength="2000" placeholder="Describe the ticket, section and any transfer arrangements." />
+            <textarea v-model.trim="listing.description" rows="4" required maxlength="2000" placeholder="Describe the ticket, section and any transfer arrangements." />
           </label>
 
           <label class="listing-form__field">
@@ -165,10 +150,7 @@ async function submitListing() {
           </label>
           <label class="listing-form__field">
             Section
-            <input v-model.trim="listing.section" list="section-suggestions" required maxlength="120" placeholder="As printed on the ticket, e.g. Cat 3" />
-            <datalist id="section-suggestions">
-              <option v-for="s in SECTION_SUGGESTIONS" :key="s" :value="s" />
-            </datalist>
+            <SearchSelect v-model="listing.section" :options="sectionOptions()" required placeholder="Choose a section, e.g. Cat 3" empty-text="No section matches. Choose one from the list." />
           </label>
         </section>
 
@@ -229,6 +211,8 @@ async function submitListing() {
 }
 .listing-form__field {
   display: grid;
+  /* Stack from the top, so a neighbour's error message does not push this box down. */
+  align-content: start;
   min-width: 0;
   gap: var(--space-2);
   color: var(--text-300);
@@ -237,7 +221,8 @@ async function submitListing() {
 .listing-form__field--wide {
   grid-column: 1 / -1;
 }
-.listing-form input, .listing-form textarea {
+/* :deep reaches the boxes inside SearchSelect, so they match the other fields. */
+.listing-form input, .listing-form :deep(.suggest > input), .listing-form textarea {
   width: 100%;
   min-width: 0;
   padding: var(--space-3);

@@ -42,8 +42,7 @@ const emit = defineEmits(['toggle-save']);
 
       <TicketFacts :facts="[['Section', sectionLabel(listing.section)], ['No. of tickets', listing.quantity]]" />
 
-      <VerifiedBadge v-if="listing.verified" class="tcard__badge" />
-      <span v-else class="tag tcard__badge">Unverified ticket</span>
+      <VerifiedBadge :verified="Boolean(listing.verified)" class="tcard__badge" />
 
       <footer class="tcard__foot">
         <span class="tcard__seller">
@@ -165,8 +164,15 @@ const emit = defineEmits(['toggle-save']);
   gap: var(--space-1);
 }
 .tcard__price strong {
-  color: var(--highlight-ink);
+  color: #14111b;
   font-size: var(--step-1);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+/* Near-black in light mode; near-white in dark so it stays readable. */
+:global(:root[data-theme='dark']) .tcard__price strong {
+  color: #f5f3ff;
 }
 .tcard__price small {
   color: var(--text-400);

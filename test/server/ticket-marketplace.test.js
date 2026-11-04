@@ -222,14 +222,13 @@ test('proof review: pending until an operator decides; rejection needs a note; a
 test('new listings start unverified and must name a known concert', async (t) => {
   const { api } = await fixture(t);
   const created = await api('/tickets', { method: 'POST', as: 'seller', body: {
-    concert: { artist: 'New Act', venue: 'Hall', event_date: '2027-01-02' },
-    priceCents: 5000, quantity: 1, section: 'GA',
+    concertId: 'c_market', priceCents: 5000, quantity: 1, section: 'Standing', description: 'Standing ticket',
   } });
   assert.equal(created.status, 201);
   assert.equal(created.body.listing.verified, false);
   assert.equal(created.body.listing.verification.status, 'none');
   assert.equal((await api('/tickets', { method: 'POST', as: 'seller', body: {
-    concertId: 'nope', priceCents: 1, quantity: 1, section: 'GA',
+    concertId: 'nope', priceCents: 1, quantity: 1, section: 'Standing', description: 'Standing ticket',
   } })).body.error, 'concert_not_found');
 });
 

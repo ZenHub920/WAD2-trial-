@@ -1,5 +1,9 @@
 import { publicUser } from './publicUser.js';
 import { decodeTicketImage } from '../services/ticketImages.js';
+import { isTicketSection } from '../../../shared/ticketSections.mjs';
+
+/** The listing forms allow 1 to 10 tickets per listing; the API matches. */
+const MAX_TICKETS = 10;
 
 function cleanListing(listing) {
   if (!listing) return null;
@@ -28,27 +32,21 @@ function validateProof(value, { required = false } = {}) {
 
 function validate(body, creating) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return 'invalid_listing';
-  if (creating && body.concertId !== undefined) {
-    if (typeof body.concertId !== 'string' || !body.concertId) return 'invalid_concert';
-    if (body.concert !== undefined) return 'concert_or_concert_id_not_both';
-  } else if (creating) {
-    const concert = body.concert;
-    if (!concert || typeof concert !== 'object' || Array.isArray(concert)) return 'invalid_concert';
-    if (typeof concert.artist !== 'string' || !concert.artist.trim()
-      || typeof concert.venue !== 'string' || !concert.venue.trim()) return 'invalid_concert';
-    const date = concert.event_date;
-    if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)
-      || Number.isNaN(Date.parse(`${date}T00:00:00Z`))
-      || new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) !== date) return 'invalid_concert_date';
-    if (concert.city !== undefined && (typeof concert.city !== 'string' || !concert.city.trim())) return 'invalid_concert';
+  // Listings are for concerts saved from Ticketmaster only, named by their id;
+  // a typed-in concert is refused.
+  if (creating) {
+    if (body.concert !== undefined) return 'concert_must_be_listed';
+    if (typeof body.concertId !== 'string' || !body.concertId) return 'concert_required';
   } else if (body.concert !== undefined) return 'concert_not_editable';
   if ((creating || body.priceCents !== undefined)
     && (!Number.isSafeInteger(body.priceCents) || body.priceCents < 0)) return 'invalid_price';
   if ((creating || body.quantity !== undefined)
-    && (!Number.isSafeInteger(body.quantity) || body.quantity < 1)) return 'invalid_quantity';
+    && (!Number.isSafeInteger(body.quantity) || body.quantity < 1 || body.quantity > MAX_TICKETS)) return 'invalid_quantity';
   if ((creating || body.section !== undefined)
-    && (typeof body.section !== 'string' || !body.section.trim() || body.section.length > 120)) return 'invalid_section';
-  if (body.description !== undefined && (typeof body.description !== 'string' || body.description.length > 2000)) return 'invalid_description';
+    && !isTicketSection(body.section)) return 'invalid_section';
+  // Required when listing, and an edit cannot blank it out.
+  if ((creating || body.description !== undefined)
+    && (typeof body.description !== 'string' || !body.description.trim() || body.description.length > 2000)) return 'invalid_description';
   if (creating) {
     const proofError = validateProof(body.proofData);
     if (proofError) return proofError;
@@ -77,20 +75,15 @@ export function createTicketController(repos, images) {
     create(req, res) {
       const error = validate(req.body, true);
       if (error) return res.status(400).json({ error });
-      if (req.body.concertId && !repos.concerts.findById(req.body.concertId)) {
+      if (!repos.concerts.findById(req.body.concertId)) {
         return res.status(400).json({ error: 'concert_not_found' });
       }
       let imagePath = null;
       try {
         if (req.body.imageData) imagePath = images.save(req.body.imageData);
-        const { concert } = req.body;
         const listing = repos.tickets.create({
           seller_user_id: req.user.id,
           concertId: req.body.concertId,
-          concert: concert && {
-            artist: concert.artist.trim(), venue: concert.venue.trim(),
-            city: concert.city?.trim() || 'Singapore', event_date: concert.event_date,
-          },
           priceCents: req.body.priceCents, quantity: req.body.quantity,
           section: req.body.section.trim(), description: req.body.description?.trim() ?? '',
           image_path: imagePath,

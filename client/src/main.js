@@ -2,6 +2,7 @@ import { createApp } from 'vue';
 import { createRouter, createWebHistory } from 'vue-router';
 
 import { guardRoute } from './routeGuards.js';
+import { installFormErrors } from './formErrors.js';
 
 import App from './App.vue';
 // Bootstrap's responsive grid and utility classes only. Its component styles
@@ -139,4 +140,6 @@ router.afterEach((to) => {
   document.title = title && title !== 'Encore' ? `${title} | Encore` : 'Encore';
 });
 
+// Red inline messages under fields instead of the browser's validation bubbles.
+installFormErrors();
 createApp(App).use(router).mount('#app');
