@@ -1,7 +1,8 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { isNavigationFailure, useRouter } from 'vue-router';
 import { api, formatDate } from '../api.js';
+import { currentUser } from '../auth.js';
 import { sectionOptions } from '../market.js';
 import SearchSelect from '../components/SearchSelect.vue';
 import ProofUpload from '../components/market/ProofUpload.vue';
@@ -12,8 +13,11 @@ import LoadingSpinner from '../components/LoadingSpinner.vue';
 const router = useRouter();
 const creating = ref(false);
 const error = ref('');
+const createdListing = ref(null);
+const notice = ref('');
 const imagePreview = ref('');
 const proof = ref('');
+let alive = true, scopeVersion = 0;
 
 // Discovery also saves provider events locally, so the selected ID can be listed.
 const concerts = ref([]);
@@ -34,15 +38,21 @@ async function loadConcerts() {
   loadingConcerts.value = true;
   concertError.value = '';
   try {
-    concerts.value = (await api.externalConcerts()).events;
+    const { events } = await api.externalConcerts();
+    if (!alive) return;
+    concerts.value = events;
   } catch {
+    if (!alive) return;
     concerts.value = [];
   }
   if (!concerts.value.length) {
     try {
       const today = new Date().toISOString().slice(0, 10);
-      concerts.value = (await api.concerts()).concerts.filter((concert) => concert.event_date >= today);
+      const saved = await api.concerts();
+      if (!alive) return;
+      concerts.value = saved.concerts.filter((concert) => concert.event_date >= today);
     } catch {
+      if (!alive) return;
       concerts.value = [];
     }
   }
@@ -57,6 +67,12 @@ const listing = ref({
   quantity: 1,
   section: '',
 });
+watch(() => currentUser.value?.id, () => {
+  scopeVersion++; creating.value = false; error.value = ''; notice.value = ''; createdListing.value = null;
+  imagePreview.value = ''; proof.value = ''; concertId.value = '';
+  listing.value = { price: '', description: '', quantity: 1, section: '' };
+}, { flush: 'sync' });
+onUnmounted(() => { alive = false; scopeVersion++; });
 
 const ERROR_COPY = {
   concert_not_found: () => 'That concert is no longer available. Choose another.',
@@ -73,26 +89,40 @@ const ERROR_COPY = {
 };
 
 async function submitListing() {
+  if (creating.value) return;
   creating.value = true;
+  const version = scopeVersion, userId = currentUser.value?.id;
+  const current = () => alive && version === scopeVersion && userId === currentUser.value?.id;
   error.value = '';
   try {
-    const { listing: created } = await api.createTicket({
-      concertId: concertId.value,
-      priceCents: Math.round(Number(listing.value.price) * 100),
-      quantity: Number(listing.value.quantity),
-      section: listing.value.section,
-      description: listing.value.description,
-      ...(imagePreview.value ? { imageData: imagePreview.value } : {}),
-      ...(proof.value ? { proofData: proof.value } : {}),
-    });
-    await router.push({ name: 'ticket-detail', params: { id: created.id } });
+    if (!createdListing.value) {
+      const { listing: created } = await api.createTicket({
+        concertId: concertId.value,
+        priceCents: Math.round(Number(listing.value.price) * 100),
+        quantity: Number(listing.value.quantity),
+        section: listing.value.section,
+        description: listing.value.description,
+        ...(imagePreview.value ? { imageData: imagePreview.value } : {}),
+        ...(proof.value ? { proofData: proof.value } : {}),
+      });
+      if (!current()) return;
+      createdListing.value = created;
+    }
+    notice.value = 'Your listing was published.';
+    try {
+      const result = await router.push({ name: 'ticket-detail', params: { id: createdListing.value.id } });
+      if (current() && isNavigationFailure(result)) notice.value = 'Your listing was published, but its page could not open. Open the published listing below.';
+    } catch {
+      if (current()) notice.value = 'Your listing was published, but its page could not open. Open the published listing below.';
+    }
   } catch (err) {
+    if (!current()) return;
     const code = err.body?.error ?? err.message;
     error.value = err.status === 401
       ? 'Please sign in before listing a ticket.'
       : (ERROR_COPY[code]?.() ?? 'Could not publish your listing. Check the details and try again.');
   } finally {
-    creating.value = false;
+    if (current()) creating.value = false;
   }
 }
 </script>
@@ -111,6 +141,7 @@ async function submitListing() {
       </header>
 
       <form class="listing-form" @submit.prevent="submitListing">
+        <fieldset class="listing-form__fields" :disabled="creating || Boolean(createdListing)">
         <section class="listing-form__section">
           <h2>Listing details</h2>
           <p v-if="loadingConcerts" class="listing-form__field listing-form__field--wide listing-form__hint loading-state" role="status" aria-busy="true">
@@ -160,13 +191,15 @@ async function submitListing() {
             <ProofUpload v-model="proof" />
           </div>
         </section>
+        </fieldset>
 
         <p v-if="error" class="listing-form__error" role="alert">{{ error }}</p>
+        <p v-if="notice" role="status">{{ notice }} <RouterLink :to="{ name: 'ticket-detail', params: { id: createdListing.id } }">Open published listing</RouterLink></p>
         <div class="listing-form__actions">
           <RouterLink to="/tickets" class="btn btn--ghost">Cancel</RouterLink>
           <button class="btn btn--primary" :disabled="creating || loadingConcerts">
             <LoadingSpinner v-if="creating" />
-            {{ creating ? 'Publishing…' : 'Publish listing' }}
+            {{ creating ? (createdListing ? 'Opening…' : 'Publishing…') : createdListing ? 'Open published listing' : 'Publish listing' }}
           </button>
         </div>
       </form>
@@ -196,6 +229,7 @@ async function submitListing() {
   display: grid;
   gap: var(--space-5);
 }
+.listing-form__fields { display:grid; gap:var(--space-5); min-width:0; padding:0; margin:0; border:0; }
 .listing-form__section {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

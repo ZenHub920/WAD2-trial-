@@ -21,7 +21,7 @@ const explanationLoading = ref(false);
 const error = ref('');
 const explanation = ref(null);
 const explanationOpen = ref(false);
-const statuses = { confirmed: 'Place confirmed', declined: 'Declined', expired: 'Expired', cancelled: 'Cancelled' };
+const statuses = { confirmed: 'Spot confirmed', declined: 'Declined', expired: 'Expired', cancelled: 'Cancelled' };
 const isHost = computed(() => currentProposal.value.role === 'host');
 const myApproval = computed(() => isHost.value ? currentProposal.value.hostApproved : currentProposal.value.seekerApproved);
 const readyToReview = computed(() => currentProposal.value.canHostRespond !== false && currentProposal.value.queueStatus !== 'waiting');
@@ -122,8 +122,8 @@ async function explain() {
     <template v-if="currentProposal.status === 'proposed'">
       <div class="proposal__reservation">
         <div>
-          <span class="proposal__label">{{ isHost ? 'Group place' : 'Your place' }}</span>
-          <strong>{{ held ? 'One place held' : 'Waiting for a place' }}</strong>
+          <span class="proposal__label">{{ isHost ? 'Group spot' : 'Your group spot' }}</span>
+          <strong>{{ held ? 'One spot held' : 'Waiting for a spot' }}</strong>
           <span class="proposal__meta">Queue position {{ currentProposal.queuePosition ?? '—' }}{{ readyToReview ? ' · Next to review' : '' }}</span>
         </div>
         <div>
@@ -134,7 +134,7 @@ async function explain() {
       </div>
 
       <div class="proposal__approvals">
-        <p class="proposal__label">Both approvals confirm the group place. Either person can approve first.</p>
+        <p class="proposal__label">Both approvals confirm the group spot. Either person can approve first.</p>
         <ul aria-label="Match approval progress">
           <li :class="{ 'is-approved': currentProposal.hostApproved }"><span class="proposal__check" aria-hidden="true">{{ currentProposal.hostApproved ? '✓' : '·' }}</span><span><strong>{{ isHost ? 'You · Host' : 'Group host' }}</strong><small>{{ currentProposal.hostApproved ? 'Approved' : 'Awaiting approval' }}</small></span></li>
           <li :class="{ 'is-approved': currentProposal.seekerApproved }"><span class="proposal__check" aria-hidden="true">{{ currentProposal.seekerApproved ? '✓' : '·' }}</span><span><strong>{{ isHost ? currentProposal.seekerName : 'You · Companion' }}</strong><small>{{ currentProposal.seekerApproved ? 'Approved' : 'Awaiting approval' }}</small></span></li>
@@ -142,8 +142,8 @@ async function explain() {
       </div>
 
       <p v-if="!readyToReview" class="proposal__note">Earlier direct or automatic requests must be resolved first. {{ isHost ? 'Review requests in arrival order.' : 'You can still decline while waiting.' }}</p>
-      <p v-else-if="myApproval" class="proposal__note" role="status">Your approval is saved. {{ isHost ? 'The companion still needs to accept.' : 'The host still needs to approve.' }} The place stays held until the deadline.</p>
-      <p v-else class="proposal__note">{{ isHost ? 'Approve this companion to join your group.' : 'Like the sound of this group? Accept your offer.' }} {{ (isHost ? currentProposal.seekerApproved : currentProposal.hostApproved) ? 'Their approval is already saved; yours will confirm the place.' : 'Their approval is also needed to confirm the place.' }}</p>
+      <p v-else-if="myApproval" class="proposal__note" role="status">Your approval is saved. {{ isHost ? 'The companion still needs to accept.' : 'The host still needs to approve.' }} The spot stays held until the deadline.</p>
+      <p v-else class="proposal__note">{{ isHost ? 'Approve this companion to join your group.' : 'Like the sound of this group? Accept your offer.' }} {{ (isHost ? currentProposal.seekerApproved : currentProposal.hostApproved) ? 'Their approval is already saved; yours will confirm the spot.' : 'Their approval is also needed to confirm the spot.' }}</p>
 
       <div class="actions">
         <button v-if="!myApproval" type="button" class="btn btn--primary" :disabled="busy || !readyToReview || !canAccept" @click="respond('accept')"><LoadingSpinner v-if="busy && responding === 'accept'" />{{ isHost ? 'Approve companion' : 'Accept group offer' }}</button>
@@ -151,12 +151,12 @@ async function explain() {
       </div>
       <p v-if="isFinished" class="proposal__note">This concert has finished. New membership approvals are closed; your proposal remains available here.</p>
     </template>
-    <p v-else-if="currentProposal.status === 'confirmed'" class="proposal__note">{{ isHost ? `${currentProposal.seekerName} is now a member of your group.` : 'Your group place is confirmed. You can find the group under My groups.' }}</p>
+    <p v-else-if="currentProposal.status === 'confirmed'" class="proposal__note">{{ isHost ? `${currentProposal.seekerName} is now a member of your group.` : 'Your group spot is confirmed. You can find the group under My groups.' }}</p>
 
     <div class="proposal__explanation">
       <button type="button" class="proposal__why" :disabled="busy || explanationLoading" :aria-expanded="explanationOpen" @click="explain"><LoadingSpinner v-if="explanationLoading" />{{ explanationOpen ? 'Hide match reasons' : 'Why this group match?' }}<span aria-hidden="true">{{ explanationOpen ? '−' : '+' }}</span></button>
       <div v-if="explanationOpen && explanation" class="proposal__reasons">
-        <p v-if="!matchReasons.length">No detailed match reasons were saved for this currentProposal.</p>
+        <p v-if="!matchReasons.length">No detailed match reasons were saved for this proposal.</p>
         <p>These reasons come from the preferences saved when this match was made. Matching considers both sides' preferences and group capacity.</p>
       </div>
     </div>
@@ -165,7 +165,7 @@ async function explain() {
       :round-id="currentProposal.roundId"
       :rated-user-id="currentProposal.role === 'host' ? currentProposal.seekerUserId : currentProposal.hostUserId"
     />
-    <p class="proposal__footnote">A group place does not include a concert ticket.</p>
+    <p class="proposal__footnote">A group spot means membership, not a meeting place or a concert ticket.</p>
     <p v-if="error" class="proposal__error" role="alert">{{ error }}</p>
   </article>
 </template>

@@ -2,6 +2,7 @@
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { api, notificationRevision } from '../api.js';
+import { currentUser } from '../auth.js';
 import { formatDateTime } from '../market.js';
 import LoadingSpinner from './LoadingSpinner.vue';
 
@@ -16,6 +17,7 @@ const unreadCount = ref(0);
 const loading = ref(false);
 const readingId = ref('');
 const error = ref('');
+const countError = ref('');
 // Chat titles are written by the server and name the sender, so there is
 // nothing here to rewrite them to — a generic label would throw away the name.
 const titles = {
@@ -23,41 +25,70 @@ const titles = {
   'Seeker preferences changed; review and resubmit the join request': 'Companion preferences changed; review your group join request',
 };
 let timer;
+let mounted = false, disposed = false, accountGeneration = 0;
+let inboxRequest = 0, unreadRequest = 0, resolveRequest = 0, readRequest = 0;
+const context = () => ({ userId: currentUser.value?.id, generation: accountGeneration });
+const current = request => !disposed && request.userId && request.userId === currentUser.value?.id
+  && request.generation === accountGeneration;
 function onPush(event) {
   if (event.data?.type === 'encore-notification') open.value ? load() : refreshUnread();
 }
 
-async function load() {
-  if (loading.value) return;
+async function load({ replace = false } = {}) {
+  const scope = context();
+  if (!current(scope) || (loading.value && !replace)) return;
+  const request = ++inboxRequest, countRequest = ++unreadRequest;
+  const active = () => current(scope) && request === inboxRequest;
   loading.value = true;
   error.value = '';
+  countError.value = '';
   try {
-    const [inbox, unread] = await Promise.all([api.notifications(), api.unreadNotifications()]);
-    items.value = inbox.notifications;
-    unreadCount.value = unread.unread;
-  } catch {
-    error.value = 'Could not load notifications. Please try again.';
+    await Promise.allSettled([
+      api.notifications().then(inbox => { if (active()) items.value = inbox.notifications; })
+        .catch(() => { if (active()) error.value = 'Could not load notifications. Please try again.'; }),
+      api.unreadNotifications().then(unread => {
+        if (active() && countRequest === unreadRequest) unreadCount.value = unread.unread;
+      }).catch(() => {
+        if (active() && countRequest === unreadRequest)
+          countError.value = 'Could not refresh the unread count. Refresh to try again.';
+      }),
+    ]);
   } finally {
-    loading.value = false;
+    if (active()) loading.value = false;
   }
 }
 async function refreshUnread() {
+  const scope = context(), request = ++unreadRequest;
+  if (!current(scope)) return;
   try {
-    unreadCount.value = (await api.unreadNotifications()).unread;
+    const unread = await api.unreadNotifications();
+    if (!current(scope) || request !== unreadRequest) return;
+    unreadCount.value = unread.unread;
+    countError.value = '';
   } catch {
     // Keep the last known count; the next poll or opening the inbox retries.
   }
 }
 async function markRead(id) {
-  if (readingId.value) return;
+  const scope = context();
+  if (!current(scope) || readingId.value || !items.value.some(item => item.id === id)) return;
+  const request = ++readRequest;
+  const active = () => current(scope) && request === readRequest;
   readingId.value = id;
   try {
     await api.readNotification(id);
-    await load();
+    if (active()) {
+      const item = items.value.find(item => item.id === id);
+      if (item && !item.readAt) {
+        item.readAt = new Date().toISOString();
+        unreadCount.value = Math.max(0, unreadCount.value - 1);
+      }
+      await load({ replace: true });
+    }
   } catch {
-    error.value = 'Could not mark this notification as read. Please try again.';
+    if (active()) error.value = 'Could not mark this notification as read. Please try again.';
   } finally {
-    readingId.value = '';
+    if (active()) readingId.value = '';
   }
 }
 function target(item) {
@@ -67,13 +98,16 @@ function target(item) {
 // Reaching a notification's page by any route resolves it, so unread items
 // pointing at the current page are marked read without opening the inbox.
 async function resolveHere(path) {
-  if (!unreadCount.value) return;
+  const scope = context(), request = ++resolveRequest;
+  const active = () => current(scope) && request === resolveRequest && route.fullPath === path;
+  if (!current(scope) || !unreadCount.value) return;
   try {
     const { notifications } = await api.notifications();
+    if (!active()) return;
     const here = notifications.filter((item) => !item.readAt && target(item) === path);
     if (!here.length) return;
     await Promise.all(here.map((item) => api.readNotification(item.id)));
-    open.value ? load() : refreshUnread();
+    if (active()) open.value ? load({ replace: true }) : refreshUnread();
   } catch {
     // Left unread; the user can still mark it from the inbox.
   }
@@ -81,11 +115,14 @@ async function resolveHere(path) {
 // Following a notification's link resolves it; the request runs alongside
 // navigation so a slow or failed call never holds up the route change.
 function follow(item) {
+  const scope = context();
+  if (!current(scope) || !items.value.includes(item)) return;
   dismiss();
   if (item.readAt) return;
   item.readAt = new Date().toISOString();
   unreadCount.value = Math.max(0, unreadCount.value - 1);
-  api.readNotification(item.id).catch(() => refreshUnread());
+  inboxRequest++; unreadRequest++; loading.value = false;
+  api.readNotification(item.id).catch(() => { if (current(scope)) refreshUnread(); });
 }
 function dismiss() {
   open.value = false;
@@ -120,14 +157,26 @@ watch(() => [route.fullPath, route.matched], (_, previous) => {
 });
 watch(() => route.fullPath, (path) => resolveHere(path));
 watch(notificationRevision, () => open.value ? load() : refreshUnread());
+function refreshAccount() {
+  const scope = context();
+  refreshUnread().then(() => { if (current(scope)) resolveHere(route.fullPath); });
+}
+watch(() => currentUser.value?.id, () => {
+  accountGeneration++; inboxRequest++; unreadRequest++; resolveRequest++; readRequest++;
+  open.value = false; items.value = []; unreadCount.value = 0; loading.value = false;
+  readingId.value = ''; error.value = ''; countError.value = '';
+  if (mounted) refreshAccount();
+}, { flush: 'sync' });
 onMounted(() => {
+  mounted = true;
   navigator.serviceWorker?.addEventListener('message', onPush);
   document.addEventListener('click', outside);
   document.addEventListener('keydown', onKeydown);
-  refreshUnread().then(() => resolveHere(route.fullPath));
+  refreshAccount();
   timer = setInterval(() => open.value ? load() : refreshUnread(), 30000);
 });
 onUnmounted(() => {
+  disposed = true; accountGeneration++;
   navigator.serviceWorker?.removeEventListener('message', onPush);
   clearInterval(timer);
   document.removeEventListener('click', outside);
@@ -157,6 +206,7 @@ onUnmounted(() => {
         <button type="button" :disabled="loading" @click="load"><LoadingSpinner v-if="loading && items.length" /><svg v-else viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 8a7 7 0 0 1 11.5-2L20 12M4 12l2.5 6A7 7 0 0 0 18 16"/></svg>Refresh</button>
       </div>
       <p v-if="error" class="notification-popover__error" role="alert">{{ error }}</p>
+      <p v-if="countError" class="notification-popover__error" role="alert">{{ countError }}</p>
       <p v-if="loading && !items.length" class="loading-state"><LoadingSpinner /> Loading notifications…</p>
       <div v-else-if="!items.length && !error" class="notification-popover__empty"><strong>No notifications yet.</strong><p>Messages, group requests and meetup updates will appear here.</p></div>
       <ul v-if="items.length" class="notification-popover__list">

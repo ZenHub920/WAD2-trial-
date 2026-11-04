@@ -9,12 +9,10 @@ import { useReducedMotion } from '../composables/useReducedMotion.js';
 const concerts = ref([]);
 const loading = ref(true);
 const error = ref(false);
-// Ticketmaster image URLs occasionally 404; those cards fall back to the artwork.
+
 const brokenImages = ref(new Set());
 const reduced = useReducedMotion();
 
-// The local list carries the companion counts; the provider list only adds
-// concerts that have not been imported yet. Either may fail on its own.
 onMounted(async () => {
   const [local, external] = await Promise.allSettled([api.concerts(), api.externalConcerts()]);
   if (local.status === 'rejected' && external.status === 'rejected') {
@@ -37,7 +35,6 @@ onMounted(async () => {
 
 const peopleCount = (c) => (c.open_seekers ?? 0) + (c.open_slots ?? 0);
 
-// The busiest upcoming shows rotate through the hero; a photo breaks ties.
 const slides = computed(() =>
   [...concerts.value]
     .sort((a, b) => peopleCount(b) - peopleCount(a) || hasImage(b) - hasImage(a))
@@ -60,10 +57,8 @@ function startSlides() {
   }, SLIDE_MS);
 }
 
-/** Which way the deck is travelling, so the card leaves the side it was pushed. */
 const slideDirection = ref('next');
 
-/** Move by one card and restart the countdown, wrapping at either end. */
 function step(delta) {
   const count = slides.value.length;
   if (count < 2) return;
@@ -72,7 +67,6 @@ function step(delta) {
   startSlides();
 }
 
-// Picking a dot restarts the countdown so the chosen slide gets its full time.
 function goToSlide(i) {
   slideDirection.value = i < activeSlide.value ? 'back' : 'next';
   activeSlide.value = i;

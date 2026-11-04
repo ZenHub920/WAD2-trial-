@@ -169,6 +169,14 @@ test('planner drafts: stages, failed saves, internal navigation, browser Back an
     const { meetup } = await api(host.context, '/meetups', 'POST', { ...shortWindow, partyId: data.parties.a });
     await host.page.goto('/meetups');
     await host.page.getByRole('link', { name: 'Share availability', exact: true }).click();
+    // Current teammate step gates require saved times before cross-stage
+    // editing. Retain one saved slot, then edit a different draft.
+    await api(host.context, `/meetups/${meetup.id}/availability`, 'PUT', { windows: [{ startsAt: '2030-01-01T17:00:00+08:00', endsAt: shortWindow.endsAt }] });
+    const { place } = await api(host.context, `/meetups/${meetup.id}/places`, 'POST', { label: 'Saved entrance', latitude: 1.3, longitude: 103.85 });
+    await api(host.context, `/meetups/${meetup.id}/vote`, 'PUT', { placeId: place.id });
+    await expect(host.page.locator('[data-availability-start]').last()).toHaveAttribute('aria-pressed', 'true');
+    await expect(host.page.locator('#meetup-tab-review')).toHaveAttribute('aria-disabled', 'false');
+    const originalAvailability = (await api(host.context, `/meetups/${meetup.id}`)).meetup.availability;
     const cell = host.page.locator('[data-availability-start]').first();
     const dialog = host.page.getByRole('dialog', { name: 'Leave with unsaved changes?', exact: true });
     await cell.click();
@@ -178,7 +186,7 @@ test('planner drafts: stages, failed saves, internal navigation, browser Back an
     await host.page.getByRole('tab', { name: /Agree on the plan/ }).click();
     await host.page.getByRole('tab', { name: /Find a time/ }).click();
     await expect(cell).toHaveAttribute('aria-pressed', 'true');
-    expect((await api(host.context, `/meetups/${meetup.id}`)).meetup.availability).toEqual([]);
+    expect((await api(host.context, `/meetups/${meetup.id}`)).meetup.availability).toEqual(originalAvailability);
 
     let releaseSave;
     const saveGate = new Promise(resolve => { releaseSave = resolve; });
@@ -188,7 +196,7 @@ test('planner drafts: stages, failed saves, internal navigation, browser Back an
       await route.fulfill({ status: 503, json: { error: 'temporarily_unavailable' } });
     });
     await host.page.getByRole('button', { name: 'Save my times', exact: true }).click();
-    await expect(host.page.getByRole('button', { name: 'Updating…', exact: true })).toBeDisabled();
+    await expect(host.page.getByRole('button', { name: 'Saving…', exact: true })).toBeDisabled();
     await expect(cell).toBeDisabled();
     await capture(host.page, 'availability-saving-disabled-dark-390');
     releaseSave();
@@ -235,8 +243,8 @@ test('planner drafts: stages, failed saves, internal navigation, browser Back an
 
     await host.page.getByRole('button', { name: 'Save my times', exact: true }).click();
     await expect(host.page.getByText('Your availability and journey have been saved.', { exact: true })).toBeVisible();
-    await expect(host.page.locator('.meetup-save-state')).toContainText('Showing your saved availability.');
-    expect((await api(host.context, `/meetups/${meetup.id}`)).meetup.availability).toHaveLength(1);
+    await expect(host.page.locator('.meetup-availability__summary')).toContainText('Your saved availability');
+    expect((await api(host.context, `/meetups/${meetup.id}`)).meetup.availability).toHaveLength(2);
     await capture(host.page, 'availability-saved-dark-390');
     await host.page.getByRole('button', { name: 'All plans', exact: true }).click();
     await expect(host.page.getByRole('heading', { name: 'My meetups', exact: true })).toBeVisible();
@@ -250,7 +258,7 @@ test('planner drafts: stages, failed saves, internal navigation, browser Back an
     await dialog.getByRole('button', { name: 'Discard changes and leave', exact: true }).click();
     await expect(host.page.getByRole('heading', { name: 'My meetups', exact: true })).toBeVisible();
     // Discarding the new draft does not erase previously saved availability.
-    expect((await api(host.context, `/meetups/${meetup.id}`)).meetup.availability).toHaveLength(1);
+    expect((await api(host.context, `/meetups/${meetup.id}`)).meetup.availability).toHaveLength(2);
   } finally { await host.context.close(); await friend.context.close(); }
 });
 
@@ -262,6 +270,7 @@ test('planner locations: query edits, stale responses and manual names cannot si
   const oldGate = new Promise(resolve => { releaseOld = resolve; });
   try {
     const { meetup } = await api(host.context, '/meetups', 'POST', { ...shortWindow, partyId: data.parties.a });
+    await api(host.context, `/meetups/${meetup.id}/availability`, 'PUT', { windows: [{ startsAt: shortWindow.startsAt, endsAt: shortWindow.endsAt }] });
     await host.page.goto(`/meetups/${meetup.id}#meetup-places`);
     const editor = host.page.locator('.meetup-place-editor');
     const lookup = editor.locator('.meetup-location-search');
@@ -281,7 +290,7 @@ test('planner locations: query edits, stale responses and manual names cannot si
     await query.fill('Stadium');
     await expect(editor.getByLabel('Place name', { exact: true })).toHaveValue('');
     await expect(lookup.locator('.meetup-location-search__selection')).toHaveCount(0);
-    await manual.getByText('Advanced/manual entry', { exact: true }).click();
+    await manual.locator('summary').click();
     await expect(manual.getByLabel('Latitude', { exact: true })).toHaveValue('');
     await expect(manual.getByLabel('Longitude', { exact: true })).toHaveValue('');
     await lookup.getByRole('button', { name: 'Search OneMap', exact: true }).click();

@@ -91,5 +91,5 @@ function publicConversation(c, viewerId) {
 }
 
 function publicMessage(m) {
-  return { id: m.id, senderId: m.sender_user_id, body: m.body, createdAt: m.created_at };
+  return { id: m.id, seq: m.seq, senderId: m.sender_user_id, body: m.body, createdAt: m.created_at };
 }

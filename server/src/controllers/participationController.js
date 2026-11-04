@@ -18,6 +18,10 @@ export function createParticipationController(repos) {
         || !SECTIONS.includes(body.sectionPref) || !ARRIVALS.includes(body.arrivalPref)) {
         return res.status(400).json({ error: 'invalid_participation' });
       }
+      // Companion finder cards show each person's face, so joining needs a picture.
+      if (!repos.users.findById(req.user.id)?.avatar_path) {
+        return res.status(400).json({ error: 'profile_picture_required' });
+      }
       res.json({ participation: repos.participation.join(req.user.id, req.params.id,
         body.sectionPref, body.arrivalPref) });
     },

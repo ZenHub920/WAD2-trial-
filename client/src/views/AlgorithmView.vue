@@ -1,5 +1,4 @@
 <script setup>
-// Replay the solver's trace for this concert's current listings.
 import { ref, computed, onUnmounted, watch } from 'vue';
 import { api, LABELS } from '../api.js';
 import { currentUser, sessionReady } from '../auth.js';
@@ -21,10 +20,6 @@ const playing = ref(false);
 const speed = ref(6);          // events per second
 let timer = null;
 let loadRequest = 0;
-
-// ---------------------------------------------------------------------------
-// Load
-// ---------------------------------------------------------------------------
 
 watch(
   [() => props.id, sessionReady, () => currentUser.value?.isOperator],

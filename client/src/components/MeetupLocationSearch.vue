@@ -5,6 +5,7 @@ import { api } from '../api.js';
 const props = defineProps({
   meetupId: { type: String, required: true },
   label: { type: String, default: 'Search a public place or postal code' },
+  placeholder: { type: String, default: 'e.g. City Hall MRT' },
   disabled: { type: Boolean, default: false },
   resetKey: { type: [String, Number], default: 0 },
   selectionHint: { type: String, default: 'Selection is not saved. Apply or save it using the form below.' },
@@ -79,7 +80,7 @@ onBeforeUnmount(() => { generation++; });
 <template>
   <div class="meetup-location-search" :aria-busy="busy">
     <div class="meetup-location-search__controls">
-      <label :for="fieldId">{{ label }}<input :id="fieldId" ref="input" v-model="query" :disabled="disabled" :aria-describedby="descriptionIds" :aria-controls="results.length ? `${fieldId}-results` : undefined" maxlength="100" placeholder="e.g. City Hall MRT" autocomplete="off" @keydown.enter.prevent="search" @keydown.down="focusResult($event)" /></label>
+      <label :for="fieldId">{{ label }}<input :id="fieldId" ref="input" v-model="query" :disabled="disabled" :aria-describedby="descriptionIds" :aria-controls="results.length ? `${fieldId}-results` : undefined" maxlength="100" :placeholder="placeholder" autocomplete="off" @keydown.enter.prevent="search" @keydown.down="focusResult($event)" /></label>
       <button type="button" class="btn btn--ghost" :disabled="disabled || busy || query.trim().length < 2" @click="search">{{ busy ? 'Searching…' : 'Search OneMap' }}</button>
     </div>
     <p :id="`${fieldId}-help`" class="group-muted meetup-location-search__help">Search, then pick a result.</p>

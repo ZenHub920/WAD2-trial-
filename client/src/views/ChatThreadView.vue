@@ -9,14 +9,16 @@ import MarketNotice from '../components/market/MarketNotice.vue';
 import MarketPageHead from '../components/market/MarketPageHead.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 
-/**
- * One buyer–seller conversation. New messages arrive by polling: every few
- * seconds it asks only for messages newer than the last one it has, and it
- * stops asking while the tab is hidden.
- */
 const props = defineProps({ id: { type: String, required: true } });
 
 const POLL_MS = 4000;
+let scopeVersion = 0;
+let disposed = false;
+let catchupAfter, pollVersion = 0, polling = false;
+function requestScope() {
+  const version = scopeVersion, id = props.id, userId = currentUser.value?.id;
+  return { id, current: () => !disposed && version === scopeVersion && id === props.id && userId === currentUser.value?.id };
+}
 
 const conversation = ref(null);
 const messages = ref([]);
@@ -25,17 +27,19 @@ const loadingHistory = ref(false);
 async function loadOlder() {
   if (!historyPage.value?.nextCursor || loadingHistory.value) return;
   loadingHistory.value = true;
+  const scope = requestScope();
   const height = listEl.value?.scrollHeight ?? 0;
   const top = listEl.value?.scrollTop ?? 0;
   try {
-    const body = await api.conversation(props.id, null, { before: historyPage.value.nextCursor });
+    const body = await api.conversation(scope.id, null, { before: historyPage.value.nextCursor });
+    if (!scope.current()) return;
     const known = new Set(messages.value.map((m) => m.id));
     messages.value = [...body.messages.filter((m) => !known.has(m.id)), ...messages.value];
     historyPage.value = body.page;
     await nextTick();
-    if (listEl.value) listEl.value.scrollTop = top + listEl.value.scrollHeight - height;
-  } catch { sendError.value = 'Could not load older messages.'; }
-  finally { loadingHistory.value = false; }
+    if (scope.current() && listEl.value) listEl.value.scrollTop = top + listEl.value.scrollHeight - height;
+  } catch { if (scope.current()) sendError.value = 'Could not load older messages.'; }
+  finally { if (scope.current()) loadingHistory.value = false; }
 }
 const loading = ref(true);
 const error = ref(null);
@@ -52,6 +56,9 @@ function append(incoming) {
   const fresh = incoming.filter((m) => !known.has(m.id));
   if (!fresh.length) return;
   messages.value = [...messages.value, ...fresh];
+  // The server sequence orders a recovered reply before an already displayed
+  // outgoing message, even when both were saved in the same second.
+  if (messages.value.every(message => Number.isInteger(message.seq))) messages.value.sort((a, b) => a.seq - b.seq);
   scrollToEnd();
 }
 
@@ -61,50 +68,73 @@ async function scrollToEnd() {
 }
 
 async function load() {
+  scopeVersion++;
+  pollVersion++; polling = false; catchupAfter = undefined;
+  const scope = requestScope();
   loading.value = true;
   error.value = null;
   conversation.value = null;
   draft.value = '';
   sendError.value = '';
   messages.value = [];
+  historyPage.value = null;
+  sending.value = false;
+  loadingHistory.value = false;
   try {
-    const body = await api.conversation(props.id);
+    const body = await api.conversation(scope.id);
+    if (!scope.current()) return;
     conversation.value = body.conversation;
     historyPage.value = body.page;
     append(body.messages);
   } catch (err) {
-    error.value = err;
+    if (scope.current()) error.value = err;
   } finally {
-    loading.value = false;
+    if (scope.current()) loading.value = false;
   }
 }
 
 async function poll() {
-  if (document.hidden || !conversation.value) return;
+  if (document.hidden || !conversation.value || sending.value || polling) return;
+  const scope = requestScope();
+  const request = ++pollVersion, cursor = catchupAfter === undefined ? lastMessageId.value : catchupAfter;
+  polling = true;
   try {
-    append(await fetchChatUpdates((options) => api.conversation(props.id, null, options), lastMessageId.value));
+    const incoming = cursor ? await fetchChatUpdates((options) => scope.current() ? api.conversation(scope.id, null, options) : Promise.reject(new Error('stale_conversation')), cursor)
+      : (await api.conversation(scope.id)).messages;
+    if (scope.current() && request === pollVersion) { append(incoming); catchupAfter = undefined; }
   } catch {
     // A missed poll is harmless; the next one catches up.
-  }
+  } finally { if (scope.current() && request === pollVersion) polling = false; }
 }
 
 async function send() {
   const body = draft.value.trim();
   if (!body || sending.value) return;
   sending.value = true;
+  pollVersion++; polling = false;
+  const scope = requestScope();
   sendError.value = '';
   try {
-    const previousNewest = lastMessageId.value;
-    const { message } = await api.sendMessage(props.id, body);
+    const previousNewest = catchupAfter === undefined ? lastMessageId.value : catchupAfter;
+    const { message } = await api.sendMessage(scope.id, body);
+    if (!scope.current()) return;
     draft.value = '';
-    if (previousNewest) append(await fetchChatUpdates((options) => api.conversation(props.id, null, options), previousNewest));
+    if (catchupAfter === undefined) catchupAfter = previousNewest;
     append([message]);
+    // A saved message remains successful even when catching up on replies fails.
+    try {
+      const incoming = previousNewest ? await fetchChatUpdates((options) => scope.current() ? api.conversation(scope.id, null, options) : Promise.reject(new Error('stale_conversation')), previousNewest)
+        : (await api.conversation(scope.id)).messages;
+      if (scope.current()) { append(incoming); catchupAfter = undefined; }
+    } catch {
+      if (scope.current()) sendError.value = 'Message sent. New replies could not refresh; the next update will retry.';
+    }
   } catch (err) {
-    sendError.value = err.message === 'message_too_long'
+    if (scope.current()) sendError.value = err.message === 'message_too_long'
       ? 'That message is too long (2,000 characters max).'
       : 'Message not sent. Please try again.';
   } finally {
-    sending.value = false;
+    if (scope.current()) sending.value = false;
   }
 }
 
@@ -118,8 +148,8 @@ function onKeydown(event) {
 
 let timer;
 onMounted(() => { timer = setInterval(poll, POLL_MS); });
-onUnmounted(() => clearInterval(timer));
-watch(() => props.id, load, { immediate: true });
+onUnmounted(() => { disposed = true; scopeVersion++; clearInterval(timer); });
+watch([() => props.id, () => currentUser.value?.id], load, { immediate: true });
 
 function timeOf(value) {
   const date = new Date(`${value.replace(' ', 'T')}Z`);

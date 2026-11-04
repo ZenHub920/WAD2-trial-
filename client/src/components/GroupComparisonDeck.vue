@@ -203,7 +203,7 @@ function cardStyle(slot) {
     <div v-if="instructionsVisible" key="instructions" class="comparison-deck__instructions">
       <div class="comparison-deck__intro"><div><h3 class="comparison-deck__instructions-title" tabindex="-1">Compare two groups at a time</h3><p>Compare first. Nothing is sent until you ask to join.</p></div><span class="comparison-deck__progress">{{ state.groups.length }} {{ state.groups.length === 1 ? 'group' : 'groups' }}</span></div>
       <ol class="comparison-deck__steps">
-        <li><span class="comparison-deck__step-number" aria-hidden="true">1</span><div><h4>Compare</h4><p>Tap <strong>Keep this group</strong> or swipe left to skip.</p></div></li>
+        <li><span class="comparison-deck__step-number" aria-hidden="true">1</span><div><h4>Compare</h4><p>Tap <strong>Keep this group</strong> to compare locally, or swipe left to skip.</p></div></li>
         <li><span class="comparison-deck__step-number" aria-hidden="true">2</span><div><h4>Request to join</h4><p>Swipe right or tap <strong>Request to join</strong>.</p></div></li>
       </ol>
       <div class="comparison-deck__start"><button type="button" class="btn btn--primary" :disabled="locked || !state.groups.length" @click="instructionsVisible = false">Start comparing</button></div>

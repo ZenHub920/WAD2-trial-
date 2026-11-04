@@ -18,7 +18,7 @@ import { flushPromises } from '@vue/test-utils';
 import ProfileView from '../../client/src/views/ProfileView.vue';
 import { api } from '../../client/src/api.js';
 import { currentUser, setCurrentUser } from '../../client/src/auth.js';
-import { loadMyPreferences } from '../../client/src/groupPreferences.js';
+import { myPreferences, loadMyPreferences, saveMyPreferences } from '../../client/src/groupPreferences.js';
 import { browserPushStatus, disableBrowserPush } from '../../client/src/browserPush.js';
 import { button, field, mountPage } from './helpers.js';
 
@@ -90,7 +90,76 @@ beforeEach(() => {
   browserPushStatus.mockResolvedValue({ supported: true, configured: true, enabled: false });
   disableBrowserPush.mockResolvedValue(undefined);
   loadMyPreferences.mockResolvedValue(null);
+  myPreferences.value = null;
   setCurrentUser({ ...SIGNED_IN });
+});
+
+describe('profile saved actions and account isolation', () => {
+  it('keeps saved questionnaire answers successful if the continuation page fails, and retries only navigation', async () => {
+    saveMyPreferences.mockResolvedValue({ about: ['singalong'] });
+    const { wrapper, router } = await mountPage(ProfileView, { path: '/profile?setup=1', stubs: isolated });
+    const replace = vi.spyOn(router, 'replace').mockRejectedValueOnce(new Error('navigation interrupted'));
+    wrapper.findComponent({ name: 'PreferenceEditor' }).vm.$emit('save', { about: ['singalong'] });
+    await flushPromises();
+    expect(saveMyPreferences).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).toContain('Saved. Groups and companion matching now use these.');
+    expect(wrapper.text()).toContain('Your answers are saved, but the next page could not open.');
+    expect(wrapper.text()).not.toContain('Could not save your answers');
+    await button(wrapper, 'Continue with saved answers').trigger('click'); await flushPromises();
+    expect(replace).toHaveBeenCalledTimes(2);
+    expect(saveMyPreferences).toHaveBeenCalledTimes(1);
+    expect(router.currentRoute.value.path).toBe('/concerts');
+  });
+
+  it('ignores a late autosave response from the previous account while allowing the new account to save', async () => {
+    let complete;
+    api.updateProfile.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const { wrapper } = await openProfile();
+    await field(wrapper, 'Display name').setValue('Old account edit'); await waitForAutosave();
+    api.profile.mockResolvedValue({ profile: savedProfile({ id: 'user-2', displayName: 'Bob' }) });
+    setCurrentUser({ id: 'user-2', displayName: 'Bob' }); await flushPromises();
+    expect(field(wrapper, 'Display name').element.value).toBe('Bob');
+    complete({ profile: savedProfile({ displayName: 'Old account edit' }) }); await flushPromises();
+    expect(field(wrapper, 'Display name').element.value).toBe('Bob');
+    expect(currentUser.value).toMatchObject({ id: 'user-2', displayName: 'Bob' });
+    await field(wrapper, 'Display name').setValue('Bob updated'); await waitForAutosave();
+    expect(api.updateProfile).toHaveBeenCalledTimes(2);
+    expect(currentUser.value.displayName).toBe('Bob updated');
+  });
+
+  it('cancels the old account pending autosave timer rather than sending its draft under the next account', async () => {
+    const { wrapper } = await openProfile();
+    await field(wrapper, 'Display name').setValue('Never send this');
+    api.profile.mockResolvedValue({ profile: savedProfile({ id: 'user-2', displayName: 'Bob' }) });
+    setCurrentUser({ id: 'user-2', displayName: 'Bob' }); await flushPromises(); await waitForAutosave();
+    expect(api.updateProfile).not.toHaveBeenCalled();
+    expect(field(wrapper, 'Display name').element.value).toBe('Bob');
+  });
+
+  it.each(['Choose picture', 'Remove picture'])('ignores %s completion after switching accounts', async label => {
+    let complete;
+    const method = label === 'Choose picture' ? 'setAvatar' : 'clearAvatar';
+    api[method].mockImplementation(() => new Promise(resolve => { complete = resolve; }));
+    const { wrapper } = await openProfile();
+    await button(wrapper, label).trigger('click');
+    await button(wrapper, label).trigger('click');
+    expect(api[method]).toHaveBeenCalledTimes(1);
+    api.profile.mockResolvedValue({ profile: savedProfile({ id: 'user-2', displayName: 'Bob' }) });
+    setCurrentUser({ id: 'user-2', displayName: 'Bob', avatarUrl: '/bob.png' }); await flushPromises();
+    complete({ user: { ...SIGNED_IN, avatarUrl: '/alice.png' } }); await flushPromises();
+    expect(currentUser.value).toMatchObject({ id: 'user-2', displayName: 'Bob', avatarUrl: '/bob.png' });
+    expect(field(wrapper, 'Display name').element.value).toBe('Bob');
+  });
+
+  it('applies an avatar response without overwriting a newer display name from the same account', async () => {
+    let complete;
+    api.setAvatar.mockImplementation(() => new Promise(resolve => { complete = resolve; }));
+    const { wrapper } = await openProfile();
+    await button(wrapper, 'Choose picture').trigger('click');
+    await field(wrapper, 'Display name').setValue('Newer name'); await waitForAutosave();
+    complete({ user: { ...SIGNED_IN, avatarUrl: '/new-picture.png' } }); await flushPromises();
+    expect(currentUser.value).toMatchObject({ id: 'user-1', displayName: 'Newer name', avatarUrl: '/new-picture.png' });
+  });
 });
 
 /* ------------------------------------------------------------------ *

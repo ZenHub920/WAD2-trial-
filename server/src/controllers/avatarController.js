@@ -1,9 +1,10 @@
 /**
  * Profile pictures.
  *
- * Optional everywhere: at registration, and afterwards. A user without one is
- * stored as NULL and drawn as a grey silhouette, which is a deliberate choice
- * rather than a placeholder to be nagged about.
+ * Optional at registration. A user without one is stored as NULL and drawn as a
+ * grey silhouette. Joining the companion finder needs one, because its cards
+ * show faces (see participationController), so it cannot be removed while the
+ * user is in the finder for an upcoming concert.
  *
  * VALIDATION
  * Reuses `decodeTicketImage`, which inspects the actual bytes — PNG chunk
@@ -17,6 +18,7 @@
  */
 
 import { publicUser } from './publicUser.js';
+import { concertParticipationEligibility } from '../../../shared/concertEligibility.mjs';
 
 export function createAvatarController(repos, images) {
   return {
@@ -48,6 +50,11 @@ export function createAvatarController(repos, images) {
 
     /** Remove it and fall back to the silhouette. */
     clear(req, res) {
+      // The companion finder shows faces: while someone is in it for an upcoming
+      // concert, the picture can be replaced but not removed.
+      const inCompanionFinder = repos.participation.mine(req.user.id)
+        .some(({ concert }) => concertParticipationEligibility(concert).eligible);
+      if (inCompanionFinder) return res.status(409).json({ error: 'profile_picture_required_for_companion_finder' });
       const previous = repos.users.findById(req.user.id)?.avatar_path ?? null;
       repos.users.setAvatar(req.user.id, null);
       if (previous) images.remove(previous);

@@ -1,5 +1,5 @@
 import { communityError } from '../db/membershipRepository.js';
-import { compareMeetupOptions, rankMeetupOptions, SLOT_MS } from './meetupPlanning.js';
+import { compareMeetupOptions, meetupRankingContext, rankMeetupOptions, SLOT_MS } from './meetupPlanning.js';
 import { createSingaporeTravel } from './singaporeTravel.js';
 import { createMeetupWeather } from './meetupWeather.js';
 import { singaporeCoordinates } from './providerCache.js';
@@ -27,9 +27,21 @@ export function createMeetupIntegrations({ db, repos, fetchImpl = globalThis.fet
       const input = repos.meetups.planningInput(user, id);
       if (input.status === 'cancelled') throw communityError('meetup_cancelled');
       const places = input.places.filter((p) => !shelteredOnly || p.sheltered);
-      const baseline = rankMeetupOptions({ startsAt: input.starts_at, endsAt: input.ends_at, availability: input.availability, places, participantCount: input.participantCount, limit: 1000 });
-      // Bounded shortlist: six public places and up to twelve time/place options.
-      const placeIds = [...new Set(baseline.map((s) => s.placeId))].slice(0, 6);
+      // Consider every valid place before bounding provider calls. A busy early
+      // place must not fill a truncated baseline and hide all alternatives.
+      const baseline = rankMeetupOptions({ startsAt: input.starts_at, endsAt: input.ends_at, availability: input.availability, places, participantCount: input.participantCount, limit: Infinity });
+      const byPlace = [...new Map(baseline.map(option => [option.placeId, null])).keys()];
+      const leaders = byPlace.map(placeId => baseline.find(option => option.placeId === placeId));
+      const voted = leaders.filter(option => option.votes > 0)
+        .sort((a, b) => b.availableCount - a.availableCount || b.votes - a.votes || compareMeetupOptions(a, b));
+      // Alternate the baseline leaders with voted alternatives. This is only a
+      // bounded sampling policy, not an optimization score: route ranking still
+      // uses the established attendance/travel/fairness/votes comparator.
+      const placeIds = [];
+      for (let i = 0; placeIds.length < 6 && (byPlace[i] || voted[i]); i++) {
+        for (const placeId of [byPlace[i], voted[i]?.placeId])
+          if (placeId && !placeIds.includes(placeId) && placeIds.length < 6) placeIds.push(placeId);
+      }
       const grouped = placeIds.map((pid) => baseline.filter((s) => s.placeId === pid));
       const candidates = [];
       const optionLimit = Math.max(1, Math.min(12, Math.floor(24 / Math.max(1, input.participantCount))));
@@ -66,13 +78,20 @@ export function createMeetupIntegrations({ db, repos, fetchImpl = globalThis.fet
         const validRoute = (r) => r.status === 'available' && Number.isFinite(r.durationMinutes) && r.durationMinutes >= 0 && r.durationMinutes <= 1440 && !r.stale;
         const complete = people > 0 && people === option.locationRespondents && results.length === people && results.every(validRoute);
         const durations = complete ? results.map((r) => r.durationMinutes) : [];
-        return { ...option, mode: 'member_preferences', basis: complete ? 'route_times' : 'straight_line_distance', totalTravelMinutes: complete ? durations.reduce((a, b) => a + b, 0) : null, maximumTravelMinutes: complete ? Math.max(...durations) : null, routedRespondents: results.filter(validRoute).length, missingLocationCount: option.availableCount - people, fallbackReason: complete ? null : travel.configured === false ? 'onemap_not_configured' : people === 0 ? 'starting_locations_not_supplied' : results.find((r) => r.status !== 'available')?.reason || 'route_budget_or_freshness_limit' };
+        return { ...option, mode: 'member_preferences', basis: complete ? 'route_times' : option.basis, totalTravelMinutes: complete ? durations.reduce((a, b) => a + b, 0) : null, maximumTravelMinutes: complete ? Math.max(...durations) : null, routedRespondents: results.filter(validRoute).length, missingRouteLocationCount: option.availableCount - people, fallbackReason: complete ? null : travel.configured === false ? 'onemap_not_configured' : people === 0 ? 'starting_locations_not_supplied' : results.find((r) => r.status !== 'available')?.reason || 'route_budget_or_freshness_limit' };
       });
       // Compare travel durations only when the entire shortlist has a complete matrix.
       // Partial provider availability must never make an unknown journey look shorter.
-      const routeRanking = options.length > 0 && options.every((o) => o.basis === 'route_times' && o.missingLocationCount === 0);
+      const routeRanking = options.length > 0 && options.every((o) => o.basis === 'route_times' && o.missingRouteLocationCount === 0);
       options.sort((a, b) => compareMeetupOptions(a, b, { routeTimes: routeRanking }));
-      return { status: 'available', version: input.version, rankingBasis: routeRanking ? 'route_times' : 'straight_line_distance', options, shortlistedPlaces: placeIds.length, routesRequested: jobIndex, message: routeRanking ? 'Ranked by attendance, combined journey time, then the longest journey, using each person’s saved car or public-transport method. Transit schedules use a fixed departure one hour before the meeting for comparison; driving estimates do not predict future traffic. Confirm the actual journey nearer the day.' : 'Ranked by attendance and straight-line distance. Complete fresh routes were unavailable for every shortlisted option; any route times shown are supplementary estimates. Add more places to compare alternatives.' };
+      const context = meetupRankingContext(options, { routeTimes: routeRanking });
+      const shortlistedPlaces = new Set(options.map(option => option.placeId)).size;
+      const scope = `Compared a shortlist of ${options.length} time/place options across ${shortlistedPlaces} of ${byPlace.length} eligible places; this is not a global route optimization.`;
+      return { status: 'available', version: input.version, ...context, options, eligiblePlaces: byPlace.length, eligibleOptions: baseline.length,
+        shortlistedPlaces, routesRequested: jobIndex,
+        message: `${context.rankingMessage} ${scope} ${routeRanking
+          ? 'Routes use each supplied car or public-transport method. Transit schedules use a fixed departure one hour before the meeting; driving estimates do not predict future traffic.'
+          : 'Fresh complete routes were unavailable for every shortlisted option. Route times shown are supplementary; straight-line distances do not use transport methods.'}` };
     },
     async transport(user, id, options = {}) {
       if (options.phase !== undefined) return nearbyTransport(user, id, options);

@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { isNavigationFailure, NavigationFailureType, useRoute, useRouter } from 'vue-router';
 import { api, LABELS } from '../api.js';
 import { currentUser, sessionReady, setCurrentUser, signOut } from '../auth.js';
 import AvatarPicker from '../components/AvatarPicker.vue';
@@ -13,6 +13,9 @@ import SaveBadge from '../components/SaveBadge.vue';
 
 const avatarBusy = ref(false);
 const avatarError = ref('');
+let alive = true, accountVersion = 0;
+const operationContext = () => ({ userId: currentUser.value?.id, version: accountVersion });
+const isCurrent = ({ userId, version }) => alive && version === accountVersion && currentUser.value?.id === userId;
 
 const router = useRouter();
 const route = useRoute();
@@ -40,30 +43,38 @@ async function logOut() {
 
 /** Applies immediately; the header picture updates with it. */
 async function applyAvatar(dataUrl) {
+  if (avatarBusy.value) return;
+  const context = operationContext();
   avatarBusy.value = true;
   avatarError.value = '';
   try {
     const { user } = await api.setAvatar(dataUrl);
-    setCurrentUser({ ...currentUser.value, ...user });
+    if (!isCurrent(context)) return;
+    setCurrentUser({ ...currentUser.value, avatarUrl: user.avatarUrl });
   } catch (err) {
+    if (!isCurrent(context)) return;
     avatarError.value = err.message === 'invalid_image'
       ? 'That file is not a readable image.'
       : 'Could not save the picture. Please try again.';
   } finally {
-    avatarBusy.value = false;
+    if (isCurrent(context)) avatarBusy.value = false;
   }
 }
 
 async function removeAvatar() {
+  if (avatarBusy.value) return;
+  const context = operationContext();
   avatarBusy.value = true;
   avatarError.value = '';
   try {
     const { user } = await api.clearAvatar();
-    setCurrentUser({ ...currentUser.value, ...user });
+    if (!isCurrent(context)) return;
+    setCurrentUser({ ...currentUser.value, avatarUrl: user.avatarUrl });
   } catch {
+    if (!isCurrent(context)) return;
     avatarError.value = 'Could not remove the picture. Please try again.';
   } finally {
-    avatarBusy.value = false;
+    if (isCurrent(context)) avatarBusy.value = false;
   }
 }
 
@@ -78,8 +89,20 @@ const prefLoading = ref(true);
 const prefNotice = ref('');
 const prefError = ref('');
 const prefEditing = ref(false);
+const setupContinueFailed = ref(false);
 const showPreferenceEditor = computed(() => settingUp.value || !myPreferences.value || prefEditing.value);
-const continueAfterSetup = () => router.replace(setupNext.value);
+async function continueAfterSetup() {
+  const context = operationContext();
+  try {
+    const navigation = await router.replace(setupNext.value);
+    if (isNavigationFailure(navigation, NavigationFailureType.aborted | NavigationFailureType.cancelled)) throw new Error('navigation_failed');
+    if (isCurrent(context)) setupContinueFailed.value = false;
+  } catch {
+    if (!isCurrent(context)) return;
+    setupContinueFailed.value = true;
+    prefError.value = prefNotice.value ? 'Your answers are saved, but the next page could not open. Try continuing again.' : 'The next page could not open. Please try again.';
+  }
+}
 
 // The server says which rule an answer broke; repeating that beats "try again",
 // which cannot succeed until the answer changes.
@@ -95,18 +118,22 @@ const savePreferencesMessages = {
 };
 
 async function savePreferences(answers) {
+  if (prefSaving.value) return;
+  const context = operationContext();
   prefSaving.value = true;
   prefError.value = '';
   prefNotice.value = '';
   try {
     await saveMyPreferences(answers);
+    if (!isCurrent(context)) return;
     prefNotice.value = 'Saved. Groups and companion matching now use these.';
     prefEditing.value = false;
     if (settingUp.value) await continueAfterSetup();
   } catch (e) {
+    if (!isCurrent(context)) return;
     prefError.value = savePreferencesMessages[e?.message] ?? 'Could not save your answers. Please try again.';
   } finally {
-    prefSaving.value = false;
+    if (isCurrent(context)) prefSaving.value = false;
   }
 }
 
@@ -139,34 +166,20 @@ function fillForm(value) {
 
 async function loadProfile() {
   const requestId = ++profileRequest;
+  const context = operationContext();
   loading.value = true;
   loadError.value = null;
   try {
     const response = await api.profile();
-    if (requestId !== profileRequest) return;
+    if (requestId !== profileRequest || !isCurrent(context)) return;
     profile.value = response.profile;
     fillForm(response.profile);
   } catch (error) {
-    if (requestId === profileRequest) loadError.value = error;
+    if (requestId === profileRequest && isCurrent(context)) loadError.value = error;
   } finally {
-    if (requestId === profileRequest) loading.value = false;
+    if (requestId === profileRequest && isCurrent(context)) loading.value = false;
   }
 }
-
-watch([() => currentUser.value?.id, sessionReady], ([userId, ready], _previous, onCleanup) => {
-  let stale = false;
-  onCleanup(() => { stale = true; profileRequest++; });
-  if (!ready) return;
-  profile.value = null;
-  form.value = null;
-  prefLoading.value = true;
-  prefError.value = '';
-  loadProfile();
-  if (!userId) { prefLoading.value = false; return; }
-  loadMyPreferences()
-    .catch(() => { if (!stale) prefError.value = 'Could not load your answers.'; })
-    .finally(() => { if (!stale) prefLoading.value = false; });
-}, { immediate: true });
 
 /* ---- Autosave -------------------------------------------------------------
  * Details and vibe sliders save on their own a moment after the last change,
@@ -194,6 +207,25 @@ function markCards(cards, state) {
   }
 }
 
+watch([() => currentUser.value?.id, sessionReady], ([userId, ready], _previous, onCleanup) => {
+  let stale = false;
+  onCleanup(() => { stale = true; profileRequest++; accountVersion++; });
+  clearTimeout(autosaveTimer); autosaveTimer = null;
+  Object.values(fades).forEach(clearTimeout);
+  lastSaved = ''; cardStatus.about = ''; cardStatus.vibe = '';
+  saving.value = false; avatarBusy.value = false; avatarError.value = '';
+  saveError.value = ''; sessionExpired.value = false;
+  prefSaving.value = false; prefNotice.value = ''; prefError.value = ''; prefEditing.value = false; setupContinueFailed.value = false;
+  profile.value = null; form.value = null;
+  if (!ready) return;
+  prefLoading.value = true;
+  loadProfile();
+  if (!userId) { prefLoading.value = false; return; }
+  loadMyPreferences()
+    .catch(() => { if (!stale) prefError.value = 'Could not load your answers.'; })
+    .finally(() => { if (!stale) prefLoading.value = false; });
+}, { immediate: true });
+
 watch(form, (value, previous) => {
   if (!value) return;
   // A fresh load (or a new account) is the saved state, not an edit.
@@ -208,11 +240,12 @@ function flushAutosave() {
   autosaveTimer = null;
   void save();
 }
-onBeforeUnmount(() => { Object.values(fades).forEach(clearTimeout); flushAutosave(); });
+onBeforeUnmount(() => { Object.values(fades).forEach(clearTimeout); flushAutosave(); alive = false; accountVersion++; profileRequest++; });
 
 async function save() {
   autosaveTimer = null;
   if (saving.value || !form.value) return;
+  const context = operationContext();
   sessionExpired.value = false;
   if (!form.value.displayName.trim()) {
     errorCard.value = 'about';
@@ -232,6 +265,7 @@ async function save() {
   markCards(cards, 'saving');
   try {
     const { profile: updated } = await api.updateProfile(JSON.parse(sending));
+    if (!isCurrent(context)) return;
     profile.value = updated;
     lastSaved = sending;
     // Update the header name in place. Re-checking the whole session here
@@ -239,6 +273,7 @@ async function save() {
     if (currentUser.value) setCurrentUser({ ...currentUser.value, displayName: updated.displayName });
     markCards(cards, 'saved');
   } catch (error) {
+    if (!isCurrent(context)) return;
     markCards(cards, '');
     errorCard.value = cards[0] ?? 'about';
     sessionExpired.value = error.status === 401;
@@ -246,6 +281,7 @@ async function save() {
       ? 'Your session has expired. Sign in again to edit your profile.'
       : 'Could not save your changes. They will be retried with your next edit.';
   } finally {
+    if (!isCurrent(context)) return;
     saving.value = false;
     // Anything changed during the request goes out now.
     if (form.value && !sessionExpired.value && snapshot(form.value) !== lastSaved && !saveError.value) void save();
@@ -362,6 +398,7 @@ async function save() {
         <div v-if="settingUp" class="profile__setup-footer">
           <p class="profile__hint">Automatic matching needs saved preferences. You can return here before switching it on.</p>
           <button type="button" class="btn btn--ghost" :disabled="prefSaving" @click="continueAfterSetup">Skip for now</button>
+          <button v-if="setupContinueFailed && prefNotice" type="button" class="btn btn--primary" :disabled="prefSaving" @click="continueAfterSetup">Continue with saved answers</button>
         </div>
       </section>
 

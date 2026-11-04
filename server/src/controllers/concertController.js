@@ -1,3 +1,4 @@
+import { concertPalette } from '../services/concertPalette.js';
 import { publicUser } from './publicUser.js';
 
 import { SECTIONS } from '../matching/compatibility.js';
@@ -56,6 +57,13 @@ export function createConcertController(repos) {
 
       res.json({
         concert,
+        // Derived rather than stored: a concert whose poster was never read
+        // still has a theme, taken from the artist's name.
+        palette: concertPalette({
+          artist: concert.artist,
+          paletteHue: concert.palette_hue,
+          paletteSource: concert.palette_source,
+        }),
         openParties: parties.length,
         // Count genuinely available slots, not original capacity.
         //

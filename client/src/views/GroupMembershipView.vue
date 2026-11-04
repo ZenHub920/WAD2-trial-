@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "../api.js";
 import { useMeetupSummaries } from '../composables/useMeetupSummaries.js';
@@ -13,13 +13,16 @@ import AvatarPicker from "../components/AvatarPicker.vue";
 import BackLink from "../components/BackLink.vue";
 import GroupPreferencesGate from "../components/GroupPreferencesGate.vue";
 import GroupPrioritiesSummary from "../components/GroupPrioritiesSummary.vue";
+import ConfirmDialog from "../components/ConfirmDialog.vue";
 import "../assets/groups.css";
+
 const props = defineProps({ id: String, token: String });
 const router = useRouter();
 const { plans: meetupPlans } = useMeetupSummaries();
 const meetupLink = scope => meetupDestination(meetupPlans.value, scope, { from: 'manage-group' });
 const meetupLabel = scope => meetupActionForScope(meetupPlans.value, scope);
 const settingsPanel = ref(null);
+const cancelPrompt = ref(false), leavePrompt = ref(false);
 const group = ref(null),
   error = ref(""),
   notice = ref(""),
@@ -46,7 +49,10 @@ const validCount = (value) => Number.isInteger(value) && value >= 0;
 const nameMissing = computed(() => !groupNameDraft.value.trim());
 const nameChanged = computed(() => Boolean(group.value) && groupNameDraft.value.trim() !== (group.value.name ?? ""));
 const sizeChanged = computed(() => Boolean(group.value) && (!group.value.settings || friends.value !== savedFriends.value || strangerPlaces.value !== savedPlaces.value));
-const dirty = computed(() => nameChanged.value || pendingImage.value !== undefined || sizeChanged.value);
+const detailsDirty = computed(() => nameChanged.value || pendingImage.value !== undefined || sizeChanged.value);
+const publicationDirty = computed(() => Boolean(group.value) && connect.value !== Boolean(group.value.settings?.connect_open));
+const dirty = computed(() => detailsDirty.value || publicationDirty.value);
+const publicationLabel = computed(() => group.value?.settings?.published ? 'Save publication settings' : 'Publish group');
 const invalid = computed(() => nameMissing.value || !validCount(friends.value) || !validCount(strangerPlaces.value));
 watch(invalid, (value) => {
   if (!value && error.value === "Fill in the highlighted fields before saving.") error.value = "";
@@ -55,6 +61,24 @@ const previewImage = computed(() => pendingImage.value === undefined ? group.val
 const fieldState = (filled) => ({ "field-ok": filled, "field-error": attempted.value && !filled });
 const memberSource = { host: 'Host', friend: 'Friend invitation', join: 'Approved application', proposal: 'Confirmed automatic match' };
 let loadVersion = 0, alive = true;
+let resolveLeave, leaveDecision;
+const stopNavigationGuard = router.beforeEach((to, from) => {
+  if (!isHost.value || !dirty.value || to.fullPath === from.fullPath) return true;
+  if (!resolveLeave) {
+    leavePrompt.value = true;
+    leaveDecision = new Promise(resolve => { resolveLeave = resolve; });
+  }
+  return leaveDecision;
+});
+function settleLeave(discard) {
+  resolveLeave?.(discard);
+  resolveLeave = null; leaveDecision = undefined; leavePrompt.value = false;
+}
+function beforeUnload(event) {
+  if (!isHost.value || !dirty.value) return;
+  event.preventDefault(); event.returnValue = '';
+}
+onMounted(() => window.addEventListener('beforeunload', beforeUnload));
 
 async function load() {
   const id = props.id, userId = currentUser.value?.id, version = ++loadVersion;
@@ -78,6 +102,7 @@ watch(
     let stale = false;
     onCleanup(() => { stale = true; });
     group.value = null;
+    busy.value = false; saving.value = false; cancelPrompt.value = false; settleLeave(false);
     error.value = "";
     notice.value = ""; refreshWarning.value = "";
     loading.value = Boolean(props.id);
@@ -92,7 +117,24 @@ watch(
   },
   { immediate: true },
 );
-onUnmounted(() => { alive = false; loadVersion++; });
+onUnmounted(() => { alive = false; loadVersion++; stopNavigationGuard(); settleLeave(false); window.removeEventListener('beforeunload', beforeUnload); });
+function actionError(e) {
+  return ({
+    members_or_preferences_incomplete: "Every expected friend must join, and every member, including the host, must save their preferences in Profile before publishing.",
+    expected_friends_below_current_members: "The number of friends can't be lower than the friends already in your group.",
+    configure_group_first: "Save your group before creating an invitation.",
+    invitation_unavailable: "This invitation has expired or is no longer available. Ask the host for a new link.",
+    invitation_used: "This single-use invitation has already been accepted. Ask the host for a new link.",
+    already_in_concert_group: "You already belong to or host a group for this concert.",
+    active_matching_proposal_exists: "Review your active matching proposal before joining another group.",
+    save_group_preferences_first: "Save your private preferences in Profile before joining.",
+    invalid_group_name: "Group names can be up to 60 characters.",
+    invalid_image: "That file is not a readable image.",
+    places_below_active_reservations: "Keep enough spots for current members and held requests. Resolve those reservations before reducing the group size.",
+    concert_finished: "This concert day has ended. Existing group information, conversations and meetup history remain available; new publishing and connections are closed.",
+    concert_date_unavailable: "A valid concert date is needed before publishing or starting new connections. Your existing group is still available.",
+  })[e.message] ?? (e.status === 401 ? "Sign in to manage your group." : "Could not save this change. Review your group and try again.");
+}
 async function act(fn, done = "Saved.") {
   if (busy.value) return false;
   const id = props.id, userId = currentUser.value?.id;
@@ -109,39 +151,29 @@ async function act(fn, done = "Saved.") {
     return true;
   } catch (e) {
     if (!current()) return false;
-    error.value = ({
-      members_or_preferences_incomplete: "Every expected friend must join, and every member, including the host, must save their preferences in Profile before publishing.",
-      expected_friends_below_current_members: "The number of friends can't be lower than the friends already in your group.",
-      configure_group_first: "Save your group before creating an invitation.",
-      invitation_unavailable: "This invitation has expired or is no longer available. Ask the host for a new link.",
-      invitation_used: "This single-use invitation has already been accepted. Ask the host for a new link.",
-      already_in_concert_group: "You already belong to or host a group for this concert.",
-      active_matching_proposal_exists: "Review your active matching proposal before joining another group.",
-      save_group_preferences_first: "Save your private preferences in Profile before joining.",
-      invalid_group_name: "Group names can be up to 60 characters.",
-      invalid_image: "That file is not a readable image.",
-      concert_finished: "This concert day has ended. Existing group information, conversations and meetup history remain available; new publishing and connections are closed.",
-      concert_date_unavailable: "A valid concert date is needed before publishing or starting new connections. Your existing group is still available.",
-    })[e.message] ?? (e.status === 401 ? "Sign in to manage your group." : "Could not save this change. Review your group and try again.");
+    error.value = actionError(e);
     return false;
   } finally {
-    busy.value = false;
+    if (current()) busy.value = false;
   }
 }
-const draftSnapshot = () => JSON.stringify([friends.value, strangerPlaces.value, groupNameDraft.value, pendingImage.value]);
+const draftSnapshot = () => JSON.stringify([friends.value, strangerPlaces.value, groupNameDraft.value, pendingImage.value, connect.value]);
+watch(draftSnapshot, () => { notice.value = ''; }, { flush: 'sync' });
 async function retryRefresh() {
   if (busy.value) return;
   const snapshot = draftSnapshot(), id = props.id, userId = currentUser.value?.id;
+  const pendingPublication = publicationDirty.value, connectDraft = connect.value;
   busy.value = true;
   try {
     await load();
     if (!alive || props.id !== id || currentUser.value?.id !== userId) return;
     refreshWarning.value = "";
-    if (draftSnapshot() === snapshot) fillDrafts();
+    if (draftSnapshot() === snapshot) { fillDrafts(); if (pendingPublication) connect.value = connectDraft; }
   } catch { /* Keep the saved outcome and the contextual refresh warning. */ }
-  finally { busy.value = false; }
+  finally { if (alive && props.id === id && currentUser.value?.id === userId) busy.value = false; }
 }
 async function saveAll() {
+  if (busy.value || !detailsDirty.value) return;
   attempted.value = true;
   if (invalid.value) {
     if (settingsPanel.value) settingsPanel.value.open = true;
@@ -149,15 +181,56 @@ async function saveAll() {
     notice.value = "";
     return;
   }
-  saving.value = true;
+  const id = props.id, userId = currentUser.value?.id;
+  const current = () => alive && props.id === id && currentUser.value?.id === userId;
+  const saved = [];
+  saving.value = true; busy.value = true; error.value = ''; notice.value = ''; refreshWarning.value = '';
+  try {
+    if (nameChanged.value) {
+      const name = groupNameDraft.value.trim();
+      await api.renameGroup(id, name); if (!current()) return;
+      group.value = { ...group.value, name }; saved.push('name');
+    }
+    if (pendingImage.value !== undefined) {
+      const image = pendingImage.value;
+      if (image) await api.setGroupImage(id, image); else await api.clearGroupImage(id);
+      if (!current()) return;
+      group.value = { ...group.value, imageUrl: image }; pendingImage.value = undefined; saved.push('picture');
+    }
+    if (sizeChanged.value) {
+      const expectedFriends = friends.value, places = strangerPlaces.value;
+      await api.configureGroup(id, { expectedFriends, strangerPlaces: places }); if (!current()) return;
+      group.value = { ...group.value, settings: { ...group.value.settings, expected_friends: expectedFriends, stranger_slots: places, published: false } };
+      saved.push('size');
+    }
+    notice.value = publicationDirty.value ? 'Group details saved. Your publication setting is still unsaved; use the publication button above.' : 'All changes saved.';
+    try { await load(); }
+    catch { if (current()) refreshWarning.value = 'The change was saved, but the latest group details could not be loaded. Retry the refresh before making another change.'; }
+  } catch (e) {
+    if (!current()) return;
+    if (saved.length) notice.value = `Saved ${saved.join(' and ')}. Other changes are still unsaved.`;
+    error.value = `${saved.length ? 'Remaining changes were not saved. ' : ''}${actionError(e)}`;
+  } finally {
+    if (current()) { saving.value = false; busy.value = false; }
+  }
+}
+async function publish() {
+  if (busy.value || detailsDirty.value) return;
+  const connectOpen = connect.value, id = props.id, userId = currentUser.value?.id;
+  await act(async () => {
+    await api.publishGroup(id, { connectOpen });
+    if (!alive || props.id !== id || currentUser.value?.id !== userId) return;
+    group.value = { ...group.value, settings: { ...group.value.settings, published: true, connect_open: connectOpen } };
+  }, group.value.settings?.published ? 'Publication settings saved.' : 'Group published.');
+}
+async function cancelGroup() {
+  const id = props.id, userId = currentUser.value?.id;
   const ok = await act(async () => {
-    if (nameChanged.value) await api.renameGroup(props.id, groupNameDraft.value.trim());
-    if (pendingImage.value) await api.setGroupImage(props.id, pendingImage.value);
-    else if (pendingImage.value === null) await api.clearGroupImage(props.id);
-    if (sizeChanged.value) await api.configureGroup(props.id, { expectedFriends: friends.value, strangerPlaces: strangerPlaces.value });
-  }, "All changes saved.");
-  saving.value = false;
-  if (ok && !refreshWarning.value) fillDrafts();
+    await api.cancelGroup(id);
+    if (!alive || props.id !== id || currentUser.value?.id !== userId) return;
+    group.value = { ...group.value, status: 'cancelled' };
+  }, 'Group cancelled.');
+  if (ok) { cancelPrompt.value = false; fillDrafts(); notice.value = 'Group cancelled.'; }
 }
 async function accept() {
   await act(async () => {
@@ -230,7 +303,7 @@ async function leave() {
           <p v-else-if="isFinished" class="group-muted" role="status">This concert day has ended. Your group information, conversations and previous meetup plans remain available. New publishing and group connections are closed.</p>
           <p v-else-if="!canCoordinate" class="group-muted" role="status">A valid concert date is needed before publishing or starting new connections. Existing group information remains available.</p>
           <p v-else class="group-muted">{{ group.settings?.published ? "Your group is visible to people looking for a group." : "Only members can see this group until it's published." }}</p>
-          <p v-if="group.remainingCapacity != null && canStartCoordination" class="group-muted">{{ group.remainingCapacity }} companion places remaining</p>
+          <p v-if="group.remainingCapacity != null && canStartCoordination" class="group-muted">{{ group.remainingCapacity }} companion spots remaining</p>
           <ul class="member-roster__list">
             <li v-for="m in group.members" :key="m.id"><div><RouterLink :to="`/people/${encodeURIComponent(m.id)}`">{{ m.name }}</RouterLink><span class="group-muted">{{ memberSource[m.source] ?? 'Member' }}</span></div><span class="member-roster__readiness" :class="{'member-roster__readiness--missing':!m.answered}">{{ m.answered ? 'Preferences saved' : 'Preferences missing' }}</span></li>
           </ul>
@@ -245,7 +318,7 @@ async function leave() {
 
         <template v-if="isHost">
           <details ref="settingsPanel" class="member-settings" :open="!group.settings?.published">
-            <summary><div><p class="member-eyebrow">Host controls</p><strong>Group settings</strong><span>Name, picture and places for friends or new companions</span></div><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m5 7.5 5 5 5-5"/></svg></summary>
+            <summary><div><p class="member-eyebrow">Host controls</p><strong>Group settings</strong><span>Name, picture and spots for friends or new companions</span></div><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m5 7.5 5 5 5-5"/></svg></summary>
             <div class="member-settings__content">
           <section class="card group-panel" aria-labelledby="group-identity-heading">
             <h2 id="group-identity-heading">Group name &amp; picture</h2>
@@ -297,27 +370,29 @@ async function leave() {
             <details class="member-invite-tools">
               <summary>Create a friend invitation <span>Single-use link</span></summary>
               <div class="member-invite-tools__content">
-            <button class="btn btn--ghost" :disabled="busy || !group.settings || dirty || group.status === 'cancelled'" @click="invite">Create single-use friend link</button>
+            <button class="btn btn--ghost" :disabled="busy || !group.settings || detailsDirty || group.status === 'cancelled'" @click="invite">Create single-use friend link</button>
+            <p v-if="!group.settings || detailsDirty" class="group-muted">Save your group details before creating an invitation link.</p>
             <label v-if="link">Copy and share privately<input :value="link" readonly @focus="$event.target.select()" /></label>
               </div>
             </details>
-            <label v-if="canStartCoordination" class="group-check"><input v-model="connect" type="checkbox" />Open to meeting other groups</label>
-            <p v-if="dirty" class="group-muted">Save your changes first.</p>
+            <label v-if="canStartCoordination" class="group-check"><input v-model="connect" type="checkbox" :disabled="busy" />Open to meeting other groups</label>
+            <p v-if="canStartCoordination" class="group-muted">{{ publicationDirty ? `Publication setting not saved. Use ${publicationLabel.toLowerCase()} to apply it.` : group.settings?.published ? 'Publication settings are saved.' : 'Publish when every expected friend has joined and every member has saved preferences.' }} Group details are saved separately below.</p>
+            <p v-if="detailsDirty" class="group-muted">Save your group details below before publishing or updating publication settings.</p>
             <div class="group-actions">
-              <button v-if="canStartCoordination" class="btn btn--primary" :disabled="busy || !group.settings || dirty" @click="act(() => api.publishGroup(id, { connectOpen: connect }), 'Group published.')">Publish group</button>
-              <button class="btn btn--danger" :disabled="busy" @click="act(() => api.cancelGroup(id), 'Group cancelled.')">Cancel group</button>
+              <button v-if="canStartCoordination" class="btn btn--primary" :disabled="busy || !group.settings || detailsDirty || (group.settings.published && !publicationDirty)" @click="publish">{{ publicationLabel }}</button>
+              <button v-if="group.status !== 'cancelled'" class="btn btn--danger" :disabled="busy" @click="cancelPrompt = true">Cancel group</button>
             </div>
           </section>
 
-          <!-- One save for everything on this page; sticks to the bottom so it
-               is always in reach. -->
+          <!-- Group details and publication have separately labelled save actions. -->
           <div class="save-bar" :class="{ 'save-bar--dirty': dirty }">
             <p v-if="error" class="group-error" role="alert">{{ error }}</p>
-            <p v-else-if="notice" class="group-success" role="status">{{ notice }}</p>
-            <p v-else-if="dirty" class="group-muted">You have unsaved changes.</p>
-            <p v-else class="group-muted">No unsaved changes.</p>
+            <p v-if="notice" class="group-success" role="status">{{ notice }}</p>
+            <template v-if="!error && !notice"><p v-if="detailsDirty" class="group-muted">You have unsaved group details.</p>
+            <p v-else-if="publicationDirty" class="group-muted">Publication setting not saved. Use {{ publicationLabel.toLowerCase() }} above.</p>
+            <p v-else class="group-muted">No unsaved changes.</p></template>
             <button v-if="dirty" type="button" class="btn btn--ghost" :disabled="busy" @click="fillDrafts">Discard</button>
-            <button type="button" class="btn btn--primary save-bar__save" :disabled="busy || !dirty" @click="saveAll">
+            <button type="button" class="btn btn--primary save-bar__save" :disabled="busy || !detailsDirty" @click="saveAll">
               <LoadingSpinner v-if="saving" />{{ saving ? "Saving…" : "Save changes" }}
             </button>
           </div>
@@ -326,6 +401,8 @@ async function leave() {
         <button v-else class="btn btn--danger-ghost" :disabled="busy" @click="leave">Leave group</button>
       </template>
     </GroupPreferencesGate>
+    <ConfirmDialog :open="cancelPrompt" title="Cancel this group?" body="The group will stop accepting members and connections. Pending requests and automatic offers will be cancelled, friend invitation links will stop working, and members will leave the active group. Your group record stays in your history. This action cannot be undone." confirm-label="Cancel group" cancel-label="Keep group" initial-focus="cancel" danger :busy="busy" @cancel="cancelPrompt = false" @confirm="cancelGroup" />
+    <ConfirmDialog :open="leavePrompt" title="Leave with unsaved group settings?" body="Your group details or publication setting have not been saved. Leaving discards these drafts. Any change already sent may still complete." confirm-label="Discard changes and leave" cancel-label="Keep editing" initial-focus="cancel" danger @cancel="settleLeave(false)" @confirm="settleLeave(true)" />
   </div>
 </template>
 

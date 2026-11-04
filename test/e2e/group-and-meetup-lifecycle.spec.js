@@ -12,6 +12,11 @@ async function capture(page, name) {
 }
 const read = async (actor, id) => (await api(actor.context, `/meetups/${id}`)).meetup;
 async function stage(page, name) { await page.locator(`#meetup-tab-${name}`).click(); }
+async function submitReviewedProposal(page, immediate) {
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText(point.label);
+  await dialog.getByRole('button', { name: immediate ? 'Confirm meetup now' : 'Submit proposal for approval', exact: true }).click();
+}
 async function confirmReopen(actor) {
   await actor.page.getByRole('button', { name: /^(Withdraw proposal and reopen planning|Reopen planning)$/ }).click();
   const dialog = actor.page.getByRole('dialog');
@@ -77,6 +82,12 @@ test('groups: past concert guard, draft creation, invitation, publication and or
     await host.page.getByLabel('Latest meeting time', { exact: false }).fill('2030-01-01T17:30');
     await host.page.getByRole('button', { name: 'Create planning board', exact: true }).click();
     await expect(host.page.getByRole('heading', { name: timing.title, exact: true })).toBeVisible();
+    const boardId = new URL(host.page.url()).pathname.split('/')[2];
+    await api(host.context, `/meetups/${boardId}/availability`, 'PUT', { windows: [{ startsAt: timing.startsAt, endsAt: timing.endsAt }] });
+    const { place } = await api(host.context, `/meetups/${boardId}/places`, 'POST', point);
+    await api(host.context, `/meetups/${boardId}/vote`, 'PUT', { placeId: place.id });
+    await expect(host.page.locator('#meetup-tab-places')).toHaveAttribute('aria-disabled', 'false');
+    await expect(host.page.locator('#meetup-tab-review')).toHaveAttribute('aria-disabled', 'false');
     await stage(host.page, 'places'); await stage(host.page, 'review');
     await host.page.getByRole('link', { name: 'Back to My groups', exact: true }).click();
     await expect(host.page).toHaveURL(/\/groups\/connect$/);
@@ -111,7 +122,8 @@ for (const scope of ['hosted', 'connected', 'kaki']) test(`${scope} planning: ex
     await a.page.goto(`${path}#meetup-places`); await b.page.goto(`${path}#meetup-review`);
     const before = await read(a, meetup.id);
     expect(before.status).toBe('planning');
-    await a.page.getByRole('button', { name: scope === 'hosted' ? 'Confirm this time & place' : 'Propose this time & place', exact: true }).first().click();
+    await a.page.getByRole('button', { name: scope === 'hosted' ? 'Confirm this time & place' : 'Propose this time & place', exact: true }).click();
+    await submitReviewedProposal(a.page, scope === 'hosted');
     await expect(a.page.locator('#meetup-review')).toBeVisible();
     let proposal = await read(a, meetup.id);
     expect(proposal.status).toBe(scope === 'hosted' ? 'confirmed' : 'proposed');
@@ -136,7 +148,8 @@ for (const scope of ['hosted', 'connected', 'kaki']) test(`${scope} planning: ex
     const stale = await a.context.request.post(`${origin}/api${path}/approve`, { headers: { Origin: origin }, data: { version: proposal.version } });
     expect(stale.status()).toBe(409);
     await stage(a.page, 'places');
-    await a.page.getByRole('button', { name: scope === 'hosted' ? 'Confirm this time & place' : 'Propose this time & place', exact: true }).first().click();
+    await a.page.getByRole('button', { name: scope === 'hosted' ? 'Confirm this time & place' : 'Propose this time & place', exact: true }).click();
+    await submitReviewedProposal(a.page, scope === 'hosted');
     await expect(a.page.locator('#meetup-review')).toBeVisible();
     proposal = await read(a, meetup.id);
     if (scope !== 'hosted') {

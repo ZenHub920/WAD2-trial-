@@ -318,6 +318,7 @@ describe('Integration: MyListingsView + ProofUpload', () => {
 // The "List a ticket" form: what it sends to the API and how it reacts.
 describe('Integration: ListingView (create a listing)', () => {
   const saved = { id: 'tm_saved', artist: 'Coldplay', venue: 'National Stadium', event_date: '2030-01-01' };
+  beforeEach(() => { api.concerts.mockResolvedValue({ concerts: [saved] }); });
   // Picks a concert, price, section and description, the way a user does.
   async function fillListing(wrapper, concertText = 'cold') {
     const [concertBox, sectionBox] = wrapper.findAll('input[role="combobox"]');
@@ -395,6 +396,78 @@ describe('Integration: ListingView (create a listing)', () => {
     expect(wrapper.get('.listing-form__error[role="alert"]').text()).toBe('Enter a valid total listing price.');
     expect(router.currentRoute.value.fullPath).toBe('/list-ticket');
   });
+
+  it('keeps a successful publication recoverable after navigation fails, without creating it twice', async () => {
+    api.externalConcerts.mockResolvedValue({ events: [] });
+    api.createTicket.mockResolvedValue({ listing: { id: 'published-once' } });
+    const { wrapper, router } = await mountPage(ListingView, '/list-ticket');
+    const navigate = vi.spyOn(router, 'push').mockRejectedValue(new Error('route chunk unavailable'));
+    await fillListing(wrapper);
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(wrapper.text()).toContain('Your listing was published, but its page could not open.');
+    expect(wrapper.text()).not.toContain('Could not publish your listing');
+    expect(wrapper.findAll('a').find(link => link.text() === 'Open published listing').attributes('href')).toBe('/tickets/published-once');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(api.createTicket).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores repeated publication submissions while the first request is pending', async () => {
+    api.externalConcerts.mockResolvedValue({ events: [] });
+    let finish;
+    api.createTicket.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const { wrapper } = await mountPage(ListingView, '/list-ticket');
+    await fillListing(wrapper);
+    await wrapper.get('form').trigger('submit');
+    await wrapper.get('form').trigger('submit');
+    expect(api.createTicket).toHaveBeenCalledTimes(1);
+    finish({ listing: { id: 'published-once' } });
+    await flushPromises();
+  });
+
+  it('does not navigate or restore a prior account listing after the creation response arrives late', async () => {
+    currentUser.value = { id: 'seller_1' };
+    api.externalConcerts.mockResolvedValue({ events: [] });
+    let finish;
+    api.createTicket.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const { wrapper, router } = await mountPage(ListingView, '/list-ticket');
+    const navigate = vi.spyOn(router, 'push');
+    await fillListing(wrapper); await wrapper.get('form').trigger('submit');
+    currentUser.value = { id: 'seller_2' }; await flushPromises();
+    finish({ listing: { id: 'old-account-listing' } }); await flushPromises();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(wrapper.text()).not.toContain('Your listing was published');
+    expect(wrapper.findAll('input[role="combobox"]')[0].element.value).toBe('');
+    expect(button(wrapper, 'Publish listing').element.disabled).toBe(false);
+  });
+
+  it('clears a saved-publication recovery cache when another account takes over the form', async () => {
+    currentUser.value = { id: 'seller_1' };
+    api.externalConcerts.mockResolvedValue({ events: [] });
+    api.createTicket.mockResolvedValueOnce({ listing: { id: 'old-listing' } }).mockResolvedValueOnce({ listing: { id: 'new-listing' } });
+    const { wrapper, router } = await mountPage(ListingView, '/list-ticket');
+    vi.spyOn(router, 'push').mockRejectedValue(new Error('navigation interrupted'));
+    await fillListing(wrapper); await wrapper.get('form').trigger('submit'); await flushPromises();
+    expect(wrapper.get('fieldset').element.disabled).toBe(true);
+    currentUser.value = { id: 'seller_2' }; await flushPromises();
+    expect(wrapper.get('fieldset').element.disabled).toBe(false);
+    await fillListing(wrapper); await wrapper.get('form').trigger('submit'); await flushPromises();
+    expect(api.createTicket).toHaveBeenCalledTimes(2);
+    expect(wrapper.findAll('a').find(link => link.text() === 'Open published listing').attributes('href')).toBe('/tickets/new-listing');
+  });
+
+  it('ignores a creation response after the form is unmounted', async () => {
+    api.externalConcerts.mockResolvedValue({ events: [] });
+    let finish;
+    api.createTicket.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const { wrapper, router } = await mountPage(ListingView, '/list-ticket');
+    const navigate = vi.spyOn(router, 'push');
+    await fillListing(wrapper); await wrapper.get('form').trigger('submit'); wrapper.unmount();
+    finish({ listing: { id: 'saved-after-unmount' } }); await flushPromises();
+    expect(navigate).not.toHaveBeenCalled();
+  });
 });
 
 // The seller's separate edit page: prefilled from the listing, saves as cents,
@@ -417,7 +490,8 @@ describe('Integration: EditListingView', () => {
     await wrapper.get('form').trigger('submit');
     await flushPromises();
 
-    expect(api.updateTicket).toHaveBeenCalledWith('ticket_1', expect.objectContaining({ priceCents: 35050, quantity: 1, section: 'Cat 3' }));
+    expect(api.updateTicket).toHaveBeenCalledWith('ticket_1', expect.objectContaining({ priceCents: 35050, quantity: 1 }));
+    expect(api.updateTicket.mock.calls[0][1]).not.toHaveProperty('section'); // unchanged sections, including legacy values, stay untouched
     expect(api.updateTicket.mock.calls[0][1]).not.toHaveProperty('imageData'); // image untouched
     // Opened directly, the edit page swaps itself for the listing and hands over the message.
     expect(router.currentRoute.value.fullPath).toBe('/tickets/ticket_1');
@@ -435,6 +509,30 @@ describe('Integration: EditListingView', () => {
     expect(back).toHaveBeenCalledOnce();
     expect(push).not.toHaveBeenCalled();
     state.mockRestore();
+  });
+
+  it('retains a legacy section when only the price changes', async () => {
+    api.ticket.mockResolvedValue({ listing: makeListing({ section: 'Legacy balcony row' }) });
+    api.updateTicket.mockResolvedValue({ listing: makeListing({ section: 'Legacy balcony row', priceCents: 32000 }) });
+    const { wrapper } = await mountPage(EditListingView, '/tickets/ticket_1/edit', { id: 'ticket_1' });
+    await wrapper.findAll('input[type="number"]')[0].setValue('320');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(api.updateTicket).toHaveBeenCalledWith('ticket_1', expect.objectContaining({ priceCents: 32000 }));
+    expect(api.updateTicket.mock.calls[0][1]).not.toHaveProperty('section');
+  });
+
+  it('sends a newly selected supported section while preserving saved-edit recovery', async () => {
+    api.updateTicket.mockResolvedValue({ listing: makeListing({ section: 'Cat 4' }) });
+    const { wrapper, router } = await mountPage(EditListingView, '/tickets/ticket_1/edit', { id: 'ticket_1' });
+    vi.spyOn(router, 'replace').mockRejectedValue(new Error('navigation unavailable'));
+    const section = wrapper.get('input[role="combobox"]');
+    await section.setValue('Cat 4'); await section.trigger('keydown', { key: 'Enter' });
+    await wrapper.get('form').trigger('submit'); await flushPromises();
+    expect(api.updateTicket).toHaveBeenCalledWith('ticket_1', expect.objectContaining({ section: 'Cat 4' }));
+    expect(wrapper.text()).toContain('Listing updated, but its page could not open.');
+    await wrapper.get('form').trigger('submit'); await flushPromises();
+    expect(api.updateTicket).toHaveBeenCalledTimes(1);
   });
 
   it('Test2: a listing with an image shows it, ready to change', async () => {
@@ -458,5 +556,64 @@ describe('Integration: EditListingView', () => {
     const { wrapper } = await mountPage(EditListingView, '/tickets/ticket_1/edit', { id: 'ticket_1' });
     expect(wrapper.find('form').exists()).toBe(false);
     expect(wrapper.text()).toContain('Only the seller can edit this listing');
+  });
+
+  it('reports a saved edit when navigation fails and retries opening without resaving unchanged fields', async () => {
+    api.updateTicket.mockResolvedValue({ listing: makeListing() });
+    const { wrapper, router } = await mountPage(EditListingView, '/tickets/ticket_1/edit', { id: 'ticket_1' });
+    vi.spyOn(router, 'replace').mockRejectedValue(new Error('navigation unavailable'));
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(wrapper.text()).toContain('Listing updated, but its page could not open.');
+    expect(wrapper.text()).not.toContain('Could not save this listing');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(api.updateTicket).toHaveBeenCalledTimes(1);
+    await wrapper.findAll('input[type="number"]')[0].setValue('320');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(api.updateTicket).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores repeated edit submissions while the first save is pending', async () => {
+    let finish;
+    api.updateTicket.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const { wrapper } = await mountPage(EditListingView, '/tickets/ticket_1/edit', { id: 'ticket_1' });
+    await wrapper.get('form').trigger('submit');
+    await wrapper.get('form').trigger('submit');
+    expect(api.updateTicket).toHaveBeenCalledTimes(1);
+    finish({ listing: makeListing() });
+    await flushPromises();
+  });
+
+  it('unlocks a new listing route while ignoring a previous listing save response', async () => {
+    let finish;
+    api.updateTicket.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; })).mockResolvedValue({ listing: makeListing({ id: 'ticket_2' }) });
+    const { wrapper, router } = await mountPage(EditListingView, '/tickets/ticket_1/edit', { id: 'ticket_1' });
+    const navigate = vi.spyOn(router, 'replace').mockRejectedValue(new Error('navigation interrupted'));
+    await wrapper.get('form').trigger('submit');
+    api.ticket.mockResolvedValue({ listing: makeListing({ id: 'ticket_2', priceCents: 22000 }) });
+    await wrapper.setProps({ id: 'ticket_2' }); await flushPromises();
+    expect(button(wrapper, 'Save changes').element.disabled).toBe(false);
+    finish({ listing: makeListing() }); await flushPromises();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(wrapper.findAll('input[type="number"]')[0].element.value).toBe('220');
+    await wrapper.get('form').trigger('submit'); await flushPromises();
+    expect(api.updateTicket).toHaveBeenLastCalledWith('ticket_2', expect.objectContaining({ priceCents: 22000 }));
+  });
+
+  it('invalidates an in-flight edit across account changes, including returning to the original account', async () => {
+    let finish;
+    api.updateTicket.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; })).mockResolvedValue({ listing: makeListing() });
+    const { wrapper, router } = await mountPage(EditListingView, '/tickets/ticket_1/edit', { id: 'ticket_1' });
+    const navigate = vi.spyOn(router, 'replace').mockRejectedValue(new Error('navigation interrupted'));
+    await wrapper.get('form').trigger('submit');
+    currentUser.value = { id: 'seller_2' }; await flushPromises();
+    currentUser.value = { id: 'seller_1' }; await flushPromises();
+    finish({ listing: makeListing() }); await flushPromises();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(button(wrapper, 'Save changes').element.disabled).toBe(false);
+    await wrapper.get('form').trigger('submit'); await flushPromises();
+    expect(api.updateTicket).toHaveBeenCalledTimes(2);
   });
 });
