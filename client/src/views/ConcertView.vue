@@ -38,6 +38,8 @@ const participation = ref(null);
 const participationLoading = ref(false);
 const participationBusy = ref(false);
 const participationError = ref('');
+// Companion cards show each person's face, so joining needs a profile picture.
+const needsPicture = computed(() => Boolean(currentUser.value) && !currentUser.value.avatarUrl);
 const participationLoadError = ref(false);
 const participationRetry = ref(0);
 const participationNeedsSignIn = ref(false);
@@ -138,6 +140,7 @@ async function saveParticipation() {
   if (participationBusy.value || participationLoading.value) return;
   refreshEligibility();
   if (!canCoordinate.value) { participationError.value = isFinished.value ? 'This concert has finished. Your existing participation and conversations remain available.' : 'A valid concert date is needed to join the companion finder.'; return; }
+  if (needsPicture.value && !participation.value) return;
   const requestId = participationRequest;
   participationBusy.value = true;
   participationError.value = '';
@@ -153,6 +156,7 @@ async function saveParticipation() {
       participationError.value = err.status === 401
         ? 'Your session has expired. Sign in to join.'
         : err.message === 'concert_finished' ? 'This concert has finished. Your existing participation and conversations remain available.'
+          : err.message === 'profile_picture_required' ? 'Add a profile picture to join. Companion cards show your face.'
           : 'Could not save your companion-finder preferences. Please try again.';
       if (err.message === 'concert_finished') refreshEligibility();
     }
@@ -528,12 +532,16 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
               </select>
             </label>
           </div>
+          <p v-if="needsPicture && !participation && canCoordinate" class="kaki-join__picture">
+            Add a profile picture to join. Companion cards show your face to other fans.
+            <RouterLink to="/profile">Add a picture</RouterLink>
+          </p>
           <p v-if="participationError" class="kaki-join__error" role="alert">{{ participationError }}</p>
           <div class="kaki-join__actions">
             <span v-if="participationBusy" class="loading-state" role="status"><LoadingSpinner />Working…</span>
             <RouterLink v-if="participation && canCoordinate" :to="{ path: '/kaki', query: { concertId: id } }" class="btn btn--ghost">Browse companions</RouterLink>
             <RouterLink v-if="isFinished" to="/messages" class="btn btn--ghost">Existing conversations</RouterLink>
-            <button v-if="canCoordinate" type="submit" class="btn btn--primary" :disabled="participationBusy">
+            <button v-if="canCoordinate" type="submit" class="btn btn--primary" :disabled="participationBusy || (needsPicture && !participation)">
               {{ participationBusy ? 'Working…' : participation ? 'Save preferences' : 'Join companion finder' }}
             </button>
             <button v-if="participation" type="button" class="btn btn--danger-ghost" :disabled="participationBusy" @click="leaveParticipation">Leave companion finder</button>
@@ -662,6 +670,19 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
+}
+.kaki-join__picture {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--accent-400);
+  border-radius: var(--radius-sm);
+  background: var(--ink-750);
+  color: var(--text-200);
+  font-size: var(--step--1);
+}
+.kaki-join__picture a {
+  margin-left: var(--space-1);
+  font-weight: 650;
 }
 .kaki-join__error {
   color: var(--rose-400);

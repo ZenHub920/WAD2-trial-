@@ -5,12 +5,6 @@ import { formatMoney, formatRelative, listingTitle, sectionLabel } from '../mark
 import MarketNotice from '../components/market/MarketNotice.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 
-/**
- * Admin page for proof of purchase. Each pending listing shows its proof;
- * approving sets the listing's Verified badge, rejecting sends the seller a note
- * so they know what to fix before re-submitting. Recent decisions sit in a
- * second tab so an admin can see what was already handled.
- */
 const listings = ref([]);
 const recent = ref([]);
 const tab = ref('pending');

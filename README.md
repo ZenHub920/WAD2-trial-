@@ -7,14 +7,14 @@ For the current Kaki workflow, backend improvements, public API inventory and cr
 
 Current documentation:
 
-| Guide | Purpose |
-| --- | --- |
-| [Hybrid group matching](docs/HYBRID_GROUP_MATCHING.md) | Direct/automatic joining, queues and approval workflow |
-| [Matching algorithms](docs/ALGORITHM.md) | Solvers, scoring and guarantees |
-| [Team credentials](docs/TEAM_CREDENTIALS_SETUP.md) | Secure local/shared development setup |
-| [Web Push deployment](docs/WEB_PUSH_COST_AND_DEPLOYMENT.md) | Delivery, hosting, backups and device verification |
-| [Backend structure](docs/BACKEND_STRUCTURE.md) | Repository organisation and refactoring |
-| [Testing](test/README.md) | Test layout, commands, reports and renamed suites |
+| Guide                                                       | Purpose                                                |
+| ----------------------------------------------------------- | ------------------------------------------------------ |
+| [Hybrid group matching](docs/HYBRID_GROUP_MATCHING.md)      | Direct/automatic joining, queues and approval workflow |
+| [Matching algorithms](docs/ALGORITHM.md)                    | Solvers, scoring and guarantees                        |
+| [Team credentials](docs/TEAM_CREDENTIALS_SETUP.md)          | Secure local/shared development setup                  |
+| [Web Push deployment](docs/WEB_PUSH_COST_AND_DEPLOYMENT.md) | Delivery, hosting, backups and device verification     |
+| [Backend structure](docs/BACKEND_STRUCTURE.md)              | Repository organisation and refactoring                |
+| [Testing](test/README.md)                                   | Test layout, commands, reports and renamed suites      |
 
 People miss shows when their friends do not share their taste in music. Ticket
 resale addresses ticket supply, while first-come-first-served forums pair people
@@ -231,7 +231,6 @@ simulated checkout. They do not prove payment. Fake saved payment accounts,
 simulated purchases, the destructive demo-seeding command and hardcoded
 application concerts have been removed.
 
-
 ### Find a companion
 
 The signed-in finder loads eligible concertgoers through `GET /api/kaki/pool`.
@@ -336,7 +335,6 @@ npm --prefix server run bench
 npm --prefix server run bench:scale
 ```
 
-
 ## Matching model
 
 Gale-Shapley solves the Stable Marriage Problem, which requires two disjoint sets
@@ -346,10 +344,10 @@ have no stable solution.
 
 Encore models group matching with two sides:
 
-| Side | Who | Capacity |
-|---|---|---|
-| Party | someone holding spare tickets, or forming a group | `q ≥ 1` |
-| Seeker | wants to join exactly one group | `1` |
+| Side   | Who                                               | Capacity |
+| ------ | ------------------------------------------------- | -------- |
+| Party  | someone holding spare tickets, or forming a group | `q ≥ 1`  |
+| Seeker | wants to join exactly one group                   | `1`      |
 
 This is the Hospital/Residents problem, the many-to-one generalisation of stable
 marriage. A stable matching always exists for this model. Deferred acceptance
@@ -392,7 +390,6 @@ between concerts.
 
 See [`docs/ALGORITHM.md`](docs/ALGORITHM.md), §10, for the full specification.
 
-
 ## Backend matching
 
 The backend computes preference lists so users do not need to rank two hundred
@@ -414,16 +411,15 @@ preference snapshot with the round so historical results can be checked again
 through the verification endpoint or the button on the results page.
 Each round also stores the proposal trace used by the visualiser.
 
-
 ## Evaluation
 
 Results from `npm run bench` with 400 seekers, 200 parties, 296 slots and 52,370 compatible pairs:
 
-| Algorithm | Blocking pairs | Match rate | Mean rank | Total score |
-|---|---|---|---|---|
-| Gale-Shapley | 0 | 74.0% | 5.55 | 499.78 |
-| Greedy (best pair first) | 175 | 74.0% | 4.32 | 503.73 |
-| Random (first-come-first-served) | 21,097 | 74.0% | 65.88 | 387.06 |
+| Algorithm                        | Blocking pairs | Match rate | Mean rank | Total score |
+| -------------------------------- | -------------- | ---------- | --------- | ----------- |
+| Gale-Shapley                     | 0              | 74.0%      | 5.55      | 499.78      |
+| Greedy (best pair first)         | 175            | 74.0%      | 4.32      | 503.73      |
+| Random (first-come-first-served) | 21,097         | 74.0%      | 65.88     | 387.06      |
 
 Greedy scores 0.79% higher overall but produces 175 blocking pairs. In each of
 those pairs, both people prefer each other to their assigned matches and could
@@ -437,11 +433,11 @@ oversubscribed, undersubscribed, large groups). Greedy produced them in all four
 
 Results from `npm run bench:scale`:
 
-| Seekers | Parties | Feasible pairs | Build prefs | Solve | Verify |
-|---|---|---|---|---|---|
-| 100 | 40 | 2,598 | 4ms | 0.2ms | 0.1ms |
-| 1,000 | 400 | 265,556 | 800ms | 15ms | 17ms |
-| 5,000 | 2,000 | 6,668,452 | 36,191ms | 1,636ms | 1,228ms |
+| Seekers | Parties | Feasible pairs | Build prefs | Solve   | Verify  |
+| ------- | ------- | -------------- | ----------- | ------- | ------- |
+| 100     | 40      | 2,598          | 4ms         | 0.2ms   | 0.1ms   |
+| 1,000   | 400     | 265,556        | 800ms       | 15ms    | 17ms    |
+| 5,000   | 2,000   | 6,668,452      | 36,191ms    | 1,636ms | 1,228ms |
 
 Preference construction takes more than 20× as long as solving. Caching each
 user's vibe-vector magnitude (a `sqrt` per pair per side) and skipping blocklist
@@ -449,7 +445,6 @@ string allocation when the blocklist is empty reduced pair-scoring cost by 1.7×
 Partitioning by concert is valid because cross-event pairs are infeasible.
 It reduced preference construction for the same 5,000-seeker population from
 36.2s to 1.7s, reported as a 24× improvement.
-
 
 ## Layout
 
@@ -496,7 +491,6 @@ docs/ALGORITHM.md     the specification
 The matching engine has no dependency on Express or SQLite, which is why the benchmarks can
 run it directly and why the tests cover the algorithm without standing up a server.
 
-
 ## The visualiser
 
 Operators can replay a round's recorded proposal trace at
@@ -505,36 +499,34 @@ Accepts, rejects and evictions are colour-coded, and groups show held offers
 filling and emptying. Public concert pages show aggregate forecast metrics
 without personal results.
 
-
 ## API
 
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/api/concerts` | list with live supply/demand counts |
-| `GET` | `/api/concerts/external?keyword=...` | first 50 upcoming SG music events from Ticketmaster (requires server key) |
-| `GET` / `POST` | `/api/tickets` | browse listings / create a seller listing (session required for POST) |
-| `GET` / `PATCH` / `DELETE` | `/api/tickets/:id` | detail / owner-only edit or remove |
-| `GET` | `/api/me/tickets` | seller's listings (session required) |
-| `GET` | `/api/kaki/pool`, `/api/kaki/decisions`, `/api/kaki/matches` | signed-in candidate pool, decision history, mutual likes |
-| `PUT` / `DELETE` | `/api/kaki/decisions/:concertId/:targetUserId` | signed-in like/skip or undo |
-| `GET` / `PATCH` | `/api/me/profile` | view and edit own matching profile |
-| `GET` / `POST` / `DELETE` | `/api/concerts/:id/participation` | check, join/update or leave Kaki for a concert |
-| `GET` | `/api/me/concerts` | concerts explicitly joined for Kaki |
-| `GET` | `/api/concerts/:id/parties` | groups with spare tickets |
-| `GET` | `/api/concerts/:id/requests` | people looking |
-| `GET` | `/api/concerts/:id/match/preview?baselines=true` | public aggregate dry run; only operators receive identities/trace |
-| `POST` | `/api/concerts/:id/match` | operator-only: run and persist a round |
-| `GET` | `/api/me/concerts/:id/result` | own latest group-round result (session required) |
-| `GET` | `/api/me/concerts/:id/matching` | own managed matching queue, request and approval state |
-| `POST` | `/api/me/concerts/:id/matching` | join automatic matching pool; UUID-v4 Idempotency-Key required; does not run a round |
-| `DELETE` | `/api/me/concerts/:id/matching` | switch to direct joining; active offers must be resolved first |
-| `GET` | `/api/rounds/:id` | operator-only full per-seeker results |
-| `GET` | `/api/rounds/:id/trace` | operator-only proposal sequence |
-| `GET` | `/api/rounds/:id/parties/:partyId` | operator-only full party roster |
-| `GET` | `/api/rounds/:id/verify` | operator-only re-check against stored snapshot |
-| `GET` | `/api/solvers` | every algorithm, with its guarantees and limits |
-| `GET` | `/api/concerts/:id/explain/:requestId` | operator-only explanation for one seeker |
-
+| Method                     | Path                                                         | Purpose                                                                              |
+| -------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `GET`                      | `/api/concerts`                                              | list with live supply/demand counts                                                  |
+| `GET`                      | `/api/concerts/external?keyword=...`                         | first 50 upcoming SG music events from Ticketmaster (requires server key)            |
+| `GET` / `POST`             | `/api/tickets`                                               | browse listings / create a seller listing (session required for POST)                |
+| `GET` / `PATCH` / `DELETE` | `/api/tickets/:id`                                           | detail / owner-only edit or remove                                                   |
+| `GET`                      | `/api/me/tickets`                                            | seller's listings (session required)                                                 |
+| `GET`                      | `/api/kaki/pool`, `/api/kaki/decisions`, `/api/kaki/matches` | signed-in candidate pool, decision history, mutual likes                             |
+| `PUT` / `DELETE`           | `/api/kaki/decisions/:concertId/:targetUserId`               | signed-in like/skip or undo                                                          |
+| `GET` / `PATCH`            | `/api/me/profile`                                            | view and edit own matching profile                                                   |
+| `GET` / `POST` / `DELETE`  | `/api/concerts/:id/participation`                            | check, join/update or leave Kaki for a concert                                       |
+| `GET`                      | `/api/me/concerts`                                           | concerts explicitly joined for Kaki                                                  |
+| `GET`                      | `/api/concerts/:id/parties`                                  | groups with spare tickets                                                            |
+| `GET`                      | `/api/concerts/:id/requests`                                 | people looking                                                                       |
+| `GET`                      | `/api/concerts/:id/match/preview?baselines=true`             | public aggregate dry run; only operators receive identities/trace                    |
+| `POST`                     | `/api/concerts/:id/match`                                    | operator-only: run and persist a round                                               |
+| `GET`                      | `/api/me/concerts/:id/result`                                | own latest group-round result (session required)                                     |
+| `GET`                      | `/api/me/concerts/:id/matching`                              | own managed matching queue, request and approval state                               |
+| `POST`                     | `/api/me/concerts/:id/matching`                              | join automatic matching pool; UUID-v4 Idempotency-Key required; does not run a round |
+| `DELETE`                   | `/api/me/concerts/:id/matching`                              | switch to direct joining; active offers must be resolved first                       |
+| `GET`                      | `/api/rounds/:id`                                            | operator-only full per-seeker results                                                |
+| `GET`                      | `/api/rounds/:id/trace`                                      | operator-only proposal sequence                                                      |
+| `GET`                      | `/api/rounds/:id/parties/:partyId`                           | operator-only full party roster                                                      |
+| `GET`                      | `/api/rounds/:id/verify`                                     | operator-only re-check against stored snapshot                                       |
+| `GET`                      | `/api/solvers`                                               | every algorithm, with its guarantees and limits                                      |
+| `GET`                      | `/api/concerts/:id/explain/:requestId`                       | operator-only explanation for one seeker                                             |
 
 ## Known limits
 

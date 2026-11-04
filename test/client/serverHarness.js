@@ -29,6 +29,8 @@ export async function startServer({ webPush, env } = {}) {
       method: 'POST', body: { display_name: name, email: `${name}@example.test`, password: 'test-password' },
     });
     if (result.status !== 201) throw new Error(`register ${name}: ${JSON.stringify(result.body)}`);
+    // A profile picture, so these users can join the companion finder.
+    db.prepare('UPDATE users SET avatar_path = ? WHERE id = ?').run(`${name}.png`, result.body.user.id);
     return { id: result.body.user.id, name, cookie: result.cookie };
   }
 

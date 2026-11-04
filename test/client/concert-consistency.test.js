@@ -13,7 +13,7 @@ vi.mock('../../client/src/api.js', async original => ({ ...await original(), api
 } }));
 vi.mock('../../client/src/auth.js', async () => {
   const { ref } = await import('vue');
-  return { currentUser: ref({ id: 'viewer', displayName: 'Ari' }), sessionReady: ref(true) };
+  return { currentUser: ref({ id: 'viewer', displayName: 'Ari', avatarUrl: '/api/avatars/ari.png' }), sessionReady: ref(true) };
 });
 
 const detail = (id = 'show', date = '2026-11-05', extra = {}) => ({
@@ -30,7 +30,7 @@ const stubs = {
   MatchProposalCard: { props: ['proposal'], template: '<p data-test="proposal">{{ proposal.id }}</p>' },
 };
 beforeEach(() => {
-  vi.resetAllMocks(); currentUser.value = { id: 'viewer', displayName: 'Ari' };
+  vi.resetAllMocks(); currentUser.value = { id: 'viewer', displayName: 'Ari', avatarUrl: '/api/avatars/ari.png' };
   vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-11-04T10:00:00Z'));
   api.concert.mockResolvedValue(detail()); api.concertSetlist.mockResolvedValue({ setlist: null });
   api.parties.mockResolvedValue({ parties: [] }); api.requests.mockResolvedValue({ requests: [] });
@@ -77,6 +77,16 @@ describe('concert participation and historical access consistency', () => {
     expect(wrapper.text()).not.toContain('This concert has finished');
     await wrapper.get('form').trigger('submit'); await flushPromises();
     expect(api.joinConcert).toHaveBeenCalledWith('tonight', { sectionPref: 'category_1', arrivalPref: 'doors' });
+  });
+
+  it('asks for a profile picture before joining the companion finder', async () => {
+    currentUser.value = { id: 'viewer', displayName: 'Ari', avatarUrl: null };
+    const { wrapper } = await mountPage(ConcertView, { path: '/concerts/show', props: { id: 'show' }, stubs });
+    expect(wrapper.get('.kaki-join__picture').text()).toContain('Add a profile picture to join');
+    expect(wrapper.get('.kaki-join__picture a').attributes('href')).toBe('/profile');
+    expect(button(wrapper, 'Join companion finder').element.disabled).toBe(true);
+    await wrapper.get('form').trigger('submit'); await flushPromises();
+    expect(api.joinConcert).not.toHaveBeenCalled();
   });
 
   it('keeps selected participation inputs after a failed join so a deliberate retry sends the same choices', async () => {

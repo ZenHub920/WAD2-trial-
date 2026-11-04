@@ -10,10 +10,6 @@ import BackArrow from '../components/BackArrow.vue';
 import MarketNotice from '../components/market/MarketNotice.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 
-/**
- * The seller's own page for changing a listing. Saving returns to the listing,
- * which confirms the update; Cancel goes back without changing anything.
- */
 const props = defineProps({ id: { type: String, required: true } });
 
 const router = useRouter();

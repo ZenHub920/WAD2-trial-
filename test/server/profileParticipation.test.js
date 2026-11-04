@@ -24,11 +24,13 @@ async function fixture(t) {
       cookie: response.headers.get('set-cookie')?.split(';')[0],
     };
   }
-  async function user(name) {
+  // Users get a profile picture unless told otherwise: the companion finder needs one.
+  async function user(name, { picture = true } = {}) {
     const response = await api('/auth/register', { method: 'POST', body: {
       display_name: name, email: `${name}@example.test`, password: 'test-password',
     } });
     assert.equal(response.status, 201);
+    if (picture) db.prepare('UPDATE users SET avatar_path = ? WHERE id = ?').run(`${name}.png`, response.body.user.id);
     return { id: response.body.user.id, cookie: response.cookie, email: `${name}@example.test` };
   }
   function concert(id) {
@@ -203,4 +205,23 @@ test('participation-only members can like mutually without creating seeker reque
     body: { decision: 'like' } })).body.decision.mutual, true);
   assert.deepEqual(await matchIds(f, alice), [`c_only:${bob.id}`]);
   assert.equal(f.db.prepare('SELECT count(*) AS n FROM seeker_requests').get().n, 0);
+});
+
+test('the companion finder needs a profile picture, and it cannot be removed while in it', async (t) => {
+  const f = await fixture(t);
+  const faceless = await f.user('no-picture', { picture: false });
+  const pictured = await f.user('with-picture');
+  f.concert('c_faces');
+  const refused = await join(f, 'c_faces', faceless.cookie);
+  assert.equal(refused.status, 400);
+  assert.equal(refused.body.error, 'profile_picture_required');
+  assert.equal(f.db.prepare('SELECT count(*) AS n FROM concert_participants').get().n, 0);
+  assert.equal((await join(f, 'c_faces', pictured.cookie)).status, 200);
+  const removal = await f.api('/me/avatar', { method: 'DELETE', cookie: pictured.cookie });
+  assert.equal(removal.status, 409);
+  assert.equal(removal.body.error, 'profile_picture_required_for_companion_finder');
+  assert.ok(f.db.prepare('SELECT avatar_path FROM users WHERE id = ?').get(pictured.id).avatar_path);
+  // After leaving, the picture can be removed again.
+  assert.equal((await f.api('/concerts/c_faces/participation', { method: 'DELETE', cookie: pictured.cookie })).status, 204);
+  assert.notEqual((await f.api('/me/avatar', { method: 'DELETE', cookie: pictured.cookie })).status, 409);
 });

@@ -11,13 +11,6 @@ import UserAvatar from '../components/UserAvatar.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
 
-/**
- * One group's shared room.
- *
- * Who may be here is the server's business and it is re-checked on every
- * request, so a 404 is the normal answer for somebody who has left or was
- * never added — not an error worth dressing up.
- */
 const props = defineProps({ id: { type: String, required: true } });
 const router = useRouter();
 

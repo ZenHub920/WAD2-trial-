@@ -14,6 +14,7 @@ import BackLink from "../components/BackLink.vue";
 import GroupPreferencesGate from "../components/GroupPreferencesGate.vue";
 import GroupPrioritiesSummary from "../components/GroupPrioritiesSummary.vue";
 import "../assets/groups.css";
+
 const props = defineProps({ id: String, token: String });
 const router = useRouter();
 const { plans: meetupPlans } = useMeetupSummaries();

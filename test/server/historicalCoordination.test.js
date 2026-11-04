@@ -189,6 +189,8 @@ test('direct authenticated API calls cannot forge eligibility and historical rea
     return { status: response.status, body: response.status === 204 ? null : await response.json() };
   };
   finish();
+  // 'new' has a picture, so the join below is refused for the finished concert, not the missing face.
+  repos.users.setAvatar('new', 'new.png');
   for (const [path, who, method, body, extra] of [
     ['/concerts/c1/participation', 'new', 'POST', { sectionPref: 'ga_standing', arrivalPref: 'mid', event_date: '2099-01-01' }],
     ['/concerts/c1/requests', 'new', 'POST', { section_pref: 'ga_standing', spend_band_max: 3, arrival_pref: 'mid', event_date: '2099-01-01' }],

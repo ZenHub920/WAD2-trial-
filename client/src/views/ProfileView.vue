@@ -60,8 +60,10 @@ async function removeAvatar() {
   try {
     const { user } = await api.clearAvatar();
     setCurrentUser({ ...currentUser.value, ...user });
-  } catch {
-    avatarError.value = 'Could not remove the picture. Please try again.';
+  } catch (err) {
+    avatarError.value = err.message === 'profile_picture_required_for_companion_finder'
+      ? 'You’re in the companion finder, which shows your face. Choose a different picture, or leave the companion finder first.'
+      : 'Could not remove the picture. Please try again.';
   } finally {
     avatarBusy.value = false;
   }

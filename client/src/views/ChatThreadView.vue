@@ -9,11 +9,6 @@ import MarketNotice from '../components/market/MarketNotice.vue';
 import MarketPageHead from '../components/market/MarketPageHead.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 
-/**
- * One buyer–seller conversation. New messages arrive by polling: every few
- * seconds it asks only for messages newer than the last one it has, and it
- * stops asking while the tab is hidden.
- */
 const props = defineProps({ id: { type: String, required: true } });
 
 const POLL_MS = 4000;

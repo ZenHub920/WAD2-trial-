@@ -1,7 +1,7 @@
 // Standalone browser-test harness. Never imported by the production server.
 // Uses an in-memory database, loopback binding and no environment-file loading.
 import { randomBytes, createHash } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { express } from './server-dependencies.mjs';
@@ -10,6 +10,10 @@ import { createTestDb } from '../../server/src/db/connection.js';
 import { makeUser, makeParty, makeSeeker } from '../server/helpers.js';
 
 const directory = mkdtempSync(join(tmpdir(), 'encore-e2e-'));
+// Fixture users share one small real picture: the companion finder needs a face.
+const FIXTURE_AVATAR = 'fixture-avatar.png';
+mkdirSync(join(directory, 'avatars'), { recursive: true });
+writeFileSync(join(directory, 'avatars', FIXTURE_AVATAR), Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000b49444154789c636000020000050001a5f645400000000049454e44ae426082', 'hex'));
 const db = createTestDb();
 const env = { NODE_ENV: 'test', APP_ORIGIN: 'http://127.0.0.1:5175',
   ONEMAP_TOKEN: 'synthetic-browser-test-token', LTA_ACCOUNT_KEY: 'synthetic-browser-test-key' };
@@ -70,6 +74,7 @@ harness.post('/__test/fixture', (req, res, next) => {
     const sessions = {};
     for (const [who, id] of Object.entries(users)) {
       repos.users.create(makeUser(id, { display_name: who, email: `${id}@example.test` }));
+      repos.users.setAvatar(id, FIXTURE_AVATAR);
       repos.membership.savePreferences(id, { about: ['supper', 'singalong'], wants: ['supper'], avoid: [] });
       const token = randomBytes(32).toString('hex');
       repos.sessions.create(createHash('sha256').update(token).digest('hex'), id, Date.now() + 3600000);
