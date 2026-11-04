@@ -375,6 +375,23 @@ describe('meeting planner with real OneMap search child', () => {
     expect(member.find('.meetup-recommendations').exists()).toBe(false);
   });
 
+  it('updates the detail card when the organizer picks another time or place', async () => {
+    const later = start + 30 * 60000;
+    const other = { id: 'place-2', label: 'Bugis MRT', latitude: 1.3, longitude: 103.85, sheltered: false, votes: 0 };
+    const option = (placeId, label, startsAt, availableCount, totalDistanceKm) => ({ placeId, label, startsAt, availableCount, participantCount: 2, totalDistanceKm, basis: 'straight_line_distance', totalTravelMinutes: null });
+    api.meetup.mockResolvedValue({ meetup: { ...board(), places: [publicPlace, other], suggestions: [
+      option('place-1', 'City Hall MRT', start, 2, 3), option('place-1', 'City Hall MRT', later, 1, 5), option('place-2', 'Bugis MRT', start, 1, 9),
+    ] } });
+    const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
+    const card = () => wrapper.get('.meetup-recommendations .meetup-option').text();
+    expect(card()).toContain('2 of 2 available'); expect(card()).toContain('About 3 km total');
+    const [placeSelect, timeSelect] = wrapper.findAll('.meetup-picker select');
+    await timeSelect.setValue(String(later));
+    expect(card()).toContain('1 of 2 available'); expect(card()).toContain('About 5 km total');
+    await placeSelect.setValue('place-2');
+    expect(card()).toContain('Bugis MRT'); expect(card()).toContain('About 9 km total');
+  });
+
   it('lets ordinary members contribute and discuss while keeping organizer decisions out of their controls', async () => {
     api.meetup.mockResolvedValue({ meetup: { ...board(), capabilities: permissions('planning', false), places: [publicPlace], suggestions: [suggestion] } });
     const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });

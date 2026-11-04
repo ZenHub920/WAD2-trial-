@@ -60,7 +60,9 @@ export function createConcertRepo(db) {
               )
           ) AS open_slots,
           (SELECT COUNT(*) FROM seeker_requests s
-            WHERE s.concert_id = c.id AND s.status = 'open')            AS open_seekers
+            WHERE s.concert_id = c.id AND s.status = 'open')            AS open_seekers,
+          (SELECT COUNT(*) FROM concert_participants cp
+            WHERE cp.concert_id = c.id AND cp.status = 'joined')        AS open_companions
         FROM concerts c
         ORDER BY c.event_date ASC
       `).all();

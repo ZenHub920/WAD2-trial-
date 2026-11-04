@@ -11,6 +11,7 @@ const props = defineProps({
   concert: { type: Object, required: true },
   openSeekers: { type: Number, default: null },
   openSlots: { type: Number, default: null },
+  openCompanions: { type: Number, default: null },
   ticketCount: { type: Number, default: null },
   fromCents: { type: Number, default: null },
   ticketsLoading: { type: Boolean, default: false },
@@ -68,7 +69,7 @@ const statClass = (count) => count === null ? null : count > 0 ? 'spot__stat--go
         <p class="spot__section-label">Find your company</p>
         <p v-if="activityLoading" class="spot__activity-loading"><LoadingSpinner /> Loading group activity…</p>
         <template v-else>
-          <p class="spot__stat" :class="statClass(openSlots)">{{ openSlots === null ? 'Group spots unavailable' : openSlots === 0 ? 'No open spots in groups' : `${openSlots} open ${openSlots === 1 ? 'spot' : 'spots'} in groups` }}</p>
+          <p class="spot__stat" :class="statClass(openCompanions)">{{ openCompanions === null ? 'Companion activity unavailable' : openCompanions === 0 ? 'Nobody looking for a companion yet' : `${openCompanions} ${openCompanions === 1 ? 'person' : 'people'} looking for a companion` }}</p>
           <p class="spot__stat" :class="statClass(openSeekers)">{{ openSeekers === null ? 'Group activity unavailable' : openSeekers === 0 ? 'Nobody looking for a group yet' : `${openSeekers} ${openSeekers === 1 ? 'person' : 'people'} looking for a group` }}</p>
         </template>
       </div>

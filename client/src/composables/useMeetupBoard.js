@@ -59,10 +59,11 @@ export function useMeetupBoard(props) {
     for (const entry of byPlace.values()) entry.times.sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
     return [...byPlace.values()];
   });
-  const pickedPlace = computed(() => placeChoices.value.find(entry => entry.placeId === pickedPlaceId.value) ?? placeChoices.value[0] ?? null);
-  const pickedOption = computed(() => pickedPlace.value?.times.find(option => option.startsAt === pickedStartsAt.value)
+  const pickedPlace = computed(() => placeChoices.value.find(entry => String(entry.placeId) === String(pickedPlaceId.value)) ?? placeChoices.value[0] ?? null);
+  const pickedOption = computed(() => pickedPlace.value?.times.find(option => String(option.startsAt) === pickedStartsAt.value)
     ?? pickedPlace.value?.best ?? null);
   const pickPlace = placeId => { pickedPlaceId.value = placeId; pickedStartsAt.value = ''; };
+  const pickTime = startsAt => { pickedStartsAt.value = String(startsAt); };
   const hasSavedAvailability = computed(() => board.value?.grid.some(slot => slot.availableCount > 0));
   const recommendationEmpty = computed(() => !board.value?.places.length ? 'No places suggested yet. Add a public meeting place above.'
     : travelOptions.shelteredOnly && !board.value.places.some(p => p.sheltered) ? 'The shelter filter excludes all suggested places. Clear it or suggest a sheltered place.'
@@ -534,7 +535,7 @@ export function useMeetupBoard(props) {
     selectPlace, selectJourney, invalidatePlace, invalidateJourney, editPlace, editJourney,
     selectedSlotCount, bestSavedOverlap, selectedTimes, activeStep, availabilityDirty, refreshing, syncNote,
     liveLabel, statuses, time, validCoordinates, recommendedOptions, hasSavedAvailability, recommendationEmpty,
-    placeChoices, pickedPlace, pickedOption, pickedStartsAt, pickPlace,
+    placeChoices, pickedPlace, pickedOption, pickedStartsAt, pickPlace, pickTime,
     refreshPlanner, showStep, stepUnlocked, navigateSteps, create, saveAvailability, discardAvailability, assignJourney,
     addPlace, vote, propose, approve, requestOrganizerAction, organizerAction, postComment, getWeather, getTravelSuggestions, getParking,
    };

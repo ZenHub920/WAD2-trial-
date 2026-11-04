@@ -201,13 +201,13 @@ async function leave() {
     <GroupPreferencesGate @saved="load">
       <template #before><GroupNavigation /></template>
       <section v-if="group" class="member-workspace" aria-label="Selected group links">
-        <div class="member-workspace__context"><p class="member-eyebrow">Your group workspace</p><strong>{{ canStartCoordination ? 'From meeting the group to making a plan.' : 'Your group, conversations and previous plans.' }}</strong><p>{{ canStartCoordination ? 'Compare availability, choose a meeting point and coordinate your concert day.' : 'Return to your group conversation or review an existing meetup. Your saved group information remains available.' }}</p></div>
+        <div class="member-workspace__context"><p class="member-eyebrow">Your group workspace · <RouterLink class="member-workspace__concert" :to="`/concerts/${encodeURIComponent(group.concertId)}`">View concert</RouterLink></p><strong>{{ canStartCoordination ? 'From meeting the group to making a plan.' : 'Your group, conversations and previous plans.' }}</strong><p>{{ canStartCoordination ? 'Compare availability, choose a meeting point and coordinate your concert day.' : 'Return to your group conversation or review an existing meetup. Your saved group information remains available.' }}</p></div>
         <div class="member-workspace__primary">
           <button v-if="canOpenMeetup" type="button" class="btn btn--primary" @click="router.push(meetupLink({ partyId: id }))">{{ canPlanMeetup ? meetupLabel({ partyId: id }) : 'View meetup history' }}</button>
-          <RouterLink class="btn btn--ghost" :to="`/groups/${encodeURIComponent(id)}/channel`">Group messages</RouterLink>
+          <RouterLink class="btn btn--ghost" :to="`/groups/${encodeURIComponent(id)}/channel`">Messages</RouterLink>
         </div>
-        <nav class="member-workspace__links" aria-label="Group management links">
-          <RouterLink :to="`/concerts/${encodeURIComponent(group.concertId)}`">Concert details</RouterLink>
+        <nav v-if="isHost" class="member-workspace__links" aria-label="Host tools">
+          <span class="member-workspace__links-label">Host tools</span>
           <RouterLink v-if="isHost && canStartCoordination" :to="{path:'/groups/connect',query:{view:'connections',groupId:id,concertId:group.concertId}}">Connect with other groups</RouterLink>
           <RouterLink v-if="isHost" :to="{path:'/groups/connect',query:{concertId:group.concertId},hash:'#join-requests'}">Review join applications</RouterLink>
         </nav>
@@ -336,6 +336,8 @@ async function leave() {
 .member-workspace__context strong { color:var(--text-100); }
 .member-workspace__primary { display:flex; flex-wrap:wrap; gap:var(--space-2); }
 .member-workspace__links { grid-column:1/-1; display:flex; flex-wrap:wrap; gap:var(--space-2) var(--space-5); padding-top:var(--space-3); border-top:var(--border-hairline); font-size:var(--step--1); }
+.member-workspace__links-label { color:var(--text-300); font-size:var(--step--2); text-transform:uppercase; letter-spacing:.08em; }
+.member-workspace__concert { text-transform:none; letter-spacing:normal; font-weight:500; }
 .member-workspace__links a { display:inline-flex; align-items:center; min-height:32px; text-underline-offset:.25em; }
 .member-roster__list { display:grid; gap:var(--space-2); margin:0; padding:0; list-style:none; }
 .member-roster__list li { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:var(--space-2) var(--space-4); padding:var(--space-3) var(--space-4); border:var(--border-hairline); border-radius:var(--radius-sm); background:var(--ink-900); }

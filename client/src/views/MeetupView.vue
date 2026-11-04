@@ -20,7 +20,7 @@ const {
   selectPlace, selectJourney, invalidatePlace, invalidateJourney, editPlace, editJourney,
   selectedSlotCount, bestSavedOverlap, selectedTimes, activeStep, availabilityDirty, refreshing, syncNote,
   liveLabel, statuses, time, validCoordinates, recommendedOptions, hasSavedAvailability, recommendationEmpty,
-  placeChoices, pickedPlace, pickedOption, pickedStartsAt, pickPlace,
+  placeChoices, pickedPlace, pickedOption, pickedStartsAt, pickPlace, pickTime,
   refreshPlanner, showStep, stepUnlocked, navigateSteps, create, saveAvailability, discardAvailability, assignJourney,
   addPlace, vote, propose, approve, requestOrganizerAction, organizerAction, postComment, getWeather, getTravelSuggestions, getParking,
  } = useMeetupBoard(props);
@@ -153,7 +153,7 @@ const {
             </select>
           </label>
           <label class="meetup-picker-field">Time
-            <select :value="pickedOption.startsAt" :disabled="busy" @change="pickedStartsAt = $event.target.value">
+            <select :value="pickedOption.startsAt" :disabled="busy" @change="pickTime($event.target.value)">
               <option v-for="t in pickedPlace.times" :key="t.startsAt" :value="t.startsAt">{{ time(t.startsAt) }} · {{ t.availableCount }} of {{ t.participantCount }} free</option>
             </select>
           </label>

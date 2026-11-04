@@ -405,7 +405,7 @@ async function openCreatedDraft() {
         <p v-else-if="mode === 'create'">Start with a draft, then invite friends and publish when your group is ready.</p>
         <p v-else>Meet another group at the same concert. Connecting groups does not merge their members.</p>
       </div>
-      <div v-if="mode === 'dashboard'" class="group-actions"><RouterLink to="/meetups" class="btn btn--ghost">My meetups</RouterLink><RouterLink :to="viewLink('create')" class="btn btn--primary">Create a group</RouterLink></div>
+      <div v-if="mode === 'dashboard'" class="group-actions"><RouterLink to="/meetups" class="btn btn--ghost">My meetups</RouterLink></div>
     </header>
     <GroupPreferencesGate :summary="mode === 'dashboard'" @saved="retry">
     <template #before><GroupNavigation /></template>
@@ -487,8 +487,8 @@ async function openCreatedDraft() {
             <div class="group-actions"><RouterLink class="btn btn--ghost" :to="{ path: '/groups', query: { concertId: r.concertId } }">View or cancel request</RouterLink></div>
           </article>
         </section>
-        <section class="owned-section" aria-labelledby="owned-heading">
-          <div class="section-heading"><h2 id="owned-heading">{{ mode === 'connections' ? 'Choose one of your groups' : 'Groups you own' }}</h2><span v-if="reads.owned.loaded" class="group-muted">{{ activeGroups.length }} upcoming or ongoing</span></div>
+        <details open class="owned-section group-dropdown" aria-labelledby="owned-heading">
+          <summary class="section-heading"><h2 id="owned-heading">{{ mode === 'connections' ? 'Choose one of your groups' : 'Groups you own' }}</h2><span v-if="reads.owned.loaded" class="group-muted">{{ activeGroups.length }} upcoming or ongoing</span><span class="group-dropdown__chevron" aria-hidden="true"></span></summary>
           <div v-if="activeGroups.length" class="owned-grid">
             <article v-for="g in activeGroups" :key="g.id" class="card group-panel owned-card">
               <div class="owned-card__top">
@@ -507,12 +507,12 @@ async function openCreatedDraft() {
             </article>
           </div>
           <div v-else-if="reads.owned.loaded" class="card group-panel empty-state"><h3>No upcoming groups you own</h3><p>{{ historicalGroups.some(g => g.owned) ? 'Your previous groups and conversations are available below. Create a draft for your next concert when you are ready.' : 'Create a draft for your next concert, then invite friends or publish it for new companions.' }}</p><RouterLink :to="viewLink('create')" class="btn btn--primary">Create a group</RouterLink></div>
-        </section>
+        </details>
       </template>
 
       <template v-if="mode === 'dashboard'">
-        <section v-if="upcomingJoinedGroups.length" class="owned-section" aria-labelledby="joined-heading">
-          <div class="section-heading"><h2 id="joined-heading">Groups I joined</h2><span class="group-muted">{{ upcomingJoinedGroups.length }} upcoming or ongoing</span></div>
+        <details v-if="upcomingJoinedGroups.length" open class="owned-section group-dropdown" aria-labelledby="joined-heading">
+          <summary class="section-heading"><h2 id="joined-heading">Groups I joined</h2><span class="group-muted">{{ upcomingJoinedGroups.length }} upcoming or ongoing</span><span class="group-dropdown__chevron" aria-hidden="true"></span></summary>
           <div class="owned-grid">
             <article v-for="g in upcomingJoinedGroups" :key="g.id" class="card group-panel owned-card owned-card--joined">
               <div class="owned-card__top"><GroupAvatar :src="g.imageUrl ?? g.group?.imageUrl" :name="groupTitle(g)" :size="52" /><div class="owned-card__title"><h3>{{ groupTitle(g) }}</h3><p v-if="g.name || g.group?.name" class="group-muted">{{ g.artist }}</p></div></div>
@@ -525,7 +525,7 @@ async function openCreatedDraft() {
               </div>
             </article>
           </div>
-        </section>
+        </details>
         <details v-if="historicalGroups.length" id="historical-groups" class="card group-panel history"><summary>{{ historicalTitle }} ({{ historicalGroups.length }})</summary><div class="history-list">
           <article v-for="g in historicalGroups" :key="g.id" class="historical-group">
             <div class="section-heading"><h3>{{ groupTitle(g) }}</h3><span class="group-state">{{ groupEligibility(g).reason === 'concert_finished' ? 'Past concert' : 'Date unavailable' }}</span></div>
@@ -599,6 +599,13 @@ async function openCreatedDraft() {
 </template>
 
 <style scoped>
+.group-dropdown > summary { display:flex; align-items:center; cursor:pointer; list-style:none; }
+.group-dropdown > summary::-webkit-details-marker { display:none; }
+.group-dropdown > summary .group-muted { margin-left:auto; }
+.group-dropdown__chevron { flex:none; width:32px; height:32px; margin-left:var(--space-3); border:var(--border-hairline); border-radius:50%; display:grid; place-items:center; transition:background .2s; }
+.group-dropdown__chevron::before { content:''; width:8px; height:8px; border-right:2px solid var(--text-300); border-bottom:2px solid var(--text-300); transform:translateY(-2px) rotate(45deg); transition:transform .2s; }
+.group-dropdown:not([open]) .group-dropdown__chevron::before { transform:translateX(-2px) rotate(-45deg); }
+.group-dropdown > summary:hover .group-dropdown__chevron { background:color-mix(in srgb,var(--accent-400) 15%,transparent); }
 .workspace-eyebrow { margin:0; color:var(--accent-400); font:600 .68rem var(--font-mono); letter-spacing:.08em; text-transform:uppercase; }
 .workspace-overview { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,15rem),1fr)); gap:var(--space-3); }
 .workspace-overview a { display:flex; align-items:center; gap:var(--space-4); padding:var(--space-4) var(--space-5); border:1px solid var(--panel-edge); border-radius:var(--radius-md); background:var(--panel-bg); box-shadow:var(--panel-shadow); color:var(--text-100); text-decoration:none; transition:border-color var(--dur-fast),transform var(--dur-fast) var(--ease-settle); }

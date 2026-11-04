@@ -76,6 +76,7 @@ const discovered = computed(() => {
       openSeekers: counts?.open_seekers ?? null,
       setlist: counts?.setlist ?? null,
       openSlots: counts?.open_slots ?? null,
+      openCompanions: counts?.open_companions ?? null,
       ticketCount: ticketsLoading.value || ticketError.value ? null : (inventory.get(concert.id)?.quantity ?? 0),
       fromCents: inventory.get(concert.id)?.fromCents ?? null,
     };
@@ -166,7 +167,7 @@ function clearFilters() {
           <div v-for="(row, i) in visibleConcerts" :key="row.concert.id" class="concert-grid__item">
             <div v-reveal="i % 3" class="concert-grid__reveal">
             <ConcertSpotlightCard
-              :concert="row.concert" :open-seekers="row.openSeekers" :open-slots="row.openSlots"
+              :concert="row.concert" :open-seekers="row.openSeekers" :open-slots="row.openSlots" :open-companions="row.openCompanions"
               :ticket-count="row.ticketCount" :from-cents="row.fromCents" :setlist="row.setlist"
               :tickets-loading="ticketsLoading" :activity-loading="activityLoading" />
             </div>
