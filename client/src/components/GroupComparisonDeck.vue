@@ -203,8 +203,8 @@ function cardStyle(slot) {
     <div v-if="instructionsVisible" key="instructions" class="comparison-deck__instructions">
       <div class="comparison-deck__intro"><div><h3 class="comparison-deck__instructions-title" tabindex="-1">Compare two groups at a time</h3><p>Compare first. Nothing is sent until you ask to join.</p></div><span class="comparison-deck__progress">{{ state.groups.length }} {{ state.groups.length === 1 ? 'group' : 'groups' }}</span></div>
       <ol class="comparison-deck__steps">
-        <li><span class="comparison-deck__step-number" aria-hidden="true">1</span><div><h4>Compare</h4><p>Tap <strong>Keep this group</strong> on the one you like more, or <strong>swipe left</strong> to skip.</p></div></li>
-        <li><span class="comparison-deck__step-number" aria-hidden="true">2</span><div><h4>Request to join</h4><p><strong>Swipe right</strong> or tap <strong>Request to join</strong>. The host approves it.</p></div></li>
+        <li><span class="comparison-deck__step-number" aria-hidden="true">1</span><div><h4>Compare</h4><p>Tap <strong>Keep this group</strong> or swipe left to skip.</p></div></li>
+        <li><span class="comparison-deck__step-number" aria-hidden="true">2</span><div><h4>Request to join</h4><p>Swipe right or tap <strong>Request to join</strong>.</p></div></li>
       </ol>
       <div class="comparison-deck__start"><button type="button" class="btn btn--primary" :disabled="locked || !state.groups.length" @click="instructionsVisible = false">Start comparing</button></div>
     </div>
@@ -213,9 +213,8 @@ function cardStyle(slot) {
       <h3>Which group feels more like you?</h3>
       <div class="comparison-deck__tools"><p class="comparison-deck__progress">{{ state.nextIndex }} of {{ state.groups.length }}</p><button type="button" class="btn btn--ghost" :disabled="locked" @click="instructionsVisible = true">How this works</button></div>
     </div>
-    <p class="comparison-deck__help"><strong>Keep this group</strong> to hold on to one · <strong>Swipe right</strong> to request · <strong>Swipe left</strong> to skip</p>
-    <p v-if="!canApply && !submitted" class="comparison-deck__notice">You can compare groups. Set up and activate direct joining, or resolve your current application or offer, before applying.</p>
-    <p v-if="submitted" class="comparison-deck__notice" role="status">Request sent to <strong>{{ groupName(submitted) }}</strong>. See Your applications for its queue position, whether a place is held and its deadline.</p>
+    <p v-if="!canApply && !submitted" class="comparison-deck__notice">You can compare groups, but can’t send a request right now.</p>
+    <p v-if="submitted" class="comparison-deck__notice" role="status">Request sent to <strong>{{ groupName(submitted) }}</strong>. Track it under Your requests.</p>
     <div v-if="visibleCount" class="comparison-deck__pair">
       <div v-for="(group, slot) in state.slots" :key="slot" class="comparison-deck__position">
         <div v-if="group" :key="group.id" class="comparison-deck__candidate" :class="{ 'comparison-deck__candidate--favorite': state.favoriteId === group.id, 'comparison-deck__candidate--dragging': drag?.slot === slot }" :style="cardStyle(slot)" :data-comparison-slot="slot" tabindex="0" role="group" :aria-label="`${groupName(group)}. Enter to keep; left arrow to skip; right arrow to request to join.`" :aria-disabled="locked" @click="onCardClick($event, slot)" @keydown="onKeydown($event, slot)" @pointerdown="onPointerDown($event, slot)" @pointermove="onPointerMove" @pointerup="onPointerUp" @pointercancel="clearPointer">

@@ -70,7 +70,7 @@ export async function refreshUnread() {
 }
 
 function connect() {
-  if (source || !currentUser.value) return;
+  if (source || !currentUser.value || pageHidden()) return;
   connectionState.value = 'connecting';
 
   // Same-origin, so the session cookie is sent automatically — no token to
@@ -118,6 +118,34 @@ function disconnect() {
   unreadTotal.value = 0;
   unreadRequest++;
   for (const kind of Object.keys(unreadByKind)) unreadByKind[kind] = 0;
+}
+
+/*
+ * Background tabs let go of the stream. Over HTTP/1.1 (the dev server, and
+ * many hosts) a browser opens at most six connections to one site, and an
+ * EventSource holds one for as long as it lives. With six Encore tabs open,
+ * every other request (concerts, groups, messages) would queue forever. A tab
+ * hidden for a little while closes its stream and reconnects when shown;
+ * 'ready' then resyncs everything it missed, as after any other gap.
+ */
+const HIDDEN_RELEASE_MS = 10000;
+let releaseTimer = null;
+const pageHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
+
+function release() {
+  if (!source) return;
+  source.close();
+  source = null;
+  // The unread badge is left as it is; it refreshes on the next 'ready'.
+  connectionState.value = 'idle';
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    clearTimeout(releaseTimer);
+    if (pageHidden()) releaseTimer = setTimeout(release, HIDDEN_RELEASE_MS);
+    else connect();
+  });
 }
 
 /** Follow the session: connect on sign-in, drop everything on sign-out. */
