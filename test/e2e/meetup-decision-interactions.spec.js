@@ -79,12 +79,12 @@ test('server shelter filtering precedes top-20 limits; owners correct and remove
     await a.page.getByRole('button', { name: 'Save place correction', exact: true }).click();
     await expect(placeRow(a.page, 'Corrected sheltered entrance')).toContainText('0 votes');
     expect((await read(b, meetup.id)).currentVotePlaceId).toBeNull();
-    await placeRow(a.page, 'Corrected sheltered entrance').getByRole('button', { name: 'Remove place', exact: true }).click();
+    await placeRow(a.page, 'Corrected sheltered entrance').getByRole('button', { name: 'Remove', exact: true }).click();
     const dialog = a.page.getByRole('dialog', { name: 'Remove your suggested place?', exact: true });
-    await dialog.getByRole('button', { name: 'Keep place', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Keep', exact: true }).click();
     expect((await read(a, meetup.id)).places).toHaveLength(9);
-    await placeRow(a.page, 'Corrected sheltered entrance').getByRole('button', { name: 'Remove place', exact: true }).click();
-    await dialog.getByRole('button', { name: 'Remove suggested place', exact: true }).click();
+    await placeRow(a.page, 'Corrected sheltered entrance').getByRole('button', { name: 'Remove', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Remove', exact: true }).click();
     await expect(placeRow(a.page, 'Corrected sheltered entrance')).toHaveCount(0);
     expect((await read(a, meetup.id)).places).toHaveLength(8);
     expect((await api(a.context, `${path}?shelteredOnly=true`)).meetup.suggestions).toEqual([]);

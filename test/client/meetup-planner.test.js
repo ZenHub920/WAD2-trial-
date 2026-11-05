@@ -1312,7 +1312,7 @@ describe('meetup decision interaction semantics', () => {
   it('requires confirmation before removing an owned suggestion and preserves it after a failed removal', async () => {
     api.meetup.mockResolvedValue({ meetup: { ...board(), places: [{ ...publicPlace, canEdit: true, canRemove: true }] } });
     const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
-    await button(wrapper, 'Remove place').trigger('click'); await flushPromises();
+    await button(wrapper, 'Remove').trigger('click'); await flushPromises();
     expect(api.removeMeetupPlace).not.toHaveBeenCalled();
     expect(document.querySelector('[role="dialog"]').textContent).toContain('Votes for this place will also be removed');
     api.removeMeetupPlace.mockRejectedValueOnce(new Error('stale_meetup_version'));

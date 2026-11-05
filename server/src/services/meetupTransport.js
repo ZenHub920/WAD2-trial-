@@ -44,15 +44,17 @@ export function createMeetupTransport({ repos, travel, now, assertCurrent }) {
     const venueName = current.concert?.venue ?? '';
     const check = () => assertCurrent(user, id, current.version, participants);
     let anchor = null;
-    if (phase === 'pre') {
-      const place = current.places.find(p => p.id === current.selected_place_id);
-      if (place) anchor = { label: place.label, latitude: place.latitude, longitude: place.longitude, source: 'meeting_place' };
-    } else if (options.latitude !== undefined || options.longitude !== undefined) {
+    // A location the person picked on the map works for either journey.
+    if (options.latitude !== undefined || options.longitude !== undefined) {
       const number = value => typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN;
       const point = { latitude: number(options.latitude), longitude: number(options.longitude) };
       if (!singaporeCoordinates(point) || (options.label !== undefined && (typeof options.label !== 'string' || options.label.length > 150)))
         throw communityError('invalid_venue_location', 400);
-      anchor = { ...point, label: options.label?.trim() || venueName || 'Confirmed concert venue', source: 'confirmed_venue' };
+      anchor = { ...point, label: options.label?.trim() || (phase === 'post' ? venueName : '') || 'Chosen location',
+        source: phase === 'post' ? 'confirmed_venue' : 'chosen_location' };
+    } else if (phase === 'pre') {
+      const place = current.places.find(p => p.id === current.selected_place_id);
+      if (place) anchor = { label: place.label, latitude: place.latitude, longitude: place.longitude, source: 'meeting_place' };
     } else if (venueName && ['singapore', 'sg'].includes(String(current.concert?.city).toLowerCase())) {
       const found = await travel.search(venueName.slice(0, 100));
       check();
@@ -79,7 +81,9 @@ export function createMeetupTransport({ repos, travel, now, assertCurrent }) {
     const buses = { status: busResults.some(result => result.status === 'available') ? 'available' : 'unavailable',
       stops: stops.map((stop, index) => ({ code: stop.code, name: stop.name, distanceKm: stop.distanceKm,
         status: busResults[index].status, reason: busResults[index].reason, stale: Boolean(busResults[index].stale),
-        services: (busResults[index].services ?? []).map(service => ({ service: service.service, crowdLevels: service.crowdLevels ?? [] })) })) };
+        services: (busResults[index].services ?? []).map(service => ({ service: service.service, crowdLevels: service.crowdLevels ?? [],
+          // Arrival times let the planner show "3 min" rather than only how full a bus is.
+          arrivals: service.arrivals ?? [] })) })) };
     return { phase, anchor, venueName,
       nearby: { ...nearby, stations, busStops: stops, stationsStatus: nearby.rail?.status, busStopsStatus: nearby.bus?.status },
       trains: scopedAlerts(alerts, stations), crowding: nearbyCrowds(crowds, stations), buses,

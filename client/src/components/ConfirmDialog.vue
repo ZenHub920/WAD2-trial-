@@ -158,13 +158,16 @@ function onKeydown(event) {
 }
 
 .confirm__actions {
-  display: flex;
-  justify-content: flex-end;
-  flex-wrap: wrap;
+  /* Two equal-width buttons, centred; they stack (still equal) when narrow. */
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
   gap: var(--space-3);
   margin-top: var(--space-6);
 }
 .confirm__actions .btn {
+  width: 100%;
+  justify-content: center;
+  text-align: center;
   white-space: normal;
 }
 

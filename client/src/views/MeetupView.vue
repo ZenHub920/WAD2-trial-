@@ -1,12 +1,15 @@
 <script setup>
+import GooglePlaceSearch from '../components/GooglePlaceSearch.vue';
+import { ref, watch } from 'vue';
+import { googleMapsEnabled } from '../googleMaps.js';
+// Falls back to the OneMap search if Google Maps cannot load.
+const googleUnavailable = ref(false);
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import BackArrow from '../components/BackArrow.vue';
 import MeetupOverview from '../components/MeetupOverview.vue';
-import MeetupLocationSearch from '../components/MeetupLocationSearch.vue';
 import MeetupAvailabilityGrid from '../components/MeetupAvailabilityGrid.vue';
 import MeetupTransportPanel from '../components/MeetupTransportPanel.vue';
 import MeetupCreationForm from '../components/MeetupCreationForm.vue';
-import MeetupDiscussionPanel from '../components/MeetupDiscussionPanel.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
 import { useMeetupBoard } from '../composables/useMeetupBoard.js';
 import { coverageLevel } from '../utils/meetupSummaries.js';
@@ -27,6 +30,18 @@ const {
   refreshPlanner, showStep, stepUnlocked, navigateSteps, create, saveAvailability, discardAvailability, assignJourney,
   addPlace, resetPlaceDraft, correctPlace, requestRemovePlace, removePlace, vote, requestProposal, propose, approve, requestOrganizerAction, organizerAction, postComment, getWeather, getTravelSuggestions, getParking, changeShelterFilter,
  } = useMeetupBoard(props);
+
+/** Before you go: each tab loads its own information the first time it opens. */
+const beforeTabs = [{ id: 'weather', label: 'Weather' }, { id: 'transport', label: 'Public transport' }, { id: 'parking', label: 'Parking' }];
+const beforeTab = ref('weather'), showAllParking = ref(false);
+function openBeforeTab(id) {
+  beforeTab.value = id;
+  if (id === 'weather' && !weather.value) void getWeather();
+  if (id === 'parking' && !transport.value?.parking) void getParking();
+}
+watch(() => [board.value?.status, board.value?.selected_place_id, activeStep.value], ([status, place, step]) => {
+  if (status === 'confirmed' && place && step === 'review') openBeforeTab(beforeTab.value);
+}, { immediate: true });
 </script>
 <template>
   <div class="container groups-page meetup-page" :class="{ 'meetup-page--board': board }">
@@ -89,14 +104,9 @@ const {
           <p class="group-muted">Where will you be travelling from? Add an approximate starting point to your selected times to help compare journeys. Other participants cannot see it. This does not suggest a meeting place.</p>
           <fieldset class="meetup-travel-fields" :disabled="busy || contributionsLocked">
             <label>Travel method<select v-model="position.travelMode"><option value="transit">Public transport</option><option value="drive">Car</option></select></label>
-            <MeetupLocationSearch :meetup-id="id" :reset-key="journeySearchKey" label="Private starting point" placeholder="e.g. your nearest MRT or approximate starting area" :disabled="busy || contributionsLocked" selection-hint="Private starting point selected. Save your availability to keep it." @selected="selectJourney" @selection-invalidated="invalidateJourney" />
-            <details class="meetup-manual-entry"><summary>Cannot find your location?</summary>
-              <div class="group-controls">
-                <label>Location label<input v-model="position.label" maxlength="100" placeholder="e.g. Tampines MRT" @input="editJourney('label')" /></label>
-                <label>Latitude<input v-model="position.latitude" type="number" min="-90" max="90" step="any" placeholder="No location supplied" @input="editJourney('latitude')" /></label>
-                <label>Longitude<input v-model="position.longitude" type="number" min="-180" max="180" step="any" placeholder="No location supplied" @input="editJourney('longitude')" /></label>
-              </div>
-            </details>
+            <!-- Pick the starting point on a Google map, or type it in; either way the pin moves. -->
+            <GooglePlaceSearch v-if="googleMapsEnabled && !googleUnavailable" :reset-key="journeySearchKey" :pin-at="validCoordinates(position) ? { lat: Number(position.latitude), lng: Number(position.longitude) } : null" label="Private starting point" placeholder="Type your nearest MRT, building or address" :disabled="busy || contributionsLocked" selection-hint="Save your availability to keep it." @selected="selectJourney" @selection-invalidated="invalidateJourney" @unavailable="googleUnavailable = true" />
+            <p v-else class="group-error" role="alert">The map could not load. Refresh the page to try again.</p>
             <p v-if="position.label && validCoordinates(position)" class="group-muted">Starting point: {{ position.label }}</p>
             <p v-if="!selectedSlotCount" class="group-muted">Pick your times first.</p>
             <p v-if="journeyDirty" class="meetup-unsaved" role="status">Not saved yet. Save your availability to keep it.</p>
@@ -125,17 +135,13 @@ const {
       <form class="card group-panel meetup-place-editor" @submit.prevent="addPlace">
         <h2>{{ editingPlaceId ? 'Correct your meeting-place suggestion' : 'Suggest a meeting place' }}</h2>
         <p class="group-muted">Suggest a public landmark or entrance where everyone could meet. This is separate from your private starting point.</p>
-        <p v-if="editingPlaceId" class="meetup-role-note" role="status">Renaming keeps the saved coordinates. Choose a new search result or edit coordinates to move the meeting place. Existing votes for this place will be cleared when you save a correction. Participants can review the change and vote again.</p>
+        <p v-if="editingPlaceId" class="meetup-role-note" role="status">Pick a new spot on the map or a new search result to move the meeting place. Existing votes for this place will be cleared when you save a correction. Participants can review the change and vote again.</p>
         <fieldset class="meetup-travel-fields" :disabled="busy || contributionsLocked">
-          <MeetupLocationSearch :meetup-id="id" :reset-key="placeSearchKey" label="Shared meeting place" placeholder="e.g. Funan entrance or a public meeting landmark" :disabled="busy || contributionsLocked" :selection-hint="editingPlaceId ? 'Replacement selected. Press Save place correction to share it.' : 'Selection is not saved. Press Add place to share it.'" @selected="selectPlace" @selection-invalidated="invalidatePlace" />
-          <label>Place name<input v-model="place.label" required maxlength="150" @input="editPlace('label')" /></label>
+          <GooglePlaceSearch v-if="googleMapsEnabled && !googleUnavailable" :reset-key="placeSearchKey" label="Shared meeting place" placeholder="Type a landmark, entrance or MRT exit" map-hint="Click the spot where everyone could meet. Zoom in to pick an exact entrance." map-label="Map of Singapore: click to choose a meeting place" :pin-at="validCoordinates(place) ? { lat: Number(place.latitude), lng: Number(place.longitude) } : null" :disabled="busy || contributionsLocked" :selection-hint="editingPlaceId ? 'Replacement selected. Press Save place correction to share it.' : 'Press Add place to share it.'" @selected="selectPlace" @selection-invalidated="invalidatePlace" @unavailable="googleUnavailable = true" />
+          <p v-else class="group-error" role="alert">The map could not load. Refresh the page to try again.</p>
           
-          <details class="meetup-manual-entry"><summary>Enter coordinates manually</summary><div class="group-controls">
-            <label>Latitude<input v-model="place.latitude" type="number" min="-90" max="90" step="any" @input="editPlace('latitude')" /></label>
-            <label>Longitude<input v-model="place.longitude" type="number" min="-180" max="180" step="any" @input="editPlace('longitude')" /></label>
-          </div></details>
           <label class="group-check"><input v-model="place.sheltered" type="checkbox" />Sheltered (optional)</label>
-          <div class="group-actions"><button class="btn btn--primary" :disabled="busy || contributionsLocked || (editingPlaceId && !placeDirty)">{{ busy ? 'Saving place...' : editingPlaceId ? 'Save place correction' : 'Add place' }}</button><button v-if="editingPlaceId || place.label || place.latitude !== '' || place.longitude !== ''" type="button" class="btn btn--ghost" :disabled="busy" @click="resetPlaceDraft">{{ editingPlaceId ? 'Cancel correction' : 'Clear place draft' }}</button></div>
+          <div class="group-actions"><button class="btn btn--primary" :disabled="busy || contributionsLocked || !place.label || !validCoordinates(place) || (editingPlaceId && !placeDirty)">{{ busy ? 'Saving place...' : editingPlaceId ? 'Save place correction' : 'Add place' }}</button><button v-if="editingPlaceId || place.label || place.latitude !== '' || place.longitude !== ''" type="button" class="btn btn--ghost" :disabled="busy" @click="resetPlaceDraft">{{ editingPlaceId ? 'Cancel correction' : 'Clear place draft' }}</button></div>
           <p v-if="editingPlaceId && !placeDirty" class="group-muted">No changes to this suggestion yet.</p>
         </fieldset>
         <p v-if="failures.places" class="group-error" role="alert">{{ failures.places }}</p>
@@ -150,8 +156,7 @@ const {
           <div class="group-actions meetup-place-actions">
             <template v-if="contributionsLocked"><span v-if="board.currentVotePlaceId === candidate.id" class="meetup-preferred-place">Your vote</span><span v-else class="group-muted">Voting locked</span></template>
             <button v-else type="button" class="btn btn--ghost" :disabled="busy" :aria-pressed="board.currentVotePlaceId === candidate.id" @click="vote(candidate.id)">{{ board.currentVotePlaceId === candidate.id ? 'Remove vote' : 'Vote for place' }}</button>
-            <button v-if="candidate.canEdit" type="button" class="btn btn--ghost" :disabled="busy || contributionsLocked" @click="correctPlace(candidate)">Correct place</button>
-            <button v-if="candidate.canRemove" type="button" class="btn btn--ghost" :disabled="busy || contributionsLocked" @click="requestRemovePlace(candidate)">Remove place</button>
+            <button v-if="candidate.canRemove" type="button" class="btn btn--danger-ghost" :disabled="busy || contributionsLocked" @click="requestRemovePlace(candidate)">Remove</button>
           </div>
         </article>
       </section>
@@ -166,13 +171,13 @@ const {
         <p v-if="failures.recommendations" class="group-error" role="alert">{{ failures.recommendations }}</p>
         <p v-if="!recommendedOptions.length" class="meetup-empty-state" role="status">{{ recommendationEmpty }}</p>
         <div v-if="bestOption" class="meetup-best-summary" aria-label="Leading recommendation">
-          <span class="meetup-next-step__eyebrow">Top meetup recommendation</span><strong>{{ bestOption.label }}</strong><span>{{ time(bestOption.startsAt) }} · {{ bestOption.availableCount }} of {{ bestOption.participantCount }} marked available</span>
-          <p class="group-muted">Availability comes first. Saved journey information helps compare suitable options; a private starting point is optional.</p>
-          <button v-if="!pickedIsBest" type="button" class="btn btn--ghost" :disabled="busy || recommendationsLoading || refreshing" @click="useBestOption">Use recommended option</button>
+          <div class="meetup-best-summary__text"><span class="meetup-next-step__eyebrow">Top meetup recommendation</span><strong>{{ bestOption.label }}</strong><span>{{ time(bestOption.startsAt) }} · {{ bestOption.availableCount }} of {{ bestOption.participantCount }} marked available</span></div>
+          <div class="meetup-best-summary__actions">
+            <button v-if="pickedOption" type="button" class="btn btn--ghost meetup-compare-toggle" :aria-expanded="comparingOptions" aria-controls="meetup-option-comparison" @click="comparingOptions = !comparingOptions">{{ comparingOptions ? 'Hide alternative options' : 'Compare other options' }}</button>
+          </div>
         </div>
-        <button v-if="pickedOption" type="button" class="btn btn--ghost meetup-compare-toggle" :aria-expanded="comparingOptions" aria-controls="meetup-option-comparison" @click="comparingOptions = !comparingOptions">{{ comparingOptions ? 'Hide alternative options' : 'Compare other options' }}</button>
         <div v-if="pickedOption" v-show="comparingOptions" id="meetup-option-comparison" class="meetup-comparison">
-        <p class="group-muted">Choose a place, then a ranked time. “Up to” is that place’s best overlap; attendance may differ at each time. Changing these menus only changes your preview.</p>
+        <p class="group-muted">Choose an alternative option</p>
         <div class="meetup-picker">
           <label class="meetup-picker-field">Place
             <select :value="pickedPlace.placeId" :disabled="busy || recommendationsLoading || refreshing" @change="pickPlace($event.target.value)">
@@ -186,7 +191,7 @@ const {
           </label>
         </div>
         </div>
-        <article v-if="pickedOption" class="meetup-option" aria-live="polite">
+        <article v-if="pickedOption" class="meetup-option meetup-option--pending" aria-live="polite">
           <p class="meetup-next-step__eyebrow">{{ pickedIsBest ? 'Review the recommendation' : 'Your alternative to review' }}</p>
           <div class="meetup-option-heading"><h3>{{ pickedOption.label }}</h3><span class="meetup-rank">Rank {{ pickedOption.rank }} of {{ recommendedOptions.length }}</span></div>
           <strong class="meetup-option-time">{{ time(pickedOption.startsAt) }}</strong>
@@ -200,22 +205,6 @@ const {
           <button type="button" class="btn btn--primary" :disabled="busy || recommendationsLoading || refreshing" @click="requestProposal(pickedOption)">{{ proposalLabel }}</button>
         </article>
       </section>
-      <p v-if="capabilities.canPropose && recommendedOptions.length" class="group-muted meetup-proposal-guidance">{{ proposalGuidance }}</p>
-      <p class="group-muted meetup-proposal-guidance">Suggesting adds a place. Voting records a preference. Only the required organizers can choose and approve the final time and place.</p>
-      <details v-if="capabilities.canPropose && board.places.length" class="meetup-disclosure meetup-manual-proposal">
-        <summary>Propose another listed time <span>Organizer choice</span></summary>
-        <p class="group-muted">The recommendations above favour times people can make. If you have discussed another arrangement, review an existing place and a time from this planning window.</p>
-        <div class="group-controls">
-          <label>Alternative meeting place<select v-model="manualPlaceId" aria-label="Alternative meeting place" :disabled="busy || refreshing"><option disabled value="">Choose a suggested place</option><option v-for="candidate in board.places" :key="candidate.id" :value="candidate.id">{{ candidate.label }}</option></select></label>
-          <label>Alternative meeting time<select v-model="manualStartsAt" aria-label="Alternative meeting time" :disabled="busy || refreshing"><option disabled value="">Choose a listed time</option><option v-for="slot in board.grid" :key="slot.startsAt" :value="String(slot.startsAt)">{{ time(slot.startsAt) }} &middot; {{ slot.availableCount }} of {{ board.participantCount }} marked available</option></select></label>
-        </div>
-        <div v-if="manualOption && !manualOption.availableCount" class="meetup-attendance-warning" role="status">
-          <strong>No participant has marked this time available.</strong>
-          <label class="group-check"><input v-model="acknowledgeNoAvailability" type="checkbox" :disabled="busy || refreshing" />I understand this time has no recorded availability and want to review it anyway.</label>
-        </div>
-        <p v-if="recommendationsInvalid" class="group-muted" role="status">Refresh the planner before reviewing another time. Your saved changes are kept.</p>
-        <button type="button" class="btn btn--ghost" :disabled="busy || refreshing || recommendationsInvalid || recommendationsLoading || !manualOption || (!manualOption.availableCount && !acknowledgeNoAvailability)" @click="requestManualProposal">Review this alternative</button>
-      </details>
       <p v-if="!capabilities.canPropose && board.status === 'planning'" class="meetup-role-note">Your organizers choose and propose the final time and place. You can suggest places and vote in step 2, then follow the proposal here.</p>
       <section v-if="board.selected_place_id" class="card group-panel meetup-current-proposal">
         <h2>{{ board.status === 'confirmed' ? 'Your confirmed meetup' : board.status === 'cancelled' ? 'Cancelled meetup' : 'Current proposal' }}</h2>
@@ -237,40 +226,46 @@ const {
           Approve plan</button
         >
         <button v-if="capabilities.canReopen" type="button" class="btn btn--ghost meetup-reopen" :disabled="busy" @click="requestOrganizerAction('reopen')">{{ board.status === 'proposed' ? 'Withdraw proposal and reopen planning' : 'Reopen planning' }}</button>
-        <details class="meetup-disclosure meetup-weather"><summary>Weather &amp; nearby parking <span>Check before travelling</span></summary><button class="btn btn--ghost" :disabled="busy" @click="getWeather">
-          Check weather and recent rainfall
-        </button>
-        <p v-if="weather">{{ weather.message ?? 'Weather is unavailable right now.' }}</p>
-        <p v-if="weather?.stale" class="group-muted">This is a cached forecast; check again before travelling.</p>
-        <p v-if="rainfall?.status === 'available'" class="group-muted">Recent rainfall: {{ rainfall.millimetres }} mm at {{ rainfall.station }}, {{ rainfall.distanceKm }} km from the meeting place ({{ time(Date.parse(rainfall.observedAt)) }}). This is an observation, not a forecast.</p>
-        <div class="meetup-parking">
-          <h3>Driving to the meetup?</h3>
-          <p class="group-muted">Live car park availability near the meeting place.</p>
-          <button type="button" class="btn btn--ghost" :disabled="busy" @click="getParking">Check nearby parking</button>
-          <template v-if="transport?.parking">
+      </section>
+      <!-- Day-of travel details, once the time and place are fixed. -->
+      <section v-if="board.status === 'confirmed' && board.selected_place_id" class="card group-panel meetup-before" aria-labelledby="meetup-before-heading">
+        <h2 id="meetup-before-heading">Before you go</h2>
+        <div class="meetup-before__tabs" role="tablist" aria-label="Travel information">
+          <button v-for="tab in beforeTabs" :key="tab.id" type="button" role="tab" class="meetup-before__tab" :aria-selected="beforeTab === tab.id" @click="openBeforeTab(tab.id)">{{ tab.label }}</button>
+        </div>
+        <p v-if="failures.review" class="group-error" role="alert">{{ failures.review }}</p>
+        <div v-show="beforeTab === 'weather'" role="tabpanel" aria-label="Weather" class="meetup-before__panel">
+          <p v-if="!weather && busy" class="loading-state" role="status"><LoadingSpinner />Checking the weather…</p>
+          <template v-else-if="weather">
+            <p class="meetup-before__lead">{{ weather.message ?? 'Weather is unavailable right now.' }}</p>
+            <p v-if="weather.stale" class="group-muted">This is a cached forecast; check again before travelling.</p>
+            <p v-if="rainfall?.status === 'available'" class="group-muted">Recent rainfall: {{ rainfall.millimetres }} mm at {{ rainfall.station }}, {{ rainfall.distanceKm }} km from the meeting place.</p>
+          </template>
+        </div>
+        <div v-show="beforeTab === 'transport'" role="tabpanel" aria-label="Public transport" class="meetup-before__panel">
+          <MeetupTransportPanel :key="`${id}:${currentUser?.id}`" embedded :active="activeStep === 'review' && beforeTab === 'transport'" :meetup-id="id" :concert="board.concert" :plan-version="board.version" :has-meeting-place="true" />
+        </div>
+        <div v-show="beforeTab === 'parking'" role="tabpanel" aria-label="Parking" class="meetup-before__panel">
+          <p v-if="!transport?.parking && busy" class="loading-state" role="status"><LoadingSpinner />Checking nearby car parks…</p>
+          <template v-else-if="transport?.parking">
             <p v-if="transport.parking.status !== 'available'">Parking information is unavailable right now. Please try again later.</p>
             <template v-else>
-              <p v-if="transport.parking.stale" class="group-muted">Showing saved parking availability. Refresh before travelling.</p>
-              <p v-if="transport.parking.coverage === 'bounded_snapshot'" class="group-muted">Showing a limited set of reporting car parks; other parking may be available.</p>
-              <p v-if="!transport.parking.carparks.length">No reported car parks within {{ transport.parking.radiusKm }} km of this meeting place.</p>
+              <p v-if="!transport.parking.carparks.length">No reported car parks within {{ transport.parking.radiusKm }} km of the meeting place.</p>
               <ul v-else class="meetup-parking__list">
-                <li v-for="carpark in transport.parking.carparks" :key="carpark.id"><strong>{{ carpark.name }}</strong><span>Approx. {{ carpark.distanceKm }} km away · {{ carpark.availableLots }} {{ carpark.availableLots === 1 ? 'car lot' : 'car lots' }} available</span></li>
+                <li v-for="carpark in (showAllParking ? transport.parking.carparks : transport.parking.carparks.slice(0, 3))" :key="carpark.id"><strong>{{ carpark.name }}</strong><span>{{ carpark.distanceKm }} km away · {{ carpark.availableLots }} {{ carpark.availableLots === 1 ? 'lot' : 'lots' }} free</span></li>
               </ul>
+              <button v-if="transport.parking.carparks.length > 3" type="button" class="btn btn--ghost" @click="showAllParking = !showAllParking">{{ showAllParking ? 'Show fewer' : `Show ${transport.parking.carparks.length - 3} more` }}</button>
             </template>
           </template>
         </div>
-        </details>
       </section>
-      <section v-else class="card group-panel meetup-current-proposal"><h2>No time and place proposed yet</h2><p class="group-muted">{{ capabilities.canPropose ? 'Review a recommendation above, or suggest a place in step 2 if there are no options yet.' : 'The host will propose one soon.' }}</p><button type="button" class="btn btn--ghost" @click="showStep('places')">Back to places</button></section>
-      <MeetupTransportPanel :key="`${id}:${currentUser?.id}`" :active="activeStep === 'review'" :meetup-id="id" :concert="board.concert" :plan-version="board.version" :has-meeting-place="Boolean(board.selected_place_id)" />
-      <MeetupDiscussionPanel v-model="comment" :comments="board.comments" :busy="busy" :can-discuss="capabilities.canDiscuss" :notice="feedback.discussion" :error="failures.discussion" @submit="postComment" />
-      <section v-if="capabilities.canCancel" class="meetup-management" aria-label="Manage this meetup"><h2>Manage this meetup</h2><button type="button" class="btn btn--ghost meetup-cancel" :disabled="busy" @click="requestOrganizerAction('cancel')">Cancel meetup</button></section>
+      <section v-if="capabilities.canCancel" class="meetup-management" aria-label="Manage this meetup"><button type="button" class="btn btn--danger-ghost meetup-cancel" :disabled="busy" @click="requestOrganizerAction('cancel')">Cancel meetup</button></section>
       </div></template
     >
     <ConfirmDialog :open="Boolean(confirmAction)" :busy="busy" :title="confirmAction === 'reopen' ? (board?.status === 'proposed' ? 'Withdraw proposal and reopen planning?' : 'Reopen planning?') : 'Cancel this meetup?'" :body="confirmAction === 'reopen' ? 'The selected time and place will be cleared. Availability, places, votes and discussion are kept. Previous approvals will no longer authorize the plan; all required organizers must approve a new proposal. Participants will be notified.' : 'This meetup will become read-only. Participants will be notified.'" :confirm-label="confirmAction === 'reopen' ? 'Reopen planning' : 'Cancel meetup'" cancel-label="Keep current plan" :danger="confirmAction === 'cancel'" @cancel="confirmAction = null" @confirm="organizerAction" />
     <ConfirmDialog :open="leavePrompt" title="Leave with unsaved changes?" body="Your availability, journey, place or discussion draft has not been saved. Leaving this planner discards it. Any update already sent may still complete." confirm-label="Discard changes and leave" cancel-label="Keep editing" initial-focus="cancel" danger @cancel="settleLeave(false)" @confirm="settleLeave(true)" />
     <ConfirmDialog :open="Boolean(proposalReview)" :busy="busy || refreshing || recommendationsLoading" :title="proposalReview?.availableCount < proposalReview?.participantCount ? 'Not everyone is available — review this meetup' : 'Review the time and place'" :body="proposalReviewBody" :confirm-label="proposalReview?.immediate ? 'Confirm meetup now' : 'Submit proposal for approval'" cancel-label="Keep comparing" initial-focus="cancel" @cancel="proposalReview = null" @confirm="propose" />
-    <ConfirmDialog :open="Boolean(removingPlace)" :busy="busy" title="Remove your suggested place?" :body="`${removingPlace?.label ?? ''} will be removed from the suggestions. Votes for this place will also be removed. Availability and other places are kept.`" confirm-label="Remove suggested place" cancel-label="Keep place" initial-focus="cancel" danger @cancel="removingPlace = null" @confirm="removePlace" />
+    <ConfirmDialog :open="Boolean(removingPlace)" :busy="busy" title="Remove your suggested place?" :body="`${removingPlace?.label ?? ''} will be removed from the suggestions. Votes for this place will also be removed. Availability and other places are kept.`" confirm-label="Remove" cancel-label="Keep" initial-focus="cancel" danger @cancel="removingPlace = null" @confirm="removePlace" />
   </div>
 </template>
 <style scoped>
@@ -289,7 +284,16 @@ const {
 .meetup-best-summary { display: grid; gap: .35rem; padding: 1rem; border: 1px solid color-mix(in srgb, var(--accent-400) 40%, var(--panel-edge)); border-radius: var(--radius-sm); background: var(--surface-interactive); }
 .meetup-best-summary > strong { color: var(--text-100); font-size: var(--step-1); }
 .meetup-best-summary > span:not(:first-child) { color: var(--text-100); font-size: var(--step--1); }
-.meetup-best-summary > .btn { justify-self: start; margin-top: .35rem; }
+.meetup-best-summary { grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--space-4); }
+.meetup-best-summary__text { display: grid; gap: .35rem; min-width: 0; }
+.meetup-best-summary__text > strong { color: var(--text-100); font-size: var(--step-1); }
+.meetup-best-summary__text > span:not(:first-child) { color: var(--text-100); font-size: var(--step--1); }
+/* The buttons sit on the right of the recommendation; below it on narrow screens. */
+.meetup-best-summary__actions { display: grid; gap: var(--space-2); justify-items: end; }
+@media (max-width: 600px) {
+  .meetup-best-summary { grid-template-columns: 1fr; }
+  .meetup-best-summary__actions { justify-items: start; }
+}
 .meetup-compare-toggle { align-self: flex-start; justify-self: start; }
 .meetup-comparison { display: grid; gap: .85rem; padding: 1rem; border: var(--border-soft); border-radius: var(--radius-sm); }
 .meetup-page--board .page-banner {
@@ -330,8 +334,6 @@ const {
 .meetup-approval-progress p { margin: .5rem 0 0; }
 .meetup-reopen { justify-self: start; }
 .meetup-management { border-top: var(--border-soft); padding-top: 1.25rem; display: grid; justify-items: start; gap: .75rem; }
-.meetup-management h2 { font-size: var(--step-0); }
-.meetup-cancel { color: var(--text-300); }
 .meetup-journey .meetup-travel-fields { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 1rem; }
 .meetup-journey .meetup-travel-fields > button { justify-self: start; }
 .meetup-manual-entry { border-top: 1px solid var(--panel-edge); padding-top: .8rem; }
@@ -535,6 +537,13 @@ const {
   border-left: 2px solid color-mix(in srgb, var(--accent-400) 55%, var(--panel-edge));
   border-radius: 6px;
 }
+/* Still to be confirmed, so it reads as pending: amber, like other waiting states. */
+.meetup-option--pending {
+  background: color-mix(in srgb, var(--amber-400) 9%, var(--ink-800));
+  border-color: color-mix(in srgb, var(--amber-400) 45%, var(--panel-edge));
+  border-left: 3px solid var(--amber-400);
+}
+.meetup-option--pending > .meetup-next-step__eyebrow { color: var(--amber-400); }
 .meetup-review-link {
   justify-self: end;
 }
@@ -642,4 +651,10 @@ const {
 .meetup-attendance-warning { display:grid; gap:.75rem; padding:1rem; border-left:3px solid var(--accent-400); background:var(--surface-interactive); border-radius:var(--radius-sm); margin-block:1rem; }
 .meetup-manual-proposal > .group-controls { margin-block:1rem; }
 .meetup-option-details { margin-block:.75rem; }
+.meetup-before { position: relative; display: grid; gap: var(--space-4); }
+.meetup-before__tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; width: fit-content; max-width: 100%; border-radius: var(--radius-pill); background: var(--ink-700); }
+.meetup-before__tab { padding: var(--space-2) var(--space-4); border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text-300); font: inherit; font-size: var(--step--1); font-weight: 600; cursor: pointer; }
+.meetup-before__tab[aria-selected='true'] { background: var(--panel-bg); color: var(--text-100); box-shadow: var(--panel-shadow); }
+.meetup-before__panel { display: grid; gap: var(--space-3); min-width: 0; }
+.meetup-before__lead { margin: 0; color: var(--text-100); }
 </style>

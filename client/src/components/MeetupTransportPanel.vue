@@ -1,8 +1,12 @@
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref, useId, watch } from 'vue';
+/**
+ * Live MRT, crowd and bus updates near the concert venue or the meeting place
+ * (once one is chosen). Choosing one checks transport straight away; there is
+ * no separate "check" step.
+ */
+import { computed, onMounted, onUnmounted, ref, useId, watch } from 'vue';
 import { api } from '../api.js';
 import { formatMeetupObservationTime } from '../utils/meetupTime.js';
-import MeetupLocationSearch from './MeetupLocationSearch.vue';
 import LoadingSpinner from './LoadingSpinner.vue';
 
 const props = defineProps({
@@ -11,18 +15,14 @@ const props = defineProps({
   hasMeetingPlace: { type: Boolean, default: false },
   planVersion: { type: Number, default: 0 },
   active: { type: Boolean, default: true },
+  /** Inside another card (Before you go): no card frame or heading of its own. */
+  embedded: { type: Boolean, default: false },
 });
 const headingId = `nearby-transport-${useId()}`;
-const phase = ref('pre'), pending = ref(false), venueOverride = ref(null), venueSearchReset = ref(0);
-const venuePending = ref(false);
-const results = reactive({ pre: null, post: null });
-const errors = reactive({ pre: '', post: '' });
-const automatic = reactive({ pre: false, post: false });
-const result = computed(() => results[phase.value]);
-const error = computed(() => errors[phase.value]);
+/** 'venue' | 'meeting' */
+const source = ref('venue');
+const pending = ref(false), result = ref(null), error = ref(''), automatic = ref(false);
 const venueName = computed(() => props.concert?.venue || result.value?.venueName || 'the concert venue');
-const canCheck = computed(() => phase.value === 'post' ? !venuePending.value : props.hasMeetingPlace);
-const key = () => `${props.meetupId}:${props.planVersion}:${props.concert?.venue ?? ''}`;
 let alive = true, generation = 0, refreshTimer;
 const time = formatMeetupObservationTime;
 const distance = value => Number.isFinite(value) ? `${Math.round(value * 1000)} m away` : 'Distance not reported';
@@ -33,69 +33,68 @@ const stationCrowds = station => {
   return (result.value?.crowding?.stations ?? []).filter(row => codes.has(row.station));
 };
 const busReport = stop => result.value?.buses?.stops?.find(row => row.code === stop.code);
+/**
+ * One compact row per bus: its next three arrivals in minutes, each coloured by
+ * how full that bus is (green seats, amber standing, red limited standing).
+ * Soonest bus first; a stop shows five buses until "Show all".
+ */
+const loadClass = load => ({ SEA: 'seats', SDA: 'standing', LSD: 'limited' })[load] ?? 'unknown';
+function minutesAway(when) {
+  const reference = Date.parse(result.value?.checkedAt ?? '') || Date.now();
+  const minutes = Math.round((Date.parse(when) - reference) / 60000);
+  return minutes <= 0 ? 'Arr' : `${minutes} min`;
+}
+function busRows(stop) {
+  const services = busReport(stop)?.services ?? [];
+  return services.map(service => {
+    const arrivals = (service.arrivals?.length ? service.arrivals : service.crowdLevels ?? []).slice(0, 3).map(bus => ({
+      // Without an arrival time, say how full it is instead.
+      label: bus.estimatedArrival ? minutesAway(bus.estimatedArrival) : ({ SEA: 'Seats', SDA: 'Standing', LSD: 'Crowded' })[bus.load] ?? '—',
+      load: loadClass(bus.load),
+      title: `${busLabel(bus.load)}${bus.wheelchairAccessible ? ' · wheelchair accessible' : ''}`,
+    }));
+    const first = Date.parse(service.arrivals?.[0]?.estimatedArrival ?? '') || Infinity;
+    return { service: service.service, arrivals, first };
+  }).sort((a, b) => a.first - b.first || a.service.localeCompare(b.service, undefined, { numeric: true }));
+}
+const expandedStops = ref(new Set());
+const toggleStop = code => { const next = new Set(expandedStops.value); next.has(code) ? next.delete(code) : next.add(code); expandedStops.value = next; };
 const providerNote = reason => reason === 'lta_not_configured' ? ' LTA DataMall is not configured.'
   : reason === 'onemap_not_configured' ? ' OneMap is not configured.' : '';
 
+/** What the server needs for the current choice. */
+function request() {
+  return { phase: source.value === 'meeting' ? 'pre' : 'post' };
+}
 async function check({ auto = false } = {}) {
-  if (pending.value || !canCheck.value || !alive || !props.active) return;
-  const requestedPhase = phase.value, context = key(), version = generation;
-  const options = { phase: requestedPhase };
-  if (requestedPhase === 'post' && venueOverride.value) Object.assign(options, venueOverride.value);
-  pending.value = true;
-  errors[requestedPhase] = '';
+  const options = request();
+  if (!options || !alive || !props.active || (pending.value && auto)) return;
+  const version = ++generation;
+  pending.value = true; error.value = '';
   try {
     const data = (await api.meetupTransport(props.meetupId, options)).transport;
-    if (!alive || key() !== context || version !== generation || phase.value !== requestedPhase) return;
-    results[requestedPhase] = data;
-    if (!auto) automatic[requestedPhase] = Boolean(data?.anchor && [data.trains, data.crowding, data.buses].some(feed => feed?.status === 'available'));
+    if (!alive || version !== generation) return;
+    result.value = data;
   } catch (failure) {
-    if (!alive || key() !== context || version !== generation || phase.value !== requestedPhase) return;
-    if ([401, 403, 404].includes(failure.status)) {
-      results.pre = null; results.post = null; automatic.pre = false; automatic.post = false;
-      errors[requestedPhase] = 'These travel checks are unavailable. Reopen the planner to check your access.';
-    } else errors[requestedPhase] = 'Could not refresh nearby transport. Any displayed information is the previous check; please try again.';
-  } finally { pending.value = false; }
+    if (!alive || version !== generation) return;
+    error.value = [401, 403, 404].includes(failure.status)
+      ? 'These travel checks are unavailable. Reopen the planner to check your access.'
+      : 'Could not load nearby transport. Please try again.';
+  } finally { if (version === generation) pending.value = false; }
 }
-function switchPhase(next) {
-  if (phase.value === next) return;
-  phase.value = next;
-  generation++;
-}
-function selectVenue(location) {
-  if (!Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)) return;
-  generation++;
-  venuePending.value = false;
-  venueOverride.value = { latitude: location.latitude, longitude: location.longitude, label: location.label };
-  results.post = null; automatic.post = false; errors.post = '';
-}
-function useConcertVenue() {
-  venuePending.value = false;
-  generation++; venueOverride.value = null; venueSearchReset.value++; results.post = null; automatic.post = false; errors.post = '';
-}
-function invalidateVenue() {
-  generation++; venuePending.value = true; venueOverride.value = null;
-  results.post = null; automatic.post = false; errors.post = '';
+function choose(next) {
+  source.value = next;
+  result.value = null; error.value = ''; automatic.value = false;
+  void check();
 }
 function refreshIfVisible() {
-  if (props.active && document.visibilityState === 'visible' && automatic[phase.value] && results[phase.value]?.anchor)
-    void check({ auto: true });
+  if (props.active && document.visibilityState === 'visible' && automatic.value && result.value?.anchor) void check({ auto: true });
 }
-watch(() => props.active, active => {
-  generation++;
-  if (active) refreshIfVisible();
-});
-watch([() => props.meetupId, () => props.concert?.venue], () => {
-  generation++; phase.value = 'pre'; venueOverride.value = null; venueSearchReset.value++;
-  venuePending.value = false;
-  results.pre = null; results.post = null; errors.pre = ''; errors.post = '';
-  automatic.pre = false; automatic.post = false;
-});
-watch(() => props.planVersion, () => {
-  generation++; results.pre = null; errors.pre = ''; automatic.pre = false;
-});
-watch(() => props.hasMeetingPlace, value => {
-  if (!value) { generation++; results.pre = null; automatic.pre = false; }
-});
+// Open on the meeting place when there is one, otherwise the concert venue.
+watch(() => props.active, active => { if (active && !result.value && !pending.value) choose(props.hasMeetingPlace ? 'meeting' : source.value); }, { immediate: true });
+watch(() => props.meetupId, () => { choose('venue'); });
+watch(() => props.planVersion, () => { if (source.value === 'meeting') void check(); });
+watch(() => props.hasMeetingPlace, value => { if (!value && source.value === 'meeting') choose('venue'); });
 onMounted(() => {
   refreshTimer = setInterval(refreshIfVisible, 60000);
   document.addEventListener('visibilitychange', refreshIfVisible);
@@ -104,25 +103,13 @@ onUnmounted(() => { alive = false; generation++; clearInterval(refreshTimer); do
 </script>
 
 <template>
-  <section class="card group-panel nearby-transport" :aria-labelledby="headingId" :data-transport-phase="phase">
-    <header><h2 :id="headingId">Getting there and getting home</h2><p>Live MRT, crowd and bus updates.</p></header>
-    <div class="nearby-transport__choices" role="group" aria-label="Transport journey">
-      <button type="button" class="btn" :class="phase === 'pre' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="phase === 'pre'" @click="switchPhase('pre')">Before the meetup</button>
-      <button type="button" class="btn" :class="phase === 'post' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="phase === 'post'" @click="switchPhase('post')">After the concert</button>
+  <section class="nearby-transport" :class="{ 'card group-panel': !embedded }" :aria-labelledby="embedded ? undefined : headingId" :aria-label="embedded ? 'Public transport' : undefined" :data-transport-source="source">
+    <header v-if="!embedded"><h2 :id="headingId">Getting there and getting home</h2><p>Live MRT, crowd and bus updates near the venue or the meeting place.</p></header>
+    <div class="nearby-transport__choices" role="group" aria-label="Where to check">
+      <button type="button" class="btn" :class="source === 'venue' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="source === 'venue'" :disabled="pending && source === 'venue'" @click="choose('venue')">Concert venue</button>
+      <button v-if="hasMeetingPlace" type="button" class="btn" :class="source === 'meeting' ? 'btn--primary' : 'btn--ghost'" :aria-pressed="source === 'meeting'" :disabled="pending && source === 'meeting'" @click="choose('meeting')">Meeting place</button>
     </div>
-    <p v-if="phase === 'pre' && !hasMeetingPlace" class="group-muted">Choose a meeting place first to check nearby transport.</p>
-    <details v-show="phase === 'post'" :open="Boolean(result && !result.anchor)" class="nearby-transport__venue">
-      <summary>{{ venueOverride ? `Selected venue: ${venueOverride.label}` : 'Check or correct the concert venue' }}</summary>
-      <p class="group-muted">Pick the concert venue, not your home or meeting place.</p>
-      <MeetupLocationSearch :key="meetupId" :meetup-id="meetupId" :reset-key="venueSearchReset" :manual-fallback="false" label="Find the concert venue" selection-hint="This only selects a location for transport checks. Press Check nearby transport to use it; the concert and meetup are unchanged." @selected="selectVenue" @selection-invalidated="invalidateVenue" />
-      <p v-if="venuePending" class="group-muted" role="status">Choose a new search result, or use the concert's venue again before checking transport.</p>
-      <button v-if="venueOverride || venuePending" type="button" class="btn btn--ghost" @click="useConcertVenue">Use the concert's venue again</button>
-    </details>
-    <p v-if="venueOverride && phase === 'post'" class="group-muted">Using {{ venueOverride.label }}. Press Check nearby transport to refresh this location.</p>
-    <div class="group-actions">
-      <button type="button" class="btn btn--primary" :disabled="pending || !canCheck" @click="check()"><LoadingSpinner v-if="pending" />{{ pending ? 'Checking nearby transport…' : 'Check nearby transport' }}</button>
-      <label v-if="result?.anchor" class="group-check"><input v-model="automatic[phase]" type="checkbox" />Refresh every minute while open</label>
-    </div>
+    <p v-if="pending" class="loading-state" role="status"><LoadingSpinner />Checking nearby transport…</p>
     <details class="nearby-transport__about">
       <summary>About this transport data</summary>
       <ul>
@@ -132,9 +119,9 @@ onUnmounted(() => { alive = false; generation++; clearInterval(refreshTimer); do
     </details>
     <p v-if="error" role="alert" class="group-error">{{ error }}</p>
     <template v-if="result">
-      <p v-if="!result.anchor" role="status" class="group-muted">{{ phase === 'post' ? 'Confirm the concert venue to see nearby MRT stations and bus stops.' : 'Choose a meeting place first to check nearby transport.' }}</p>
+      <p v-if="!result.anchor" role="status" class="group-muted">{{ source === 'venue' ? `We couldn’t find ${venueName} on the map, so nearby transport isn’t available.` : 'Choose a meeting place to see nearby MRT stations and bus stops.' }}</p>
       <template v-else>
-        <div class="nearby-transport__context"><strong>Near {{ result.anchor.label }}</strong><span v-if="result.checkedAt">Checked {{ time(result.checkedAt) }} SGT</span></div>
+        <div class="nearby-transport__context"><span class="nearby-transport__place"><strong>{{ /^near\s/i.test(result.anchor.label) ? result.anchor.label : `Near ${result.anchor.label}` }}</strong><button type="button" class="nearby-transport__refresh" :class="{ 'nearby-transport__refresh--spinning': pending }" :disabled="pending" aria-label="Refresh transport" title="Refresh" @click="check()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7" /><path d="M20 4v7h-7" /></svg></button></span><span v-if="result.checkedAt">Checked {{ time(result.checkedAt) }} SGT</span></div>
         <p v-if="result.nearby?.status !== 'available'" role="status" class="group-muted">Nearby station and bus-stop lookup is unavailable.{{ providerNote(result.nearby?.reason) }}</p>
         <template v-else>
           <div class="nearby-transport__advisory">
@@ -165,7 +152,8 @@ onUnmounted(() => { alive = false; generation++; clearInterval(refreshTimer); do
               </article>
             </section>
             <section aria-label="Nearby bus stops">
-              <h3>Nearby bus stops</h3><p class="group-muted">Up to three stops within 800 m.</p>
+              <h3>Nearby bus stops</h3>
+              <p class="bus-legend" aria-label="How full each bus is"><span class="bus-legend__dot bus-row__time--seats"></span>Seats <span class="bus-legend__dot bus-row__time--standing"></span>Standing <span class="bus-legend__dot bus-row__time--limited"></span>Crowded</p>
               <p v-if="result.nearby.busStopsStatus === 'unavailable'">Bus-stop lookup is unavailable.</p>
               <p v-else-if="!result.nearby.busStops?.length">No bus stops reported within this area.</p>
               <article v-for="stop in result.nearby.busStops ?? []" :key="stop.code" class="nearby-transport__stop">
@@ -174,12 +162,18 @@ onUnmounted(() => { alive = false; generation++; clearInterval(refreshTimer); do
                 <template v-else>
                   <p v-if="busReport(stop).stale" class="group-muted">Showing saved bus loads; check again before travelling.</p>
                   <p v-if="!busReport(stop).services?.length">No bus services reported at this stop.</p>
-                  <details v-else><summary>View {{ busReport(stop).services.length }} bus {{ busReport(stop).services.length === 1 ? 'service' : 'services' }}</summary>
-                    <div v-for="service in busReport(stop).services" :key="service.service" class="nearby-transport__service"><strong>Bus {{ service.service }}</strong>
-                      <p v-if="!service.crowdLevels?.length">Crowding not reported.</p>
-                      <p v-for="(vehicle, index) in service.crowdLevels ?? []" :key="index">{{ vehicle.position === 1 ? 'Next bus' : `Following bus ${vehicle.position - 1}` }}: {{ busLabel(vehicle.load) }}<span v-if="vehicle.wheelchairAccessible"> · Wheelchair accessible</span></p>
-                    </div>
-                  </details>
+                  <template v-else>
+                    <ul class="bus-rows" :aria-label="`Buses at ${stop.name}`">
+                      <li v-for="row in (expandedStops.has(stop.code) ? busRows(stop) : busRows(stop).slice(0, 5))" :key="row.service" class="bus-row">
+                        <span class="bus-row__number">{{ row.service }}</span>
+                        <span class="bus-row__times">
+                          <span v-for="(bus, index) in row.arrivals" :key="index" class="bus-row__time" :class="`bus-row__time--${bus.load}`" :title="bus.title">{{ bus.label }}</span>
+                          <span v-if="!row.arrivals.length" class="group-muted">Not reported</span>
+                        </span>
+                      </li>
+                    </ul>
+                    <button v-if="busRows(stop).length > 5" type="button" class="bus-rows__more" @click="toggleStop(stop.code)">{{ expandedStops.has(stop.code) ? 'Show fewer buses' : `Show all ${busRows(stop).length} buses` }}</button>
+                  </template>
                 </template>
               </article>
             </section>
@@ -245,9 +239,31 @@ onUnmounted(() => { alive = false; generation++; clearInterval(refreshTimer); do
 .nearby-transport__stop h4 {
   font-size: var(--step-0);
 }
-.nearby-transport__service {
-  padding-top: var(--space-3);
+/* Bus arrivals: one tidy row per bus. */
+.nearby-transport__place { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.nearby-transport__refresh {
+  display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; flex: none;
+  border: var(--border-soft); border-radius: 50%; background: var(--panel-bg); color: var(--accent-400); cursor: pointer;
 }
+.nearby-transport__refresh:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-400) 10%, var(--panel-bg)); }
+.nearby-transport__refresh:disabled { cursor: progress; }
+.nearby-transport__refresh svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.nearby-transport__refresh--spinning svg { animation: nearby-refresh-spin .9s linear infinite; }
+@keyframes nearby-refresh-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .nearby-transport__refresh--spinning svg { animation: none; } }
+.bus-rows { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+.bus-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-1) 0; border-top: var(--border-hairline); }
+.bus-row:first-child { border-top: 0; }
+.bus-row__number { flex: none; min-width: 3.2rem; padding: 2px var(--space-2); border-radius: var(--radius-sm); background: var(--ink-700); color: var(--text-100); font-weight: 700; font-size: var(--step--1); text-align: center; }
+.bus-row__times { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.bus-row__time { min-width: 3.4rem; padding: 2px var(--space-2); border-radius: var(--radius-pill); font-size: var(--step--2); font-weight: 600; text-align: center; border: 1px solid transparent; }
+.bus-row__time--seats { background: color-mix(in srgb, var(--signal-good) 14%, transparent); color: var(--signal-good); border-color: color-mix(in srgb, var(--signal-good) 35%, transparent); }
+.bus-row__time--standing { background: color-mix(in srgb, var(--amber-400) 16%, transparent); color: var(--amber-400); border-color: color-mix(in srgb, var(--amber-400) 35%, transparent); }
+.bus-row__time--limited { background: color-mix(in srgb, var(--signal-bad) 14%, transparent); color: var(--signal-bad); border-color: color-mix(in srgb, var(--signal-bad) 35%, transparent); }
+.bus-row__time--unknown { background: var(--ink-700); color: var(--text-300); }
+.bus-rows__more { justify-self: start; padding: 0; border: 0; background: none; color: var(--accent-400); font: inherit; font-size: var(--step--1); text-decoration: underline; cursor: pointer; }
+.bus-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); margin: 0; color: var(--text-300); font-size: var(--step--2); }
+.bus-legend__dot { display: inline-block; width: .7rem; height: .7rem; border-radius: 50%; border: 1px solid; }
 .nearby-transport__warning {
   color: var(--rose-400);
 }
