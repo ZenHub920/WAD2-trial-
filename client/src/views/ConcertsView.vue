@@ -115,10 +115,6 @@ function clearFilters() {
       </header>
 
       <section class="concert-filters" aria-label="Filter concerts">
-        <div class="concert-filters__heading">
-          <span class="concert-filters__mark" aria-hidden="true"><MarketIcon name="search" :size="18" /></span>
-          <p>Find your next show<span>Start with an artist, venue or date.</span></p>
-        </div>
         <div class="concert-filters__controls">
         <label class="concert-filters__search">
           <span>Search concerts</span>
@@ -230,34 +226,6 @@ function clearFilters() {
   border-radius: var(--radius-lg);
   background: var(--panel-bg);
   box-shadow: inset 0 1px 0 var(--panel-highlight), var(--shadow-md);
-}
-.concert-filters__heading {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-.concert-filters__heading p {
-  margin: 0;
-  color: var(--text-100);
-  font-size: var(--step--1);
-  font-weight: 700;
-}
-.concert-filters__heading p span {
-  margin-left: var(--space-3);
-  color: var(--text-300);
-  font-weight: 400;
-}
-.concert-filters__mark {
-  display: grid;
-  place-items: center;
-  width: 2rem;
-  height: 2rem;
-  flex: none;
-  border: 1px solid color-mix(in srgb, var(--accent-400) 30%, var(--panel-edge));
-  border-radius: var(--radius-sm);
-  background: var(--accent-glow);
-  color: var(--accent-400);
-  box-shadow: inset 0 1px 0 var(--panel-highlight);
 }
 .concert-filters__controls {
   display: grid;
@@ -415,7 +383,6 @@ function clearFilters() {
     grid-template-columns: minmax(0, 1fr);
   }
   .concert-filters { padding: var(--space-4); }
-  .concert-filters__heading p span { display: block; margin: var(--space-1) 0 0; }
   .concert-market__tools {
     width: 100%;
   }
