@@ -77,7 +77,7 @@ describe('WelcomeView', () => {
     const { wrapper } = await mountPage(WelcomeView, { path: '/welcome?next=%2Fgroups' });
     await finishPreferences(wrapper);
 
-    expect(saveMyPreferences).toHaveBeenCalledOnce();
+    expect(saveMyPreferences).toHaveBeenCalled() // autosave, then the final save;
     expect(wrapper.text()).toContain("You're all set");
     expect(wrapper.text()).toContain('You can change your preferences and vibe anytime on your Profile page');
     const links = wrapper.findAll('a');

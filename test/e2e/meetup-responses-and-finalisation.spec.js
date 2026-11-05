@@ -28,7 +28,7 @@ test('an explicit unavailable response stays distinct from no response, updates 
     await expect(summary).not.toContainText('have not responded');
     const unavailable = member.page.getByRole('checkbox', { name: "I can't make any of these times", exact: true });
     await unavailable.check();
-    await expect(member.page.getByText('Unsaved response: Unavailable for these times', { exact: true })).toBeVisible();
+    await expect(member.page.locator('.meetup-save-state')).toContainText('Save your changes to update the group.');
     expect((await read(member, meetup.id)).availabilityResponse).toBe('unanswered');
     await member.page.getByRole('button', { name: 'Save my response', exact: true }).click();
     await expect(member.page.getByText('Your availability has been saved. The group knows you cannot make these times.', { exact: true })).toBeVisible();
@@ -40,7 +40,6 @@ test('an explicit unavailable response stays distinct from no response, updates 
     expect(saved.grid.every(slot => slot.availableCount === 0)).toBe(true);
     await capture(host.page, 'unavailable-versus-unanswered-live');
     await member.page.reload(); await expect(unavailable).toBeChecked();
-    await expect(member.page.locator('.meetup-availability__summary')).toContainText('Unavailable response saved');
 
     // Painting is a revised response; it removes the unavailable selection but
     // does not tell the group until the deliberate save.
@@ -76,9 +75,7 @@ test('an organizer can finalise recommendations without own availability while p
     }] });
     const { place } = await api(member.context, `/meetups/${meetup.id}/places`, 'POST', placeInput);
     await openBoard(host, meetup.id);
-    const next = host.page.locator('.meetup-next-step');
-    await expect(next.getByRole('button', { name: 'Review the recommendation', exact: false })).toBeVisible();
-    await expect(next).toContainText('You have not shared your own availability yet.');
+    await expect(host.page.locator('.meetup-save-state')).toContainText('No response saved for you.');
     await expect(host.page.locator('.meetup-journey > summary')).toContainText('My private starting point');
     await expect(host.page.locator('.meetup-audience--private')).toContainText('Only you');
     const hostState = await read(host, meetup.id);
@@ -91,7 +88,7 @@ test('an organizer can finalise recommendations without own availability while p
     await expect(host.page.locator('#meetup-review')).toBeHidden();
     await expect(host.page.locator('#meetup-places .meetup-recommendations')).toHaveCount(0);
     await expect(host.page.locator('#meetup-places').getByRole('button', { name: /^(Confirm|Propose) this time & place$/ })).toHaveCount(0);
-    await expect(host.page.locator('.meetup-audience--shared')).toContainText('Shared with this group');
+    await expect(host.page.locator('.meetup-place-editor')).toContainText('separate from your private starting point');
     await openBoard(member, meetup.id, 'places');
     const suggestion = member.page.locator('.meetup-place-row').filter({ has: member.page.getByRole('heading', { name: placeInput.label, exact: true }) });
     await suggestion.getByRole('button', { name: 'Vote for place', exact: true }).click();
@@ -101,7 +98,7 @@ test('an organizer can finalise recommendations without own availability while p
     expect((await read(member, meetup.id)).currentVotePlaceId).toBe(place.id);
     await capture(host.page, 'shared-places-votes-not-finalisation');
 
-    await next.getByRole('button', { name: 'Review the recommendation', exact: false }).click();
+    await host.page.locator('#meetup-tab-review').click();
     await expect(host.page.locator('#meetup-review')).toBeVisible();
     await expect(host.page.locator('.meetup-recommendations')).toBeVisible();
     await expect(host.page.locator('.meetup-option')).toContainText(placeInput.label);
@@ -116,7 +113,7 @@ test('an organizer can finalise recommendations without own availability while p
   } finally { await host.context.close(); await member.context.close(); }
 });
 
-test('a zero-attendance alternative requires explicit acknowledgment in both API validation and the review workflow', async ({ browser, request }) => {
+test('a zero-attendance time needs explicit acknowledgment from the API and is never recommended in the planner', async ({ browser, request }) => {
   const data = await fixture(request), host = await person(browser, data, 'hostA'), member = await person(browser, data, 'friendA');
   try {
     const { meetup } = await api(host.context, '/meetups', 'POST', { ...timing, partyId: data.parties.a });
@@ -132,30 +129,18 @@ test('a zero-attendance alternative requires explicit acknowledgment in both API
     expect((await read(host, meetup.id)).version).toBe(initial.version);
     expect((await read(host, meetup.id)).selected_place_id).toBeNull();
 
+    // The planner only recommends times someone can make, so this time is never offered there.
     await openBoard(host, meetup.id, 'review');
-    const alternative = host.page.locator('.meetup-manual-proposal');
-    await alternative.locator(':scope > summary').click();
-    const review = alternative.getByRole('button', { name: 'Review this alternative', exact: true });
-    await expect(review).toBeDisabled();
-    await alternative.getByLabel('Alternative meeting place', { exact: true }).selectOption(place.id);
-    await alternative.getByLabel('Alternative meeting time', { exact: true }).selectOption(String(start));
-    await expect(alternative.getByText('No participant has marked this time available.', { exact: true })).toBeVisible();
-    await expect(review).toBeDisabled();
-    await capture(host.page, 'zero-availability-acknowledgment');
-    await alternative.getByRole('checkbox', { name: 'I understand this time has no recorded availability and want to review it anyway.', exact: true }).check();
-    await expect(review).toBeEnabled();
-    let submissions = 0;
-    host.page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === `/api/meetups/${meetup.id}/propose`) submissions++; });
-    await review.click();
-    const dialog = host.page.getByRole('dialog', { name: /Not everyone is available/ });
-    await expect(dialog).toContainText('Only 0 of 2');
-    await expect(dialog).toContainText(placeInput.label);
-    await expect(dialog).toContainText('immediately confirms the meetup');
-    expect(submissions).toBe(0); expect((await read(host, meetup.id)).status).toBe('planning');
-    await dialog.getByRole('button', { name: 'Confirm meetup now', exact: true }).click();
-    await expect(host.page.locator('.meetup-context')).toContainText('Meetup confirmed');
+    await expect(host.page.locator('.meetup-option')).toHaveCount(0);
+    await expect(host.page.locator('.meetup-recommendations .meetup-empty-state')).toBeVisible();
+    await capture(host.page, 'zero-availability-not-recommended');
+    // With the acknowledgment, an organizer can still confirm it deliberately.
+    await api(host.context, `/meetups/${meetup.id}/propose`, 'POST', { placeId: place.id, startsAt: new Date(start).toISOString(),
+      version: initial.version, participationRevision: initial.participationRevision, acknowledgeNoAvailability: true });
+    await host.page.reload();
+    await expect(host.page.getByText('This plan is confirmed.', { exact: false })).toBeVisible();
     const confirmed = await read(host, meetup.id);
-    expect(submissions).toBe(1); expect(confirmed.status).toBe('confirmed');
+    expect(confirmed.status).toBe('confirmed');
     expect(confirmed.selected_start).toBe(start); expect(confirmed.selected_place_id).toBe(place.id);
     expect(confirmed.approvals).toHaveLength(1);
     expect(confirmed.availabilityResponses.respondedCount).toBe(0);

@@ -1211,7 +1211,7 @@ Files: [group-workspace-recovery.test.js](test/client/group-workspace-recovery.t
 [group-membership-workspace.test.js](test/client/group-membership-workspace.test.js) (15) ·
 [group-connections-workspace.test.js](test/client/group-connections-workspace.test.js) (14) ·
 [group-settings-interactions.test.js](test/client/group-settings-interactions.test.js) (5) ·
-[group-navigation.test.js](test/client/group-navigation.test.js) (0)
+[group-navigation.test.js](test/client/group-navigation.test.js) (1)
 
 #### Meetup planner
 
@@ -1225,26 +1225,26 @@ survive every one of them, plus optimistic concurrency against other members edi
 | Drag to paint availability | Click, drag, and drag from a selected slot | Slots selected, then erased | The grid's three gestures |
 | Touch painting | Hold then drag; swipe | Paints; swipe scrolls instead | Distinct touch and mouse models |
 | Save with transit or drive | A selected period plus a travel method | Saved with that method | The journey options |
-| A complete vs incomplete manual origin | Partial, then full coordinates | Rejected, then saved | Validation on a manual entry |
-| Applying only the travel method | Method changed, origins untouched | Each period keeps its existing origin | A narrow edit stays narrow |
+| Editing a picked starting point | A map pick, then new search text | The old pick is dropped and never saved | No stale coordinates |
+| Changing only the travel method | Method changed, starting point untouched | Every selected time gets the new method | One starting point for all times |
 | A stale save | A version conflict | The draft is kept and the current version reloaded for review | Optimistic concurrency, without data loss |
 | A live update during editing | Someone else confirms the plan | The unsaved draft is retained and further changes lock | Concurrent edits do not discard local work |
-| A confirmed plan | A finalised meetup | Contributions locked, discussion still open | Locking is partial, not total |
+| A confirmed plan | A finalised meetup | Contributions locked; organizers can reopen | Locked until deliberately reopened |
 | Organizer picker | An alternative time and place | The algorithm's recommendation and the reviewed choice both preserved | Reviewing is not approving |
 | Proposal recovery | A teammate's proposal | Recovered; approval remains explicit | No implicit approvals |
 | Changing boards | Board A, then board B | A's private drafts cleared; A's late routes ignored | No cross-board leakage |
 | Creation date guardrails | Dates around the concert | Out-of-window dates refused | A meetup must sit in its concert's window |
-| Address selection | An OneMap search and a pick | The selection saved as the starting location | A real child component, not a stub |
-| Nearby transport | A chosen meeting place | MRT, bus and parking panels; a neutral state without a place | Live data degrades honestly |
+| Map selection | A spot picked on the Google map (a stand-in in tests) | Saved as the starting point or meeting place | No real Maps calls in tests |
+| Nearby transport | A confirmed meeting place | MRT stations and one row per bus with arrival times; the venue on request | Live data degrades honestly |
 | Scope-aware navigation | Entry from chat, groups or management | Returns to where it came from | `?from=` round-trips correctly |
 
-Files: [meetup-planner.test.js](test/client/meetup-planner.test.js) (137) ·
+Files: [meetup-planner.test.js](test/client/meetup-planner.test.js) (132) ·
 [meetup-navigation.test.js](test/client/meetup-navigation.test.js) (29) ·
 [availability-grid.test.js](test/client/availability-grid.test.js) (20) ·
 [meetup-entry.test.js](test/client/meetup-entry.test.js) (18) ·
 [meetup-location-search.test.js](test/client/meetup-location-search.test.js) (15) ·
 [meetup-form-panels.test.js](test/client/meetup-form-panels.test.js) (13) ·
-[nearby-transport.test.js](test/client/nearby-transport.test.js) (12) ·
+[nearby-transport.test.js](test/client/nearby-transport.test.js) (14) ·
 [meetup-time.test.js](test/client/meetup-time.test.js) (10)
 
 #### Notifications

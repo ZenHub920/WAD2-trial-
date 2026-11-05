@@ -45,7 +45,7 @@ describe('notification settings and inbox', () => {
     await wrapper.get('button[aria-label="Notifications, 1 unread"]').trigger('click');
     await flushPromises();
     expect(wrapper.text()).toContain(item.title);
-    expect(wrapper.text()).toContain('Unread');
+    expect(wrapper.find('.update--unread').exists()).toBe(true);
     await button(wrapper, 'Mark read').trigger('click');
     await flushPromises();
     expect(api.readNotification).toHaveBeenCalledExactlyOnceWith(item.id);

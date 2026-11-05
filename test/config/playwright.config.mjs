@@ -30,7 +30,9 @@ export default defineConfig({
     {
       command: 'node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5175 --strictPort',
       cwd: join(repositoryRoot, 'client'),
-      env: { API_URL: 'http://127.0.0.1:3105' },
+      // Never the real Google Maps in tests: this placeholder key overrides
+      // client/.env.local, and support.js serves a stand-in Maps script.
+      env: { API_URL: 'http://127.0.0.1:3105', VITE_GOOGLE_MAPS_API_KEY: 'e2e-placeholder-key' },
       url: 'http://127.0.0.1:5175',
       reuseExistingServer: false,
       timeout: 30000,

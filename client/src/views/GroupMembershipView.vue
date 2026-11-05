@@ -422,9 +422,6 @@ async function leave() {
                 <button type="button" class="stepper__btn" :disabled="busy || strangerPlaces >= 1000" aria-label="One more spot" @click="strangerPlaces = (validCount(strangerPlaces) ? strangerPlaces : 0) + 1">+</button>
               </div>
             </div>
-            <p v-if="group.settings?.published && sizeChanged && canStartCoordination" class="size-warning" role="note">
-              Your group is published. Saving a new size hides it until you publish again.
-            </p>
           </section>
             </div>
           </details>

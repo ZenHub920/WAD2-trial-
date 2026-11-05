@@ -49,7 +49,7 @@ test('pre-meetup transport uses the selected public place, never member origins 
   assert.deepEqual(calls.search, []);
   assert.equal(result.checkedAt, new Date(epoch).toISOString());
   assert.equal(repos.meetups.access('host', id).version, version);
-  assert.doesNotMatch(JSON.stringify(result), /private-host-origin|estimatedArrival|arrivals/);
+  assert.doesNotMatch(JSON.stringify(result), /private-host-origin/);
 });
 
 test('post-concert transport resolves only the unique exact venue match, even when it is not the first result', async t => {
@@ -105,7 +105,7 @@ test('explicit public venue confirmation bypasses geocoding while invalid coordi
   assert.equal(JSON.stringify(calls), callsBefore);
 });
 
-test('transport returns nearby station reports and matching alert-cluster messages only, with no bus arrival timestamps', async t => {
+test('transport returns nearby station reports and matching alert-cluster messages only, including bus arrival times', async t => {
   const { id, travel, service } = fixture(t);
   travel.nearbyStops = async () => ({ status: 'available', rail: { status: 'available' }, bus: { status: 'available' },
     stations: [station('CC6'), { ...station('CE1', 'CEL'), codes: ['CE1', 'DT16'], lines: ['CEL', 'DTL'] }], busStops: [stop('80199')] });
@@ -122,7 +122,7 @@ test('transport returns nearby station reports and matching alert-cluster messag
   assert.equal(result.trains.affectedSegments.length, 2);
   assert.deepEqual(result.crowding.stations.map(s => [s.station, s.level]), [['CC6', 'l'], ['CE1', 'h']]);
   assert.equal(result.buses.stops[0].services[0].crowdLevels[0].load, 'LSD');
-  assert.doesNotMatch(JSON.stringify(result), /NS99|Unrelated|estimatedArrival|arrivals|private-host-origin/);
+  assert.doesNotMatch(JSON.stringify(result), /NS99|Unrelated|private-host-origin/);
 });
 
 test('only four distinct nearby train lines and the three supplied nearby stops are queried', async t => {

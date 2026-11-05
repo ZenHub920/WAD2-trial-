@@ -1,6 +1,7 @@
 import { test, expect } from '../support/playwright.mjs';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { fakeGoogleMaps, pickPlace } from './support.js';
 
 const origin = 'http://127.0.0.1:5175';
 const shortWindow = { title: 'Hardening checks', startsAt: '2030-01-01T16:00:00+08:00', endsAt: '2030-01-01T17:30:00+08:00' };
@@ -13,6 +14,7 @@ async function person(browser, data, who = 'hostA', { theme = 'dark', width = 39
   const context = await browser.newContext({ reducedMotion: 'reduce', timezoneId: 'UTC', viewport: { width, height: 844 }, hasTouch: touch, isMobile: touch });
   await context.addInitScript(value => localStorage.setItem('encore-theme', value), theme);
   await context.route(/^https:\/\//, route => route.abort());
+  await fakeGoogleMaps(context);
   await context.addCookies([{ name: 'encore_session', value: data.sessions[who], domain: '127.0.0.1', path: '/api' }]);
   return { context, page: await context.newPage() };
 }
@@ -243,7 +245,7 @@ test('planner drafts: stages, failed saves, internal navigation, browser Back an
 
     await host.page.getByRole('button', { name: 'Save my times', exact: true }).click();
     await expect(host.page.getByText('Your availability has been saved.', { exact: true })).toBeVisible();
-    await expect(host.page.locator('.meetup-availability__summary')).toContainText('Your saved availability');
+    await expect(host.page.locator('.meetup-save-state')).toHaveCount(0);
     expect((await api(host.context, `/meetups/${meetup.id}`)).meetup.availability).toHaveLength(2);
     await capture(host.page, 'availability-saved-dark-390');
     await host.page.getByRole('button', { name: 'All plans', exact: true }).click();
@@ -262,79 +264,38 @@ test('planner drafts: stages, failed saves, internal navigation, browser Back an
   } finally { await host.context.close(); await friend.context.close(); }
 });
 
-test('planner locations: query edits, stale responses and manual names cannot silently save old coordinates', async ({ browser, request }) => {
+test('planner locations: editing the search drops the old pick, so old coordinates are never saved', async ({ browser, request }) => {
   const data = await fixture(request), host = await person(browser, data, 'hostA', { theme: 'light' });
-  const a = { label: 'City Hall meeting point', latitude: 1.293, longitude: 103.852, address: 'North Bridge Road' };
-  const b = { label: 'Stadium meeting point', latitude: 1.3028, longitude: 103.875, address: 'Stadium Walk' };
-  let releaseOld;
-  const oldGate = new Promise(resolve => { releaseOld = resolve; });
+  const a = { label: 'City Hall meeting point', latitude: 1.293, longitude: 103.852 };
+  const b = { label: 'Stadium meeting point', latitude: 1.3028, longitude: 103.875 };
+  const placePost = () => host.page.waitForRequest(request => request.url().endsWith(`/api/meetups/${meetup.id}/places`) && request.method() === 'POST');
+  let meetup;
   try {
-    const { meetup } = await api(host.context, '/meetups', 'POST', { ...shortWindow, partyId: data.parties.a });
+    ({ meetup } = await api(host.context, '/meetups', 'POST', { ...shortWindow, partyId: data.parties.a }));
     await api(host.context, `/meetups/${meetup.id}/availability`, 'PUT', { windows: [{ startsAt: shortWindow.startsAt, endsAt: shortWindow.endsAt }] });
     await host.page.goto(`/meetups/${meetup.id}#meetup-places`);
     const editor = host.page.locator('.meetup-place-editor');
-    const lookup = editor.locator('.meetup-location-search');
-    const query = lookup.getByRole('textbox');
-    const manual = editor.locator('.meetup-manual-entry');
-    await host.page.route(`**/api/meetups/${meetup.id}/locations?*`, async route => {
-      const q = new URL(route.request().url()).searchParams.get('q');
-      if (q === 'Old request') await oldGate;
-      if (q === 'Failure') return route.fulfill({ status: 503, json: { error: 'unavailable' } });
-      await route.fulfill({ json: { result: { status: 'available', locations: [q === 'Stadium' ? b : a] } } });
-    });
-    await query.fill('City Hall');
-    await lookup.getByRole('button', { name: 'Search OneMap', exact: true }).click();
-    await lookup.getByRole('button', { name: /City Hall meeting point/ }).click();
-    await expect(editor.getByLabel('Place name', { exact: true })).toHaveValue(a.label);
+    const add = editor.getByRole('button', { name: 'Add place', exact: true });
+    await pickPlace(host.page, 'Shared meeting place', a.label, { lat: a.latitude, lng: a.longitude });
     await capture(host.page, 'location-selected-light-390');
-    await query.fill('Stadium');
-    await expect(editor.getByLabel('Place name', { exact: true })).toHaveValue('');
-    await expect(lookup.locator('.meetup-location-search__selection')).toHaveCount(0);
-    await manual.locator('summary').click();
-    await expect(manual.getByLabel('Latitude', { exact: true })).toHaveValue('');
-    await expect(manual.getByLabel('Longitude', { exact: true })).toHaveValue('');
-    await lookup.getByRole('button', { name: 'Search OneMap', exact: true }).click();
-    await lookup.getByRole('button', { name: /Stadium meeting point/ }).click();
-    await expect(manual.getByLabel('Latitude', { exact: true })).toHaveValue(String(b.latitude));
-    await expect(manual.getByLabel('Longitude', { exact: true })).toHaveValue(String(b.longitude));
-    await editor.getByLabel('Place name', { exact: true }).fill('Our manually chosen entrance');
-    await expect(manual.getByLabel('Latitude', { exact: true })).toHaveValue('');
-    await expect(manual.getByLabel('Longitude', { exact: true })).toHaveValue('');
-    await expect(lookup.locator('.meetup-location-search__selection')).toHaveCount(0);
-    await manual.getByLabel('Latitude', { exact: true }).fill('1.304');
-    await manual.getByLabel('Longitude', { exact: true }).fill('103.876');
-    const saved = host.page.waitForRequest(request => request.url().endsWith(`/api/meetups/${meetup.id}/places`) && request.method() === 'POST');
-    await editor.getByRole('button', { name: 'Add place', exact: true }).click();
-    expect((await saved).postDataJSON()).toMatchObject({ label: 'Our manually chosen entrance', latitude: 1.304, longitude: 103.876 });
-    await expect(host.page.locator('.meetup-suggested-places').getByRole('heading', { name: 'Our manually chosen entrance', exact: true })).toBeVisible();
-    expect((await api(host.context, `/meetups/${meetup.id}`)).meetup.places[0]).toMatchObject({ label: 'Our manually chosen entrance', latitude: 1.304, longitude: 103.876 });
+    // Typing again un-picks the first place; nothing old can be saved.
+    await editor.getByRole('combobox').fill('Stadium');
+    await expect(editor.locator('.google-place__selection')).toHaveCount(0);
+    await expect(add).toBeDisabled();
+    await pickPlace(host.page, 'Shared meeting place', b.label, { lat: b.latitude, lng: b.longitude });
+    let saved = placePost();
+    await add.click();
+    expect((await saved).postDataJSON()).toMatchObject({ label: b.label, latitude: b.latitude, longitude: b.longitude });
+    await expect(host.page.locator('.meetup-suggested-places').getByRole('heading', { name: b.label, exact: true })).toBeVisible();
 
-    await query.fill('Old request');
-    const oldSent = host.page.waitForRequest(request => request.url().includes('/locations?q=Old+request'));
-    await lookup.getByRole('button', { name: 'Search OneMap', exact: true }).click();
-    await oldSent;
-    await expect(lookup).toHaveAttribute('aria-busy', 'true');
-    await query.fill('Stadium');
-    await lookup.getByRole('button', { name: 'Search OneMap', exact: true }).click();
-    await lookup.getByRole('button', { name: /Stadium meeting point/ }).click();
-    const oldResponse = host.page.waitForResponse(response => response.url().includes('/locations?q=Old+request'));
-    releaseOld();
-    await oldResponse;
-    await expect(editor.getByLabel('Place name', { exact: true })).toHaveValue(b.label);
-    await expect(lookup.locator('.meetup-location-search__selection')).toContainText(b.label);
-
-    await query.fill('Failure');
-    await lookup.getByRole('button', { name: 'Search OneMap', exact: true }).click();
-    await expect(lookup.getByRole('alert')).toContainText('Could not search places');
-    await expect(editor.getByLabel('Place name', { exact: true })).toHaveValue('');
-    await expect(lookup.locator('.meetup-location-search__selection')).toHaveCount(0);
-    await capture(host.page, 'location-failed-cleared-light-390');
-    await editor.getByLabel('Place name', { exact: true }).fill('Manual fallback');
-    await manual.getByLabel('Latitude', { exact: true }).fill('1.3');
-    await manual.getByLabel('Longitude', { exact: true }).fill('103.87');
-    await query.fill('Failure again');
-    await expect(editor.getByLabel('Place name', { exact: true })).toHaveValue('Manual fallback');
-    await expect(manual.getByLabel('Latitude', { exact: true })).toHaveValue('1.3');
-    await expect(manual.getByLabel('Longitude', { exact: true })).toHaveValue('103.87');
-  } finally { releaseOld(); await host.context.close(); }
+    // A click on an empty spot names the nearest landmark and keeps the exact coordinates.
+    await editor.getByRole('button', { name: 'Select on the map', exact: true }).click();
+    await host.page.evaluate(() => window.__fakeMapClick(1.304, 103.876));
+    await expect(editor.locator('.google-place__selection')).toContainText('Near Test landmark');
+    saved = placePost();
+    await add.click();
+    expect((await saved).postDataJSON()).toMatchObject({ label: 'Near Test landmark', latitude: 1.304, longitude: 103.876 });
+    const places = (await api(host.context, `/meetups/${meetup.id}`)).meetup.places;
+    expect(places.map(place => place.label)).toEqual([b.label, 'Near Test landmark']);
+  } finally { await host.context.close(); }
 });

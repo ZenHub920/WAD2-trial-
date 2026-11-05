@@ -132,11 +132,11 @@ async function checkAvailability(page, width) {
   await expect(middle).toHaveAttribute('aria-pressed', 'false');
   await paintWithPointer(page, first, third);
   for (const cell of [first, middle, third]) await expect(cell).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByText('Unsaved changes', { exact: true })).toBeVisible();
+  await expect(page.locator('.meetup-save-state')).toContainText('Save your changes to update the group.');
   await paintWithPointer(page, first, third);
   for (const cell of [first, middle, third]) await expect(cell).toHaveAttribute('aria-pressed', 'false');
   await page.getByRole('button', { name: 'Discard my changes', exact: true }).click();
-  await expect(page.getByText('Your saved availability', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Discard my changes', exact: true })).toHaveCount(0);
   await expect(third).toHaveAttribute('aria-pressed', 'true');
   const geometry = await first.boundingBox();
   expect(geometry.width, `heatmap target width ${width}`).toBeGreaterThanOrEqual(40);

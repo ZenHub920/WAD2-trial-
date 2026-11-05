@@ -33,6 +33,8 @@ beforeEach(async () => {
   repos.parties.create(makeParty('rich', makeUser(ids.hostB), { spend_band: 3 }));
   for (const [id, host] of [['cheap', 'hostA'], ['rich', 'hostB']]) {
     repos.membership.configure(ids[host], id, { strangerPlaces: 1 });
+    // Groups are listed as soon as they are set up; these tests list each one themselves.
+    db.prepare('UPDATE group_settings SET published=0 WHERE party_id=?').run(id);
     repos.membership.saveAnswers(ids[host], id, { about: ['supper'], wants: ['singalong'] });
   }
   for (const who of ['a', 'b', 'c', 'outsider']) repos.seekers.create(makeSeeker(`s_${who}`, makeUser(ids[who]), {

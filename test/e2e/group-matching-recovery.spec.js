@@ -69,10 +69,13 @@ test('direct request response loss recovers the actual request and route viewing
     await seeker.page.getByRole('button', { name: 'See all', exact: true }).click();
     await seeker.page.locator(`[data-group-id="${data.parties.a}"]`).getByRole('button', { name: 'Ask to join', exact: true }).click();
     await seeker.page.getByRole('dialog').getByRole('button', { name: 'Send request', exact: true }).click();
-    await expect(seeker.page.getByRole('region', { name: 'Your pending requests', exact: true })).toContainText(`Supper crew ${data.suffix}`);
+    // The lost response is recovered: the request is found and shown in My groups.
+    await expect(seeker.page).toHaveURL(url => url.pathname === '/groups/connect');
+    await expect(seeker.page.getByRole('region', { name: 'Groups you’ve asked to join', exact: true })).toContainText(`Supper crew ${data.suffix}`);
     expect(posts).toBe(1);
     const before = (await api(seeker.context, '/me/group-join-requests?scope=own')).requests;
     expect(before).toHaveLength(1); expect(before[0].status).toBe('pending'); expect(before[0].seatReserved).toBe(true);
+    await seeker.page.goto(`/groups?concertId=${data.concertId}&mode=direct`);
     await seeker.page.getByRole('button', { name: 'View automatic matching', exact: true }).click();
     await expect(seeker.page.getByRole('heading', { name: 'Resolve your current group request first', exact: true })).toBeVisible();
     const after = (await api(seeker.context, '/me/group-join-requests?scope=own')).requests;

@@ -39,6 +39,8 @@ async function fixture(t) {
   for (const [id, host] of [['group_a', 'host_a'], ['group_b', 'host_b']]) {
     repos.parties.create(makeParty(id, makeUser(host)));
     repos.membership.configure(host, id, { strangerPlaces: 1 });
+    // Groups are listed as soon as they are set up; these tests list each one themselves.
+    db.prepare('UPDATE group_settings SET published=0 WHERE party_id=?').run(id);
     repos.membership.saveAnswers(host, id, { about: ['singalong'], wants: ['supper'] });
   }
   async function call(path, { user = 'seeker_a', method = 'GET', key, body, headers = {} } = {}) {

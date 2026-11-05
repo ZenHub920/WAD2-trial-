@@ -124,11 +124,11 @@ describe('My groups context and persisted feedback', () => {
     expect(router.currentRoute.value.path).toBe(existing ? '/meetups/plan-1' : '/meetups');
   });
 
-  it('preserves historical groups while labelling the section without an inaccurate upcoming claim', async () => {
-    api.hostedGroups.mockResolvedValue({ groups: [{ ...group('historic', 'Last concert friends'), eventDate: '2026-10-01' }] });
+  it('hides groups whose concert has passed and offers group creation from the heading', async () => {
+    api.hostedGroups.mockResolvedValue({ groups: [{ ...group('historic', 'Last concert friends'), eventDate: '2000-10-01' }] });
     const { wrapper, router } = await mountPage(GroupConnectionsView, { path: '/groups/connect' });
-    expect(wrapper.text()).toContain('Last concert friends');
-    expect(wrapper.text()).toContain('2026-10-01');
+    expect(wrapper.text()).not.toContain('Last concert friends');
+    expect(wrapper.text()).toContain('No groups owned');
     expect(wrapper.text()).not.toContain('Your active groups');
     const createLink = wrapper.get('.page-heading a[href="/groups/connect?view=create"]');
     expect(createLink.text()).toBe('+ Create group');

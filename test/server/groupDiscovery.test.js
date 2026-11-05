@@ -131,7 +131,9 @@ test('saved preferences use the authoritative group name off-page and safely ret
   assert.equal(saved.groupName, 'Midnight Concert Crew'); assert.equal(saved.available, true);
   repos.parties.setName('pB', 'Renamed Concert Crew');
   assert.equal((await call('/me/group-preferences/c1', 'seeker')).body.preferences[0].groupName, 'Renamed Concert Crew');
+  // Set up but taken off the list, e.g. a group no longer accepting people.
   repos.membership.configure(cookies.hostBId, 'pB', { expectedFriends: 0 });
+  db.prepare("UPDATE group_settings SET published=0 WHERE party_id='pB'").run();
   const unavailable = (await call('/me/group-preferences/c1', 'seeker')).body.preferences[0];
   assert.equal(unavailable.partyId, 'pB'); assert.equal(unavailable.available, false);
   assert.equal(unavailable.groupName, null); assert.equal(unavailable.hostName, null);

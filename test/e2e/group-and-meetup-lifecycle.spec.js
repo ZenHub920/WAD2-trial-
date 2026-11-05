@@ -20,9 +20,9 @@ async function submitReviewedProposal(page, immediate) {
 async function confirmReopen(actor) {
   await actor.page.getByRole('button', { name: /^(Withdraw proposal and reopen planning|Reopen planning)$/ }).click();
   const dialog = actor.page.getByRole('dialog');
-  await expect(dialog).toContainText('Availability, places, votes and discussion are kept.');
+  await expect(dialog).toContainText('Availability, places and votes are kept.');
   await dialog.getByRole('button', { name: 'Reopen planning', exact: true }).click();
-  await expect(actor.page.locator('.meetup-context')).toContainText('Collecting availability');
+  await expect(actor.page.locator('[aria-label=\"Planning is locked\"]')).toHaveCount(0);
 }
 
 test('groups: past concert guard, draft creation, invitation, publication and origin-aware planner return', async ({ browser, request }) => {
@@ -46,6 +46,7 @@ test('groups: past concert guard, draft creation, invitation, publication and or
     await host.page.getByRole('button', { name: 'Create group', exact: true }).click();
     await expect(host.page).toHaveURL(/\/groups\/[^/]+\/members$/);
     const groupId = new URL(host.page.url()).pathname.split('/')[2];
+    await host.page.locator('summary').filter({ hasText: 'Group settings' }).click();
     await host.page.getByRole('spinbutton', { name: "Friends you'll invite", exact: true }).fill('1');
     await host.page.getByRole('button', { name: 'Save changes', exact: true }).click();
     await expect(host.page.getByText('All changes saved.', { exact: true })).toBeVisible();
@@ -100,7 +101,8 @@ test('groups: past concert guard, draft creation, invitation, publication and or
   } finally { await host.context.close(); await friend.context.close(); }
 });
 
-for (const scope of ['hosted', 'kaki']) test(`${scope} planning: explicit submission, approval integrity, visible recovery, preserved contributions and fresh confirmation`, async ({ browser, request }) => {
+// Companion (pair) meetups are switched off on the server (pair_meetups_disabled).
+for (const scope of ['hosted']) test(`${scope} planning: explicit submission, approval integrity, visible recovery, preserved contributions and fresh confirmation`, async ({ browser, request }) => {
   const data = await fixture(request);
   const a = await person(browser, data, scope === 'kaki' ? 'seeker' : 'hostA');
   const b = await person(browser, data, scope === 'kaki' ? 'outsider' : 'friendA');
@@ -141,7 +143,7 @@ for (const scope of ['hosted', 'kaki']) test(`${scope} planning: explicit submis
     expect(reopened.approvals).toHaveLength(0); expect(reopened.selected_place_id).toBeNull();
     expect(reopened.availability).toEqual(before.availability);
     expect(reopened.places).toEqual(before.places); expect(reopened.comments).toEqual(before.comments);
-    await expect(b.page.locator('.meetup-context')).toContainText('Collecting availability');
+    await expect(b.page.locator('[aria-label=\"Planning is locked\"]')).toHaveCount(0);
     const stale = await a.context.request.post(`${origin}/api${path}/approve`, { headers: { Origin: origin }, data: { version: proposal.version } });
     expect(stale.status()).toBe(409);
     await stage(a.page, 'review');
@@ -157,18 +159,18 @@ for (const scope of ['hosted', 'kaki']) test(`${scope} planning: explicit submis
       await expect(b.page.getByRole('button', { name: 'Approve plan', exact: true })).toBeVisible();
       await b.page.getByRole('button', { name: 'Approve plan', exact: true }).click();
     }
-    await expect(a.page.locator('.meetup-context')).toContainText('Meetup confirmed');
+    await expect(a.page.getByText('This plan is confirmed.', { exact: false })).toBeVisible();
     expect((await read(a, meetup.id)).approvals).toHaveLength(scope === 'hosted' ? 1 : 2);
     await capture(a.page, `${scope}-confirmed`);
     await a.page.reload();
-    await expect(a.page.locator('.meetup-context')).toContainText('Meetup confirmed');
+    await expect(a.page.getByText('This plan is confirmed.', { exact: false })).toBeVisible();
     await expect(a.page.getByRole('button', { name: 'Approve plan', exact: true })).toHaveCount(0);
     await stage(a.page, 'review');
     const management = a.page.getByRole('region', { name: 'Manage this meetup', exact: true });
     await management.getByRole('button', { name: 'Cancel meetup', exact: true }).click();
     await a.page.getByRole('dialog').getByRole('button', { name: 'Cancel meetup', exact: true }).click();
-    await expect(a.page.locator('.meetup-context')).toContainText('Meetup cancelled');
-    await expect(b.page.locator('.meetup-context')).toContainText('Meetup cancelled');
+    await expect(a.page.locator('.meetup-page')).toContainText('This plan was cancelled.');
+    await expect(b.page.locator('.meetup-page')).toContainText('This plan was cancelled.');
     expect((await read(a, meetup.id)).places).toHaveLength(1);
     expect(errors).toEqual([]);
   } finally { for (const actor of [a,b,stranger]) await actor.context.close(); }

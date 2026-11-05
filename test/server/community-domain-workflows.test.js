@@ -144,16 +144,16 @@ test("explicit custom choices retain their meaning decision without forced alias
     /choose_concept_or_custom/,
   );
 });
-test("recommendations use member answers, preserve opposite intent, and publish only completed groups", () => {
+test("recommendations use member answers, preserve opposite intent, and list a group as soon as it is set up", () => {
   repos.membership.configure("h1", "p1", { expectedFriends: 0 });
   repos.membership.saveAnswers("h1", "p1", answers);
   repos.recommendations.savePersonal("seeker", "c1", answers);
+  // No draft step: setting the group up lists it straight away.
   assert.ok(
-    !repos.recommendations
+    repos.recommendations
       .individual("seeker", "c1")
       .some((g) => g.id === "p1"),
   );
-  repos.membership.publish("h1", "p1");
   assert.equal(
     createMatchingService({ db, repos })
       .preview("c1")

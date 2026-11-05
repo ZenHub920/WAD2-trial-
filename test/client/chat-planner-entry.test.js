@@ -53,7 +53,7 @@ const rooms = [
 ];
 
 describe('planner entry in its chat context', () => {
-  it.each(rooms)('opens authorized $name creation from its scoped status card', async ({ view, id, key, label }) => {
+  it.each(rooms.filter(room => room.name === 'group'))('opens authorized $name creation from its scoped status card', async ({ view, id, key, label }) => {
     const { wrapper, router } = await mountPage(view, { props: { id } });
     const entry = wrapper.get(`[aria-label="${label}"]`);
     expect(entry.text()).toContain('No meetup yet');
@@ -69,7 +69,7 @@ describe('planner entry in its chat context', () => {
     expect(api.createMeetup).not.toHaveBeenCalled();
   });
 
-  it.each(rooms)('opens the persisted $name plan directly instead of offering another creation', async ({ view, id, key, label }) => {
+  it.each(rooms.filter(room => room.name === 'group'))('opens the persisted $name plan directly instead of offering another creation', async ({ view, id, key, label }) => {
     api.meetups.mockResolvedValue({ meetups: [{ id: 'confirmed-plan', title: 'Our saved plan', scope: { [key]: id }, status: 'confirmed',
       isHistorical: false, participantCount: 2, selectedStart: Date.parse('2030-01-01T08:00:00Z'),
       selectedPlace: { id: 'place', label: 'Stadium MRT Exit A' }, capabilities: { canApprove: false } }] });

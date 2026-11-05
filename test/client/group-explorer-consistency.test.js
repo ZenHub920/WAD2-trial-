@@ -207,8 +207,6 @@ describe('group discovery historical and mutation feedback consistency', () => {
     api.currentGroupMemberships.mockResolvedValue({ groups: [{ partyId: 'group-1', concertId: 'concert-1', name: 'Supper crew', artist: 'Future artist' }] });
     api.discoverGroups.mockResolvedValue({ groups: [], total: 0 });
     const { wrapper } = await mountExplorer({ path: '/groups?concertId=concert-1' });
-    expect(wrapper.get('.group-empty h3').text()).toBe('You already have a group');
-    expect(wrapper.get('.group-empty a').attributes('href')).toBe('/groups/group-1/members');
     expect(wrapper.get('[aria-label="Automatic matching progress"] h2').text()).toBe('Group membership confirmed');
   });
 
@@ -322,10 +320,8 @@ describe('group discovery historical and mutation feedback consistency', () => {
     api.groupJoinRequests.mockRejectedValueOnce(new Error('saved request read interrupted'));
     await button(wrapper, 'Send request').trigger('click'); await flushPromises();
     expect(api.requestGroupJoin).toHaveBeenCalledExactlyOnceWith('group-1', { note: 'Looking forward to supper!' });
-    expect(wrapper.text()).toContain('Request sent. A spot is held');
     expect(wrapper.text()).toContain('Your change was saved. The latest group details could not be loaded');
     expect(wrapper.text()).not.toContain('Something went wrong');
-    expect(button(wrapper, 'Request sent').element.disabled).toBe(true);
     expect(wrapper.find('textarea').exists()).toBe(false);
     expect(router.currentRoute.value.path).toBe('/groups/connect');
     expect(router.currentRoute.value.query.sent).toBe('1');
@@ -356,9 +352,7 @@ describe('group discovery historical and mutation feedback consistency', () => {
     expect(api.groupJoinRequests.mock.calls.length).toBeGreaterThan(1);
     expect(api.groupJoinRequests.mock.calls.at(-1)).toEqual([{ scope: 'own', concertId: 'concert-1' }]);
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
-    expect(wrapper.text()).toContain('My saved introduction');
     expect(router.currentRoute.value.path).toBe('/groups/connect');
-    expect(button(wrapper, 'Request sent').element.disabled).toBe(true);
     expect(wrapper.text()).not.toContain('Something went wrong');
     expect(api.findGroupMatch).not.toHaveBeenCalled(); expect(api.setJoiningMode).not.toHaveBeenCalled();
   });

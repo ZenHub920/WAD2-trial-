@@ -1,7 +1,7 @@
 import { test, expect } from '../support/playwright.mjs';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { api, fixture, person, origin } from './support.js';
+import { api, fixture, person, origin, pickPlace } from './support.js';
 
 const timing = { title: 'Decide before the show', startsAt: '2030-01-01T16:00:00+08:00', endsAt: '2030-01-01T17:30:00+08:00' };
 const read = async (actor, id) => (await api(actor.context, `/meetups/${id}`)).meetup;
@@ -31,27 +31,18 @@ async function originDraft(page, label, lat, lon, mode) {
   const journey = page.locator('.meetup-journey');
   await journey.locator(':scope > summary').click();
   await journey.getByLabel(/^Travel method/).first().selectOption(mode);
-  const manual = journey.locator('.meetup-manual-entry');
-  await manual.locator(':scope > summary').click();
-  await manual.getByLabel('Location label', { exact: true }).fill(label);
-  await manual.getByLabel('Latitude', { exact: true }).fill(String(lat));
-  await manual.getByLabel('Longitude', { exact: true }).fill(String(lon));
-  await journey.getByRole('button', { name: 'Apply to selected times', exact: true }).click();
+  await pickPlace(page, 'Private starting point', label, { lat, lng: lon });
 }
 async function addPlace(page, name, lat, lon, sheltered = false) {
   const form = page.locator('.meetup-place-editor');
-  await form.getByLabel('Place name', { exact: true }).fill(name);
-  const manual = form.locator('.meetup-manual-entry');
-  if (await manual.getAttribute('open') === null) await manual.locator(':scope > summary').click();
-  await manual.getByLabel('Latitude', { exact: true }).fill(String(lat));
-  await manual.getByLabel('Longitude', { exact: true }).fill(String(lon));
+  await pickPlace(page, 'Shared meeting place', name, { lat, lng: lon });
   await form.getByLabel('Sheltered (optional)', { exact: true }).setChecked(sheltered);
   await form.getByRole('button', { name: 'Add place', exact: true }).click();
   await expect(page.locator('.meetup-place-row').filter({ has: page.getByRole('heading', { name, exact: true }) })).toBeVisible();
 }
 const placeRow = (page, label) => page.locator('.meetup-place-row').filter({ has: page.getByRole('heading', { name: label, exact: true }) });
 
-test('server shelter filtering precedes top-20 limits; owners correct and remove saved places independently of the picker', async ({ browser, request }) => {
+test('server shelter filtering precedes top-20 limits; owners remove saved places independently of the picker', async ({ browser, request }) => {
   const data = await fixture(request), a = await person(browser, data, 'hostA'), b = await person(browser, data, 'friendA');
   try {
     const { meetup } = await api(a.context, '/meetups', 'POST', { ...timing, partyId: data.parties.a });
@@ -69,23 +60,17 @@ test('server shelter filtering precedes top-20 limits; owners correct and remove
     await a.page.goto(`${path}#meetup-review`);
     await expect(a.page.locator('.meetup-option')).toHaveCount(1);
     // The teammate's picker uses the actual unfiltered top-ranked options.
-    // Saved suggestions remain correctable even when absent from that shortlist.
+    // Saved suggestions remain removable even when absent from that shortlist.
     await expect(a.page.locator('.meetup-picker').getByRole('combobox', { name: 'Place', exact: true }).locator(`option[value="${place.id}"]`)).toHaveCount(0);
     await a.page.locator('[data-planner-step="places"]').click();
-    const row = placeRow(a.page, 'Farther sheltered choice');
-    await row.getByRole('button', { name: 'Correct place', exact: true }).click();
-    await expect(a.page.locator('.meetup-place-editor')).toContainText('Existing votes for this place will be cleared');
-    await a.page.locator('.meetup-place-editor').getByLabel('Place name', { exact: true }).fill('Corrected sheltered entrance');
-    await a.page.getByRole('button', { name: 'Save place correction', exact: true }).click();
-    await expect(placeRow(a.page, 'Corrected sheltered entrance')).toContainText('0 votes');
-    expect((await read(b, meetup.id)).currentVotePlaceId).toBeNull();
-    await placeRow(a.page, 'Corrected sheltered entrance').getByRole('button', { name: 'Remove', exact: true }).click();
+    await expect(placeRow(a.page, 'Farther sheltered choice')).toContainText('2 votes');
+    await placeRow(a.page, 'Farther sheltered choice').getByRole('button', { name: 'Remove', exact: true }).click();
     const dialog = a.page.getByRole('dialog', { name: 'Remove your suggested place?', exact: true });
     await dialog.getByRole('button', { name: 'Keep', exact: true }).click();
     expect((await read(a, meetup.id)).places).toHaveLength(9);
-    await placeRow(a.page, 'Corrected sheltered entrance').getByRole('button', { name: 'Remove', exact: true }).click();
+    await placeRow(a.page, 'Farther sheltered choice').getByRole('button', { name: 'Remove', exact: true }).click();
     await dialog.getByRole('button', { name: 'Remove', exact: true }).click();
-    await expect(placeRow(a.page, 'Corrected sheltered entrance')).toHaveCount(0);
+    await expect(placeRow(a.page, 'Farther sheltered choice')).toHaveCount(0);
     expect((await read(a, meetup.id)).places).toHaveLength(8);
     expect((await api(a.context, `${path}?shelteredOnly=true`)).meetup.suggestions).toEqual([]);
     await a.page.locator('[data-planner-step="review"]').click();

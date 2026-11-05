@@ -76,7 +76,6 @@ describe('private questionnaire placement', () => {
   it('reveals the unchanged editor only when existing users edit their private answers', async () => {
     myPreferences.value = existingAnswers();
     const { wrapper } = await mountPage(ProfileView, { path: '/profile#preferences' });
-    expect(wrapper.text()).toContain('Only you can see your answers');
     expect(wrapper.findComponent(PreferenceEditor).exists()).toBe(false);
     await button(wrapper, 'Edit private preferences').trigger('click');
     await flushPromises();

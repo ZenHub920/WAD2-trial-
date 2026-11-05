@@ -312,6 +312,8 @@ export function useMeetupBoard(props) {
       const data = (await api.meetup(props.id, travelOptions.shelteredOnly ? { shelteredOnly: true } : {})).meetup;
       if (!alive || context() !== key || request !== loadRequest) return;
       const keepDraft = preserveDrafts && availabilityDirty.value;
+      // A picked but unsaved starting point survives other people's updates too.
+      const keepJourney = preserveDrafts && journeyDirty.value;
       if (board.value?.version !== data.version || board.value?.participationRevision !== data.participationRevision) {
         travelRecommendations.value = null; transport.value = null; weather.value = null; rainfall.value = null;
       }
@@ -337,7 +339,7 @@ export function useMeetupBoard(props) {
       if (!keepDraft) availabilityResponse.value = savedAvailabilityResponse.value;
       if (keepDraft) for (const start of Object.keys(nextSlots)) if (slots.value[start]) nextSlots[start] = slots.value[start];
       slots.value = nextSlots;
-      if (!keepDraft || !hasOriginDraft.value) {
+      if (!(keepDraft || keepJourney) || !hasOriginDraft.value) {
         const savedOrigin = Object.values(nextSlots).find(slot => slot.selected && validCoordinates(slot));
         const savedMode = Object.values(nextSlots).find(slot => slot.selected)?.travelMode;
         Object.assign(position, savedOrigin
@@ -355,7 +357,7 @@ export function useMeetupBoard(props) {
       if (firstLoad && !plannerSteps.some(step => route.hash === `#meetup-${step}`))
         activeStep.value = ['proposed', 'confirmed', 'cancelled'].includes(data.status) ? 'review' : 'availability';
       if (data.status === 'cancelled') syncNote.value = 'This plan was cancelled. Your draft has been kept for reference.';
-      else if (keepDraft) syncNote.value = data.status === 'planning' ? 'Group updates received. Your unsaved availability is kept.'
+      else if (keepDraft || keepJourney) syncNote.value = data.status === 'planning' ? 'Group updates received. Your unsaved availability is kept.'
         : 'Planning is locked. Your unsaved availability is kept; an organizer must reopen planning before you can save it.';
       else syncNote.value = '';
     } else {
@@ -601,7 +603,7 @@ export function useMeetupBoard(props) {
   function applyJourney() {
     failures.journey = '';
     if (hasOriginDraft.value && !validCoordinates(position)) {
-      failures.journey = 'Select a starting location from the search results, or enter both valid coordinates manually.';
+      failures.journey = 'Pick your starting point on the map or choose a search result.';
       return false;
     }
     for (const [start, slot] of Object.entries(slots.value)) if (slot.selected) {

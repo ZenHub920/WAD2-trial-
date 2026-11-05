@@ -49,7 +49,7 @@ describe('notification bell', () => {
     const { wrapper } = await mountPage(NotificationBell);
     await wrapper.get('.notification-bell__button').trigger('click');
     await flushPromises();
-    expect(wrapper.text()).toContain('No notifications yet.');
+    expect(wrapper.text()).toContain('No updates yet.');
 
     api.notifications.mockRejectedValue(new Error('offline'));
     await wrapper.findAll('button').find(b => b.text().includes('Refresh')).trigger('click');
@@ -190,7 +190,7 @@ describe('notification bell', () => {
     await wrapper.get('.notification-popover__read').trigger('click'); await flushPromises();
     expect(api.readNotification).toHaveBeenCalledExactlyOnceWith('n1');
     expect(wrapper.find('.notification-popover__read').exists()).toBe(false);
-    expect(wrapper.text()).toContain('Read'); expect(wrapper.text()).toContain('Could not load notifications');
+    expect(wrapper.find('.update--unread').exists()).toBe(false); expect(wrapper.text()).toContain('Could not load notifications');
     expect(wrapper.text()).not.toContain('Could not mark this notification as read');
   });
 });

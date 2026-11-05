@@ -26,8 +26,12 @@ test('a seeker finds an offer without an operator, gives consent, and opens the 
     const proposal = (await api(seeker.context, '/me/proposals')).proposals.find(item => item.status === 'proposed');
     expect(proposal.seekerApproved).toBe(true); expect(proposal.hostApproved).toBe(false);
     host = await person(browser, data, proposal.partyId === data.parties.a ? 'hostA' : 'hostB');
-    await host.page.goto('/groups/connect');
-    await host.page.getByRole('button', { name: 'Approve companion', exact: true }).click();
+    // Hosts review matches in Manage group, under Pending join requests.
+    await host.page.goto(`/groups/${proposal.partyId}/members`);
+    const pending = host.page.locator('#join-requests');
+    await expect(pending).toContainText('Matched for you');
+    await pending.getByRole('button', { name: 'Accept', exact: true }).click();
+    await expect(host.page.getByText(/You accepted .*They join once they accept too\.|joined your group/)).toBeVisible();
     await seeker.page.reload();
     await expect(progress).toContainText('Group membership confirmed');
     await expect(progress.getByRole('link', { name: 'Open your group', exact: true })).toHaveAttribute('href', `/groups/${proposal.partyId}/members`);
@@ -95,7 +99,8 @@ for (const theme of ['light', 'dark']) test(`automatic search and browsing fallb
     await browse.focus(); await expect(browse).toBeFocused();
     await seeker.page.keyboard.press('Enter');
     await expect(seeker.page.getByRole('group', { name: 'How to show groups', exact: true })).toBeVisible();
-    expect((await api(seeker.context, `/me/concerts/${data.concertId}/matching`)).matching.optedIn).toBe(true);
+    // Choosing to browse makes browsing the active method, which leaves automatic matching.
+    await expect.poll(async () => (await api(seeker.context, `/me/concerts/${data.concertId}/matching`)).matching.optedIn).toBe(false);
     expect((await api(seeker.context, '/me/group-join-requests?scope=own')).requests).toEqual([]);
   } finally { await seeker.context.close(); await Promise.all(hosts.map(host => host.context.close())); }
 });
@@ -109,21 +114,22 @@ test('first-time meetup members can explore without availability while guidance 
     await api(host.context, `${path}/availability`, 'PUT', { windows: [{ startsAt: timing.startsAt, endsAt: timing.endsAt }] });
     await api(host.context, `${path}/places`, 'POST', { label: 'Funan first meeting point', latitude: 1.2913, longitude: 103.85 });
     await member.page.goto(path);
-    const next = member.page.getByRole('region', { name: 'What should I do next?', exact: true });
-    await expect(next).toContainText('Share when you can meet');
-    await expect(next).toContainText('You can explore the other steps first');
+    const saveState = member.page.locator('.meetup-save-state');
+    await expect(saveState).toContainText('No response saved for you.');
+    await expect(saveState).toContainText('You can explore the other steps first');
     await member.page.getByRole('tab', { name: /Suggest places/ }).click();
     await expect(member.page.locator('.meetup-suggested-places')).toContainText('Funan first meeting point');
     await expect(member.page.locator('.meetup-recommendations')).toHaveCount(0);
     await member.page.getByRole('tab', { name: /Finalise meetup/ }).click();
-    await expect(member.page.locator('.meetup-discussion')).toBeVisible();
+    await expect(member.page.locator('#meetup-review')).toContainText('Your organizers choose and propose the final time and place.');
     expect((await api(member.context, path)).meetup.availability).toEqual([]);
-    await next.getByRole('button', { name: 'Choose my available times', exact: true }).click();
-    await expect(member.page.locator('[data-availability-start]').first()).toBeFocused();
+    await member.page.getByRole('tab', { name: /Share availability/ }).click();
     await member.page.locator('[data-availability-start]').first().click();
-    await expect(next).toContainText('Save your time changes');
+    await expect(saveState).toContainText('Save your changes to update the group.');
     await member.page.getByRole('button', { name: 'Save my times', exact: true }).click();
-    await expect(next).toContainText('Help choose a meeting place');
+    await expect(member.page.getByText('Your availability has been saved.', { exact: true })).toBeVisible();
+    await member.page.getByRole('button', { name: /Next: suggest places/ }).click();
+    await expect(member.page.locator('#meetup-places')).toBeVisible();
     await host.page.goto(`${path}#meetup-review`);
     await expect(host.page.locator('.meetup-best-summary')).toContainText('Funan first meeting point');
     await expect(host.page.locator('.meetup-picker')).toBeHidden();

@@ -1,4 +1,5 @@
 import { test, expect } from '../support/playwright.mjs';
+import { fakeGoogleMaps, pickPlace } from './support.js';
 
 const origin = 'http://127.0.0.1:5175';
 async function fixture(request, mode = 'direct') {
@@ -18,6 +19,7 @@ async function person(browser, data, who) {
   // Remote fonts/images are outside these feature tests. Application API traffic
   // remains real; blocking optional HTTPS assets avoids internet-dependent loads.
   await context.route(/^https:\/\//, route => route.abort());
+  await fakeGoogleMaps(context);
   await context.addCookies([{ name: 'encore_session', value: data.sessions[who], domain: '127.0.0.1', path: '/api' }]);
   return { context, page: await context.newPage() };
 }
@@ -112,7 +114,7 @@ test('private preference setup: registration opens the welcome questionnaire and
     await expect(page.getByRole('heading', { name: 'About you', exact: true })).toBeVisible();
     await page.getByLabel('Age range').selectOption('21-24');
     await page.getByLabel('Home region').selectOption('central');
-    await page.getByLabel('Gender').selectOption('unspecified');
+    await page.locator('.welcome__field').filter({ hasText: /^Gender/ }).locator('select').selectOption('unspecified');
     await page.getByLabel('Companion preference').selectOption('any');
     await page.getByLabel('English').check();
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -166,8 +168,12 @@ test('automatic matching: joining the pool then finding a match produces an offe
     expect(proposal.seekerApproved).toBe(true);
     const who = proposal.partyId === data.parties.a ? 'hostA' : 'hostB';
     hosts[who] = await person(browser, data, who);
-    await hosts[who].page.goto('/groups/connect');
-    await hosts[who].page.getByRole('button', { name: 'Approve companion', exact: true }).click();
+    // Hosts review matches in Manage group, under Pending join requests.
+    await hosts[who].page.goto(`/groups/${proposal.partyId}/members`);
+    const pending = hosts[who].page.locator('#join-requests');
+    await expect(pending).toContainText('Matched for you');
+    await pending.getByRole('button', { name: 'Accept', exact: true }).click();
+    await expect(hosts[who].page.getByText(/You accepted .*They join once they accept too\.|joined your group/)).toBeVisible();
     await seeker.page.reload();
     await expect(seeker.page.getByRole('heading', { name: /crew/ }).first()).toBeVisible();
     const memberships = (await api(seeker.context, '/me/current-group-memberships')).groups;
@@ -176,7 +182,7 @@ test('automatic matching: joining the pool then finding a match produces an offe
   } finally { await seeker.context.close(); for (const host of Object.values(hosts)) await host.context.close(); }
 });
 
-test('nearby transport: before-meetup checks use the meeting place and after-concert checks use the venue', async ({ browser, request }) => {
+test('nearby transport: a confirmed meetup checks the meeting place first and the concert venue on request', async ({ browser, request }) => {
   const data = await fixture(request), host = await person(browser, data, 'hostA');
   try {
     const { meetup } = await api(host.context, '/meetups', 'POST', { partyId: data.parties.a, title: 'Transport plan', startsAt: '2030-01-01T08:00:00Z', endsAt: '2030-01-01T09:00:00Z' });
@@ -184,22 +190,23 @@ test('nearby transport: before-meetup checks use the meeting place and after-con
     await api(host.context, `/meetups/${meetup.id}/availability`, 'PUT', { windows: [{ startsAt: '2030-01-01T08:00:00Z', endsAt: '2030-01-01T09:00:00Z' }] });
     const version = (await api(host.context, `/meetups/${meetup.id}`)).meetup.version;
     await api(host.context, `/meetups/${meetup.id}/propose`, 'POST', { placeId: place.id, startsAt: '2030-01-01T08:00:00Z', version });
-    await host.page.goto(`/meetups/${meetup.id}`);
-    await host.page.locator('[data-planner-step="review"]').click();
-    const panel = host.page.locator('[data-transport-phase]');
-    await panel.getByRole('button', { name: 'Check nearby transport', exact: true }).click();
+    await host.page.goto(`/meetups/${meetup.id}#meetup-review`);
+    // Travel details live in "Before you go" once the time and place are fixed.
+    const before = host.page.locator('.meetup-before');
+    await before.getByRole('tab', { name: 'Public transport', exact: true }).click();
+    const panel = before.locator('[data-transport-source]');
+    await expect(panel).toHaveAttribute('data-transport-source', 'meeting');
     await expect(panel.getByRole('heading', { name: 'CITY HALL MRT STATION', exact: true })).toBeVisible();
     await expect(panel.getByText('Low crowding', { exact: true })).toBeVisible();
     await expect(panel.getByText('NS1', { exact: true })).toHaveCount(0);
-    await panel.getByRole('button', { name: 'After the concert', exact: true }).click();
-    await panel.getByRole('button', { name: 'Check nearby transport', exact: true }).click();
+    await panel.getByRole('button', { name: 'Concert venue', exact: true }).click();
     await expect(panel.getByRole('heading', { name: 'STADIUM MRT STATION', exact: true })).toBeVisible();
     await expect(panel.getByText('High crowding', { exact: true })).toBeVisible();
     await expect(panel.getByText('Singapore Indoor Stadium bus stop', { exact: true })).toBeVisible();
-    await panel.locator('summary').filter({ hasText: /Bus|service|crowd/i }).last().click();
-    await expect(panel.getByText(/Limited standing space/)).toBeVisible();
+    // Each bus is one row; its arrivals are coloured by how full the bus is.
+    await expect(panel.locator('.bus-row__time--limited').first()).toBeVisible();
     await expect(panel.getByRole('heading', { name: 'CITY HALL MRT STATION', exact: true })).toHaveCount(0);
-    await panel.getByRole('button', { name: 'Before the meetup', exact: true }).click();
+    await panel.getByRole('button', { name: 'Meeting place', exact: true }).click();
     await expect(panel.getByRole('heading', { name: 'CITY HALL MRT STATION', exact: true })).toBeVisible();
   } finally { await host.context.close(); }
 });
@@ -244,21 +251,18 @@ test('meetup guardrails: members contribute, places stay visible and only the ho
     await expect(member.page.getByText('Your availability has been saved.', { exact: true })).toBeVisible();
     await member.page.locator('[data-planner-step="places"]').click();
     const placeForm = member.page.locator('form').filter({ has: member.page.getByRole('heading', { name: 'Suggest a meeting place', exact: true }) });
-    await placeForm.locator('.meetup-location-search input').fill('Indoor Stadium');
-    await placeForm.getByRole('button', { name: 'Search OneMap', exact: true }).click();
-    await placeForm.getByRole('button', { name: /SINGAPORE INDOOR STADIUM.*2 STADIUM WALK/ }).click();
-    await expect(placeForm.getByText('Selected: SINGAPORE INDOOR STADIUM.', { exact: true })).toBeVisible();
+    await pickPlace(member.page, 'Shared meeting place', 'Singapore Indoor Stadium', { lat: 1.3028, lng: 103.8743 });
     await placeForm.getByRole('button', { name: 'Add place', exact: true }).click();
     const suggested = member.page.locator('section').filter({ has: member.page.getByRole('heading', { name: 'Suggested meeting places', exact: true }) });
-    await expect(suggested.getByText('SINGAPORE INDOOR STADIUM', { exact: true })).toBeVisible();
+    await expect(suggested.getByRole('heading', { name: 'Singapore Indoor Stadium', exact: true })).toBeVisible();
     await expect(member.page.getByRole('button', { name: 'Propose this time & place', exact: true })).toHaveCount(0);
     saved = (await api(host.context, path)).meetup;
     expect(saved.places).toHaveLength(1);
     expect(saved.suggestions).toHaveLength(1);
     await plannerSnippet(member.page.locator('#meetup-places'), 'meetup-place-before-availability.png');
 
-    // Actual pointer dragging paints all three intervals. Applying a journey
-    // changes a local draft; saving is a distinct request and persists on reload.
+    // Actual pointer dragging paints all three intervals. Picking a starting
+    // point changes a local draft; saving is a distinct request and persists on reload.
     const cells = host.page.locator('[data-availability-start]');
     await expect(cells).toHaveCount(3);
     await cells.last().scrollIntoViewIfNeeded();
@@ -271,11 +275,8 @@ test('meetup guardrails: members contribute, places stay visible and only the ho
     const journey = host.page.locator('.meetup-journey');
     await journey.locator('summary').first().click();
     await journey.getByRole('combobox').first().selectOption('drive');
-    await journey.locator('.meetup-location-search input').fill('Indoor Stadium');
-    await journey.getByRole('button', { name: 'Search OneMap', exact: true }).click();
-    await journey.getByRole('button', { name: /SINGAPORE INDOOR STADIUM.*2 STADIUM WALK/ }).click();
-    await host.page.getByRole('button', { name: 'Apply to selected times', exact: true }).click();
-    await expect(host.page.getByText(/Journey details applied to 3 selected times/)).toBeVisible();
+    await pickPlace(host.page, 'Private starting point', 'Singapore Indoor Stadium', { lat: 1.3028, lng: 103.8743 });
+    await expect(journey.locator('.meetup-unsaved')).toBeVisible();
     expect((await api(host.context, path)).meetup.availability).toHaveLength(0);
     await plannerSnippet(journey, 'meetup-journey-draft.png');
     await host.page.setViewportSize({ width: 390, height: 844 });
@@ -300,7 +301,7 @@ test('meetup guardrails: members contribute, places stay visible and only the ho
     await submitReviewedProposal(host.page, true);
     await host.page.locator('[data-planner-step="review"]').click();
     await expect(host.page.getByRole('button', { name: 'Approve plan', exact: true })).toHaveCount(0);
-    await expect(host.page.locator('.meetup-context').getByText('Meetup confirmed', { exact: true })).toBeVisible();
+    await expect(host.page.getByText('This plan is confirmed.', { exact: false })).toBeVisible();
     const confirmed = (await api(host.context, path)).meetup;
     await member.page.reload();
     await expect(member.page.getByRole('button', { name: 'Save my times', exact: true })).toBeDisabled();
@@ -320,10 +321,7 @@ test('meetup guardrails: members contribute, places stay visible and only the ho
     expect({ status: saved.status, version: saved.version, place: saved.selected_place_id, start: saved.selected_start })
       .toEqual({ status: 'confirmed', version: confirmed.version, place: confirmed.selected_place_id, start: confirmed.selected_start });
     await member.page.locator('[data-planner-step="review"]').click();
-    await expect(member.page.getByRole('heading', { name: 'Discussion', exact: true })).toBeVisible();
-    await member.page.getByLabel('Message', { exact: true }).fill('Could we meet half an hour later?');
-    await member.page.getByRole('button', { name: 'Post', exact: true }).click();
-    await expect(member.page.getByText('Your message was posted.', { exact: true })).toBeVisible();
+    await expect(member.page.getByRole('heading', { name: 'Your confirmed meetup', exact: true })).toBeVisible();
     expect((await api(host.context, path)).meetup.status).toBe('confirmed');
     await plannerSnippet(member.page.locator('#meetup-review'), 'meetup-member-confirmed.png');
     await member.page.setViewportSize({ width: 390, height: 844 });
@@ -335,7 +333,7 @@ test('meetup guardrails: members contribute, places stay visible and only the ho
     const dialog = host.page.getByRole('dialog');
     await expect(dialog).toContainText(/approval/i);
     await dialog.getByRole('button', { name: 'Reopen planning', exact: true }).click();
-    await expect(host.page.locator('.meetup-context').getByText('Collecting availability', { exact: true })).toBeVisible();
+    await expect(host.page.locator('[aria-label=\"Planning is locked\"]')).toHaveCount(0);
     saved = (await api(host.context, path)).meetup;
     expect(saved.status).toBe('planning');
     expect(saved.version).toBeGreaterThan(confirmed.version);
@@ -344,10 +342,10 @@ test('meetup guardrails: members contribute, places stay visible and only the ho
     await host.page.locator('[data-planner-step="review"]').click();
     await host.page.getByRole('button', { name: 'Confirm this time & place', exact: true }).click();
     await submitReviewedProposal(host.page, true);
-    await expect(host.page.locator('.meetup-context').getByText('Meetup confirmed', { exact: true })).toBeVisible();
+    await expect(host.page.getByText('This plan is confirmed.', { exact: false })).toBeVisible();
     saved = (await api(host.context, path)).meetup;
     expect(saved.status).toBe('confirmed');
     expect(saved.approvals).toHaveLength(1);
-    await expect(member.page.locator('.meetup-context').getByText('Meetup confirmed', { exact: true })).toBeVisible();
+    await expect(member.page.getByText('This plan is confirmed.', { exact: false })).toBeVisible();
   } finally { await host.context.close(); await member.context.close(); }
 });
