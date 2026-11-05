@@ -73,7 +73,13 @@ function measureIndicator() {
   const from = list.getBoundingClientRect();
   const to = active.getBoundingClientRect();
   if (!to.width) { indicator.value = null; return; }
-  indicator.value = { left: `${to.left - from.left}px`, width: `${to.width}px` };
+  // The underline this replaces was an inset shadow, so the link's own corner
+  // radius clipped it and its ends curved inward. Insetting by that radius
+  // reproduces the shape; reading it from the link keeps the two in step if
+  // the radius token ever changes.
+  const radius = Number.parseFloat(getComputedStyle(active).borderBottomLeftRadius) || 0;
+  const inset = Math.min(radius, to.width / 4);
+  indicator.value = { left: `${to.left - from.left + inset}px`, width: `${Math.max(0, to.width - inset * 2)}px` };
 }
 
 const remeasure = () => { void nextTick(measureIndicator); };
@@ -272,7 +278,8 @@ onUnmounted(() => {
   bottom: 0;
   left: 0;
   height: 2px;
-  border-radius: 2px;
+  /* Fully rounded at this height, so both ends read as caps rather than cuts. */
+  border-radius: var(--radius-pill, 999px);
   background: var(--accent-400);
   transition: left var(--dur-base) var(--ease-settle, ease-out), width var(--dur-base) var(--ease-settle, ease-out);
   pointer-events: none;
