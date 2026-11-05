@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { api, fixture, person } from './support.js';
 
-const emptyTitle = 'No suitable groups matching your preferences were found.';
+const emptyTitle = 'No suitable groups found';
 
 async function capture(page, name) {
   if (!process.env.ENCORE_UX_CAPTURE_DIR) return;
@@ -46,17 +46,9 @@ test('the same concert-wide count can give two accounts different personalised r
     await seeker.page.getByRole('button', { name: 'See all', exact: true }).click();
     await expect(seeker.page.locator(`[data-group-id="${data.parties.a}"]`)).toBeVisible();
     await outsider.page.goto(`/groups?concertId=${data.concertId}&mode=direct`);
-    const empty = outsider.page.getByRole('region', { name: 'Group discovery status', exact: true });
-    await expect(empty.getByRole('heading', { name: emptyTitle, exact: true })).toBeVisible();
+    await expect(outsider.page.locator('.no-groups')).toHaveText(emptyTitle);
     await expect(outsider.page.locator(`option[value="${data.concertId}"]`)).toContainText('1 open group overall');
     await expect(outsider.page.locator('.results-heading .key-figure')).toHaveText('0');
-    const scope = outsider.page.locator('[aria-label="About your group results"]');
-    await expect(scope).toContainText('Results are personalised.');
-    await expect(scope.locator('details')).not.toHaveAttribute('open', '');
-    await scope.getByText('Why these results?', { exact: true }).click();
-    await expect(scope.locator('details')).toHaveAttribute('open', '');
-    await expect(scope).toContainText('Two accounts can see different groups for the same concert.');
-    await expect(empty.getByRole('link', { name: 'Create a group', exact: true })).toHaveAttribute('href', `/groups/connect?concertId=${data.concertId}&view=create`);
     await expect(outsider.page.locator('[data-group-id]')).toHaveCount(0);
     await expect(outsider.page.getByText(`Supper crew ${data.suffix}`, { exact: true })).toHaveCount(0);
     await capture(outsider.page, 'personalised-empty-desktop');
@@ -64,7 +56,7 @@ test('the same concert-wide count can give two accounts different personalised r
   } finally { await seeker.context.close(); await outsider.context.close(); }
 });
 
-for (const theme of ['light', 'dark']) test(`personalised empty results and next actions remain usable at 390px in ${theme}`, async ({ browser, request }) => {
+for (const theme of ['light', 'dark']) test(`a plain no-groups line stays usable at 390px in ${theme}`, async ({ browser, request }) => {
   const { data, outsider } = await personalResultsFixture(browser, request);
   let joiningWrites = 0;
   outsider.page.on('request', request => {
@@ -75,18 +67,7 @@ for (const theme of ['light', 'dark']) test(`personalised empty results and next
     await outsider.page.setViewportSize({ width: 390, height: 844 });
     await outsider.page.goto(`/groups?concertId=${data.concertId}&mode=direct`);
     await expect(outsider.page.locator('html')).toHaveAttribute('data-theme', theme);
-    const empty = outsider.page.getByRole('region', { name: 'Group discovery status', exact: true });
-    await expect(empty.getByRole('heading', { name: emptyTitle, exact: true })).toBeVisible();
-    const summary = outsider.page.locator('[aria-label="About your group results"] summary');
-    await summary.focus(); await outsider.page.keyboard.press('Enter');
-    await expect(outsider.page.locator('[aria-label="About your group results"] details')).toHaveAttribute('open', '');
-    await outsider.page.keyboard.press('Tab');
-    await expect(outsider.page.getByRole('link', { name: 'Review my preferences', exact: true })).toBeFocused();
-    const refreshed = outsider.page.waitForResponse(response => response.url().includes(`/api/groups/discover/${data.concertId}`) && response.request().method() === 'GET');
-    await empty.getByRole('button', { name: 'Check again', exact: true }).focus();
-    await outsider.page.keyboard.press('Enter'); await refreshed;
-    await expect(empty.getByRole('heading', { name: emptyTitle, exact: true })).toBeVisible();
-    await expect(empty.getByRole('link', { name: 'Create a group', exact: true })).toBeVisible();
+    await expect(outsider.page.locator('.no-groups')).toHaveText(emptyTitle);
     expect(await outsider.page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
     expect((await api(outsider.context, `/me/concerts/${data.concertId}/matching`)).matching.optedIn).toBe(false);
     expect((await api(outsider.context, '/me/group-join-requests?scope=own')).requests).toEqual([]);

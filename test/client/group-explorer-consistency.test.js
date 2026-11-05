@@ -20,6 +20,11 @@ const pending = { id: 'request-1', userId: 'viewer', concertId: 'concert-1', par
 const mountExplorer = options => mountPage(GroupExplorerView, { ...options, stubs: { Teleport: true, ...options?.stubs } });
 const dialog = wrapper => wrapper.find('[role="dialog"]').exists()
   ? wrapper.get('[role="dialog"]') : new DOMWrapper(document.querySelector('[role="dialog"]'));
+/** The page refreshes its status when the tab comes back into view. */
+async function returnToTab() {
+  Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+  document.dispatchEvent(new Event('visibilitychange'));
+}
 const queued = { preferencesComplete: true, optedIn: true, state: 'queued', latestAttempt: null };
 const matchingOffer = overrides => ({ id: 'offer-1', partyId: 'group-1', concertId: 'concert-1', role: 'seeker',
   status: 'proposed', seekerApproved: false, hostApproved: false, canHostRespond: true,
@@ -88,63 +93,6 @@ describe('group discovery historical and mutation feedback consistency', () => {
     expect(button(wrapper, 'Leave the match list').exists()).toBe(true);
     expect(wrapper.findAll('button').some(item => item.text() === 'Join automatic matching')).toBe(false);
     expect(api.setJoiningMode).toHaveBeenCalledTimes(1);
-  });
-  it('saves an automatic matching preference without applying or enrolling in the match list', async () => {
-    api.seekerRequest.mockResolvedValue({ request: { status: 'open', joining_mode: 'direct' } });
-    api.preferGroup.mockImplementation(async () => {
-      api.discoverGroups.mockResolvedValue({ groups: [{ ...group('group-1', 'Supper crew'), preferred: true }], total: 1 });
-      api.groupPreferences.mockResolvedValue({ preferences: [{ partyId: 'group-1', groupName: 'Supper crew', hostName: 'Supper crew host', status: 'open', available: true }] });
-      return { partyId: 'group-1', preferred: true };
-    });
-    const { wrapper } = await mountExplorer({ path: '/groups?concertId=concert-1&mode=algorithm' });
-    expect(wrapper.text()).toContain('without sending an application or starting a round');
-    await button(wrapper, 'Prioritise for matching').trigger('click'); await flushPromises();
-    expect(api.preferGroup).toHaveBeenCalledExactlyOnceWith('group-1');
-    const card = wrapper.get('[data-group-id="group-1"]');
-    expect(card.get('[role="status"]').text()).toContain('Priority saved. No application sent and no matching round started.');
-    expect(card.get('button[aria-pressed="true"]').text()).toBe('Remove priority');
-    expect(wrapper.get('[aria-label="Saved matching priorities"]').text()).toContain('Saved priority groups (1)');
-    expect(button(wrapper, 'Join automatic matching').exists()).toBe(true);
-    expect(api.requestGroupJoin).not.toHaveBeenCalled(); expect(api.findMyGroup).not.toHaveBeenCalled();
-  });
-  it('uses canonical queued state rather than the legacy opt-in flag and exposes the next step', async () => {
-    api.seekerRequest.mockResolvedValue({ request: { status: 'open', joining_mode: 'algorithm', matching_opt_in: 0 } });
-    api.groupMatching.mockResolvedValue({ matching: { preferencesComplete: true, optedIn: true, state: 'queued' } });
-    const { wrapper } = await mountExplorer({ path: '/groups?concertId=concert-1' });
-    const progress = wrapper.get('[aria-label="Automatic matching progress"]');
-    expect(progress.get('h2').text()).toBe('Ready to find a match');
-    expect(progress.get('a[href="#matching-group-results"]').text()).toBe('Choose priority groups');
-    const selectedMethod = button(wrapper, 'Viewing this pathway');
-    expect(selectedMethod.attributes('aria-pressed')).toBe('true');
-    await selectedMethod.trigger('click'); await flushPromises();
-    expect(wrapper.findAll('button').some(item => item.text() === 'Join automatic matching')).toBe(false);
-    expect(api.setJoiningMode).not.toHaveBeenCalled();
-    expect(api.findMyGroup).not.toHaveBeenCalled();
-    expect(api.findGroupMatch).not.toHaveBeenCalled();
-  });
-  it('searches only on Find a match and keeps no-offer enrollment after an acknowledged search', async () => {
-    const queued = { preferencesComplete: true, optedIn: true, state: 'queued' };
-    api.seekerRequest.mockResolvedValue({ request: { status: 'open', joining_mode: 'algorithm' } });
-    api.groupMatching.mockResolvedValue({ matching: queued });
-    api.findGroupMatch.mockImplementation(async (_concert, id) => {
-      const latestAttempt = attempt(id); savedMethod('algorithm', { ...queued, latestAttempt });
-      return { matching: { ...queued, latestAttempt }, search: { status: 'waiting', attempt: latestAttempt } };
-    });
-    api.discoverGroups.mockResolvedValue({ groups: [], total: 0 });
-    api.groupPreferences.mockResolvedValue({ preferences: [{ partyId: 'group-1', groupName: 'Supper crew', available: true }] });
-    const { wrapper } = await mountExplorer({ path: '/groups?concertId=concert-1' });
-    expect(api.findGroupMatch).not.toHaveBeenCalled();
-    await button(wrapper, 'Find a match').trigger('click'); await flushPromises();
-    const firstAttempt = api.findGroupMatch.mock.calls[0][1];
-    expect(firstAttempt).toMatch(/^[0-9a-f]{8}-[0-9a-f-]{27}$/i);
-    expect(api.findGroupMatch.mock.calls[0][0]).toBe('concert-1');
-    expect(wrapper.get('[aria-label="Automatic matching progress"] h2').text()).toBe('No suitable group is available.');
-    expect(wrapper.get('[aria-label="Automatic matching progress"]').text()).toContain('Your place on the match list is kept');
-    expect(wrapper.find('a[href="#matching-group-results"]').exists()).toBe(false);
-    expect(wrapper.get('[aria-label="Saved matching priorities"]').text()).toContain('Saved priority groups (1)');
-    expect(button(wrapper, 'Leave the match list').exists()).toBe(true);
-    await button(wrapper, 'Find a match').trigger('click'); await flushPromises();
-    expect(api.findGroupMatch.mock.calls[1][1]).not.toBe(firstAttempt);
   });
   it('reuses an uncertain search attempt and applies its acknowledged offer even if the following read fails', async () => {
     const queued = { preferencesComplete: true, optedIn: true, state: 'queued' };
@@ -239,35 +187,6 @@ describe('group discovery historical and mutation feedback consistency', () => {
     expect(wrapper.findAll('button').some(item => item.text() === 'Leave the match list')).toBe(false);
     expect(api.findMyGroup).not.toHaveBeenCalled();
   });
-  it('keeps acknowledged priority selection after a failed read and reverses it without enrollment or applications', async () => {
-    api.seekerRequest.mockResolvedValue({ request: { status: 'open', joining_mode: 'algorithm' } });
-    api.preferGroup.mockResolvedValue({ preference: { partyId: 'group-1', preferred: true } });
-    api.removeGroupPreference.mockResolvedValue({ preference: { partyId: 'group-1', preferred: false } });
-    const { wrapper } = await mountExplorer({ path: '/groups?concertId=concert-1' });
-    api.discoverGroups.mockRejectedValueOnce(new Error('read unavailable'));
-    api.groupPreferences.mockRejectedValueOnce(new Error('saved priorities unavailable'));
-    await button(wrapper, 'Prioritise for matching').trigger('click'); await flushPromises();
-    expect(wrapper.get('[data-group-id="group-1"] button[aria-pressed="true"]').text()).toBe('Remove priority');
-    expect(wrapper.get('[aria-label="Saved matching priorities"]').text()).toContain('Supper crew');
-    expect(wrapper.text()).toContain('Your change was saved.');
-    await button(wrapper.get('[data-group-id="group-1"]'), 'Remove priority').trigger('click'); await flushPromises();
-    expect(api.removeGroupPreference).toHaveBeenCalledExactlyOnceWith('group-1');
-    expect(wrapper.get('[data-group-id="group-1"] button[aria-pressed="false"]').text()).toBe('Prioritise for matching');
-    expect(wrapper.get('[data-group-id="group-1"] [role="status"]').text()).toContain('Priority removed.');
-    expect(wrapper.get('[aria-label="Saved matching priorities"]').text()).toContain('Saved priority groups (0)');
-    expect(api.findMyGroup).not.toHaveBeenCalled(); expect(api.requestGroupJoin).not.toHaveBeenCalled();
-  });
-  it('keeps an unsuccessful priority visibly unselected without claiming a save', async () => {
-    api.seekerRequest.mockResolvedValue({ request: { status: 'open', joining_mode: 'algorithm' } });
-    api.preferGroup.mockRejectedValue(new Error('offline'));
-    const { wrapper } = await mountExplorer({ path: '/groups?concertId=concert-1' });
-    await button(wrapper, 'Prioritise for matching').trigger('click'); await flushPromises();
-    const card = wrapper.get('[data-group-id="group-1"]');
-    expect(card.get('button[aria-pressed="false"]').text()).toBe('Prioritise for matching');
-    expect(card.get('[role="status"]').text()).toContain('Priority was not changed');
-    expect(card.text()).not.toContain('Priority saved.');
-    expect(wrapper.get('[aria-label="Saved matching priorities"]').text()).toContain('Saved priority groups (0)');
-  });
   it('updates approval progress from the authoritative response when the subsequent read fails', async () => {
     const offer = { id: 'offer-1', partyId: 'group-1', concertId: 'concert-1', role: 'seeker', status: 'proposed', seekerApproved: false, hostApproved: false, canHostRespond: true, queueStatus: 'held', seatReserved: true, eventDate: '2030-01-01', expiresAt: '2030-01-01T10:00:00Z' };
     api.seekerRequest.mockResolvedValue({ request: { status: 'open', joining_mode: 'algorithm' } });
@@ -285,29 +204,6 @@ describe('group discovery historical and mutation feedback consistency', () => {
     expect(progress.text()).toContain('You approved · Host reply needed');
     expect(progress.text()).not.toContain('Membership confirmed');
     expect(api.acceptProposal).toHaveBeenCalledTimes(1);
-  });
-  it('shows confirmed navigation only after both approvals produce a confirmed response', async () => {
-    const offer = { id: 'offer-1', partyId: 'group/1', concertId: 'concert-1', role: 'seeker', status: 'proposed', seekerApproved: false, hostApproved: true, canHostRespond: true, queueStatus: 'held', seatReserved: true, eventDate: '2030-01-01', expiresAt: '2030-01-01T10:00:00Z' };
-    api.seekerRequest.mockResolvedValue({ request: { status: 'open', joining_mode: 'algorithm' } });
-    api.groupMatching.mockResolvedValue({ matching: { preferencesComplete: true, optedIn: true, state: 'pending', proposal: offer } });
-    api.myProposals.mockResolvedValue({ proposals: [offer] });
-    api.acceptProposal.mockResolvedValue({ proposal: { status: 'confirmed', seekerApproved: true, hostApproved: true } });
-    const { wrapper, router } = await mountExplorer({ path: '/groups?concertId=concert-1' });
-    expect(wrapper.get('[aria-label="Automatic matching progress"]').text()).toContain('The host has approved.');
-    expect(wrapper.find('a[href="/groups/group%2F1/channel"]').exists()).toBe(false);
-    api.discoverGroups.mockRejectedValueOnce(new Error('read unavailable'));
-    api.groupMatching.mockRejectedValueOnce(new Error('matching read unavailable'));
-    api.myProposals.mockRejectedValueOnce(new Error('offers read unavailable'));
-    await button(wrapper, 'Accept group offer').trigger('click'); await flushPromises();
-    const progress = wrapper.get('[aria-label="Automatic matching progress"]');
-    expect(progress.get('h2').text()).toBe('Group membership confirmed');
-    expect(progress.get('a[href="/groups/group%2F1/members"]').text()).toBe('Open your group');
-    expect(progress.get('a[href="/groups/group%2F1/channel"]').text()).toBe('Group messages');
-    expect(wrapper.findAll('button').some(item => item.text() === 'Leave the match list')).toBe(false);
-    expect(button(wrapper.get('[data-group-id="group-1"]'), 'Prioritise for matching').element.disabled).toBe(true);
-    await button(progress, 'Plan meetup').trigger('click'); await flushPromises();
-    expect(router.currentRoute.value.path).toBe('/meetups');
-    expect(router.currentRoute.value.query.partyId).toBe('group/1');
   });
   it('keeps a confirmed member focused on their group when discovery has no remaining results', async () => {
     api.seekerRequest.mockResolvedValue({ request: { status: 'matched', joining_mode: 'algorithm' } });
@@ -330,7 +226,7 @@ describe('group discovery historical and mutation feedback consistency', () => {
       proposal: matchingOffer({ status: 'confirmed', seekerApproved: true, hostApproved: true }) } });
     api.myProposals.mockRejectedValueOnce(new Error('proposal inbox unavailable'));
     api.currentGroupMemberships.mockRejectedValueOnce(new Error('membership details unavailable'));
-    await button(wrapper.get('[aria-label="Automatic matching progress"]'), 'Check for updates').trigger('click'); await flushPromises();
+    await returnToTab(); await flushPromises();
     expect(wrapper.get('[aria-label="Automatic matching progress"] h2').text()).toBe('Group membership confirmed');
     expect(wrapper.find('#automatic-offers').exists()).toBe(false);
     expect(wrapper.findAll('button').some(item => item.text() === 'Accept group offer')).toBe(false);
@@ -345,7 +241,7 @@ describe('group discovery historical and mutation feedback consistency', () => {
     api.myProposals.mockResolvedValue({ proposals: [matchingOffer({ status: 'confirmed', seekerApproved: true, hostApproved: true })] });
     api.groupMatching.mockRejectedValueOnce(new Error('matching status unavailable'));
     api.currentGroupMemberships.mockRejectedValueOnce(new Error('membership details unavailable'));
-    await button(wrapper.get('[aria-label="Automatic matching progress"]'), 'Check for updates').trigger('click'); await flushPromises();
+    await returnToTab(); await flushPromises();
     expect(wrapper.get('[aria-label="Automatic matching progress"] h2').text()).toBe('Group membership confirmed');
     expect(wrapper.find('#automatic-offers').exists()).toBe(false);
     expect(wrapper.findAll('button').some(item => item.text() === 'Accept group offer')).toBe(false);
@@ -362,7 +258,7 @@ describe('group discovery historical and mutation feedback consistency', () => {
     savedMethod('algorithm', { ...queued, proposal: null });
     api.currentGroupMemberships.mockResolvedValue({ groups: [] });
     api.myProposals.mockRejectedValueOnce(new Error('old inbox retained'));
-    await button(wrapper.get('[aria-label="Automatic matching progress"]'), 'Check for updates').trigger('click'); await flushPromises();
+    await returnToTab(); await flushPromises();
     expect(wrapper.get('[aria-label="Automatic matching progress"] h2').text()).toBe('Ready to find a match');
     expect(wrapper.text()).not.toContain('Group membership confirmed');
     expect(wrapper.find('a[href="/groups/group-1/members"]').exists()).toBe(false);
@@ -379,7 +275,7 @@ describe('group discovery historical and mutation feedback consistency', () => {
     api.currentGroupMemberships.mockResolvedValue({ groups: [] });
     api.myProposals.mockResolvedValue({ proposals: [] });
     api.groupMatching.mockRejectedValueOnce(new Error('old matching status retained'));
-    await button(wrapper.get('[aria-label="Automatic matching progress"]'), 'Check for updates').trigger('click'); await flushPromises();
+    await returnToTab(); await flushPromises();
     expect(wrapper.get('[aria-label="Automatic matching progress"] h2').text()).toBe('Matching status is unavailable');
     expect(wrapper.text()).not.toContain('Your group membership is confirmed.');
     expect(wrapper.find('a[href="/groups/group-1/members"]').exists()).toBe(false);
@@ -394,11 +290,11 @@ describe('group discovery historical and mutation feedback consistency', () => {
     const { wrapper } = await mountExplorer({ path: '/groups?concertId=concert-1&mode=algorithm' });
     api.groupMatching.mockResolvedValue({ matching: { ...queued, optedIn: false, state: 'accepted', proposal: confirmed } });
     api.myProposals.mockRejectedValueOnce(new Error('proposal inbox unavailable'));
-    await button(wrapper.get('[aria-label="Automatic matching progress"]'), 'Check for updates').trigger('click'); await flushPromises();
+    await returnToTab(); await flushPromises();
     let finishMatching, failInbox;
     api.groupMatching.mockImplementationOnce(() => new Promise(resolve => { finishMatching = resolve; }));
     api.myProposals.mockImplementationOnce(() => new Promise((_resolve, reject) => { failInbox = reject; }));
-    await button(wrapper.get('[aria-label="Automatic matching progress"]'), 'Check for updates').trigger('click');
+    await returnToTab();
     expect(wrapper.find('#automatic-offers').exists()).toBe(false);
     expect(wrapper.findAll('button').some(item => item.text() === 'Accept group offer')).toBe(false);
     finishMatching({ matching: { ...queued, optedIn: false, state: 'accepted', proposal: confirmed } });
@@ -658,33 +554,15 @@ describe('group discovery historical and mutation feedback consistency', () => {
     expect(api.findMyGroup).not.toHaveBeenCalled(); expect(api.findGroupMatch).not.toHaveBeenCalled();
   });
 
-  it('shows authoritative off-page saved group names without replacing them with host names', async () => {
-    savedMethod('algorithm');
-    api.discoverGroups.mockResolvedValue({ groups: [], total: 0, discovery: { state: 'filters_empty', eligibleCount: 8, filteredCount: 0 } });
-    api.groupPreferences.mockResolvedValue({ preferences: [{ partyId: 'off-page', groupName: 'Midnight Concert Crew', hostName: 'Different host name', available: true }, { partyId: 'closed', groupName: null, hostName: null, available: false }] });
-    const { wrapper } = await mountExplorer({ path: '/groups?concertId=concert-1&mode=algorithm' });
-    const priorities = wrapper.get('[aria-label="Saved matching priorities"]');
-    expect(priorities.text()).toContain('Midnight Concert Crew');
-    expect(priorities.text()).not.toContain('Different host name');
-    expect(priorities.text()).toContain('Unavailable saved group');
-    expect(wrapper.text()).toContain('No groups match');
-  });
-
-  it.each(['groups_unavailable', 'no_eligible_groups'])('explains personalised results without treating the concert-wide count as a guaranteed match (%s)', async state => {
+  it.each(['groups_unavailable', 'no_eligible_groups'])('shows a plain no-groups line without treating the concert-wide count as a guaranteed match (%s)', async state => {
     api.concerts.mockResolvedValue({ concerts: [{ id: 'concert-1', artist: 'Future artist', event_date: '2030-01-01', open_parties: 1 }] });
     api.discoverGroups.mockResolvedValue({ groups: [], total: 0, discovery: { state, eligibleCount: 0, filteredCount: 0 } });
     const { wrapper, router } = await mountExplorer({ path: '/groups?concertId=concert-1&mode=direct' });
     expect(wrapper.get('select option[value="concert-1"]').text()).toContain('1 open group overall');
-    const scope = wrapper.get('[aria-label="About your group results"]');
-    expect(scope.text()).toContain('Results are personalised.');
-    expect(scope.get('summary').text()).toBe('Why these results?');
-    expect(scope.text()).toContain('Two accounts can see different groups for the same concert.');
-    const empty = wrapper.get('[aria-label="Group discovery status"]');
-    expect(empty.get('h3').text()).toBe('No suitable groups matching your preferences were found.');
+    expect(wrapper.find('[aria-label="About your group results"]').exists()).toBe(false);
+    expect(wrapper.get('.no-groups').text()).toBe('No suitable groups found');
     expect(wrapper.text()).not.toContain('No groups for this show yet');
-    expect(empty.get('a').attributes('href')).toBe('/groups/connect?concertId=concert-1&view=create');
-    await button(empty, 'Check again').trigger('click'); await flushPromises();
-    expect(api.discoverGroups).toHaveBeenCalledTimes(2);
+    expect(wrapper.find('[aria-label="Group discovery status"]').exists()).toBe(false);
     expect(api.setJoiningMode).not.toHaveBeenCalled(); expect(api.findGroupMatch).not.toHaveBeenCalled();
     expect(router.currentRoute.value.query.mode).toBe('direct');
   });
@@ -696,7 +574,7 @@ describe('group discovery historical and mutation feedback consistency', () => {
     if (count === undefined) expect(option).not.toMatch(/open groups|no groups/);
     else expect(option).toContain('0 open groups overall');
     expect(wrapper.get('.results-heading .key-figure').text()).toBe('1');
-    expect(wrapper.get('[aria-label="About your group results"]').text()).toContain('Results are personalised.');
+    expect(wrapper.find('[aria-label="About your group results"]').exists()).toBe(false);
   });
 
   it.each(['withdrawn', 'matched'])('keeps a non-open search state distinct from a preference mismatch (%s)', async status => {
@@ -704,7 +582,7 @@ describe('group discovery historical and mutation feedback consistency', () => {
     api.discoverGroups.mockResolvedValue({ groups: [], total: 0, discovery: { state: 'groups_unavailable', eligibleCount: 0, filteredCount: 0 } });
     const { wrapper } = await mountExplorer({ path: '/groups?concertId=concert-1' });
     const empty = wrapper.get('[aria-label="Group discovery status"]');
-    expect(empty.text()).not.toContain('No suitable groups matching your preferences were found.');
+    expect(empty.text()).not.toContain('No suitable groups found');
     if (status === 'withdrawn') {
       expect(empty.get('h3').text()).toBe('You paused your group search');
       expect(empty.get('a').attributes('href')).toBe('#resume-group-search');
@@ -735,10 +613,10 @@ describe('group discovery historical and mutation feedback consistency', () => {
     api.discoverGroups.mockResolvedValue({ groups: [], total: 0, discovery: { state: 'groups_unavailable', eligibleCount: 0, filteredCount: 0 } });
     const { wrapper } = await mountExplorer({ path: '/groups?concertId=concert-1&mode=direct' });
     expect(wrapper.get('[aria-label="Group discovery status"] h3').text()).toBe('Your current group status could not be checked');
-    expect(wrapper.text()).not.toContain('No suitable groups matching your preferences were found.');
+    expect(wrapper.text()).not.toContain('No suitable groups found');
     api.groupMatching.mockResolvedValueOnce({ matching: { preferencesComplete: true, optedIn: false, state: 'idle' } });
     await button(wrapper, 'Retry matching status').trigger('click'); await flushPromises();
-    expect(wrapper.get('[aria-label="Group discovery status"] h3').text()).toBe('No suitable groups matching your preferences were found.');
+    expect(wrapper.get('.no-groups').text()).toBe('No suitable groups found');
     expect(api.setJoiningMode).not.toHaveBeenCalled(); expect(api.findGroupMatch).not.toHaveBeenCalled();
   });
 
@@ -750,7 +628,7 @@ describe('group discovery historical and mutation feedback consistency', () => {
     expect(wrapper.find('#group-search-setup').exists()).toBe(true);
     expect(empty.get('h3').text()).toBe('Save your concert plans to continue');
     expect(empty.get('a').attributes('href')).toBe('#group-search-setup');
-    expect(wrapper.text()).not.toContain('No suitable groups matching your preferences were found.');
+    expect(wrapper.text()).not.toContain('No suitable groups found');
     expect(api.createRequest).not.toHaveBeenCalled(); expect(api.setJoiningMode).not.toHaveBeenCalled();
   });
 

@@ -11,57 +11,6 @@ async function capture(page, name, region = null) {
   else await page.screenshot({ ...options, fullPage: true });
 }
 
-test('automatic matching reports failed enrollment and reversible priorities without starting a search', async ({ browser, request }) => {
-  const data = await fixture(request), seeker = await person(browser, data, 'seeker');
-  let automaticRounds = 0;
-  seeker.page.on('request', request => {
-    if (request.method() === 'POST' && [
-      `/api/concerts/${data.concertId}/match`, `/api/me/concerts/${data.concertId}/matching/find`,
-    ].includes(new URL(request.url()).pathname)) automaticRounds++;
-  });
-  try {
-    await seeker.page.goto(`/groups?concertId=${data.concertId}&mode=algorithm`);
-    // The route is lazy-loaded; wait for that navigation before exercising it.
-    await expect(seeker.page.getByRole('heading', { name: 'Find your people for the show', exact: true })).toBeVisible({ timeout: 60000 });
-    const switchMode = seeker.page.getByRole('button', { name: 'Join automatic matching', exact: true });
-    expect((await api(seeker.context, `/me/concerts/${data.concertId}/matching`)).matching.optedIn).toBe(false);
-    const modeEndpoint = `**/api/me/seeker-requests/${data.concertId}/joining-mode`;
-    await seeker.page.route(modeEndpoint, route => route.fulfill({ status: 409, json: { error: 'save_discovery_preferences_first' } }));
-    await switchMode.click();
-    await seeker.page.getByRole('dialog').getByRole('button', { name: 'Join automatic matching', exact: true }).click();
-    await expect(seeker.page.getByRole('alert')).toContainText('Save your private preferences');
-    await expect(seeker.page.getByRole('dialog')).toBeVisible();
-    expect((await api(seeker.context, `/me/concerts/${data.concertId}/matching`)).matching.optedIn).toBe(false);
-    await seeker.page.unroute(modeEndpoint);
-    await seeker.page.getByRole('dialog').getByRole('button', { name: 'Join automatic matching', exact: true }).click();
-    const progress = seeker.page.getByRole('region', { name: 'Automatic matching progress', exact: true });
-    await expect(progress.getByRole('heading', { name: 'Ready to find a match', exact: true })).toBeVisible();
-    await expect(progress.getByRole('button', { name: 'Find a match', exact: true })).toBeEnabled();
-    await expect(seeker.page.getByRole('button', { name: 'Join automatic matching', exact: true })).toHaveCount(0);
-    const card = seeker.page.locator(`[data-group-id="${data.parties.a}"]`);
-    await card.getByRole('button', { name: 'Prioritise for matching', exact: true }).click();
-    await expect(card.getByRole('status')).toContainText('Priority saved. No application sent and no matching round started.');
-    await expect(card.getByRole('button', { name: 'Remove priority', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    await expect(progress.getByRole('heading', { name: 'Saved priority groups (1)', exact: true })).toBeVisible();
-    expect((await api(seeker.context, `/me/group-preferences/${data.concertId}`)).preferences.map(item => item.partyId)).toContain(data.parties.a);
-    expect((await api(seeker.context, '/me/group-join-requests?scope=own')).requests).toEqual([]);
-    expect((await api(seeker.context, '/me/proposals')).proposals).toEqual([]);
-    await capture(seeker.page, 'automatic-priority-saved');
-    await seeker.page.reload();
-    await expect(card.getByRole('button', { name: 'Remove priority', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    const preferenceEndpoint = `**/api/group-preferences/${data.parties.a}`;
-    await seeker.page.route(preferenceEndpoint, route => route.fulfill({ status: 503, json: { error: 'synthetic_priority_failure' } }));
-    await card.getByRole('button', { name: 'Remove priority', exact: true }).click();
-    await expect(card.getByRole('status')).toContainText('Priority was not changed');
-    await expect(card.getByRole('button', { name: 'Remove priority', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    await seeker.page.unroute(preferenceEndpoint);
-    await card.getByRole('button', { name: 'Remove priority', exact: true }).click();
-    await expect(card.getByRole('button', { name: 'Prioritise for matching', exact: true })).toHaveAttribute('aria-pressed', 'false');
-    expect((await api(seeker.context, `/me/group-preferences/${data.concertId}`)).preferences).toEqual([]);
-    expect(automaticRounds).toBe(0);
-  } finally { await seeker.context.close(); }
-});
-
 test('a seeker finds an offer without an operator, gives consent, and opens the group after both approvals', async ({ browser, request }) => {
   const data = await fixture(request, 'algorithm'), seeker = await person(browser, data, 'seeker');
   let host;
