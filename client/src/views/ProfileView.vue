@@ -365,9 +365,6 @@ async function save() {
           </label>
         </fieldset>
       </section>
-      <p class="profile__hint">
-        Reliability {{ Math.round(profile.reliability * 100) }}%
-      </p>
       </template>
 
       <!-- The site's one questionnaire. Groups and companion ranking both

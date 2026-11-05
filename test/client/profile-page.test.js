@@ -192,7 +192,7 @@ describe('profile page (component tests)', () => {
     expect(field(wrapper, 'Chinese').element.checked).toBe(false);
     expect(field(wrapper, 'Singalong').element.value).toBe('3');
     expect(wrapper.text()).not.toContain('verified');
-    expect(wrapper.text()).toContain('Reliability 82%');
+    expect(wrapper.text()).not.toContain('Reliability');
   });
 
   it('(2) shows the email as read-only and passes the signed-in name to the picture control', async () => {

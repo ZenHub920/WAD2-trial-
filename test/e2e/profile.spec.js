@@ -52,7 +52,7 @@ test('a signed-in fan edits their profile, saves it, and the change survives a r
     await expect(page.getByLabel('Display name')).toHaveValue('hostA');
     await expect(page.getByLabel('Email')).toHaveValue(`${data.users.hostA}@example.test`);
     await expect(page.getByLabel('Email')).toHaveAttribute('readonly', '');
-    await expect(page.getByText('Reliability 80%')).toBeVisible();
+    await expect(page.getByText(/Reliability/)).toHaveCount(0);
 
     // Actions: change the name, the two dropdowns, add a language and nudge one
     // vibe slider up by one step, exactly as a user would.
