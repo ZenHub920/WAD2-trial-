@@ -884,155 +884,457 @@ with a mouse, hold-then-drag to paint with touch, and swipe to scroll.
 
 ## Testing
 
-**1 379 automated tests** across three layers, plus 19 Playwright end-to-end specs. Roughly
-25 600 lines of test code against ~45 500 lines of application code.
+**1 379 automated tests** across the three layers, plus **19 Playwright end-to-end specs**.
+Roughly 25 600 lines of test code against ~45 500 lines of application code.
 
-All test infrastructure lives in the top-level [test/](test/) directory rather than beside
-the source, and reuses the client's installed tooling — moving tests must not require a
-second `node_modules` or a machine-specific link.
+### The three layers, and where they live
+
+| Test Type | What is Tested? | Components Involved | Where in this repo | Tests |
+|---|---|---|---|---|
+| **Unit test** | A single unit — a plain function, or one Vue component in isolation | One component in isolation | [test/client/](test/client/) · [test/client-node/](test/client-node/) · [test/server/](test/server/) | — |
+| **Integration test** | The interaction between two or more units | Two or more integrated components, or a route plus its repository | [test/client/](test/client/) · [test/server/](test/server/) | — |
+| **End-to-End (E2E) test** | The complete system from the user's perspective | Entire application — Vite client, Express API, SQLite database | [test/e2e/](test/e2e/) | 19 specs |
+
+Counted by runner rather than by layer, since many files mix component and integration suites:
+
+| Runner | Framework | Files | Tests |
+|---|---|---|---|
+| `npm run test:client` | **Vitest** + `@vue/test-utils` (jsdom) | 44 | **683** |
+| `npm run test:client` (second pass) | Node's built-in runner, DOM-free client utilities | 1 | included above |
+| `npm run test:server` | Node's built-in runner (`node --test`) | 63 | **696** |
+| `npm run test:e2e` | **Playwright** (Chromium) | 19 | 19 specs |
+
+A Vue component counts as a "unit" here, so a component test is a form of unit testing. When
+two or more real components are mounted together, the file labels that suite
+`Integration:` — [market-integration.test.js](test/client/market-integration.test.js) and the
+profile page's second suite are the clearest examples.
+
+### Running the tests
 
 ```bash
-npm test              # server + client (stops if the server suite fails)
+npm test              # server, then client (stops if the server suite fails)
 npm run test:server   # Node test runner, 63 files
-npm run test:client   # Vitest component tests, then client-node
-npm run test:e2e      # Playwright, boots its own API + Vite
+npm run test:client   # Vitest component tests, then the DOM-free pass
+npm run test:e2e      # Playwright — boots its own API and Vite server
 npm run test:all      # everything
+
+cd client && npm run test:watch        # Vitest in watch mode
+cd client && npm run test:e2e:report   # open the Playwright HTML report
 ```
 
-### Vue component testing — Vitest + @vue/test-utils
+### Conventions this project follows
 
-**44 Vitest files, 683 tests** in [test/client/](test/client/). Configuration:
-[vitest.config.mjs](test/config/vitest.config.mjs) — `jsdom` environment, the real `@vitejs/plugin-vue`
-so `.vue` files compile exactly as in production, `maxWorkers: 2`, and `clearMocks` /
-`restoreMocks` on so no test leaks a stub into the next.
-
-[setup.js](test/client/setup.js) handles what jsdom lacks:
+**Test suites and test cases.** `describe()` names a suite, `it()` names a case. The
+marketplace and profile files use the numbered form throughout:
 
 ```js
-enableAutoUnmount(afterEach);               // no component survives its test
-window.matchMedia = vi.fn(query => ({       // jsdom has no matchMedia
-  media: query,
-  matches: query === '(prefers-reduced-motion: reduce)',
-  addEventListener() {}, removeEventListener() {},
-}));
-Object.defineProperty(document, 'visibilityState', { value: 'visible' });
-afterEach(() => { vi.useRealTimers(); document.body.innerHTML = ''; });
-```
-
-Note `matches` deliberately returns `true` for reduced motion: tests run with animation
-disabled, so assertions never race a transition.
-
-[helpers.js](test/client/helpers.js) provides the shared harness:
-
-```js
-// Mount a view with a real router on a memory history
-export async function mountPage(component, { path = '/', props = {}, stubs = {} } = {}) {
-  const router = createRouter({ history: createMemoryHistory(), routes: [...] });
-  await router.push(path);
-  await router.isReady();
-  const wrapper = mount(component, {
-    props, attachTo: document.body, global: { plugins: [router], stubs },
-  });
-  await flushPromises();           // let onMounted fetches settle
-  return { wrapper, router };
-}
-
-// Query by what the user sees, not by CSS class
-export function button(wrapper, text) { /* find <button> by its text */ }
-export function field(wrapper, text)  { /* find input via its <label> */ }
-```
-
-`button()` and `field()` are the important choice: they locate elements **by visible text
-and label association**, not by selector. A test that finds a button by its label keeps
-passing when the markup is restructured and fails when the *label* changes — which is
-exactly when a user would notice.
-
-Tests use a `TestSuite:` / `TestN:` naming convention with a comment above each case
-explaining what it covers:
-
-```js
-// OrderSummary shows the order amount, delivery fee and total.
 describe('TestSuite: OrderSummary', () => {
-  // Computed property check: total = subtotal + delivery fee.
-  it('Test2: adds the delivery fee into the order total', () => {
-    const wrapper = mount(OrderSummary, {
-      props: { subtotalCents: 31000, deliveryFeeCents: 550 },
-    });
-    expect(wrapper.text()).toContain('SGD $315.50');
-    expect(wrapper.text()).not.toContain('Free');
-  });
+  it('Test2: adds the delivery fee into the order total', () => { ... })
+})
+```
 
-  // Conditional rendering: the <h3> appears only when the heading prop is set.
-  it('Test3: shows a heading only when one is given', () => {
-    expect(mount(OrderSummary, { props: { subtotalCents: 0 } })
-      .find('h3').exists()).toBe(false);
-  });
+**Assertions.** `expect(...)` supplies the actual value and a matcher supplies the expected
+one; together they are one assertion. Matchers in use across the suite:
+
+| Matcher | Where it is used here |
+|---|---|
+| `toBe()` | primitives — prices, counts, flags, `element.disabled` |
+| `toEqual()` | objects and arrays — the ordered option list a `<select>` renders, request payloads |
+| `toContain()` | substring of rendered text, membership in an array |
+| `toHaveLength()` | number of cards, rows or members rendered |
+| `toBeTruthy()` / `toBeFalsy()` | presence checks such as `wrapper.find(...).exists()` |
+
+**Stubs.** A child component is replaced with a lightweight fake when the parent is the thing
+under test, and both kinds appear here. An **automatic stub** when the child is simply
+irrelevant to the assertion — Vue Test Utils swaps in an empty placeholder:
+
+```js
+// market-components.test.js — the poster and avatar are not what this test is about
+mount(OrderItem, { global: { stubs: { TicketPoster: true, UserAvatar: true } } });
+```
+
+And a **custom stub** that echoes what it receives, when the point of the test is that the
+parent passes the right thing down:
+
+```js
+// group-matching.test.js — a fake RouterLink that exposes its target as an href
+mount(GroupListingCard, {
+  global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } },
 });
 ```
 
-**What the Vue tests cover:**
+`mountPage` forwards a `stubs` option for the same purpose, and whole modules are stubbed with
+`vi.mock` where a gate component or a composable would otherwise pull in the network.
 
-| Concern | Example files |
-|---|---|
-| Props → render, computed values | `market-components`, `market-unit` |
-| Conditional rendering, slots | `market-components`, `confirmation-dialog` |
-| Events and `v-model` | `search-select`, `availability-grid` |
-| Full page mount with router + stubbed API | `profile-page`, `market-tickets-page`, `welcome-and-admin` |
-| Navigation guards | `route-guards`, `navigation-disclosure` |
-| SSE / live updates | `chat/chat-live`, `notification/notification-ui` |
-| Optimistic concurrency and draft preservation | `meetup-planner`, `group-workspace-recovery` |
-| Lost-response recovery (POST committed, response dropped) | `group-explorer-consistency`, `chat/ticket-chat-recovery` |
-| Accessibility and contrast | `theme-contrast`, `header-overlays` |
-| Service worker | `notification/service-worker` |
+**Robust over fragile.** [helpers.js](test/client/helpers.js) deliberately offers no
+selector-based lookup. `button(wrapper, 'Save my response')` finds a `<button>` by its visible
+text and `field(wrapper, 'Concert')` finds an input through its `<label>`:
 
-The recovery tests are the most valuable ones. They assert that a request whose POST
-committed but whose response was lost does not resubmit, and that unsaved drafts survive a
-stale-version rejection — the failures that are hardest to find by hand and worst to ship.
-
-Component tests mount against a **stubbed API layer** rather than a live server, except
-where a file uses [serverHarness.js](test/client/serverHarness.js) to exercise a real
-Express app over an in-memory database.
-
-### Server testing — the Node built-in test runner
-
-**63 files, 696 tests** in [test/server/](test/server/), run with `node --test`. No Jest, no
-Mocha — Node's own runner, driven by
-[run-node-tests.mjs](test/scripts/run-node-tests.mjs), which passes explicit file paths so
-Node cannot wander off and discover Vitest specs, Playwright specs, or old reports.
-
-Tests build a real Express app via `createApp({ db, env, fetchImpl })` against a fresh
-in-memory SQLite database and exercise it over HTTP. Dependency injection means there is
-almost no module mocking: a stub `fetchImpl` stands in for Ticketmaster or OneMap, and the
-real routing, middleware, validation and SQL all run.
-
-Coverage spans the algorithm (`galeShapley`, `stableRoommates`, `compatibility`, `registry`,
-`preferenceFactors`), HTTP and security (`httpSecurity`, `sessions`, `accountSecurity`,
-`providerSecurity`, `ticketmasterSecurity`), the full group and meetup lifecycle, real-time
-delivery, push, pagination, and every migration module.
-
-`test/client-node/` holds one more Node-runner file for pure client utilities that need no
-DOM.
-
-### End-to-end — Playwright
-
-**19 specs** in [test/e2e/](test/e2e/). The config boots the whole stack itself: an API on
-`127.0.0.1:3105` (waiting on `/api/health`) and a Vite server on `127.0.0.1:5175`. Serial
-(`workers: 1`), `reducedMotion: 'reduce'`, trace and screenshot retained on failure.
-
-Specs cover the full journeys: group-and-meetup lifecycle, matching recovery, realtime
-consistency, ticket marketplace, notifications, chat, first-time UX, cross-workflow
-consistency, and `responsive-ui` across viewports.
-
-```bash
-npm run test:e2e
-cd client && npm run test:e2e:report    # open the HTML report
+```js
+export function button(wrapper, text) {
+  const found = wrapper.findAll('button').find(item => item.text().trim() === text);
+  if (!found) throw new Error(`Button not found: ${text}`);
+  return found;
+}
 ```
+
+So a test keeps passing when the markup is restructured and fails when the *label* changes —
+which is the point at which a user would notice. Tests assert on rendered text, emitted
+events and the requests sent, not on CSS classes or HTML structure. The one deliberate
+exception is [theme-contrast.test.js](test/client/theme-contrast.test.js), which asserts
+contrast ratios on the design tokens because that *is* the observable behaviour being checked.
+
+**What is left untested on purpose.** Every HTML tag, every CSS class, exact DOM structure,
+and framework behaviour. Integration suites also skip what a component suite already proved —
+the profile page's integration tests check that the form and the notification panel save
+independently, and do not re-check field validation.
+
+**Verification and validation.** These tests are verification: they check the app against its
+specification. Validation — whether the workflows suit real concert-goers — is what the
+in-app `/feedback` page and the post-concert reliability loop collect, and is not something a
+test suite can answer.
+
+---
+
+### What is tested, page by page
+
+#### Sign in and Welcome — onboarding
+
+New accounts are forced through `/welcome` before anything else, so these tests guard the gate
+itself as much as the form.
+
+| Test | Input | Expected output | Purpose |
+|---|---|---|---|
+| Starts a new member on About you | A fresh account, no saved answers | The About-you step, which requires a language before continuing | The gate opens at the first incomplete step |
+| Cannot be skipped | Any new account | No skip button; the page states that saving is required | The preferences gate cannot be bypassed |
+| Saves answers as they change | Edits to any answer | Saved with no Save button present | Autosave is the contract, not a button |
+| Continues to `?next=` after saving | `?next=/groups`, then a completed save | Navigates to `/groups` | The gate returns people where they were heading |
+| Ignores an off-site `?next=` | `?next=https://example.com` | Navigates to the concert list instead | An open-redirect guard |
+| Asks for the six vibe ratings | Preferences saved, vibe not | The vibe step, then continues | Both halves of onboarding are required |
+| Keeps the questionnaire open on failure | A save that rejects | The questionnaire stays open with an error | A failed save never loses the answers |
+
+Files: [welcome-and-admin.test.js](test/client/welcome-and-admin.test.js) (14) ·
+[preferences-onboarding.test.js](test/client/preferences-onboarding.test.js) (7) ·
+[route-guards.test.js](test/client/route-guards.test.js) (9)
+
+#### Profile page
+
+The clearest example of the two layers side by side: a `(component tests)` suite of 11
+numbered cases, then an `(integration tests)` suite mounting the profile form together with
+its notification section.
+
+| Test | Input | Expected output | Purpose |
+|---|---|---|---|
+| (1) Fills the form with the server's profile | A profile response | Every field populated from it | Props and loaded state render correctly |
+| (2) Email is read-only | Any profile | Email not editable; the signed-in name reaches the picture control | A field that must not be edited, and prop passing to a child |
+| (3) Signed-out visitor | The load answers `401` | "Sign in to see your profile." | Conditional rendering by auth state |
+| (4) Retry after a failed load | A rejected load, then a success | Retry offered, then the form appears | Error state is recoverable |
+| (5) Refuses a blank display name | Display name blanked | "Enter a display name.", and no request sent | Client-side validation |
+| (6) Refuses with no language chosen | No language chosen | "Choose at least one language." | A required multi-select |
+| (7) Saves the edited profile | Several fields edited, name as `'  Jamie Tan  '` | **One** PATCH, name trimmed, then "Saved" | The payload is normalised and batched |
+| (8) Explains an expired session | The save answers `401` | Expired-session message with a sign-in link | A failed save never discards the edit |
+| (9) Applies a chosen picture at once | A picture is chosen | Sent at once, profile PATCH untouched | Two independent save paths |
+| (10)–(11) Rejected picture, then log out | An unreadable file; then Log out | "That file is not a readable image."; session cleared and back to the home page | Upload failure and sign-out side effects |
+| **Integration** (1) Renders both together | A profile and notification preferences | Profile form *and* notification panel both render | The page composes its children |
+| **Integration** (2)–(3) Independent saves | Change one side only | Saves that side without touching the other | The two panels do not interfere |
+| **Integration** (4) Signed out | No session | Notification section omitted entirely | Conditional composition |
+
+Six further cases cover account switching: a late autosave response from the previous account
+is ignored, the old account's pending autosave timer is cancelled rather than sent under the
+new one, and an avatar response does not overwrite a newer display name.
+
+Files: [profile-page.test.js](test/client/profile-page.test.js) (21)
+
+#### Public profile — concert vibe
+
+| Test | Input | Expected output | Purpose |
+|---|---|---|---|
+| Renders six self-rated axes | A completed vibe | Six axes plus an accessible text equivalent, no invalid SVG coordinates | The chart is both correct and readable by screen readers |
+| Shows chart, interests and ratings | A full profile | All three, plus the privacy boundary explained | What is and is not shared is stated |
+| An unanswered vibe is not all-zero | No vibe saved | Not presented as a measured flat personality | Absent data must not read as measured data |
+| Saved zeros stay distinct | Explicit `0` ratings | Shown as real ratings, not as unanswered | Zero and null are different |
+| Navigating between people | Person A, then person B | A's profile cleared at once; a late A response ignored | No stale profile leaks across navigation |
+| Missing or blocked profile | Either case | One neutral unavailable state | Blocking is not disclosed |
+
+Files: [public-profile.test.js](test/client/public-profile.test.js) (6)
+
+#### Concerts
+
+| Test | Input | Expected output | Purpose |
+|---|---|---|---|
+| Asks for a picture before the finder | An account with no photo | Prompted for a picture before joining | A precondition is enforced in the UI |
+| Keeps inputs after a failed join | Selections, then a failing join | Choices retained so a retry sends the same ones | A retry is deliberate, not a guess |
+| Rechecks eligibility at submission | A page left open across local midnight | Eligibility re-evaluated on submit | A stale page cannot submit an expired action |
+| Keeps an overseas concert open | A concert in another timezone | Its own local day stays open | Eligibility is per-event timezone |
+| Ignores late responses | Detail/setlist responses arriving after the concert prop changes | Both ignored | No cross-concert data bleed |
+| Operator panel | An operator session | Matching context shown, with no run controls and no requests | A read-only operator view really is read-only |
+| Removes its timer on unmount | Unmounting the page | Timer and focus listener removed | No leaks from the midnight refresh |
+
+Files: [concert-consistency.test.js](test/client/concert-consistency.test.js) (13)
+
+#### Ticket marketplace
+
+The most conventionally structured area — pure functions, then components, then integration.
+
+**Component tests.** `OrderSummary` (3), `MarketNotice` (2), `ProofUpload` (6),
+`ListingDetailCard` (12), `TicketListingCard` (5).
+
+| Test | Input | Expected output | Purpose |
+|---|---|---|---|
+| `OrderSummary` Test2 | `subtotalCents: 31000`, `deliveryFeeCents: 550` | `SGD $315.50`, and not `Free` | A computed total from two props |
+| `OrderSummary` Test3 | With and without a `heading` prop | `<h3>` present only when given | Conditional rendering |
+| `MarketNotice` Test1 | `tone: 'error'` | `role="alert"` with title and message | Errors are announced to screen readers |
+| `ProofUpload` Test4–5 | A file over 2 MB, then exactly 2 MB | Rejected, then accepted | A **boundary** case on the size limit |
+| `ProofUpload` Test2 | A valid PNG | Emitted to the parent as a data URL | The emitted event carries the right payload |
+| `ListingDetailCard` Test5–6 | Same listing, buyer then seller | Buyer: message seller, checkout disabled. Seller: Edit and Remove | One component, two roles |
+| `ListingDetailCard` Test9 | `busy: true` | Actions disabled | A request cannot be sent twice |
+| `TicketListingCard` Test4 | Verified and unverified listings | Badge only on the verified one | Conditional rendering from a flag |
+
+**Integration tests.** Real components mounted together: `OrderItem + TicketPoster +
+VerifiedBadge`, `TicketDetailView + ListingDetailCard` for both buyer and seller,
+`MyListingsView + ProofUpload`, `ListingView`, `EditListingView`.
+
+| Test | Input | Expected output | Purpose |
+|---|---|---|---|
+| Poster fallback | A listing photo that fails to load | Falls back to the generated poster | Three components cooperate on one visual |
+| Buyer Test2 | Message seller | The chat thread for this listing opens | Cross-page navigation with the right id |
+| Buyer Test3 | A signed-out buyer | Sent to sign in, then brought back | The redirect round-trip |
+| Seller Test3 | Remove, confirmed | Returns to My listings | A destructive action behind confirmation |
+| Seller Test4 | Remove, cancelled | Listing kept | Cancelling really cancels |
+| `MyListingsView` Test3 | Upload proof, submit | Listing moves to pending review | A status transition across two components |
+| `ListingView` Test1 | No live Ticketmaster discovery | Saved concerts offered; only the id is sent | A degraded provider still allows listing |
+| `EditListingView` Test1 | Edited price | Sent in cents, then returns to the listing | Unit conversion in the payload |
+
+A further set covers lost responses: a publication that committed but whose response never
+arrived is recoverable without creating a second listing; repeated submissions are ignored
+while the first is pending; and a response arriving after an account switch is discarded.
+
+**Unit tests of plain functions** — `formatMoney`, `priceParts`, `sectionLabel`,
+`listingTitle`, `formatRelative`, `formatDateTime`, `hueFor`, `useSavedListings`. Includes a
+zero-price ticket, large amounts, invalid timestamps giving an empty string, and `hueFor`
+always producing the same hue in `0–359` for a given id.
+
+Files: [market-unit.test.js](test/client/market-unit.test.js) (25) ·
+[market-components.test.js](test/client/market-components.test.js) (23) ·
+[market-tickets-page.test.js](test/client/market-tickets-page.test.js) (17) ·
+[market-integration.test.js](test/client/market-integration.test.js) (40) ·
+[market-saved-feedback.test.js](test/client/market-saved-feedback.test.js) (2)
+
+#### Companion finder — Kaki
+
+| Test | Input | Expected output | Purpose |
+|---|---|---|---|
+| No eligible profiles for a show | A joined concert with no candidates | The artist and date stay selectable | An empty result is not a broken filter |
+| Explains no joined concerts | An account with no concert plans | Says so, and keeps a safe legacy fallback | An honest empty state |
+| Reviewed vs absent candidates | A deck already swiped through | The two are distinguished; decisions never cleared by a filter reset | Filtering must not destroy decisions |
+| Narrow filters | Over-restrictive filters | Identified as narrow; Reset restores the preview | The user is told *why* it is empty |
+| A vetoed candidate | A compatibility veto | A generic empty state, with no private veto detail | Another person's dealbreakers stay private |
+| Ranking fails to load | A rejected recommendations call | Falls back to the filtered list, not an error | Ranking is an enhancement, not a requirement |
+| A late ranking response | Concert query changes mid-flight | The late response is ignored | No cross-concert result bleed |
+| Swipe persistence | A like | Saved once; the card advances only after it persists | No optimistic success claim |
+| A failed decision | A like that rejects | Kept available for retry, no success announced | Honest failure |
+| Dragging | Non-primary mouse button, background cards | Ignored and inert | Only deliberate gestures count |
+
+Files: [kaki-concert-context.test.js](test/client/kaki-concert-context.test.js) (11) ·
+[swipe-feedback.test.js](test/client/swipe-feedback.test.js) (5)
+
+#### Messages and chat
+
+Covers the three separate thread types — companion chat, ticket chat and group channels —
+plus the Server-Sent Events stream.
+
+| Test | Input | Expected output | Purpose |
+|---|---|---|---|
+| Sending and reading | A sent message | Appears, and is marked read | The core send/read cycle |
+| Live delivery | An event on the SSE stream | The thread updates without a reload | Real-time delivery works |
+| Connection handling | A dropped stream | Reconnects | Transient network loss is survivable |
+| Group channel scope | A member and a non-member | Only members receive channel events | Authorisation is enforced per event |
+| Ticket thread recovery | A mutation whose response was lost | Recovered without duplicating the message | Lost responses do not duplicate sends |
+| Planner entry in chat | A conversation with and without a meetup | The correct planner entry point in each case | One component, several contexts |
+| Inbox | Mixed companion and ticket threads | Both listed, kept distinct | Separate thread types share one inbox |
+
+Files: [chat/chat-api.test.js](test/client/chat/chat-api.test.js) (8) ·
+[chat/chat-live.test.js](test/client/chat/chat-live.test.js) (9) ·
+[chat/group-channel.test.js](test/client/chat/group-channel.test.js) (11) ·
+[chat/ticket-chat-recovery.test.js](test/client/chat/ticket-chat-recovery.test.js) (6) ·
+[chat-planner-entry.test.js](test/client/chat-planner-entry.test.js) (9) ·
+[messages-inbox.test.js](test/client/messages-inbox.test.js) (2)
+
+#### Groups — Find a group
+
+The largest client area, because a group application is the hardest thing in the app to get
+wrong safely: there are two routes in (browse-and-apply, or automatic matching), and the page
+must never claim a request was sent when it was not.
+
+| Test | Input | Expected output | Purpose |
+|---|---|---|---|
+| Viewing versus enrolling | Opening the automatic pathway | Viewed without enrolling; joining needs explicit confirmation | Looking is not joining |
+| A pending request blocks switching | An outstanding application | The other pathway can be viewed but not activated | One commitment at a time |
+| Switch succeeds, refresh fails | A successful switch, then a failing read | The confirmed enrollment is still shown | The authoritative response wins over a failed refresh |
+| Double submission | Two rapid searches | The second is locked out | One search at a time |
+| One pending application | A second application attempt | Refused, with the limit explained | The single-pending-application rule |
+| A lost POST response | A request that committed, response dropped | Recovered without resubmitting | No duplicate applications |
+| An ambiguous search after remount | A remount mid-search | The same scoped UUID is reused; no automatic POST | Idempotency across a remount |
+| A rate-limited recovery | A recovery that is rate limited | The attempt is retained and the UUID restored | Backpressure does not lose state |
+| Unsuccessful application | A failed application | A note is kept; no claim that a request was sent | Never report a success that did not happen |
+| Discovery and preferences both fail | Both calls reject | A real offer stays visible | Independent failures stay independent |
+| Unknown vs zero group count | `undefined` vs `0` | Distinguished in the message | "We don't know" is not "there are none" |
+| A late response from another account | Account switch mid-flight | The previous account's results are not reused | Personalised results never cross accounts |
+| Completed concert | A past concert | Both pathways closed; pending history retained | History stays readable after the event |
+
+Files: [group-explorer-consistency.test.js](test/client/group-explorer-consistency.test.js) (42) ·
+[group-matching.test.js](test/client/group-matching.test.js) (17)
+
+`group-matching.test.js` covers the cards themselves: the comparison deck sends exactly one
+application, a failed application stays retryable, a queued offer cannot be accepted out of
+turn but can be declined, approval marks render as a green tick / amber pending / red cross,
+and an applicant's match reasons are shown **without** rendering their questionnaire answers.
+
+#### Groups — My groups, membership and settings
+
+| Test | Input | Expected output | Purpose |
+|---|---|---|---|
+| Eligible concerts only | Past, today, future and started concerts | Only today and future offered | Group creation needs an upcoming show |
+| Ineligible route preselection | `?concertId=` a past concert | Rejected rather than silently substituted | The URL cannot pick an invalid concert |
+| Cutoff rechecked at submission | A page open overnight | Re-checked on submit | Same guard as the concert page |
+| Configuration fails after creation | A created draft, failed configure | The known draft reopens for setup recovery | No orphaned second group |
+| An uncertain creation | A lost or `409` creation response | Reconciled against the sole owned group | A duplicate group is never created |
+| Two creation requests | Rapid double submit | The second is blocked while the first is pending | Idempotent creation |
+| First-time host setup | A new group | Listed straight away; reserved friend places shown; no publish step | Matches the current no-draft product rule |
+| Host controls and members | A member, not the host | Setup and publication controls hidden; chat and plans kept | Role-based rendering |
+| Pending join requests | A queue of applicants | Each with picture and profile link, in queue order, accept or decline | The host's review surface |
+| Unsaved settings on navigation | Edits, then navigate or reload | Protected, and no prompt when nothing changed | A guard that does not nag |
+| Partial settings save | Name succeeded, size failed | Only the failed change is retried | Partial success is reported honestly |
+| Per-source retry | Any one of five sources failing | Only the failed source is retried | Five independent reads, five independent retries |
+
+Files: [group-workspace-recovery.test.js](test/client/group-workspace-recovery.test.js) (27) ·
+[group-membership-workspace.test.js](test/client/group-membership-workspace.test.js) (15) ·
+[group-connections-workspace.test.js](test/client/group-connections-workspace.test.js) (14) ·
+[group-settings-interactions.test.js](test/client/group-settings-interactions.test.js) (5) ·
+[group-navigation.test.js](test/client/group-navigation.test.js) (0)
+
+#### Meetup planner
+
+The biggest single file in the suite, because the planner is three steps with drafts that must
+survive every one of them, plus optimistic concurrency against other members editing.
+
+| Test | Input | Expected output | Purpose |
+|---|---|---|---|
+| Three-stage planning | Moving between steps 1–3 | One step at a time; drafts kept across steps; keyboard navigable | The wizard contract |
+| Never writes a draft on its own | Opening and browsing the planner | No write is sent | Nothing is saved without an explicit action |
+| Drag to paint availability | Click, drag, and drag from a selected slot | Slots selected, then erased | The grid's three gestures |
+| Touch painting | Hold then drag; swipe | Paints; swipe scrolls instead | Distinct touch and mouse models |
+| Save with transit or drive | A selected period plus a travel method | Saved with that method | The journey options |
+| A complete vs incomplete manual origin | Partial, then full coordinates | Rejected, then saved | Validation on a manual entry |
+| Applying only the travel method | Method changed, origins untouched | Each period keeps its existing origin | A narrow edit stays narrow |
+| A stale save | A version conflict | The draft is kept and the current version reloaded for review | Optimistic concurrency, without data loss |
+| A live update during editing | Someone else confirms the plan | The unsaved draft is retained and further changes lock | Concurrent edits do not discard local work |
+| A confirmed plan | A finalised meetup | Contributions locked, discussion still open | Locking is partial, not total |
+| Organizer picker | An alternative time and place | The algorithm's recommendation and the reviewed choice both preserved | Reviewing is not approving |
+| Proposal recovery | A teammate's proposal | Recovered; approval remains explicit | No implicit approvals |
+| Changing boards | Board A, then board B | A's private drafts cleared; A's late routes ignored | No cross-board leakage |
+| Creation date guardrails | Dates around the concert | Out-of-window dates refused | A meetup must sit in its concert's window |
+| Address selection | An OneMap search and a pick | The selection saved as the starting location | A real child component, not a stub |
+| Nearby transport | A chosen meeting place | MRT, bus and parking panels; a neutral state without a place | Live data degrades honestly |
+| Scope-aware navigation | Entry from chat, groups or management | Returns to where it came from | `?from=` round-trips correctly |
+
+Files: [meetup-planner.test.js](test/client/meetup-planner.test.js) (137) ·
+[meetup-navigation.test.js](test/client/meetup-navigation.test.js) (29) ·
+[availability-grid.test.js](test/client/availability-grid.test.js) (20) ·
+[meetup-entry.test.js](test/client/meetup-entry.test.js) (18) ·
+[meetup-location-search.test.js](test/client/meetup-location-search.test.js) (15) ·
+[meetup-form-panels.test.js](test/client/meetup-form-panels.test.js) (13) ·
+[nearby-transport.test.js](test/client/nearby-transport.test.js) (12) ·
+[meetup-time.test.js](test/client/meetup-time.test.js) (10)
+
+#### Notifications
+
+| Test | Input | Expected output | Purpose |
+|---|---|---|---|
+| Triggers | Group, match, meetup and feedback events | A notification for each | Each event type produces one |
+| Reading | Open one, then read all | Individually and bulk marked read; the badge follows | Read state is consistent |
+| The bell | Unread counts and an empty inbox | Correct count, and a usable empty state | The most-seen component in the app |
+| Preferences | Categories toggled | Saved without touching the profile | Independent save path |
+| Browser push queue | A queued push | Delivered through the service worker | The push pipeline |
+| Notification click | A click on a push notification | Opens the right page | The deep link resolves |
+
+Files: [notification/notification-bell.test.js](test/client/notification/notification-bell.test.js) (15) ·
+[notification/notification-api.test.js](test/client/notification/notification-api.test.js) (12) ·
+[notification/service-worker.test.js](test/client/notification/service-worker.test.js) (7) ·
+[notification/notification-ui.test.js](test/client/notification/notification-ui.test.js) (3)
+
+#### Shared UI, navigation and theme
+
+| Test | Input | Expected output | Purpose |
+|---|---|---|---|
+| Header overlays | Navigation during initial lazy routing | Overlays behave and ownership is unambiguous | Lazy routes must not strand an overlay |
+| Navigation and filters | Expanding the nav and filter panels | Disclosure state correct | Progressive disclosure |
+| `SearchSelect` | Typing and selecting | Emits the chosen value | A reusable control's contract |
+| `ConfirmDialog` | Keyboard interaction | Keyboard-operable confirm and cancel | Destructive actions are reachable without a mouse |
+| Artist wave backdrop | A poster | Renders without invalid geometry | A decorative component that must not break layout |
+| Theme contrast | Light and dark tokens | Shared colour contracts hold in both | WCAG contrast is asserted, not assumed |
+
+Files: [header-overlays.test.js](test/client/header-overlays.test.js) (8) ·
+[theme-contrast.test.js](test/client/theme-contrast.test.js) (9) ·
+[navigation-disclosure.test.js](test/client/navigation-disclosure.test.js) (3) ·
+[search-select.test.js](test/client/search-select.test.js) (3) ·
+[confirmation-dialog.test.js](test/client/confirmation-dialog.test.js) (5) ·
+[artist-wave-backdrop.test.js](test/client/artist-wave-backdrop.test.js) (6) ·
+[client-node/group-comparison.test.js](test/client-node/group-comparison.test.js)
+
+---
+
+### End-to-end journeys — Playwright
+
+Playwright asks a different question from Vitest: *can the user complete the task?* The config
+boots the whole stack itself — an API on `127.0.0.1:3105` (waiting on `/api/health`) and Vite
+on `127.0.0.1:5175` — and runs serially with `reducedMotion: 'reduce'`, keeping a trace and
+screenshot on failure.
+
+| Journey | Spec |
+|---|---|
+| Sign in, edit and save a profile | [profile.spec.js](test/e2e/profile.spec.js) |
+| List, browse, buy and message about a ticket | [ticket-marketplace.spec.js](test/e2e/ticket-marketplace.spec.js) |
+| Companion finder and the availability calendar | [kaki-and-availability-calendar.spec.js](test/e2e/kaki-and-availability-calendar.spec.js) |
+| Messaging across thread types | [chat.spec.js](test/e2e/chat.spec.js) |
+| Group discovery results | [group-discovery-results.spec.js](test/e2e/group-discovery-results.spec.js) |
+| Create a group through to a planned meetup | [group-and-meetup-lifecycle.spec.js](test/e2e/group-and-meetup-lifecycle.spec.js) |
+| A first-time user's group and meetup path | [first-time-group-meetup-ux.spec.js](test/e2e/first-time-group-meetup-ux.spec.js) |
+| Matching recovery after an interrupted search | [group-matching-recovery.spec.js](test/e2e/group-matching-recovery.spec.js) |
+| Group settings and realtime consistency | [group-settings-interactions.spec.js](test/e2e/group-settings-interactions.spec.js) · [group-realtime-consistency.spec.js](test/e2e/group-realtime-consistency.spec.js) |
+| Meetup creation, drafts, decisions and finalisation | [meetup-creation-retry.spec.js](test/e2e/meetup-creation-retry.spec.js) · [meetup-interactions-and-drafts.spec.js](test/e2e/meetup-interactions-and-drafts.spec.js) · [meetup-decision-interactions.spec.js](test/e2e/meetup-decision-interactions.spec.js) · [meetup-responses-and-finalisation.spec.js](test/e2e/meetup-responses-and-finalisation.spec.js) · [meetup-navigation.spec.js](test/e2e/meetup-navigation.spec.js) |
+| Notifications end to end | [notifications.spec.js](test/e2e/notifications.spec.js) |
+| Community workflows and cross-page consistency | [community-workflows.spec.js](test/e2e/community-workflows.spec.js) · [cross-workflow-consistency.spec.js](test/e2e/cross-workflow-consistency.spec.js) |
+| Phone through wide-desktop layout | [responsive-ui.spec.js](test/e2e/responsive-ui.spec.js) |
+
+---
+
+### Server-side tests
+
+63 files, **696 tests**, on Node's built-in runner. Each builds a real Express app through
+`createApp({ db, env, fetchImpl })` against a fresh in-memory SQLite database and drives it
+over HTTP, so the real routing, middleware, validation and SQL all execute. Dependency
+injection means almost no module mocking — a stub `fetchImpl` stands in for Ticketmaster or
+OneMap.
+
+| Area | What it covers | Largest files |
+|---|---|---|
+| **The algorithm** | Deferred acceptance, Irving's algorithm, scoring, feasibility, the registry and classifier, questionnaire factors | `compatibility` (27) · `galeShapley` (26) · `preferenceFactors` (26) · `registry` (22) |
+| **Group discovery and matching** | Discovery results, eligibility, self-serve and managed matching, join lifecycle, seat reservations | `groupDiscovery` (34) · `hybridDirect` (23) · `managedMatching` (17) · `selfServeMatching` (13) |
+| **Community workflows** | Group settings, membership, consensus, historical coordination, profile participation | `community-domain-workflows` (28) · `community-http-workflows` |
+| **Meetups** | Domain rules, guardrails, transport, car planning, navigation, integrations, weather | `meetupIntegrations` (18) · `meetupTransport` (10) · `meetupDomain` (10) |
+| **Chat and realtime** | Companion chat, group channels, catch-up, keyset pagination, SSE scope | `kakiChat` (22) · `kakiRealtime` (15) · `groupChannel` (13) |
+| **Security** | Sessions, account security, HTTP headers and CSRF, rate limiting, provider and Ticketmaster hardening, system CA | `accountSecurity` (17) · `httpSecurity` (17) · `providerSecurity` (14) |
+| **Platform** | Delivery and push, concerts API, setlists, palette extraction, migrations | `delivery` (23) · `concert-api` (25) · `setlist` (14) |
 
 ### Benchmarks
 
+Not tests, but the same harness. These produce the comparison tables in
+[the algorithm section](#the-matching-algorithm):
+
 ```bash
 cd server
-npm run bench          # algorithm comparison against baselines
+npm run bench          # Gale-Shapley against the greedy and random baselines
 npm run bench:scale    # runtime scaling study
 ```
 
