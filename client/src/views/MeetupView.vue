@@ -75,19 +75,16 @@ const {
         <div class="meetup-time-layout">
           <MeetupAvailabilityGrid :grid="board.grid" :participant-count="board.participantCount" v-model:selected="selectedTimes" :disabled="busy || contributionsLocked" />
           <aside class="meetup-time-context" aria-labelledby="meetup-group-availability-heading">
-            <h3 id="meetup-group-availability-heading">Group availability</h3>
-            <p class="group-muted">{{ board.participantCount }} {{ board.participantCount === 1 ? 'person' : 'people' }} on this plan</p>
-            <dl class="meetup-time-context__metrics">
-              <div><dt>Your selected time</dt><dd><strong>{{ selectedSlotCount / 2 }}</strong> {{ selectedSlotCount === 2 ? 'hour' : 'hours' }}<span>{{ availabilityDirty ? 'In your unsaved draft' : 'In your saved availability' }}</span></dd></div>
-              <div><dt>Most overlap saved</dt><dd v-if="bestSavedOverlap"><strong>{{ bestSavedOverlap.availableCount }}<small>/{{ board.participantCount }}</small></strong> available together<span>{{ time(bestSavedOverlap.startsAt) }}</span></dd><dd v-else class="meetup-time-context__empty">No available times saved yet.</dd></div>
-            </dl>
+            <h3 id="meetup-group-availability-heading">Group availability ({{ board.participantCount }})</h3>
+            <!-- Only once the person has actually saved: before that there is
+                 nothing to have saved yet, so the line would read as a fault. -->
+            <p v-if="hasResponded && !bestSavedOverlap" class="meetup-time-context__empty">No available times saved yet.</p>
             <div v-if="board.availabilityResponses" class="meetup-response-summary" aria-label="Availability responses">
               <strong>{{ board.availabilityResponses.respondedCount }} of {{ board.participantCount }} participants responded</strong>
-              <span>{{ board.availabilityResponses.availableCount }} selected available times</span>
-              <span>{{ board.availabilityResponses.unavailableCount }} cannot make these times</span>
-              <span>{{ board.availabilityResponses.unansweredCount }} have not responded</span>
+              <!-- Nobody unavailable is the ordinary case, and "0 cannot make
+                   these times" reads as a problem where there is none. -->
+              <span v-if="board.availabilityResponses.unavailableCount">{{ board.availabilityResponses.unavailableCount }} cannot make these times</span>
             </div>
-            <p v-else class="group-muted meetup-availability-coverage">Counts show saved available times, not who has answered. An unselected time can mean someone is unavailable or has not answered yet.</p>
           </aside>
         </div>
         <fieldset class="meetup-response-controls" :disabled="busy || contributionsLocked">
@@ -321,7 +318,6 @@ const {
 .meetup-best-summary > .btn { justify-self: start; margin-top: .35rem; }
 .meetup-compare-toggle { align-self: flex-start; justify-self: start; }
 .meetup-comparison { display: grid; gap: .85rem; padding: 1rem; border: var(--border-soft); border-radius: var(--radius-sm); }
-.meetup-availability-coverage { font-size: .8rem; line-height: 1.5; }
 .meetup-page--board .page-banner {
   padding: 1rem 1.25rem;
   border: var(--border-soft);
@@ -513,13 +509,8 @@ const {
 }
 .meetup-time-context h3 { font-size: var(--step-0); }
 .meetup-time-context > p { font-size: var(--step--1); }
-.meetup-time-context__metrics { display: grid; gap: 1.5rem; margin: 1rem 0; }
-.meetup-time-context__metrics dt { color: var(--text-300); font-size: var(--step--1); }
-.meetup-time-context__metrics dd { margin: .3rem 0 0; color: var(--text-200); font-size: .875rem; }
-.meetup-time-context__metrics dd > strong { color: var(--text-100); font-size: 2rem; font-weight: 600; letter-spacing: -.05em; line-height: 1.2; }
-.meetup-time-context__metrics strong > small { color: var(--text-300); font-size: 1rem; font-weight: 400; letter-spacing: 0; }
-.meetup-time-context__metrics dd > span { display: block; margin-top: .4rem; color: var(--text-300); line-height: 1.5; }
-.meetup-time-context__metrics .meetup-time-context__empty { margin-top: .5rem; color: var(--text-300); line-height: 1.5; }
+/* No longer nested in the metrics list that used to carry it. */
+.meetup-time-context__empty { color: var(--text-300); font-size: var(--step--1); line-height: 1.5; }
 .meetup-time-context .meetup-time-context__note { color: var(--text-300); font-size: .85rem; line-height: 1.65; }
 .meetup-save-bar {
   border-top: 1px solid var(--ink-500);
@@ -634,7 +625,6 @@ const {
 @media (max-width: 800px) {
   .meetup-time-layout { grid-template-columns: minmax(0, 1fr); gap: 1.25rem; }
   .meetup-time-context { padding: 1.25rem 0 0; border-left: 0; border-top: 1px solid var(--panel-edge); }
-  .meetup-time-context__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin: .75rem 0; }
 }
 .meetup-parking {
   display: grid;

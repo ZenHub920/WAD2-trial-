@@ -59,7 +59,7 @@ describe('drag-to-paint group availability', () => {
     expect(component.text()).toContain('Tue, 1 Jan');
     expect(component.text()).toContain('Wed, 2 Jan');
     expect(component.text()).toContain('16:00');
-    expect(component.text()).toContain('All times are Singapore time.');
+    expect(component.text()).not.toContain('Singapore time');
     expect(cell(start).attributes('aria-pressed')).toBe('true');
     expect(cell(start).text()).toContain('0/2');
     expect(cell(start).attributes('aria-label')).toContain('You are available.');
