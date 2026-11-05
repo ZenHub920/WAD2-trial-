@@ -5,6 +5,8 @@ import LoadingSpinner from '../components/LoadingSpinner.vue';
 import { vReveal } from '../composables/useReveal.js';
 import { useCountUp } from '../composables/useCountUp.js';
 import { useReducedMotion } from '../composables/useReducedMotion.js';
+import { useInView } from '../composables/useInView.js';
+import { usePosterHue } from '../composables/usePosterHue.js';
 
 const concerts = ref([]);
 const loading = ref(true);
@@ -34,6 +36,10 @@ onMounted(async () => {
 });
 
 const peopleCount = (c) => (c.open_seekers ?? 0) + (c.open_slots ?? 0);
+
+/* The strip under the hero: the next shows in date order, read like a
+   playlist. Rendered twice so the loop can wrap without a visible seam. */
+const setlist = computed(() => concerts.value.slice(0, 14));
 
 const slides = computed(() =>
   [...concerts.value]
@@ -277,13 +283,48 @@ const steps = [
   },
 ];
 
+/* The steps sit just under the hero, so on a tall screen they are partly on
+   screen before anyone scrolls. The shared v-reveal would call that "in view"
+   and play the entrance into an empty room; this waits until the row is
+   properly reached. */
+const loaded = computed(() => !loading.value);
+const { target: stepsRow, inView: stepsInView } = useInView({
+  threshold: 0.3,
+  rootMargin: '0px 0px -10% 0px',
+  until: loaded,
+});
+
 const titleWords = ['Meet', 'before', 'the', 'music.'];
+
+/* The hero takes its colour from whoever is on the featured poster, so the
+   whole top of the page shifts as the carousel moves between shows. */
+const featuredPoster = computed(() =>
+  featured.value && hasImage(featured.value) ? featured.value.hero_image_url : null,
+);
+const { hue } = usePosterHue(featuredPoster);
+
+/* A tight analogous pair off the poster, kept pastel so it sits at the same
+   volume as the rest of the palette. The third orb stays on the brand mint so
+   the hero still reads as Encore whatever is on the poster. */
+/* The page opens in Encore purple; the poster colours only take over once
+   the carousel first moves on, so the first impression is always the brand. */
+const posterColours = ref(false);
+watch(activeSlide, () => { posterColours.value = true; }, { once: true });
+
+const heroTint = computed(() =>
+  !posterColours.value || hue.value == null
+    ? {}
+    : {
+        '--hero-a': `hsl(${hue.value} 58% 72%)`,
+        '--hero-b': `hsl(${(hue.value + 14) % 360} 52% 66%)`,
+      },
+);
 </script>
 
 <template>
   <div class="home">
     <!-- ---------------------------------------------------------------- Hero -->
-    <section class="hero">
+    <section class="hero" :style="heroTint">
       <div class="hero__backdrop" aria-hidden="true">
         <span class="orb orb--one" />
         <span class="orb orb--two" />
@@ -417,8 +458,8 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
       <div class="container">
         <h2 v-reveal class="section__title">How it <span class="text-gradient">works</span></h2>
 
-        <ol class="steps">
-          <li v-for="(step, i) in steps" :key="step.n" v-reveal="i">
+        <ol ref="stepsRow" class="steps" :class="{ 'steps--in': stepsInView }">
+          <li v-for="(step, i) in steps" :key="step.n" :style="{ '--reveal-i': i }">
             <RouterLink :to="step.to" class="step" :aria-label="`${step.title}: ${step.cta}`">
             <span class="step__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none"><path :d="step.icon" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
@@ -480,6 +521,34 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
         </div>
       </div>
     </section>
+
+    <!-- ------------------------------------------------------------ Setlist -->
+    <nav v-if="setlist.length" class="setlist" aria-label="Upcoming concerts">
+      <div class="setlist__track">
+        <ul v-for="copy in 2" :key="copy" class="setlist__run" :aria-hidden="copy === 2 ? 'true' : undefined">
+          <li v-for="concert in setlist" :key="concert.id">
+            <RouterLink
+              :to="`/concerts/${concert.id}`"
+              class="setlist__item"
+              :tabindex="copy === 2 ? -1 : undefined"
+            >
+              <svg class="mic" viewBox="0 0 24 24" aria-hidden="true">
+                <g transform="rotate(-35 12 12)">
+                  <!-- tapered handle, then the collar, then the ball grille -->
+                  <path d="M9.4 11.6h5.2l-1.1 10a1.5 1.5 0 0 1-3 0z" fill="currentColor" />
+                  <rect x="8.8" y="10" width="6.4" height="2" rx="0.8" class="mic__collar" />
+                  <circle cx="12" cy="5.6" r="4.6" fill="currentColor" />
+                  <path d="M8.2 4.2h7.6M7.6 6.3h8.8M8.7 8.4h6.6M10 1.7v7.9M12 1.2v8.8M14 1.7v7.9" class="mic__mesh" />
+                </g>
+              </svg>
+              <span class="setlist__artist">{{ concert.artist }}</span>
+              <span class="setlist__when">{{ formatShortDate(concert.event_date) }}, {{ concert.venue }}</span>
+            </RouterLink>
+          </li>
+        </ul>
+      </div>
+    </nav>
+
   </div>
 </template>
 
@@ -509,6 +578,11 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
   position: relative;
   isolation: isolate;
   padding-block: var(--space-8) var(--space-8);
+  /* Overridden inline with the featured poster's hue; these are the fallback
+     for a monochrome poster, a CORS refusal, or before the first sample. */
+  --hero-a: var(--accent-300);
+  --hero-b: var(--accent-400);
+  --hero-c: var(--mint-400);
 }
 
 /* Slow drifting colour behind the hero, faded out at the bottom edge. */
@@ -526,6 +600,9 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
   filter: blur(70px);
   opacity: 0.55;
   animation: drift 18s ease-in-out infinite alternate;
+  /* Long enough that a slide change reads as the colour settling rather than
+     as a fourth thing moving on the page. */
+  transition: background 900ms ease;
 }
 
 .orb--one {
@@ -533,7 +610,7 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
   height: 520px;
   top: -180px;
   left: -120px;
-  background: var(--accent-300);
+  background: var(--hero-a);
 }
 
 .orb--two {
@@ -541,7 +618,7 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
   height: 420px;
   top: 10%;
   right: -100px;
-  background: var(--accent-400);
+  background: var(--hero-b);
   opacity: 0.35;
   animation-duration: 22s;
   animation-direction: alternate-reverse;
@@ -552,7 +629,7 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
   height: 360px;
   bottom: -120px;
   left: 35%;
-  background: var(--mint-400);
+  background: var(--hero-c);
   opacity: 0.25;
   animation-duration: 26s;
 }
@@ -595,13 +672,47 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
   font-size: var(--step-6);
   line-height: 1.05;
   letter-spacing: -0.02em;
-  max-width: 16ch;
+  /* "Walk in together." is 17ch; at 16ch it broke across a fourth line. */
+  max-width: 18ch;
 }
 
+/* The headline assembles rather than arriving in one piece: words drop in,
+   and every second one swings in from the right, so the line builds with a
+   bit of back-and-forth instead of a single uniform lift. */
 .word {
   display: inline-block;
-  animation: rise var(--dur-slower) var(--ease-settle) both;
+  animation: drop-in var(--dur-slower) var(--ease-settle) both;
   animation-delay: calc(120ms + var(--w) * 90ms);
+}
+
+.word:nth-child(even) {
+  animation-name: swing-in;
+}
+
+@keyframes drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.55em);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+@keyframes swing-in {
+  from {
+    opacity: 0;
+    transform: translateX(0.8em);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
 }
 
 @keyframes rise {
@@ -617,17 +728,13 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
   }
 }
 
+/* The second line carries the turn in the sentence, so it gets its own line
+   and nothing else — no second colour, no shimmer competing with the orbs. */
+/* The closing line lands last and travels furthest, as the turn in the
+   sentence rather than one more word. */
 .hero__accent {
   display: block;
-  background: linear-gradient(100deg, var(--accent-400), var(--mint-400) 50%, var(--accent-400));
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation:
-    rise var(--dur-slower) var(--ease-settle) both,
-    shimmer 5s ease-in-out 1s infinite alternate;
-  animation-delay: calc(120ms + var(--w) * 90ms), 1s;
+  animation-name: swing-in;
 }
 
 .hero__lede {
@@ -1033,6 +1140,30 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
   gap: var(--space-5);
 }
 
+/* The cards travel in along the row rather than lifting together, so the
+   order of the steps is carried by the direction they move. The gap between
+   them is wide enough to read as one then the next, not one movement. */
+.steps > li {
+  opacity: 0;
+  transform: translateX(64px);
+  transition:
+    opacity var(--dur-slower) var(--ease-settle),
+    transform var(--dur-slower) var(--ease-settle);
+  transition-delay: calc(var(--reveal-i, 0) * 170ms);
+}
+
+.steps--in > li {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .steps > li {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @media (min-width: 860px) {
   .steps {
     grid-template-columns: repeat(3, 1fr);
@@ -1227,6 +1358,110 @@ const titleWords = ['Meet', 'before', 'the', 'music.'];
   font-size: var(--step--1);
 }
 
+/* ---- Setlist strip ------------------------------------------------------ */
+
+.setlist {
+  position: relative;
+  overflow: hidden;
+  background: var(--ink-850);
+  border-block: 1px solid var(--ink-600);
+  /* Edges fade so items arrive and leave rather than being cut off. */
+  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+}
+
+.setlist__track {
+  display: flex;
+  width: max-content;
+  animation: setlist-roll 70s linear infinite;
+}
+
+/* Hover or keyboard focus stops the roll so a show can be read and picked. */
+.setlist:hover .setlist__track,
+.setlist:focus-within .setlist__track {
+  animation-play-state: paused;
+}
+
+.setlist__run {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.setlist__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-6);
+  color: var(--text-300);
+  text-decoration: none;
+  white-space: nowrap;
+  font-size: var(--step--1);
+}
+
+.setlist__artist {
+  color: var(--text-100);
+  font-weight: 700;
+}
+
+.setlist__when {
+  color: var(--text-400);
+  font-variant-numeric: tabular-nums;
+}
+
+.setlist__item:hover .setlist__artist {
+  color: var(--accent-500);
+}
+
+.setlist__item:focus-visible {
+  outline: 2px solid var(--accent-500);
+  outline-offset: -4px;
+  border-radius: var(--radius-sm);
+}
+
+/* A small mic marks each show as a live performance. It sits still: the
+   strip's roll is the only ambient motion on it. */
+.mic {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-right: -2px;
+  color: var(--accent-500);
+  transform-origin: 30% 85%;
+}
+
+.mic__collar {
+  fill: var(--mint-400);
+}
+
+/* The grille's mesh, drawn in the strip's own background so it reads as
+   gaps in the ball rather than lines on top of it. */
+.mic__mesh {
+  fill: none;
+  stroke: var(--ink-850);
+  stroke-width: 0.7;
+  opacity: 0.7;
+}
+
+/* Pointing at a show tips the mic once, as an answer to the pointer. */
+.setlist__item:hover .mic,
+.setlist__item:focus-visible .mic {
+  animation: mic-tip var(--dur-slow) var(--ease-spring-soft);
+}
+
+@keyframes mic-tip {
+  40% { transform: rotate(-14deg); }
+}
+
+@keyframes setlist-roll {
+  to { transform: translateX(-50%); }
+}
+
+/* ---- Panel grid --------------------------------------------------------- */
+
+/* The heading keeps the page's container; only the grid runs full width. */
+/* The whole block is dark, so it lands against the light setlist strip as a
+   hard change of ground rather than more of the same page. */
 @media (prefers-reduced-motion: reduce) {
   .feature,
   .carousel__layer,
