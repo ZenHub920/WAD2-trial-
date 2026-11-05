@@ -98,7 +98,6 @@ onMounted(loadPush);
       <button v-else-if="push" class="btn btn--ghost" type="button" :disabled="pushBusy" @click="togglePush">
         {{ pushBusy ? 'Updating…' : push.enabled ? 'Turn off on this device' : 'Enable browser notifications' }}
       </button>
-      <p class="push-hint">Delivery depends on your browser, operating system and notification settings. Logging out turns off notifications on this device.</p>
     </div>
   </section>
 </template>

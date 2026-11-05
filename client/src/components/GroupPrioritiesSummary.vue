@@ -1,4 +1,5 @@
 <script setup>
+import { vibeChip } from '../vibe.js';
 import { computed } from 'vue';
 
 const props = defineProps({ profile: { type: Object, default: null } });
@@ -9,7 +10,7 @@ const coverage = computed(() => props.profile?.coverage);
 <template>
   <section v-if="coverage" class="group-priorities" aria-label="Shared group preferences">
     <div class="group-priorities__heading"><strong>Shared preferences</strong><span>{{ coverage.answered }} of {{ coverage.total }} profiles represented</span></div>
-    <ul v-if="priorities.length" class="group-priorities__list"><li v-for="priority in priorities" :key="priority.key">{{ priority.label }}</li></ul>
+    <ul v-if="priorities.length" class="group-priorities__list"><li v-for="priority in priorities" :key="priority.key" v-bind="vibeChip(priority.key, priority.label)">{{ priority.label }}</li></ul>
     <p v-else>No shared preference yet. A preference appears when more than half of all members choose it.</p>
     <p v-if="!coverage.complete" class="group-priorities__pending">Still forming — some members haven't saved their preferences.</p>
     <p v-else-if="priorities.length">Chosen by a majority of the group. Individual answers stay private.</p>

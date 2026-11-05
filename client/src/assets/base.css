@@ -865,3 +865,10 @@ li strong {
 .field--invalid:focus-visible {
   border-color: var(--status-danger) !important;
 }
+
+/* A chip that is a concert vibe takes that vibe's colour (see vibe.js). */
+.vibe-chip {
+  border: 1px solid color-mix(in oklab, var(--vibe-colour) 40%, transparent) !important;
+  background: color-mix(in oklab, var(--vibe-colour) 14%, transparent) !important;
+  color: var(--text-100) !important;
+}

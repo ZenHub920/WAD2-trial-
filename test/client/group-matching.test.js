@@ -125,7 +125,7 @@ describe('automatic approvals and arrival queue', () => {
   it('saves seeker approval while still requiring host approval', async () => {
     api.acceptProposal.mockResolvedValue({});
     const wrapper = mount(MatchProposalCard, { props: { proposal: proposal() } });
-    expect(wrapper.text()).toContain('Both approvals confirm the group spot.');
+    expect(wrapper.get('[aria-label="Match approval progress"]').text()).toContain('Awaiting approval');
     await button(wrapper, 'Accept group offer').trigger('click');
     await flushPromises();
     expect(api.acceptProposal).toHaveBeenCalledExactlyOnceWith('offer-1');
@@ -205,5 +205,35 @@ describe('private questionnaires and shared group preferences', () => {
     expect(wrapper.text()).toContain('4 of 4 profiles represented');
     expect(wrapper.text()).toContain('No shared preference yet');
     expect(wrapper.text()).not.toContain('Still forming');
+  });
+});
+
+describe('offer card match reasons', () => {
+  it('colours a concert-vibe reason by its vibe and leaves other reasons plain', () => {
+    const wrapper = mount(MatchProposalCard, { props: { proposal: { id: 'offer-2', role: 'seeker', status: 'confirmed', groupName: 'Crew', hostName: 'Host',
+      artist: 'Artist', section: 'ga_standing', reasons: [{ concept: 'singalong', label: 'Sing along' }, { concept: 'pre_food', label: 'Food before the concert' }] } } });
+    const [vibe, plain] = wrapper.findAll('[aria-label="Saved match reasons"] li');
+    expect(vibe.classes()).toContain('proposal__reason--vibe');
+    expect(vibe.attributes('style')).toContain('--vibe-colour: var(--vibe-singalong)');
+    expect(plain.classes()).not.toContain('proposal__reason--vibe');
+    expect(wrapper.text()).not.toContain('A group spot means membership');
+  });
+});
+
+describe('offer approval marks', () => {
+  const offer = overrides => ({ id: 'offer-3', role: 'seeker', groupName: 'Crew', hostName: 'Host', artist: 'Artist', section: 'ga_standing',
+    expiresAt: '2030-01-01T10:00:00Z', ...overrides });
+  it('shows an approval as a green tick and a pending one in amber', () => {
+    const wrapper = mount(MatchProposalCard, { props: { proposal: offer({ status: 'proposed', hostApproved: true, seekerApproved: false }) } });
+    const [host, seeker] = wrapper.findAll('[aria-label="Match approval progress"] li');
+    expect(host.classes()).toContain('is-approved'); expect(host.get('.proposal__check').text()).toBe('✓');
+    expect(seeker.classes()).toContain('is-pending'); expect(seeker.text()).toContain('Awaiting approval');
+  });
+  it('marks whoever had not approved a declined offer with a red cross', () => {
+    const wrapper = mount(MatchProposalCard, { props: { proposal: offer({ status: 'declined', hostApproved: true, seekerApproved: false }) } });
+    const [host, seeker] = wrapper.findAll('[aria-label="Match approval progress"] li');
+    expect(host.classes()).toContain('is-approved');
+    expect(seeker.classes()).toContain('is-declined'); expect(seeker.get('.proposal__check').text()).toBe('✕');
+    expect(seeker.text()).toContain('Declined');
   });
 });

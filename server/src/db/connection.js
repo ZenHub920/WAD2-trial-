@@ -76,6 +76,7 @@ export function getDb() {
  * without rebuilding their tables.
  */
 const ADDED_COLUMNS = [
+  ['match_proposals', 'declined_by', 'TEXT'],
   ['users', 'password_hash', 'TEXT'],
   ['users', 'is_operator', 'INTEGER NOT NULL DEFAULT 0 CHECK (is_operator IN (0,1))'],
   ['concerts', 'source', 'TEXT'],

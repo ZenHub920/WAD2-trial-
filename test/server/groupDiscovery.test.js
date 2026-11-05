@@ -225,6 +225,25 @@ test('declining excludes the pair from preview, execution and explanations even 
   round();
   assert.equal(repos.proposals.forUser(cookies.seekerId).find(p => p.status === 'proposed').partyId, 'pA');
 });
+test('a seeker can bring a group they declined back into matching, but not undo a host decline', async () => {
+  await pref(); round();
+  const proposal = repos.proposals.forUser(cookies.seekerId)[0];
+  assert.equal((await call(`/proposals/${proposal.id}/decline`, 'seeker', 'POST')).status, 200);
+  const declined = repos.proposals.forUser(cookies.seekerId).find(p => p.id === proposal.id);
+  assert.equal(declined.declinedBy, 'seeker');
+  assert.equal(declined.pairExcluded, true);
+  assert.ok(!matching.preview('c1').profile.seekerPrefs.get('s1').includes(proposal.partyId));
+  // Only the seeker who declined can take it back.
+  const host = proposal.partyId === 'pA' ? 'hostA' : 'hostB';
+  assert.equal((await call(`/proposals/${proposal.id}/undo-decline`, host, 'POST')).status, 404);
+  const undone = await call(`/proposals/${proposal.id}/undo-decline`, 'seeker', 'POST');
+  assert.equal(undone.status, 200);
+  assert.equal(undone.body.proposal.pairExcluded, false);
+  assert.equal(undone.body.proposal.status, 'declined'); // the old offer stays in history
+  assert.ok(matching.preview('c1').profile.seekerPrefs.get('s1').includes(proposal.partyId));
+  assert.equal((await call(`/proposals/${proposal.id}/undo-decline`, 'seeker', 'POST')).status, 200);
+});
+
 test('matching retries preserve history, confirmed proposals and live capacity across later rounds', async () => {
   await pref('pA');
   const key = randomUUID();

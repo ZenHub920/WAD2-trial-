@@ -1,4 +1,5 @@
 <script setup>
+import { vibeChip } from '../vibe.js';
 import { computed } from 'vue';
 import { LABELS, formatDate } from '../api.js';
 import GroupAvatar from './GroupAvatar.vue';
@@ -49,10 +50,10 @@ const hasMore = computed(() => props.group.notes || props.group.reasons?.length 
     <GroupPrioritiesSummary :profile="group.profile" />
     <div v-if="group.compatibility != null || group.reasons?.length" class="group-card__fit">
       <p v-if="group.compatibility != null"><strong>{{ group.compatibility>=0.75?'Strong fit':group.compatibility>=0.5?'Potential fit':'Explore this group' }}</strong><span v-if="group.confidence==='limited'">, based on limited preference information</span></p>
-      <ul v-if="group.reasons?.length" class="group-card__reasons"><li v-for="r in group.reasons.slice(0, 3)" :key="r.concept ?? r.label">{{ r.label }}</li></ul>
+      <ul v-if="group.reasons?.length" class="group-card__reasons"><li v-for="r in group.reasons.slice(0, 3)" :key="r.concept ?? r.label" v-bind="vibeChip(r.concept, r.label)">{{ r.label }}</li></ul>
     </div>
     <ul class="group-tags" aria-label="Things they want to do"><template v-for="(name, id) in LABELS.plans" :key="id"><li v-if="group.plans?.[id]">{{ name }}</li></template></ul>
-    <ul class="group-tags group-card__vibe" aria-label="Their vibe"><template v-for="(name, id) in LABELS.vibe" :key="id"><li v-if="group.vibe?.[id]">{{ name }} {{ group.vibe[id] }}/4</li></template></ul>
+    <ul class="group-tags group-card__vibe" aria-label="Their vibe"><template v-for="(name, id) in LABELS.vibe" :key="id"><li v-if="group.vibe?.[id]" v-bind="vibeChip(id)">{{ name }} {{ group.vibe[id] }}/4</li></template></ul>
     <p v-if="group.notes" class="group-notes">{{ group.notes }}</p>
     <footer v-if="$slots.default" class="group-card__actions"><slot /></footer>
   </article>

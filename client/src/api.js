@@ -309,6 +309,10 @@ export const api = {
       }
     ),
 
+  // Let a group you declined be matched with you again in later rounds.
+  undoDeclineProposal: (proposalId) =>
+    request(`/proposals/${encodeURIComponent(proposalId)}/undo-decline`, { method: 'POST' }),
+
   // Decline a pending proposal.
   declineProposal: (proposalId) =>
     request(

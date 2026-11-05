@@ -113,6 +113,23 @@ const automaticProposals = computed(() => {
   return source.filter(proposal => ['proposed', 'confirmed'].includes(proposal.status));
 });
 const activeProposals = computed(() => automaticProposals.value.filter(proposal => proposal.status === 'proposed'));
+/** Offers you declined that are still kept out of matching, so you can change your mind. */
+const declinedOffers = computed(() => {
+  // Declining the same group more than once leaves several old offers, but it is
+  // one group to bring back: list each group once, using its latest offer.
+  const byGroup = new Map();
+  for (const proposal of proposals.value) {
+    if (proposal.status !== 'declined' || proposal.declinedBy === 'host' || !proposal.pairExcluded) continue;
+    const seen = byGroup.get(proposal.partyId);
+    if (!seen || Number(proposal.expiresAt ?? 0) > Number(seen.expiresAt ?? 0)) byGroup.set(proposal.partyId, proposal);
+  }
+  return [...byGroup.values()];
+});
+const offerGroupName = proposal => proposal.groupName || (proposal.hostName ? `${proposal.hostName}’s group` : 'This group');
+async function bringBack(proposal) {
+  await act(() => api.undoDeclineProposal(proposal.id),
+    `${offerGroupName(proposal)} can be matched with you again. Press Find a match when you’re ready.`);
+}
 const currentOffer = computed(() => activeProposals.value[0] ?? automaticProposals.value.find(proposal => proposal.status === 'confirmed') ?? null);
 const confirmedGroupId = computed(() => currentGroup.value?.partyId ?? currentGroup.value?.id
   ?? (currentOffer.value?.status === 'confirmed' ? currentOffer.value.partyId : null));
@@ -138,13 +155,28 @@ const modeOptions = [
   { mode: 'direct', kicker: 'Pick yourself', title: 'Browse and choose', description: 'Compare groups and review a request before sending it.', action: 'Browse groups' },
   { mode: 'algorithm', kicker: 'Let us help', title: 'Automatic matching', description: 'Join the list explicitly, then find a match. Any offer needs your approval and the host’s approval.', action: 'View automatic matching' },
 ];
-const modeAction = option => displayedMode.value === option.mode ? 'Viewing this pathway' : option.action;
+const modeAction = option => displayedMode.value === option.mode ? 'Selected' : option.action;
 function chooseMode(mode) {
   if (!['direct', 'algorithm'].includes(mode)) return;
   displayedMode.value = mode;
   applicationFor.value = ''; void settleConfirm(false);
   loadedContext = context();
   void router.push({ query: { ...route.query, mode } }).catch(() => {});
+  // Picking Browse and choose switches to it; nobody needs a second "activate"
+  // step. (Automatic matching still has its own Join button, because joining
+  // the list lets other people's rounds send you offers.)
+  if (mode === 'direct' && seeker.value?.status === 'open' && persistedMode.value !== 'direct' && canSwitchMode.value) void activateDirect();
+}
+async function activateDirect() {
+  const key = context();
+  await act(async () => {
+    const result = await api.setJoiningMode(concertId.value, 'direct');
+    if (!isCurrent(key)) return;
+    if (result.request) seeker.value = result.request;
+    if (result.matching) applyMatching(result.matching);
+    searchResult.value = null; rememberAttempt('');
+    if (result.request) matching.value = { ...matching.value, optedIn: false, state: 'idle' };
+  }, 'Browse and choose is now how you find a group. You’ve left the automatic match list.');
 }
 const lastAttempt = computed(() => matching.value.latestAttempt ?? searchResult.value?.attempt ?? null);
 const noMatchFound = computed(() => lastAttempt.value?.status === 'waiting' || (!lastAttempt.value && searchResult.value?.status === 'waiting'));
@@ -190,7 +222,7 @@ const matchingProgress = computed(() => {
   if (pendingDirect.value.length) return { phase: 2, title: 'Resolve your current group request first', detail: 'Track or cancel the request in My groups before switching to automatic matching.' };
   if (queued && matchAttemptKey.value) return { phase: 3, title: 'Check your last search', detail: 'A previous search response was not confirmed. Recover the same attempt safely, or wait a moment; this page refreshes on its own and does not start another round.' };
   if (queued) return noMatchFound.value
-    ? { phase: 3, title: 'No suitable group is available.', detail: 'Your place on the match list is kept. Try Find a match again later, or explore Browse and choose groups. Viewing groups does not leave matching.' }
+    ? { phase: 3, title: 'No suitable group is available.', detail: 'Your place on the match list is kept. Try Find a match again later, or switch to Browse and choose to pick a group yourself.' }
     : { phase: 3, title: 'Ready to find a match', detail: 'You’re on the match list. Press Find a match when you’re ready; we’ll look for the group that suits you best.' };
   return { phase: 2, title: 'Join automatic matching when you’re ready', detail: 'Join the match list, then press Find a match and we’ll suggest a group that suits you.' };
 });
@@ -377,7 +409,7 @@ function requestMethodChange(target) {
 const methodTitle = computed(() => methodChange.value?.target === 'algorithm' ? 'Join automatic matching?' : 'Switch to Browse and choose?');
 const methodBody = computed(() => methodChange.value?.target === 'algorithm'
   ? 'This changes your active joining method and adds you to automatic matching. Eligible enrolled seekers can receive offers when anyone starts a concert matching round. Joining does not start a search; both you and the host approve an offer.'
-  : 'This leaves the automatic matching list and activates direct requests. Your saved priorities and history are kept. Viewing either pathway alone never changes your enrollment.');
+  : 'This leaves the automatic matching list and activates direct requests. Your history is kept. Viewing either pathway alone never changes your enrollment.');
 async function activateMode() {
   const change = methodChange.value;
   if (!change || change.context !== context() || !canSwitchMode.value) { methodChange.value = null; return; }
@@ -585,10 +617,10 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
              groups sits in the card above, beside the rest of their actions. -->
         <template v-if="!currentGroup">
         <h2 id="joining-mode-heading">How do you want to find a group?</h2>
-        <p class="group-status" role="status">{{ enrollmentSummary }} Viewing a pathway does not change this.</p>
+        <p class="group-status" role="status">{{ enrollmentSummary }}</p>
         <div class="joining-modes" role="group" aria-label="Ways to find a group">
           <article v-for="option in modeOptions" :key="option.mode" class="joining-mode" :class="{ 'joining-mode--selected': displayedMode === option.mode }">
-            <div class="joining-mode__eyebrow"><p class="group-kicker mono">{{ option.kicker }}</p><span v-if="displayedMode === option.mode" class="joining-mode__selected">Viewing</span><span v-if="seeker && persistedMode === option.mode" class="group-muted">Saved method</span></div>
+            <div class="joining-mode__eyebrow"><p class="group-kicker mono">{{ option.kicker }}</p><span v-if="seeker && persistedMode === option.mode" class="joining-mode__selected">Active</span></div>
             <h3>{{ option.title }}</h3>
             <p>{{ option.description }}</p>
             <button type="button" class="btn" :class="displayedMode === option.mode ? 'btn--primary' : 'btn--ghost'" :aria-pressed="displayedMode === option.mode" :disabled="busy" @click="chooseMode(option.mode)">{{ modeAction(option) }}</button>
@@ -600,10 +632,6 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
           {{ pendingDirect[0].seatReserved ? 'We’re saving you a spot.' : pendingDirect[0].queuePosition ? `You’re number ${pendingDirect[0].queuePosition} in line.` : 'Your request is in the group’s queue.' }}
           <span v-if="dateLabel(pendingDirect[0].expiresAt)">Your request expires {{ dateLabel(pendingDirect[0].expiresAt) }}, even if you are still waiting.</span>
         </p>
-        <div v-if="displayedMode === 'direct' && persistedMode !== 'direct' && seeker?.status === 'open'" class="method-activation">
-          <p>You can compare groups while remaining on the automatic match list. To send a direct request, explicitly switch your active method first.</p>
-          <button type="button" class="btn btn--primary" :disabled="busy || !canSwitchMode" @click="requestMethodChange('direct')">Switch to Browse and choose</button>
-        </div>
         </template>
 
       <section v-if="displayedMode === 'algorithm'" class="card group-panel automatic-matching" aria-label="Automatic matching progress">
@@ -632,7 +660,20 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
           <button v-if="matching.optedIn && !membershipConfirmed" type="button" class="btn btn--danger-ghost" :disabled="busy || !canSwitchMode" @click="leavePool">Leave the match list</button>
         </div>
         <p v-if="lastAttempt" class="group-muted matching-last-attempt" role="status">Latest matching attempt<span v-if="dateLabel(lastAttempt.attemptedAt)"> · {{ dateLabel(lastAttempt.attemptedAt) }}</span>: {{ lastAttempt.status === 'waiting' ? 'No suitable group was found.' : lastAttempt.status === 'proposed' ? 'An offer was received in that attempt. Current offers and membership are shown separately.' : lastAttempt.status === 'confirmed' ? 'Your membership was already confirmed.' : 'An earlier attempt is recorded; its original outcome is unavailable.' }}</p>
-        <details class="matching-explanation"><summary>How does automatic matching work?</summary><p>Joining the list makes you eligible. Prioritising groups influences your ranking; it does not apply or hold a seat. Find a match starts a round for eligible seekers and groups at this concert, so other enrolled people can also receive offers. Every offer still needs the seeker’s and host’s approval.</p></details>
+        <div v-if="declinedOffers.length && canCoordinate" class="declined-offers" aria-label="Offers you declined">
+          <h3>Offers you declined</h3>
+          <p class="group-muted">Changed your mind? Bring a group back and it can be offered to you again.</p>
+          <ul>
+            <li v-for="offer in declinedOffers" :key="offer.id">
+              <span class="declined-offers__group">
+                <GroupAvatar :src="offer.imageUrl" :name="offerGroupName(offer)" :size="40" />
+                <span><strong>{{ offerGroupName(offer) }}</strong><small v-if="offer.hostName">Hosted by {{ offer.hostName }}</small></span>
+              </span>
+              <button type="button" class="btn btn--ghost" :disabled="busy" @click="bringBack(offer)">Bring back to matching</button>
+            </li>
+          </ul>
+        </div>
+        <details class="matching-explanation"><summary>How does automatic matching work?</summary><p>Joining the list makes you eligible. Find a match starts a round for everyone on the list at this concert, so other people can get offers too. Every offer still needs your approval and the host’s.</p></details>
         <p v-if="activeProposals.length" class="group-muted">You can view browsing, but answer your match before changing your active method or sending another request.</p>
         <p v-else-if="pendingLegacy.length" class="group-muted">Answer or cancel your earlier match in My groups before leaving the match list.</p>
       </section>
@@ -716,10 +757,18 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
 </template>
 
 <style scoped>
-.method-activation,.pending-request-summary,.group-read-feedback { padding:var(--space-4); border:var(--border-soft); border-left:3px solid var(--accent-400); border-radius:var(--radius-md); background:var(--panel-bg); overflow-wrap:anywhere; }
 .pending-request-summary h2 { font-size:var(--step-0); }
 .group-empty h3 { font-size:var(--step-0); }
 .matching-explanation { font-size:var(--step--1); color:var(--text-300); }
+.declined-offers { display:grid; gap:var(--space-2); padding-top:var(--space-4); border-top:1px solid var(--panel-edge); }
+.declined-offers h3 { margin:0; font-size:var(--step-0); }
+.declined-offers p { margin:0; font-size:var(--step--1); }
+.declined-offers ul { display:grid; gap:var(--space-2); margin:0; padding:0; list-style:none; }
+.declined-offers li { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:var(--space-2) var(--space-3); padding:var(--space-2) var(--space-3); border:var(--border-hairline); border-radius:var(--radius-sm); }
+.declined-offers__group { display:flex; align-items:center; gap:var(--space-3); min-width:0; }
+.declined-offers__group > span { display:grid; gap:2px; min-width:0; }
+.declined-offers__group strong { overflow-wrap:anywhere; }
+.declined-offers__group small { color:var(--text-300); font-size:var(--step--1); }
 .join-confirm { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 16px; background: rgb(20 12 40 / 0.45); }
 .join-confirm__panel { width: min(520px, 100%); max-height: calc(100vh - 32px); overflow: auto; }
 .join-confirm__panel ul { padding-left: 1.2rem; margin: 0; display: grid; gap: 0.35rem; }

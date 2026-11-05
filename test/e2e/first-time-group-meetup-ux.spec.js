@@ -55,22 +55,19 @@ test('no suitable automatic group has an explicit message and a working return t
     await capture(seeker.page, 'no-suitable-group', progress);
     await seeker.page.reload();
     await expect(progress.getByRole('heading', { name: 'No suitable group is available.', exact: true })).toBeVisible();
-    await progress.getByRole('button', { name: 'Browse and choose groups', exact: true }).click();
-    await expect(seeker.page.getByRole('group', { name: 'How to show groups', exact: true })).toBeVisible();
-    expect((await api(seeker.context, `/me/concerts/${data.concertId}/matching`)).matching.optedIn).toBe(true);
+    // Choosing Browse and choose switches to it; a failed switch keeps you on the match list.
     const modeEndpoint = `**/api/me/seeker-requests/${data.concertId}/joining-mode`;
     await seeker.page.route(modeEndpoint, route => route.fulfill({ status: 503, json: { error: 'synthetic_mode_failure' } }));
-    await seeker.page.getByRole('button', { name: 'Switch to Browse and choose', exact: true }).click();
-    await seeker.page.getByRole('dialog').getByRole('button', { name: 'Switch active method', exact: true }).click();
+    await progress.getByRole('button', { name: 'Browse and choose groups', exact: true }).click();
     await expect(seeker.page.getByRole('alert')).toContainText('Something went wrong');
     expect((await api(seeker.context, `/me/concerts/${data.concertId}/matching`)).matching.optedIn).toBe(true);
     await seeker.page.unroute(modeEndpoint);
-    await seeker.page.getByRole('dialog').getByRole('button', { name: 'Switch active method', exact: true }).click();
-    await expect(seeker.page.getByRole('dialog')).toHaveCount(0);
+    const direct = seeker.page.locator('.joining-mode').filter({ has: seeker.page.getByRole('heading', { name: 'Browse and choose', exact: true }) });
+    await direct.getByRole('button').click();
+    await expect(seeker.page.getByText('Browse and choose is now how you find a group.', { exact: false })).toBeVisible();
     const current = (await api(seeker.context, `/me/concerts/${data.concertId}/matching`)).matching;
     expect(current.optedIn).toBe(false); expect(current.state).toBe('idle');
-    const direct = seeker.page.locator('.joining-mode').filter({ has: seeker.page.getByRole('heading', { name: 'Browse and choose', exact: true }) });
-    await expect(direct).toContainText('Saved method');
+    await expect(direct).toContainText('Active');
     await expect(seeker.page.getByRole('group', { name: 'How to show groups', exact: true })).toBeVisible();
     expect((await api(seeker.context, '/me/group-join-requests?scope=own')).requests).toEqual([]);
   } finally { await seeker.context.close(); await Promise.all(hosts.map(host => host.context.close())); }

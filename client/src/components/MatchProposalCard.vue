@@ -1,4 +1,5 @@
 <script setup>
+import { vibeChip } from '../vibe.js';
 import { computed, ref, watch } from 'vue';
 import { api, LABELS } from '../api.js';
 import FeedbackForm from './FeedbackForm.vue';
@@ -24,6 +25,18 @@ const explanationOpen = ref(false);
 const statuses = { confirmed: 'Spot confirmed', declined: 'Declined', expired: 'Expired', cancelled: 'Cancelled' };
 const isHost = computed(() => currentProposal.value.role === 'host');
 const myApproval = computed(() => isHost.value ? currentProposal.value.hostApproved : currentProposal.value.seekerApproved);
+/**
+ * The two people who must approve, each approved (green tick), pending
+ * (yellow) or, once the offer was declined, declined (red cross).
+ */
+const approvers = computed(() => {
+  const offer = currentProposal.value;
+  const state = approved => approved ? 'approved' : offer.status === 'declined' ? 'declined' : 'pending';
+  return [
+    { key: 'host', name: isHost.value ? 'You · Host' : 'Group host', state: state(offer.hostApproved) },
+    { key: 'seeker', name: isHost.value ? offer.seekerName : 'You · Companion', state: state(offer.seekerApproved) },
+  ];
+});
 const readyToReview = computed(() => currentProposal.value.canHostRespond !== false && currentProposal.value.queueStatus !== 'waiting');
 const held = computed(() => currentProposal.value.seatReserved ?? currentProposal.value.queueStatus !== 'waiting');
 const groupName = computed(() => currentProposal.value.groupName || `${currentProposal.value.hostName}'s group`);
@@ -40,9 +53,14 @@ const deadline = computed(() => {
     day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
   });
 });
+/** Reasons that are a concert vibe use that vibe's colour (tokens.css). */
+const VIBE_OF_CONCEPT = { singalong: 'singalong', photography: 'photography', group_photos: 'photography', dancing: 'dancing',
+  quiet: 'quiet', early_queue: 'queue_early', merch_run: 'merch' };
 const matchReasons = computed(() => {
   const saved = explanation.value?.breakdown;
-  const reasons = (saved?.discovery?.reasons ?? currentProposal.value.reasons ?? []).map(reason => reason.label).filter(Boolean);
+  const savedReasons = saved?.discovery?.reasons ?? currentProposal.value.reasons ?? [];
+  const vibeOf = Object.fromEntries(savedReasons.filter(reason => reason.label).map(reason => [reason.label, VIBE_OF_CONCEPT[reason.concept] ?? null]));
+  const reasons = savedReasons.map(reason => reason.label).filter(Boolean);
   const components = saved?.components ?? {};
   // Fall back only to positive evidence recorded with this matching round.
   const supported = [
@@ -53,7 +71,8 @@ const matchReasons = computed(() => {
     [components.language === 1, 'A language in common'],
     [components.budgetFit === 1, 'Matching budget preferences'],
   ];
-  return [...new Set([...reasons, ...supported.filter(([matches]) => matches).map(([, label]) => label)])].slice(0, 3);
+  return [...new Set([...reasons, ...supported.filter(([matches]) => matches).map(([, label]) => label)])].slice(0, 3)
+    .map(label => ({ label, vibe: vibeOf[label] ?? null }));
 });
 
 async function respond(action) {
@@ -115,8 +134,17 @@ async function explain() {
 
     <div v-if="matchReasons.length" class="proposal__fit">
       <p class="proposal__label">Why you were matched</p>
-      <ul aria-label="Saved match reasons"><li v-for="reason in matchReasons" :key="reason">{{ reason }}</li></ul>
+      <ul aria-label="Saved match reasons"><li v-for="reason in matchReasons" :key="reason.label" v-bind="vibeChip(reason.vibe, reason.label)" :class="{ 'proposal__reason--vibe': reason.vibe }">{{ reason.label }}</li></ul>
       <p v-if="currentProposal.confidence === 'limited'" class="proposal__meta">Based on limited preference information.</p>
+    </div>
+
+    <div v-if="['proposed', 'declined'].includes(currentProposal.status)" class="proposal__approvals">
+      <ul aria-label="Match approval progress">
+        <li v-for="person in approvers" :key="person.key" :class="`is-${person.state}`">
+          <span class="proposal__check" aria-hidden="true">{{ person.state === 'approved' ? '✓' : person.state === 'declined' ? '✕' : '…' }}</span>
+          <span><strong>{{ person.name }}</strong><small>{{ person.state === 'approved' ? 'Approved' : person.state === 'declined' ? 'Declined' : 'Awaiting approval' }}</small></span>
+        </li>
+      </ul>
     </div>
 
     <template v-if="currentProposal.status === 'proposed'">
@@ -133,17 +161,9 @@ async function explain() {
         </div>
       </div>
 
-      <div class="proposal__approvals">
-        <p class="proposal__label">Both approvals confirm the group spot. Either person can approve first.</p>
-        <ul aria-label="Match approval progress">
-          <li :class="{ 'is-approved': currentProposal.hostApproved }"><span class="proposal__check" aria-hidden="true">{{ currentProposal.hostApproved ? '✓' : '·' }}</span><span><strong>{{ isHost ? 'You · Host' : 'Group host' }}</strong><small>{{ currentProposal.hostApproved ? 'Approved' : 'Awaiting approval' }}</small></span></li>
-          <li :class="{ 'is-approved': currentProposal.seekerApproved }"><span class="proposal__check" aria-hidden="true">{{ currentProposal.seekerApproved ? '✓' : '·' }}</span><span><strong>{{ isHost ? currentProposal.seekerName : 'You · Companion' }}</strong><small>{{ currentProposal.seekerApproved ? 'Approved' : 'Awaiting approval' }}</small></span></li>
-        </ul>
-      </div>
 
       <p v-if="!readyToReview" class="proposal__note">Earlier direct or automatic requests must be resolved first. {{ isHost ? 'Review requests in arrival order.' : 'You can still decline while waiting.' }}</p>
       <p v-else-if="myApproval" class="proposal__note" role="status">Your approval is saved. {{ isHost ? 'The companion still needs to accept.' : 'The host still needs to approve.' }} The spot stays held until the deadline.</p>
-      <p v-else class="proposal__note">{{ isHost ? 'Approve this companion to join your group.' : 'Like the sound of this group? Accept your offer.' }} {{ (isHost ? currentProposal.seekerApproved : currentProposal.hostApproved) ? 'Their approval is already saved; yours will confirm the spot.' : 'Their approval is also needed to confirm the spot.' }}</p>
 
       <div class="actions">
         <button v-if="!myApproval" type="button" class="btn btn--primary" :disabled="busy || !readyToReview || !canAccept" @click="respond('accept')"><LoadingSpinner v-if="busy && responding === 'accept'" />{{ isHost ? 'Approve companion' : 'Accept group offer' }}</button>
@@ -172,7 +192,6 @@ async function explain() {
       :round-id="currentProposal.roundId"
       :rated-user-id="currentProposal.role === 'host' ? currentProposal.seekerUserId : currentProposal.hostUserId"
     />
-    <p class="proposal__footnote">A group spot means membership, not a meeting place or a concert ticket.</p>
     <p v-if="error" class="proposal__error" role="alert">{{ error }}</p>
   </article>
 </template>
@@ -195,7 +214,7 @@ async function explain() {
 .proposal__head {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-3);
 }
 .proposal__identity {
@@ -249,6 +268,12 @@ async function explain() {
   color: var(--text-200);
   font-size: var(--step--1);
 }
+/* A concert-vibe reason takes that vibe's colour, as on the public profile. */
+.proposal__fit li.proposal__reason--vibe {
+  border: 1px solid color-mix(in oklab, var(--vibe-colour) 40%, transparent);
+  background: color-mix(in oklab, var(--vibe-colour) 14%, transparent);
+  color: var(--text-100);
+}
 .proposal__reservation {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -299,10 +324,24 @@ async function explain() {
   font-size: var(--step--2);
   color: var(--text-300);
 }
+/* Approved green, pending amber, declined red. */
 .is-approved .proposal__check {
-  background: var(--accent-glow);
-  border-color: var(--accent-400);
-  color: var(--accent-400);
+  background: color-mix(in srgb, var(--signal-good) 14%, transparent);
+  border-color: var(--signal-good);
+  color: var(--signal-good);
+  font-weight: 700;
+}
+.is-pending .proposal__check {
+  background: color-mix(in srgb, var(--amber-400) 16%, transparent);
+  border-color: var(--amber-400);
+  color: var(--amber-400);
+  font-weight: 700;
+}
+.is-declined .proposal__check {
+  background: color-mix(in srgb, var(--signal-bad) 14%, transparent);
+  border-color: var(--signal-bad);
+  color: var(--signal-bad);
+  font-weight: 700;
 }
 .proposal__approvals strong {
   display: block;

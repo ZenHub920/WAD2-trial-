@@ -162,6 +162,13 @@ export function registerEnhancementRoutes(router, { repos, requireUser }) {
     );
   }
 
+  // A seeker can bring a group they declined back into automatic matching.
+  router.post('/proposals/:id/undo-decline', requireUser, (req, res) => {
+    const result = repos.proposals.undoDecline(req.user.id, req.params.id);
+    if (result.error) return res.status(result.status ?? 400).json({ error: result.error });
+    return res.json({ proposal: result });
+  });
+
   // ============================================================
   // IMPROVEMENT #12
   // RETRIEVE THE HISTORICAL MATCH EXPLANATION

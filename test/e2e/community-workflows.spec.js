@@ -160,7 +160,7 @@ test('automatic matching: joining the pool then finding a match produces an offe
     await expect(seeker.page.getByRole('button', { name: 'Leave the match list', exact: true })).toBeVisible();
     expect((await api(seeker.context, `/me/concerts/${data.concertId}/matching`)).matching.optedIn).toBe(true);
     await seeker.page.getByRole('button', { name: 'Find a match', exact: true }).click();
-    await expect(seeker.page.getByText('Both approvals confirm the group spot. Either person can approve first.')).toBeVisible();
+    await expect(seeker.page.getByRole('list', { name: 'Match approval progress', exact: true })).toBeVisible();
     await seeker.page.getByRole('button', { name: 'Accept group offer', exact: true }).click();
     expect((await api(seeker.context, '/me/current-group-memberships')).groups).toHaveLength(0);
     const proposal = (await api(seeker.context, '/me/proposals')).proposals.find(p => p.status === 'proposed');

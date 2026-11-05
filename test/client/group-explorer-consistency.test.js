@@ -128,23 +128,24 @@ describe('group discovery historical and mutation feedback consistency', () => {
     resolveSearch({ matching: queued, search: { status: 'waiting' } }); await flushPromises();
     expect(button(wrapper, 'Find a match').element.disabled).toBe(false);
   });
-  it('opens browsing after an empty search without silently leaving automatic matching', async () => {
+  it('makes Browse and choose the active method as soon as it is chosen', async () => {
     const queued = { preferencesComplete: true, optedIn: true, state: 'queued' };
     api.seekerRequest.mockResolvedValue({ request: { status: 'open', joining_mode: 'algorithm' } });
     api.groupMatching.mockResolvedValue({ matching: queued });
     api.findGroupMatch.mockResolvedValue({ matching: queued, search: { status: 'waiting' } });
+    api.setJoiningMode.mockResolvedValue({ request: { status: 'open', joining_mode: 'direct' } });
     const { wrapper, router } = await mountExplorer({ path: '/groups?concertId=concert-1&mode=algorithm' });
     await button(wrapper, 'Find a match').trigger('click'); await flushPromises();
     await button(wrapper, 'Browse and choose groups').trigger('click'); await flushPromises();
-    expect(api.setJoiningMode).not.toHaveBeenCalled();
+    expect(api.setJoiningMode).toHaveBeenCalledExactlyOnceWith('concert-1', 'direct');
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
     expect(wrapper.get('.joining-mode--selected h3').text()).toBe('Browse and choose');
     expect(router.currentRoute.value.query.mode).toBe('direct');
-    expect(button(wrapper, 'Start comparing').exists()).toBe(true);
-    expect(wrapper.find('[aria-label="Automatic matching progress"]').exists()).toBe(false);
-    expect(wrapper.text()).toContain('Switch to Browse and choose');
+    expect(wrapper.text()).not.toContain('Switch to Browse and choose');
+    expect(wrapper.text()).toContain('Browse and choose is now how you find a group.');
     expect(api.requestGroupJoin).not.toHaveBeenCalled();
   });
-  it('retains automatic enrollment when an explicitly confirmed switch to browsing fails', async () => {
+  it('keeps automatic enrollment when switching to Browse and choose fails', async () => {
     const queued = { preferencesComplete: true, optedIn: true, state: 'queued' };
     api.seekerRequest.mockResolvedValue({ request: { status: 'open', joining_mode: 'algorithm' } });
     api.groupMatching.mockResolvedValue({ matching: queued });
@@ -153,13 +154,8 @@ describe('group discovery historical and mutation feedback consistency', () => {
     const { wrapper, router } = await mountExplorer({ path: '/groups?concertId=concert-1&mode=algorithm' });
     await button(wrapper, 'Find a match').trigger('click'); await flushPromises();
     await button(wrapper, 'Browse and choose groups').trigger('click'); await flushPromises();
-    expect(api.setJoiningMode).not.toHaveBeenCalled();
-    await button(wrapper, 'Switch to Browse and choose').trigger('click'); await flushPromises();
-    expect(dialog(wrapper).attributes('aria-label')).toBe('Switch to Browse and choose?');
-    await button(dialog(wrapper), 'Switch active method').trigger('click'); await flushPromises();
     expect(api.setJoiningMode).toHaveBeenCalledExactlyOnceWith('concert-1', 'direct');
     expect(wrapper.text()).toContain('Something went wrong');
-    await button(dialog(wrapper), 'Keep current method').trigger('click'); await flushPromises();
     await button(wrapper, 'View automatic matching').trigger('click'); await flushPromises();
     expect(wrapper.get('[aria-label="Automatic matching progress"]').text()).toContain('match list');
     expect(button(wrapper, 'Leave the match list').exists()).toBe(true);

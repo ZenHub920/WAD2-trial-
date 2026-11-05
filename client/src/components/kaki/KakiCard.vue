@@ -1,4 +1,5 @@
 <script setup>
+import { vibeChip } from '../../vibe.js';
 /**
  * One profile, as it appears in the swipe deck.
  *
@@ -61,7 +62,7 @@ const interests = computed(() => {
       <template v-if="interests.items.length">
         <p class="kaki-card__interest-label">{{ interests.label }}</p>
         <ul class="kaki-card__chips">
-          <li v-for="item in interests.items" :key="item" class="kaki-card__chip">{{ item }}</li>
+          <li v-for="item in interests.items" :key="item" class="kaki-card__chip" v-bind="vibeChip(item)">{{ item }}</li>
         </ul>
       </template>
     </div>

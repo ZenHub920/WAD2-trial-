@@ -47,6 +47,10 @@ export function createProposalRepo(db, repos = null) {
       seekerApprovedAt: p.seeker_approved_at ?? null,
       hostApprovedAt: p.host_approved_at ?? null,
       approvalPolicy: p.approval_policy ?? 'mutual',
+      declinedBy: p.declined_by ?? null,
+      // Still excluded from later rounds (false once the seeker brings it back).
+      pairExcluded: p.status === 'declined'
+        && Boolean(db.prepare('SELECT 1 FROM match_declines WHERE seeker_request_id=? AND party_id=?').get(p.seeker_request_id, p.party_id)),
       ...queueInfo(db, { proposalId: p.id }),
     };
   };
@@ -218,6 +222,26 @@ export function createProposalRepo(db, repos = null) {
 
     expire,
 
+    /**
+     * Take back a decline: the seeker who declined an automatic offer can let
+     * that group be matched with them again in later rounds. The declined
+     * offer stays in history; only the pair's exclusion is removed. A host's
+     * decline cannot be undone by the seeker.
+     */
+    undoDecline: db.transaction((userId, proposalId) => {
+      const proposal = db.prepare(`${JOINED} WHERE mp.id=?`).get(proposalId);
+      if (!proposal || proposal.seeker_user_id !== userId) return { error: 'proposal_not_found', status: 404 };
+      // Offers declined before this was recorded have no declined_by; let the
+      // seeker bring those back too. A host's decline stays final.
+      if (proposal.status !== 'declined' || proposal.declined_by === 'host')
+        return { error: 'decline_cannot_be_undone', status: 409 };
+      const eligibility = concertParticipationEligibility(db.prepare('SELECT * FROM concerts WHERE id=?').get(proposal.concert_id));
+      if (!eligibility.eligible) return { error: eligibility.reason, status: 409 };
+      db.prepare('DELETE FROM match_declines WHERE seeker_request_id=? AND party_id=?')
+        .run(proposal.seeker_request_id, proposal.party_id);
+      return details(db.prepare(`${JOINED} WHERE mp.id=?`).get(proposalId));
+    }).immediate,
+
     /** A decline excludes only this exact seeker/group pair from later rounds. */
     declinedPairsForConcert(concertId) {
       const rows = db.prepare(`
@@ -331,7 +355,7 @@ export function createProposalRepo(db, repos = null) {
       if ((decision === 'accept' || role === 'host') && (!queue.canHostRespond || !queue.seatReserved))
         return { error: 'request_waiting_in_queue', status: 409 };
       if (decision === 'decline') {
-        db.prepare("UPDATE match_proposals SET status='declined' WHERE id=?").run(proposalId);
+        db.prepare("UPDATE match_proposals SET status='declined',declined_by=? WHERE id=?").run(role, proposalId);
         db.prepare('INSERT OR IGNORE INTO match_declines(seeker_request_id,party_id) VALUES(?,?)')
           .run(proposal.seeker_request_id,proposal.party_id);
         refresh(proposal.party_id,proposal.seeker_request_id);
