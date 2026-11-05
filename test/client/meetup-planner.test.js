@@ -105,7 +105,7 @@ describe('three-stage planning, explicit responses and current participant decis
     expect(wrapper.text()).toContain('Your availability has been saved.');
     expect(wrapper.get('.meetup-response-summary').text()).toContain('1 of 2 participants responded');
     expect(wrapper.get('.meetup-response-summary').text()).toContain('1 cannot make these times');
-    expect(wrapper.get('.meetup-response-summary').text()).toContain('1 have not responded');
+    expect(wrapper.get('.meetup-response-summary').text()).not.toContain('have not responded');
     expect(unavailableChoice(wrapper).element.checked).toBe(true);
     expect(wrapper.text()).not.toContain('Unsaved changes');
   });
@@ -120,8 +120,8 @@ describe('three-stage planning, explicit responses and current participant decis
     api.meetup.mockRejectedValueOnce(new Error('read_offline'));
     await button(wrapper, 'Save my times').trigger('click'); await flushPromises();
     expect(api.meetupAvailability).toHaveBeenCalledExactlyOnceWith('meetup-1', [expect.objectContaining({ startsAt: new Date(start).toISOString() })], 1);
-    expect(wrapper.get('.meetup-response-summary').text()).toContain('1 selected available times');
-    expect(wrapper.get('.meetup-response-summary').text()).toContain('0 cannot make these times');
+    // Nobody unavailable: the line is hidden rather than reading "0 cannot".
+    expect(wrapper.get('.meetup-response-summary').text()).not.toContain('cannot make these times');
   });
   it('preserves a dirty unavailable response through live refresh and keeps it after a failed save', async () => {
     vi.useFakeTimers();
@@ -137,7 +137,7 @@ describe('three-stage planning, explicit responses and current participant decis
       await button(wrapper, 'Save my response').trigger('click'); await flushPromises();
       expect(unavailableChoice(wrapper).element.checked).toBe(true);
       expect(wrapper.text()).toContain('Availability was not saved. Your draft is kept.');
-      expect(wrapper.get('.meetup-response-summary').text()).toContain('0 cannot make these times');
+      expect(wrapper.get('.meetup-response-summary').text()).not.toContain('cannot make these times');
     } finally { vi.useRealTimers(); }
   });
   it('retains an acknowledged unavailable save and updates own response counts when the following read fails', async () => {
@@ -160,7 +160,7 @@ describe('three-stage planning, explicit responses and current participant decis
     await button(wrapper, 'Save my times').trigger('click'); await flushPromises();
     expect(api.meetupAvailability).toHaveBeenCalledExactlyOnceWith('meetup-1', [], 1, 'unanswered');
     expect(wrapper.text()).toContain('Your saved response has been cleared.');
-    expect(wrapper.get('.meetup-response-summary').text()).toContain('2 have not responded');
+    expect(wrapper.get('.meetup-response-summary').text()).toContain('0 of 2 participants responded');
   });
   it('keeps organizer-only finalisation unavailable to a regular member while allowing read-only stage inspection', async () => {
     const wrapper = await open({ capabilities: permissions('planning', false), places: [publicPlace], suggestions: [suggestion] });
@@ -355,9 +355,8 @@ describe('first-time meetup guidance follows actual permissions, saved state and
   it('uses aggregate overlap honestly without inventing respondents or exposing another origin', async () => {
     const wrapper = await open({ participantCount: 6, availability: [], grid: [{ startsAt: start, availableCount: 5 }],
       places: [publicPlace], suggestions: [{ ...suggestion, participantCount: 6, availableCount: 5, locationRespondents: 0, totalDistanceKm: null }] });
-    expect(wrapper.get('.meetup-time-context').text()).toContain('5/6 available together');
-    expect(wrapper.get('.meetup-availability-coverage').text()).toContain('not who has answered');
-    expect(wrapper.get('.meetup-availability-coverage').text()).toContain('unavailable or has not answered yet');
+    // The panel states the group size and leaves the counts to the grid.
+    expect(wrapper.get('.meetup-time-context h3').text()).toBe('Group availability (6)');
     expect(region(wrapper).text()).toContain('Review a time and place for your group');
     expect(wrapper.get('.meetup-own-response-reminder').text()).toContain('not shared your own availability');
     expect(wrapper.get('.meetup-best-summary').text()).toContain('5 of 6 marked available');
@@ -658,14 +657,13 @@ describe('meeting planner with real OneMap search child', () => {
     ] } });
     const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
     const summary = wrapper.get('.meetup-time-context');
-    expect(summary.text()).toContain('3 people on this plan');
-    expect(summary.text()).toContain('0.5 hours');
-    expect(summary.text()).toContain('2/3 available together');
-    expect(summary.text()).toContain('12:30');
+    // The panel is a group-level readout now: the size, and nothing about the
+    // viewer's own draft, which the grid itself already shows.
+    expect(summary.get('h3').text()).toBe('Group availability (3)');
+    expect(summary.text()).not.toContain('people on this plan');
+    expect(summary.text()).not.toContain('available together');
     await wrapper.get(`[data-availability-start="${start + 1800000}"]`).trigger('click');
-    expect(summary.text()).toContain('1 hour');
-    expect(summary.text()).toContain('In your unsaved draft');
-    expect(summary.text()).toContain('2/3 available together');
+    expect(summary.get('h3').text()).toBe('Group availability (3)');
     expect(api.meetupAvailability).not.toHaveBeenCalled();
   });
   it('shows one planning step at a time, keeps drafts across steps and supports keyboard navigation', async () => {

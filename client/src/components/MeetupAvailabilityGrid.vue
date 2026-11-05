@@ -173,7 +173,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="availability-grid" :class="{ 'availability-grid--short': days.length <= 2 && times.length <= 8 }">
     <div class="availability-grid__intro">
-      <p :id="helpId"><span class="availability-grid__mouse-help">Click a time block to select it, or drag across several. Drag from a selected time to erase.</span><span class="availability-grid__touch-help">Tap a time, or hold then drag to paint or erase. Swipe to scroll.</span> <span>All times are Singapore time.</span></p>
+      <p :id="helpId"><span class="availability-grid__mouse-help">Click a time block to select it, or drag across several. Drag from a selected time to erase.</span><span class="availability-grid__touch-help">Tap a time, or hold then drag to paint or erase. Swipe to scroll.</span></p>
       <div class="availability-grid__legend" aria-label="Availability colour scale">
         <span>Fewer available</span><i v-for="level in [0, 1, 2, 3, 4]" :key="level" :data-heat="level" aria-hidden="true" /><span>More available</span>
         <span class="availability-grid__your-key">✓ Your times</span>

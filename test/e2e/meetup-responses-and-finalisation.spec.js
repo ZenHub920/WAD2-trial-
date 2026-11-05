@@ -25,7 +25,7 @@ test('an explicit unavailable response stays distinct from no response, updates 
     await openBoard(host, meetup.id); await openBoard(member, meetup.id);
     const summary = host.page.getByLabel('Availability responses', { exact: true });
     await expect(summary).toContainText('0 of 2 participants responded');
-    await expect(summary).toContainText('2 have not responded');
+    await expect(summary).not.toContainText('have not responded');
     const unavailable = member.page.getByRole('checkbox', { name: "I can't make any of these times", exact: true });
     await unavailable.check();
     await expect(member.page.getByText('Unsaved response: Unavailable for these times', { exact: true })).toBeVisible();
@@ -34,7 +34,7 @@ test('an explicit unavailable response stays distinct from no response, updates 
     await expect(member.page.getByText('Your availability has been saved. The group knows you cannot make these times.', { exact: true })).toBeVisible();
     await expect(summary).toContainText('1 of 2 participants responded');
     await expect(summary).toContainText('1 cannot make these times');
-    await expect(summary).toContainText('1 have not responded');
+    await expect(summary).not.toContainText('have not responded');
     let saved = await read(member, meetup.id);
     expect(saved.availabilityResponse).toBe('unavailable'); expect(saved.availability).toEqual([]);
     expect(saved.grid.every(slot => slot.availableCount === 0)).toBe(true);
@@ -49,8 +49,8 @@ test('an explicit unavailable response stays distinct from no response, updates 
     await expect(unavailable).not.toBeChecked();
     expect((await read(member, meetup.id)).availabilityResponse).toBe('unavailable');
     await member.page.getByRole('button', { name: 'Save my times', exact: true }).click();
-    await expect(summary).toContainText('1 selected available times');
-    await expect(summary).toContainText('0 cannot make these times');
+    // Nobody unavailable: the line is hidden rather than reading "0 cannot".
+    await expect(summary).not.toContainText('cannot make these times');
     saved = await read(member, meetup.id);
     expect(saved.availabilityResponse).toBe('available'); expect(saved.availability).toHaveLength(1);
     await member.page.reload(); await expect(first).toHaveAttribute('aria-pressed', 'true');
@@ -59,7 +59,7 @@ test('an explicit unavailable response stays distinct from no response, updates 
     await member.page.getByRole('button', { name: 'Save my times', exact: true }).click();
     await expect(member.page.getByText('Your saved response has been cleared. You have not marked yourself unavailable.', { exact: true })).toBeVisible();
     await expect(summary).toContainText('0 of 2 participants responded');
-    await expect(summary).toContainText('2 have not responded');
+    await expect(summary).not.toContainText('have not responded');
     await member.page.reload(); await expect(unavailable).not.toBeChecked();
     saved = await read(member, meetup.id);
     expect(saved.availabilityResponse).toBe('unanswered'); expect(saved.availability).toEqual([]);
