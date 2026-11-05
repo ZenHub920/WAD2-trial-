@@ -514,7 +514,6 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
   <div class="container groups-page">
     <GroupNavigation class="groups-page__nav" />
     <header class="groups-hero">
-      <p class="groups-hero__eyebrow mono">Groups</p>
       <h1>Find your people for the show</h1>
     </header>
 
@@ -560,10 +559,6 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
           <RouterLink :to="`/groups/${encodeURIComponent(currentGroup.partyId ?? currentGroup.id)}/members`" class="btn btn--primary">See your group</RouterLink>
           <RouterLink :to="`/groups/${encodeURIComponent(currentGroup.partyId ?? currentGroup.id)}/channel`" class="btn btn--ghost">Group messages</RouterLink>
           <button v-if="canPlanMeetup || meetupPlans.some(plan => plan.scope?.partyId === (currentGroup.partyId ?? currentGroup.id))" type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: currentGroup.partyId ?? currentGroup.id }))">{{ meetupLabel({ partyId: currentGroup.partyId ?? currentGroup.id }) }}</button>
-          <!-- Last in the row: this card already says they are in a group, so
-               looking at the others is one more thing to do from here, not an
-               announcement that needs its own panel. -->
-          <RouterLink :to="{ path: '/groups', query: { ...(concertId ? { concertId } : {}), mode: 'direct' } }" class="btn btn--ghost">View other groups</RouterLink>
         </div>
       </section>
 
@@ -784,7 +779,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
   line-height: 1.05;
   max-width: 20ch;
 }
-.groups-hero__eyebrow, .group-kicker {
+.group-kicker {
   font-size: var(--step--2);
   letter-spacing: 0.1em;
   text-transform: uppercase;

@@ -382,18 +382,19 @@ async function leave() {
 
         <template v-if="isHost">
           <details ref="settingsPanel" class="member-settings" :open="!group.settings">
-            <summary><div><p class="member-eyebrow">Host controls</p><strong>Group settings</strong><span>Name, picture and spots for friends or new companions</span></div><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m5 7.5 5 5 5-5"/></svg></summary>
+            <summary><div><strong>Group settings</strong><span>Name, picture and spots for friends or new companions</span></div><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m5 7.5 5 5 5-5"/></svg></summary>
             <div class="member-settings__content">
           <section class="card group-panel" aria-labelledby="group-identity-heading">
             <h2 id="group-identity-heading">Group name &amp; picture</h2>
-            <label><span id="group-name-label">Group name</span>
-              <input v-model="groupNameDraft" aria-labelledby="group-name-label" :aria-describedby="attempted && nameMissing ? 'group-name-error' : undefined" maxlength="60" placeholder="e.g. Front Row Crew" :disabled="busy" :class="fieldState(!nameMissing)" :aria-invalid="attempted && nameMissing" />
-              <span v-if="attempted && nameMissing" id="group-name-error" class="field-message">Enter a name for your group.</span>
-            </label>
+            <!-- Picture first, then the name, as on Create group. -->
             <AvatarPicker :src="previewImage" :name="groupNameDraft" :busy="busy" :size="72"
               @select="(image) => (pendingImage = image)" @remove="pendingImage = null">
               <template #preview><GroupAvatar :src="previewImage" :name="groupNameDraft || group.artist || ''" :size="72" /></template>
             </AvatarPicker>
+            <label><span id="group-name-label">Group name</span>
+              <input v-model="groupNameDraft" aria-labelledby="group-name-label" :aria-describedby="attempted && nameMissing ? 'group-name-error' : undefined" maxlength="60" placeholder="e.g. Front Row Crew" :disabled="busy" :class="fieldState(!nameMissing)" :aria-invalid="attempted && nameMissing" />
+              <span v-if="attempted && nameMissing" id="group-name-error" class="field-message">Enter a name for your group.</span>
+            </label>
           </section>
 
           <section class="card group-panel" aria-labelledby="group-size-heading">
@@ -465,7 +466,6 @@ async function leave() {
 
 <style scoped>
 #group-members,#group-publication { scroll-margin-top:calc(var(--header-height) + var(--space-4)); }
-.member-eyebrow { margin:0 0 var(--space-1); font:600 .68rem var(--font-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--accent-400); }
 .member-workspace { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:var(--space-4); padding:var(--space-5); border:1px solid color-mix(in srgb,var(--accent-400) 36%,var(--panel-edge)); border-radius:var(--radius-lg); background:var(--panel-bg); box-shadow:var(--panel-shadow); }
 .member-workspace__context > p:last-child { margin-top:var(--space-2); max-width:58ch; color:var(--text-300); font-size:var(--step--1); }
 .member-workspace__context strong { color:var(--text-100); }
