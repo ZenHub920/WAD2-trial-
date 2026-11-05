@@ -199,7 +199,6 @@ watch(() => currentUser.value?.id, userId => {
   <div class="container section inbox">
     <header class="head">
       <div class="head__title"><h1>Messages</h1></div>
-      <div class="head__actions"><RouterLink to="/meetups" class="btn btn--ghost">My meetups</RouterLink></div>
     </header>
 
     <p v-if="actionError" class="notice notice--error" role="alert">{{ actionError }}</p>

@@ -285,7 +285,9 @@ export function createMeetupRepo(db, repos) {
     context(user, input = {}) {
       const scope = scopedAccess(user, input), concert = concertFor(scope);
       return { concert, policy: meetupDatePolicy(concert), ...scopeMetadata(scope, user),
-        capabilities: capabilities({ ...scope, status: 'planning' }, user),
+        capabilities: scope.kaki_conversation_id
+          ? { ...capabilities({ ...scope, status: 'planning' }, user), canCreate: false }
+          : capabilities({ ...scope, status: 'planning' }, user),
         participantCount: participants(scope).length, requiredApprovers: approvers(scope),
         meetups: scopedBoards(scope).map(m => summary(m, user)) };
     },
@@ -321,6 +323,8 @@ export function createMeetupRepo(db, repos) {
     },
     create: db.transaction((user, input = {}) => {
       const scope = scopedAccess(user, input);
+      // 1-to-1 companion pairs coordinate in their chat; meetup boards are for groups only.
+      if (scope.kaki_conversation_id) throw communityError('pair_meetups_disabled', 403);
       organizer(scope, user);
       const { starts, ends } = requireMeetupWindow(input.startsAt, input.endsAt, concertFor(scope));
       const title = normalizeMeetupTitle(input.title);

@@ -388,14 +388,14 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
           <div class="kaki-join__fields">
             <label>
               Preferred section
-              <select v-model="sectionPref" :disabled="participationBusy || !canCoordinate" required>
+              <select v-model="sectionPref" :disabled="participationBusy || !canCoordinate" required @change="participation && saveParticipation()">
                 <option v-if="!Object.hasOwn(SECTION_OPTIONS, sectionPref)" :value="sectionPref" disabled>Previously selected: {{ LABELS.section[sectionPref] ?? sectionPref }}</option>
                 <option v-for="(label, value) in SECTION_OPTIONS" :key="value" :value="value">{{ label }}</option>
               </select>
             </label>
             <label>
               Arrival plan
-              <select v-model="arrivalPref" :disabled="participationBusy || !canCoordinate" required>
+              <select v-model="arrivalPref" :disabled="participationBusy || !canCoordinate" required @change="participation && saveParticipation()">
                 <option v-if="!Object.hasOwn(ARRIVAL_OPTIONS, arrivalPref)" :value="arrivalPref" disabled>Previously selected: {{ LABELS.arrival[arrivalPref] ?? arrivalPref }}</option>
                 <option v-for="(label, value) in ARRIVAL_OPTIONS" :key="value" :value="value">{{ label }}</option>
               </select>
@@ -410,8 +410,8 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
             <span v-if="participationBusy" class="loading-state" role="status"><LoadingSpinner />Working…</span>
             <RouterLink v-if="participation && canCoordinate" :to="{ path: '/kaki', query: { concertId: id } }" class="btn btn--ghost">Browse companions</RouterLink>
             <RouterLink v-if="isFinished" to="/messages" class="btn btn--ghost">Existing conversations</RouterLink>
-            <button v-if="canCoordinate" type="submit" class="btn btn--primary" :disabled="participationBusy || (needsPicture && !participation)">
-              {{ participationBusy ? 'Working…' : participation ? 'Save preferences' : 'Join companion finder' }}
+            <button v-if="canCoordinate && !participation" type="submit" class="btn btn--primary" :disabled="participationBusy || needsPicture">
+              {{ participationBusy ? 'Working…' : 'Join companion finder' }}
             </button>
             <button v-if="participation" type="button" class="btn btn--danger-ghost" :disabled="participationBusy" @click="leaveParticipation">Leave companion finder</button>
           </div>
