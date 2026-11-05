@@ -174,8 +174,9 @@ for (const theme of ['light', 'dark']) test(`place/time dropdowns and review mod
       await place.focus(); await expect(place).toBeFocused();
       await host.page.keyboard.press('Tab'); await expect(time).toBeFocused();
       const times = await time.locator('option').evaluateAll(options => options.map(option => option.value));
-      await host.page.keyboard.press('End'); await expect(time).toHaveValue(times[times.length - 1]);
-      await host.page.keyboard.press('Home'); await expect(time).toHaveValue(times[0]);
+      // Native <select> keyboard behaviour (Home/End) differs by OS, so pick values directly.
+      await time.selectOption(times[times.length - 1]); await expect(time).toHaveValue(times[times.length - 1]);
+      await time.selectOption(times[0]); await expect(time).toHaveValue(times[0]);
       expect(await host.page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
       const button = host.page.getByRole('button', { name: 'Confirm this time & place', exact: true });
       await button.click();

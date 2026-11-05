@@ -156,6 +156,8 @@ describe('WelcomeView', () => {
     const { wrapper } = await mountPage(WelcomeView, { path: '/welcome' });
     const editor = wrapper.findComponent(PreferenceEditor);
     expect(editor.findAll('button').some((b) => b.text() === 'Save preferences')).toBe(false);
+    // Autosave arms one tick after mount, so the loaded answers don't trigger a save.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     await button(editor, 'Loud and lively').trigger('click');
     await new Promise((resolve) => setTimeout(resolve, 800)); await flushPromises();
     expect(saveMyPreferences).toHaveBeenCalledOnce();

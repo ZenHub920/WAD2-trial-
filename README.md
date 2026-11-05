@@ -401,6 +401,38 @@ To avoid repeatedly logging out during the recording, use a separate browser pro
 | Session 5 | Group B Host |
 | Session 6 | Group C Host |
 
+### 4. Operator (admin) access
+
+Some of the demo is operator-only: the **Admin** link in the navigation (`/admin/verifications`), the setlist editor on a concert page, the saved matching round under *Last round*, the traced algorithm view at `/concerts/<id>/algorithm`, and the operator-only API routes. A normal account sees none of these.
+
+Operator status is a flag on the user row, granted from the command line. There is no screen for it, by design — nobody can promote themselves through the app.
+
+Create the account first by signing up normally, then from the **`server` directory**:
+
+```bash
+cd server
+npm run operator:grant -- someone@example.com
+```
+
+The `--` matters: without it npm keeps the argument instead of passing it to the script. The script prints `Operator granted to <email>`, or `No existing account for <email>` if the address has no account yet.
+
+**Sign that account out and back in afterwards.** The flag is read when the session loads, so an already-open session keeps showing the non-operator view.
+
+Three things worth knowing:
+
+- **It writes to whichever database the server uses.** The script opens the database through the same connection the server does, so it follows `ENCORE_DB` in `server/.env`. Run it from `server/`, or a relative `ENCORE_DB` path resolves against the wrong directory and you will promote an account in a database nobody is reading.
+- **The change is never committed.** `server/data/` is gitignored, so who holds operator status is local to each machine and does not travel with the repository.
+- **The committed snapshot already has one.** `test/fixtures/encore-demo.sqlite` ships with `demo.alice@example.test` as an operator, so a database copied from the fixture needs no grant to demonstrate the operator views.
+
+To check who currently holds it:
+
+```bash
+cd server
+node -e "process.env.ENCORE_DB ??= './data/encore.db';
+  const db = require('better-sqlite3')(process.env.ENCORE_DB);
+  console.table(db.prepare('SELECT email, display_name FROM users WHERE is_operator = 1').all());"
+```
+
 ## Testing
 
 ENCORE uses complementary test types:
