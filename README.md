@@ -15,6 +15,7 @@ Rather than relying on who happens to respond first in a public forum, ENCORE gi
 - [Data storage](#data-storage)
 - [External integrations](#external-integrations)
 - [Local setup](#local-setup)
+- [Demo account setup](#demo-account-setup)
 - [Testing](#testing)
 - [Security and privacy](#security-and-privacy)
 - [Project structure](#project-structure)
@@ -325,6 +326,80 @@ cd server && ENCORE_DB=./data/demo.sqlite npm run dev
 ```
 
 The demo passwords are not recorded in the repository — ask whoever added the snapshot if you need to sign in as one of those accounts.
+
+## Demo account setup
+
+The end-to-end demo uses **six manually prepared accounts** and **three hosted groups**. Accounts 1–4 cover matching, approvals and the main meetup planner; Accounts 5–6 cover shared meetup approval.
+
+> **Important:** all six accounts should join the **same upcoming concert** where relevant. ENCORE's concert-specific matching and group discovery filters may otherwise stop them from seeing one another.
+
+### 1. How the accounts interact
+
+| Flow | Accounts | Sequence |
+| --- | --- | --- |
+| Person-to-person matching | Account 1 (Primary seeker) ⇄ Account 2 (Companion) | Mutual likes → Match → Private chat |
+| Person-to-group matching | Accounts 1 & 3 (Direct / automatic seekers) → Account 4 (Group A host) | Applications or offers → Host approval → Membership |
+| Multi-organizer meetup | Account 5 (Group B host) ⇄ Account 6 (Group C host) | Shared meetup proposal → Two required approvals → Confirmation |
+
+### 2. What to prepare for each account
+
+**Account 1 — Primary Seeker**
+
+- [ ] Complete profile onboarding and matching preferences
+- [ ] Join the selected concert
+- [ ] Ensure Account 2 is eligible for Kaki Finder
+- [ ] Prepare to apply for Group A through Browse and Choose
+- [ ] Leave Account 1 outside Group A initially
+
+**Account 2 — Companion**
+
+- [ ] Complete profile and questionnaire
+- [ ] Join the same concert as Account 1
+- [ ] Prepare to reciprocate Account 1's like
+- [ ] Optionally join Group A beforehand to help demonstrate meetup availability
+
+**Account 3 — Automatic Matching Seeker**
+
+- [ ] Complete profile and matching preferences
+- [ ] Join the same concert
+- [ ] Remain outside existing groups
+- [ ] Ensure eligible capacity exists for automatic matching
+- [ ] Do not consume the intended matching scenario before recording
+
+**Account 4 — Group A Host**
+
+- [ ] Create Group A for the chosen concert
+- [ ] Configure group preferences and capacity
+- [ ] Leave at least one vacancy for Account 1
+- [ ] Prepare the group meetup planner
+- [ ] Be ready to approve Account 1
+
+**Account 5 — Group B Host**
+
+- [ ] Create Group B for the same concert
+- [ ] Configure group preferences and capacity
+- [ ] Prepare a shared meetup with Group C
+- [ ] Be ready to propose or approve the meetup arrangement
+
+**Account 6 — Group C Host**
+
+- [ ] Create Group C for the same concert
+- [ ] Configure group preferences
+- [ ] Be ready to review Group B's meetup proposal
+- [ ] Give the second required approval during recording
+
+### 3. Recommended browser setup
+
+To avoid repeatedly logging out during the recording, use a separate browser profile or session per account:
+
+| Browser session | Signed-in account |
+| --- | --- |
+| Session 1 | Primary Seeker |
+| Session 2 | Companion |
+| Session 3 | Automatic Matching Seeker |
+| Session 4 | Group A Host |
+| Session 5 | Group B Host |
+| Session 6 | Group C Host |
 
 ## Testing
 
