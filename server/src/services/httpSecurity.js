@@ -22,7 +22,10 @@ export function createHttpSecurity({ env = process.env } = {}) {
   if (production && !env.APP_ORIGIN) throw new Error('production_app_origin_required');
   const allowed = new Set(configured.map((value) => configuredOrigin(value, production)));
   if (!production) for (const value of ['http://localhost:5173', 'http://127.0.0.1:5173']) allowed.add(value);
-  const trusted = (value) => typeof value === 'string' && allowed.has(value);
+  // Development only: http://test1.localhost:5173 etc. Each name keeps its own
+  // login cookie, so several test accounts can be open in tabs of one browser.
+  const devAlias = (value) => !production && /^http:\/\/[a-z0-9-]+\.localhost:5173$/.test(value);
+  const trusted = (value) => typeof value === 'string' && (allowed.has(value) || devAlias(value));
   const reject = (res, code = 'csrf_verification_failed') => res.status(403).json({ error: code });
   const headers = (req, res, next) => {
     const publicImage = /^(?:\/api)?\/(avatars|ticket-images)(?:\/|$)/.test(req.path);
