@@ -9,6 +9,7 @@ import MeetupCreationForm from '../components/MeetupCreationForm.vue';
 import MeetupDiscussionPanel from '../components/MeetupDiscussionPanel.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
 import { useMeetupBoard } from '../composables/useMeetupBoard.js';
+import { coverageLevel } from '../utils/meetupSummaries.js';
 import '../assets/groups.css';
 const props = defineProps({ id: String });
 const {
@@ -19,7 +20,7 @@ const {
   manualPlaceId, manualStartsAt, manualOption, acknowledgeNoAvailability, requestManualProposal,
   feedback, failures, placeSearchKey, confirmAction, capabilities, contributionsLocked, selectedOrigins,
   editingPlaceId, removingPlace, proposalReview, proposalReviewBody, recommendationsLoading, recommendationsInvalid,
-  journeySearchKey, leavePrompt, settleLeave, journeyDirty, placeDirty, hasOwnSavedTimes, organizerRole, nextStep, followNextStep,
+  journeySearchKey, leavePrompt, settleLeave, journeyDirty, placeDirty, hasOwnSavedTimes,
   selectPlace, selectJourney, invalidatePlace, invalidateJourney, editPlace, editJourney,
   selectedSlotCount, bestSavedOverlap, selectedTimes, activeStep, availabilityDirty, refreshing, syncNote,
   liveLabel, statuses, time, validCoordinates, recommendedOptions, placeChoices, pickedPlace, pickedOption, pickedVotes, pickedStartsAt, pickPlace, pickTime, comparingOptions, bestOption, pickedIsBest, useBestOption, recommendationMethod, journeySummary, recommendationEmpty,
@@ -53,10 +54,6 @@ const {
       </template>
     <template v-else-if="board"
       ><div class="meetup-context"><span>{{ board.participantCount }} participants</span><strong>{{ statuses[board.status] ?? "Plan updated" }}</strong></div>
-      <section v-if="nextStep" class="meetup-next-step" aria-labelledby="meetup-next-step-heading">
-        <div class="meetup-next-step__content"><p class="meetup-next-step__eyebrow" id="meetup-next-step-heading">What should I do next?</p><h2>{{ nextStep.title }}</h2><p>{{ nextStep.body }}</p><p v-if="board.status === 'planning'" class="meetup-next-step__role">{{ organizerRole }}</p><p v-if="capabilities.canPropose && !hasResponded && !availabilityDirty && nextStep.step === 'review'" class="meetup-own-response-reminder">You have not shared your own availability yet. <button type="button" class="btn btn--ghost" @click="showStep('availability')">Share my availability</button></p></div>
-        <button type="button" class="btn btn--primary" :disabled="busy || refreshing" @click="followNextStep">{{ nextStep.label }} <span aria-hidden="true">→</span></button>
-      </section>
       <section v-if="board.status === 'proposed' || board.status === 'confirmed'" class="meetup-role-note meetup-recovery" aria-label="Planning is locked">
         <p>{{ board.status === 'confirmed' ? 'This plan is confirmed.' : 'Waiting for organizer approval.' }} Changes are locked, but you can still chat.</p>
         <p v-if="!capabilities.canReopen">Ask an organizer to reopen planning to make changes.</p>
@@ -71,7 +68,6 @@ const {
       <section id="meetup-availability" v-show="activeStep === 'availability'" role="tabpanel" aria-labelledby="meetup-tab-availability" class="card group-panel meetup-availability meetup-workspace">
         <h2>Select the times you are available</h2>
         <p class="group-muted">Click or tap a half-hour block to select it; drag across several to paint your availability. Darker green means more saved availability.</p>
-        <div class="meetup-availability__summary"><strong>{{ selectedSlotCount }} half-hour {{ selectedSlotCount === 1 ? 'block' : 'blocks' }} selected</strong><span :class="{ 'meetup-unsaved': availabilityDirty }">{{ availabilityDirty ? 'Unsaved changes' : savedAvailabilityResponse === 'unanswered' ? 'No response saved' : savedAvailabilityResponse === 'unavailable' ? 'Unavailable response saved' : 'Your saved availability' }}</span></div>
         <div class="meetup-time-layout">
           <MeetupAvailabilityGrid :grid="board.grid" :participant-count="board.participantCount" v-model:selected="selectedTimes" :disabled="busy || contributionsLocked" />
           <aside class="meetup-time-context" aria-labelledby="meetup-group-availability-heading">
@@ -80,7 +76,7 @@ const {
                  nothing to have saved yet, so the line would read as a fault. -->
             <p v-if="hasResponded && !bestSavedOverlap" class="meetup-time-context__empty">No available times saved yet.</p>
             <div v-if="board.availabilityResponses" class="meetup-response-summary" aria-label="Availability responses">
-              <strong>{{ board.availabilityResponses.respondedCount }} of {{ board.participantCount }} participants responded</strong>
+              <strong class="meetup-coverage" :data-level="coverageLevel(board.availabilityResponses.respondedCount, board.participantCount)">{{ board.availabilityResponses.respondedCount }} of {{ board.participantCount }} participants responded</strong>
               <!-- Nobody unavailable is the ordinary case, and "0 cannot make
                    these times" reads as a problem where there is none. -->
               <span v-if="board.availabilityResponses.unavailableCount">{{ board.availabilityResponses.unavailableCount }} cannot make these times</span>
@@ -89,7 +85,6 @@ const {
         </div>
         <fieldset class="meetup-response-controls" :disabled="busy || contributionsLocked">
           <label class="group-check"><input v-model="unavailable" type="checkbox" />I can't make any of these times</label>
-          <p class="group-muted">This clears your selected blocks in this draft. Save to tell the group; you can revise your response later.</p>
           <p :class="availabilityDirty ? 'meetup-unsaved' : 'group-muted'" role="status">{{ availabilityDirty ? 'Unsaved response' : 'Your response' }}: {{ responseLabel }}</p>
         </fieldset>
         <details class="meetup-disclosure meetup-journey">
@@ -294,24 +289,7 @@ const {
   gap: var(--space-5);
 }
 .meetup-page--board { gap: var(--space-4); }
-.meetup-next-step {
-  display: flex;
-  align-items: center;
-  gap: 1rem 1.5rem;
-  flex-wrap: wrap;
-  padding: clamp(1rem, 3vw, 1.5rem);
-  border: 1px solid color-mix(in srgb, var(--accent-400) 42%, var(--panel-edge));
-  border-left: 3px solid var(--accent-400);
-  border-radius: var(--radius-md);
-  background: linear-gradient(115deg, color-mix(in srgb, var(--accent-400) 9%, var(--surface-interactive)), var(--surface-interactive));
-  box-shadow: inset 0 1px 0 var(--panel-highlight), 0 5px 18px color-mix(in srgb, var(--ink-900) 10%, transparent);
-}
-.meetup-next-step__content { flex: 1 1 28rem; min-width: 0; }
-.meetup-next-step__content h2 { margin: .3rem 0 .5rem; font-size: clamp(1.15rem, 2.4vw, 1.4rem); line-height: 1.3; }
-.meetup-next-step__content > p:not(.meetup-next-step__eyebrow) { color: var(--text-300); font-size: var(--step--1); line-height: 1.55; }
-.meetup-next-step__role { margin-top: .65rem; padding-top: .65rem; border-top: var(--border-soft); }
 .meetup-next-step__eyebrow { color: var(--text-100); font-size: .75rem; font-weight: 700; letter-spacing: .055em; text-transform: uppercase; }
-.meetup-next-step > button { flex: 0 1 auto; white-space: normal; text-align: left; }
 .meetup-best-summary { display: grid; gap: .35rem; padding: 1rem; border: 1px solid color-mix(in srgb, var(--accent-400) 40%, var(--panel-edge)); border-radius: var(--radius-sm); background: var(--surface-interactive); }
 .meetup-best-summary > strong { color: var(--text-100); font-size: var(--step-1); }
 .meetup-best-summary > span:not(:first-child) { color: var(--text-100); font-size: var(--step--1); }
@@ -476,24 +454,20 @@ const {
 .meetup-availability > h2 {
   margin-bottom: -.5rem;
 }
-.meetup-availability__summary {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: .5rem;
-  padding-block: .85rem;
-  border-block: 1px solid var(--ink-500);
-  color: var(--text-300);
-}
 .meetup-unsaved {
   color: var(--accent-400);
 }
+
+/* How far through the group a count is, at a glance. The number itself still
+   carries the information, so colour is only emphasis and never the only cue. */
+.meetup-coverage[data-level='low'] { color: var(--danger-fill); }
+.meetup-coverage[data-level='part'] { color: var(--caution-ink, #8a6200); }
+.meetup-coverage[data-level='high'] { color: var(--success-fill); }
+:root[data-theme='dark'] .meetup-coverage[data-level='low'] { color: #ff8b8b; }
+:root[data-theme='dark'] .meetup-coverage[data-level='part'] { color: #e0b341; }
+:root[data-theme='dark'] .meetup-coverage[data-level='high'] { color: #5fd49b; }
 .meetup-save-state { font-size: var(--step--1); font-weight: 600; color: var(--text-200); }
 .meetup-decision { font-size: var(--step-1); font-weight: 600; line-height: 1.5; color: var(--text-100); }
-.meetup-availability__summary strong {
-  color: var(--text-200);
-  font-weight: 500;
-}
 .meetup-time-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(12rem, .6fr);
@@ -662,12 +636,12 @@ const {
 .meetup-audience { display:inline-flex; align-items:center; padding:.2rem .55rem; border:1px solid var(--panel-edge); border-radius:var(--radius-pill); font-size:.75rem; font-weight:650; line-height:1.4; }
 .meetup-audience--private { color:var(--text-300); background:var(--surface-interactive); }
 .meetup-audience--shared { color:var(--mint-400); border-color:color-mix(in srgb,var(--mint-400) 40%,var(--panel-edge)); margin-bottom:.35rem; }
-.meetup-response-controls { display:grid; gap:.5rem; margin:1rem 0; padding:1rem; border:var(--border-soft); border-radius:var(--radius-sm); min-width:0; }
+/* Under the table, not in a frame of its own: it is one choice about the
+   grid above it, so a bordered panel made it look like a separate step. */
+.meetup-response-controls { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1.25rem; margin:1rem 0 0; padding:0; border:0; min-width:0; }
 .meetup-response-controls p { margin:0; }
 .meetup-response-summary { display:grid; gap:.3rem; font-size:var(--step--1); line-height:1.6; border-top:var(--border-soft); padding-top:1rem; }
 .meetup-response-summary span { color:var(--text-300); }
-.meetup-own-response-reminder { display:flex; align-items:center; flex-wrap:wrap; gap:.5rem; margin-top:.75rem; }
-.meetup-own-response-reminder .btn { min-height:2.25rem; font-size:var(--step--1); }
 .meetup-attendance-warning { display:grid; gap:.75rem; padding:1rem; border-left:3px solid var(--accent-400); background:var(--surface-interactive); border-radius:var(--radius-sm); margin-block:1rem; }
 .meetup-manual-proposal > .group-controls { margin-block:1rem; }
 .meetup-option-details { margin-block:.75rem; }

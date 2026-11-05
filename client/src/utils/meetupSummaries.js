@@ -52,3 +52,24 @@ export function meetupActionForScope(plans, scope) {
   const plan = preferredMeetup(meetupsForScope(plans, scope));
   return plan ? meetupPresentation(plan).action : 'Plan meetup';
 }
+
+/**
+ * How well covered a count is, as a band rather than a number.
+ *
+ * The same scale serves every "N of M" readout on the planner, so a glance
+ * means the same thing wherever it lands. A group nobody has answered for and
+ * a group everybody has answered for should never look alike.
+ *
+ * Bands: under half is 'low', half up to three quarters is 'part', and above
+ * three quarters is 'high'. A plan with no participants has nothing to cover,
+ * so it reports 'low' rather than dividing by zero.
+ */
+export function coverageLevel(count, total) {
+  const whole = Number(total);
+  const part = Number(count);
+  if (!Number.isFinite(whole) || whole <= 0 || !Number.isFinite(part) || part <= 0) return 'low';
+  const ratio = part / whole;
+  if (ratio > 0.75) return 'high';
+  if (ratio >= 0.5) return 'part';
+  return 'low';
+}

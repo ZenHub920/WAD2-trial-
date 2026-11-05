@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue';
 import { formatMeetupDay, formatMeetupClock, singaporeDayKey } from '../utils/meetupTime.js';
+import { coverageLevel } from '../utils/meetupSummaries.js';
 
 const props = defineProps({
   grid: { type: Array, required: true },
@@ -207,7 +208,7 @@ onBeforeUnmount(() => {
     </div>
     <div v-if="inspected" class="availability-grid__inspection" aria-live="polite" aria-atomic="true">
       <span>{{ formatMeetupDay(inspected.startsAt) }} · {{ inspected.time }}–{{ formatMeetupClock(inspected.startsAt + 1800000) }}</span>
-      <strong>{{ count(inspected) }} of {{ participantCount }} available</strong>
+      <strong class="meetup-coverage" :data-level="coverageLevel(count(inspected), participantCount)">{{ count(inspected) }} of {{ participantCount }} available</strong>
       <span>{{ selectedSet.has(inspected.startsAt) ? 'You’re available' : 'Not selected' }}</span>
     </div>
     <p v-if="cells.length" class="availability-grid__hint">Arrow keys move; Space selects.</p>
@@ -418,4 +419,12 @@ td {
 @media (prefers-reduced-motion: reduce) {
   .availability-grid__cell { transition: none; }
 }
+/* The same bands the planner uses, repeated because scoped styles do not
+   cross the component boundary. Colour is emphasis; the count is the fact. */
+.meetup-coverage[data-level='low'] { color: var(--danger-fill); }
+.meetup-coverage[data-level='part'] { color: var(--caution-ink, #8a6200); }
+.meetup-coverage[data-level='high'] { color: var(--success-fill); }
+:root[data-theme='dark'] .meetup-coverage[data-level='low'] { color: #ff8b8b; }
+:root[data-theme='dark'] .meetup-coverage[data-level='part'] { color: #e0b341; }
+:root[data-theme='dark'] .meetup-coverage[data-level='high'] { color: #5fd49b; }
 </style>

@@ -67,11 +67,10 @@ describe('three-stage planning, explicit responses and current participant decis
     expect(wrapper.get('#meetup-places').find('.meetup-recommendations').exists()).toBe(false);
     expect(wrapper.get('#meetup-review').get('.meetup-recommendations').exists()).toBe(true);
     expect(wrapper.get('#meetup-places').find('.meetup-option').exists()).toBe(false);
-    expect(wrapper.get('.meetup-next-step h2').text()).toBe('Review a time and place for your group');
-    expect(wrapper.get('.meetup-own-response-reminder').text()).toContain('not shared your own availability');
-    await wrapper.get('.meetup-next-step > .btn--primary').trigger('click'); await flushPromises();
+    await wrapper.get('[data-planner-step="review"]').trigger('click'); await flushPromises();
     expect(wrapper.get('#meetup-review').isVisible()).toBe(true);
-    expect(document.activeElement).toBe(wrapper.get('.meetup-option .btn--primary').element);
+    // The prompt that used to move focus into the panel is gone; reaching the
+    // step by its tab leaves focus on the tab, which is correct for a tablist.
     expect(api.proposeMeetupPlan).not.toHaveBeenCalled();
     expect(wrapper.get('.meetup-option-details').element.open).toBe(false);
     expect(wrapper.get('.meetup-picker').isVisible()).toBe(false);
@@ -107,12 +106,11 @@ describe('three-stage planning, explicit responses and current participant decis
     expect(wrapper.get('.meetup-response-summary').text()).toContain('1 cannot make these times');
     expect(wrapper.get('.meetup-response-summary').text()).not.toContain('have not responded');
     expect(unavailableChoice(wrapper).element.checked).toBe(true);
-    expect(wrapper.text()).not.toContain('Unsaved changes');
+    expect(wrapper.text()).not.toContain('Unsaved response');
   });
   it('allows an unavailable member to revise by painting a real time without sending the response automatically', async () => {
     const wrapper = await open({ availabilityResponse: 'unavailable', availabilityResponses: counts(0, 1),
       capabilities: permissions('planning', false), places: [publicPlace] });
-    expect(wrapper.get('.meetup-next-step h2').text()).toBe('Help choose a meeting place');
     await wrapper.get('[data-availability-start]').trigger('click');
     expect(unavailableChoice(wrapper).element.checked).toBe(false);
     expect(wrapper.get('.meetup-response-controls').text()).toContain('Unsaved response: Available times selected');
@@ -132,7 +130,7 @@ describe('three-stage planning, explicit responses and current participant decis
       live.handler('meetup-updated', { meetupId: 'meetup-1' });
       await vi.advanceTimersByTimeAsync(160); await flushPromises();
       expect(unavailableChoice(wrapper).element.checked).toBe(true);
-      expect(wrapper.text()).toContain('Unsaved changes');
+      expect(wrapper.text()).toContain('Unsaved response');
       api.meetupAvailability.mockRejectedValueOnce(new Error('offline'));
       await button(wrapper, 'Save my response').trigger('click'); await flushPromises();
       expect(unavailableChoice(wrapper).element.checked).toBe(true);
@@ -147,7 +145,7 @@ describe('three-stage planning, explicit responses and current participant decis
     await button(wrapper, 'Save my response').trigger('click'); await flushPromises();
     expect(wrapper.text()).toContain('Your availability has been saved.');
     expect(wrapper.text()).toContain('Group details could not refresh');
-    expect(wrapper.text()).not.toContain('Unsaved changes');
+    expect(wrapper.text()).not.toContain('Unsaved response');
     expect(wrapper.get('.meetup-response-summary').text()).toContain('1 of 2 participants responded');
     expect(wrapper.get('.meetup-response-summary').text()).toContain('1 cannot make these times');
     expect(button(wrapper, 'Save my response').element.disabled).toBe(true);
@@ -279,93 +277,37 @@ describe('three-stage planning, explicit responses and current participant decis
   });
 });
 
-describe('first-time meetup guidance follows actual permissions, saved state and drafts', () => {
-  const region = wrapper => wrapper.get('[aria-labelledby="meetup-next-step-heading"]');
+describe('the planner never writes a draft on its own', () => {
   const open = async (overrides = {}) => {
     api.meetup.mockResolvedValue({ meetup: { ...board(), ...overrides } });
     return (await mountPage(MeetupView, { props: { id: 'meetup-1' } })).wrapper;
   };
-  it('directs someone with no saved available times to the grid while allowing inspection of later stages', async () => {
-    const wrapper = await open({ availability: [], grid: [{ startsAt: start, availableCount: 0 }] });
-    expect(region(wrapper).text()).toContain('Share when you can meet');
-    await wrapper.get('[data-planner-step="places"]').trigger('click');
-    expect(wrapper.get('#meetup-places').isVisible()).toBe(true);
-    await region(wrapper).get('button').trigger('click'); await flushPromises();
-    expect(wrapper.get('#meetup-availability').isVisible()).toBe(true);
-    expect(document.activeElement).toBe(wrapper.get('[data-availability-start]').element);
-    expect(api.meetupAvailability).not.toHaveBeenCalled();
-    expect(api.proposeMeetupPlan).not.toHaveBeenCalled();
-  });
-  it('prioritizes unsaved availability and directs attention to the real save button without submitting', async () => {
-    const wrapper = await open({ places: [publicPlace], suggestions: [suggestion] });
-    await wrapper.get('[data-availability-start]').trigger('click');
-    await wrapper.get('[data-planner-step="places"]').trigger('click');
-    expect(region(wrapper).text()).toContain('Save your time changes');
-    await region(wrapper).get('button').trigger('click'); await flushPromises();
-    expect(document.activeElement).toBe(button(wrapper, 'Save my times').element);
-    expect(wrapper.get('[data-availability-start]').attributes('aria-pressed')).toBe('false');
-    expect(api.meetupAvailability).not.toHaveBeenCalled();
-    expect(region(wrapper).text()).toContain('last saved availability');
-  });
-  it('keeps optional journey details secondary and distinguishes applying them from saving', async () => {
+  it('keeps optional journey details collapsed and unsent until applied', async () => {
     const wrapper = await open();
     expect(wrapper.get('.meetup-journey').element.open).toBe(false);
     await field(wrapper.get('.meetup-journey'), 'Location label').setValue('Private starting area draft');
-    expect(region(wrapper).text()).toContain('Apply your optional journey details');
-    await region(wrapper).get('button').trigger('click'); await flushPromises();
-    expect(wrapper.get('.meetup-journey').element.open).toBe(true);
-    expect(region(wrapper).text()).toContain('then save your availability');
     expect(api.meetupAvailability).not.toHaveBeenCalled();
     expect(api.meetupTravelSuggestions).not.toHaveBeenCalled();
   });
-  it('identifies an unsaved place and discussion draft without sharing either automatically', async () => {
+  it('holds an unsaved place and discussion draft without sharing either', async () => {
     const wrapper = await open();
     await field(wrapper.get('.meetup-place-editor'), 'Place name').setValue('Public entrance draft');
-    expect(region(wrapper).text()).toContain('Share your place suggestion');
-    await region(wrapper).get('button').trigger('click'); await flushPromises();
-    expect(document.activeElement).toBe(field(wrapper.get('.meetup-place-editor'), 'Place name').element);
     await button(wrapper, 'Clear place draft').trigger('click');
     await wrapper.get('.meetup-discussion textarea').setValue('Discussion draft');
-    expect(region(wrapper).text()).toContain('Finish your discussion message');
     expect(api.proposeMeetupPlace).not.toHaveBeenCalled();
     expect(api.meetupComment).not.toHaveBeenCalled();
-  });
-  it.each([
-    ['planning', true, false, false, 'Review a time and place for your group'],
-    ['planning', false, false, false, 'Help choose a meeting place'],
-    ['planning', false, false, true, 'Your place preference is saved'],
-    ['proposed', true, false, false, 'Your approval is needed'],
-    ['proposed', true, true, false, 'Waiting for the remaining approval'],
-    ['proposed', false, false, false, 'Waiting for organizer approval'],
-    ['confirmed', true, true, false, 'Your meetup is confirmed'],
-    ['cancelled', false, false, false, 'This meetup is cancelled'],
-  ])('explains the actual next responsibility for %s organizer=%s approved=%s voted=%s', async (status, organizer, hasApproved, voted, title) => {
-    const wrapper = await open({ status, capabilities: { ...permissions(status, organizer), canApprove: status === 'proposed' && organizer && !hasApproved },
-      hasApproved, requiredApprovers: ['user-1', 'host-2'], approvals: hasApproved ? ['user-1'] : [],
-      currentVotePlaceId: voted ? publicPlace.id : null, places: [publicPlace], suggestions: [suggestion],
-      selected_place_id: status !== 'planning' ? publicPlace.id : null, selected_start: start });
-    expect(region(wrapper).get('h2').text()).toBe(title);
-    await region(wrapper).get('button').trigger('click'); await flushPromises();
-    if (status !== 'planning') expect(wrapper.get('#meetup-review').isVisible()).toBe(true);
-    expect(api.approveMeetup).not.toHaveBeenCalled();
-    expect(api.proposeMeetupPlan).not.toHaveBeenCalled();
-    expect(api.voteMeetupPlace).not.toHaveBeenCalled();
-    if (!organizer) expect(wrapper.find('.meetup-recommendations').exists()).toBe(false);
   });
   it('uses aggregate overlap honestly without inventing respondents or exposing another origin', async () => {
     const wrapper = await open({ participantCount: 6, availability: [], grid: [{ startsAt: start, availableCount: 5 }],
       places: [publicPlace], suggestions: [{ ...suggestion, participantCount: 6, availableCount: 5, locationRespondents: 0, totalDistanceKm: null }] });
     // The panel states the group size and leaves the counts to the grid.
     expect(wrapper.get('.meetup-time-context h3').text()).toBe('Group availability (6)');
-    expect(region(wrapper).text()).toContain('Review a time and place for your group');
-    expect(wrapper.get('.meetup-own-response-reminder').text()).toContain('not shared your own availability');
     expect(wrapper.get('.meetup-best-summary').text()).toContain('5 of 6 marked available');
     expect(wrapper.get('.meetup-option').text()).toContain('No starting locations supplied');
     expect(wrapper.text()).not.toContain('5 responded');
   });
   it('does not turn read-only capabilities into write permissions when later stages are inspected', async () => {
     const wrapper = await open({ availability: [], capabilities: { ...permissions('planning', false), canContribute: false }, places: [publicPlace] });
-    expect(region(wrapper).text()).toContain('View the planning progress');
     await wrapper.get('[data-planner-step="places"]').trigger('click');
     expect(wrapper.get('.meetup-place-editor fieldset').element.disabled).toBe(true);
     expect(wrapper.find('.meetup-recommendations').exists()).toBe(false);
@@ -377,11 +319,14 @@ describe('first-time meetup guidance follows actual permissions, saved state and
     api.voteMeetupPlace.mockResolvedValueOnce({ result: { voted: true, version: 2 } });
     api.meetup.mockRejectedValueOnce(new Error('offline'));
     await button(wrapper, 'Vote for place').trigger('click'); await flushPromises();
-    expect(region(wrapper).get('h2').text()).toBe('Refresh the recommendations');
     expect(wrapper.find('.meetup-option').exists()).toBe(false);
     api.meetup.mockResolvedValueOnce({ meetup: { ...board(), version: 2, places: [{ ...publicPlace, votes: 1 }], suggestions: [suggestion], currentVotePlaceId: publicPlace.id } });
-    await region(wrapper).get('button').trigger('click'); await flushPromises();
-    expect(region(wrapper).get('h2').text()).toBe('Review a time and place for your group');
+    // The standing Refresh planner control is the retry now that the prompted
+    // next step is gone; the recovery path itself must still work.
+    await button(wrapper, 'Refresh planner').trigger('click'); await flushPromises();
+    // Refreshing restores the recommendations without moving the person to
+    // another step, so the option is back in the review panel, not on screen.
+    expect(wrapper.find('.meetup-option').exists()).toBe(true);
     expect(api.voteMeetupPlace).toHaveBeenCalledTimes(1);
     expect(api.proposeMeetupPlan).not.toHaveBeenCalled();
   });
@@ -685,7 +630,7 @@ describe('meeting planner with real OneMap search child', () => {
     await wrapper.get('[data-planner-step="review"]').trigger('keydown', { key: 'Home' });
     expect(timePanel.isVisible()).toBe(true);
     expect(wrapper.get('[data-availability-start]').attributes('aria-pressed')).toBe('false');
-    expect(wrapper.text()).toContain('Unsaved changes');
+    expect(wrapper.text()).toContain('Unsaved response');
     expect(api.meetupAvailability).not.toHaveBeenCalled();
   });
   it('lets an authorized person inspect places and discussion before saving times without making any automatic writes', async () => {
@@ -694,7 +639,7 @@ describe('meeting planner with real OneMap search child', () => {
     const next = button(wrapper, 'Next: suggest places →');
     expect(next.element.disabled).toBe(false);
     expect(button(wrapper, 'Save my times').element.disabled).toBe(true);
-    expect(wrapper.get('.meetup-next-step').text()).toContain('No response is saved for you.');
+    expect(wrapper.get('.meetup-save-state').text()).toContain('No response saved for you.');
     await wrapper.get('[data-planner-step="places"]').trigger('click');
     expect(wrapper.get('#meetup-places').isVisible()).toBe(true);
     await wrapper.get('[data-planner-step="review"]').trigger('click');
@@ -823,7 +768,7 @@ describe('meeting planner with real OneMap search child', () => {
     await button(wrapper, 'Save my times').trigger('click'); await flushPromises();
     expect(wrapper.get('[role="alert"]').text()).toContain('This plan has changed');
     expect(wrapper.get('[data-availability-start]').attributes('aria-pressed')).toBe('false');
-    expect(wrapper.text()).toContain('Unsaved changes');
+    expect(wrapper.text()).toContain('Unsaved response');
   });
   it('clears private drafts when changing boards and ignores the previous board’s late routes', async () => {
     api.meetup.mockResolvedValue({ meetup: { ...board(), places: [publicPlace] } });
@@ -847,7 +792,7 @@ describe('meeting planner with real OneMap search child', () => {
     await field(wrapper, 'Travel method').setValue('drive');
     await button(wrapper, 'Apply to selected times').trigger('click');
     expect(wrapper.get('.meetup-journey [role="status"]').text()).toContain('2 selected times. Not saved yet.');
-    expect(wrapper.text()).toContain('Unsaved changes');
+    expect(wrapper.text()).toContain('Unsaved response');
     await button(wrapper, 'Save my times').trigger('click'); await flushPromises();
     expect(api.meetupAvailability).toHaveBeenCalledWith('meetup-1', [
       expect.objectContaining({ travelMode: 'drive', latitude: 1.3, longitude: 103.85, label: 'City Hall' }),
@@ -887,11 +832,11 @@ describe('meeting planner with real OneMap search child', () => {
     const { wrapper } = await mountPage(MeetupView, { props: { id: 'meetup-1' } });
     await field(wrapper, 'Travel method').setValue('drive');
     await button(wrapper, 'Apply to selected times').trigger('click');
-    expect(wrapper.text()).toContain('Unsaved changes');
+    expect(wrapper.text()).toContain('Unsaved response');
     api.meetup.mockResolvedValue({ meetup: { ...board(), version: 2, availability: [{ ...board().availability[0], travel_mode: 'drive' }] } });
     await button(wrapper, 'Save my times').trigger('click'); await flushPromises();
     expect(wrapper.get('#meetup-availability > [role="status"]').text()).toBe('Your availability has been saved.');
-    expect(wrapper.get('.meetup-availability__summary').text()).toContain('Your saved availability');
+    expect(wrapper.get('.meetup-response-controls').text()).toContain('Your response:');
     expect(wrapper.text()).not.toContain('Meetup updated.');
   });
 
@@ -1087,7 +1032,7 @@ describe('meeting planner with real OneMap search child', () => {
     expect(wrapper.get('[data-availability-start]').attributes('aria-pressed')).toBe('false');
     expect(wrapper.get('[data-availability-start]').element.disabled).toBe(true);
     expect(wrapper.text()).toContain('Your unsaved availability is kept');
-    expect(wrapper.text()).toContain('Unsaved changes');
+    expect(wrapper.text()).toContain('Unsaved response');
     expect(wrapper.get('textarea').element.value).toBe('My pending change request');
     expect(api.meetupAvailability).not.toHaveBeenCalled();
   });
@@ -1553,12 +1498,12 @@ describe('meetup creation concert-date guardrails', () => {
     const { wrapper, router } = await mountPage(MeetupView, { path: '/meetups/meetup-1?from=overview', props: { id: 'meetup-1' } });
     expect(wrapper.get('.back-link').attributes('href')).toBe('/meetups');
     await wrapper.get('[data-availability-start]').trigger('click');
-    expect(wrapper.text()).toContain('Unsaved changes');
+    expect(wrapper.text()).toContain('Unsaved response');
     await wrapper.get('[data-planner-step="places"]').trigger('click'); await flushPromises();
     expect(router.currentRoute.value.hash).toBe('#meetup-places');
     expect(router.currentRoute.value.query.from).toBe('overview');
     expect(api.meetup).toHaveBeenCalledTimes(1);
-    expect(wrapper.text()).toContain('Unsaved changes');
+    expect(wrapper.text()).toContain('Unsaved response');
   });
 });
 
@@ -1665,7 +1610,7 @@ describe('planner draft, selection and persistence hardening', () => {
     await button(wrapper, 'Save my times').trigger('click'); await flushPromises();
     expect(wrapper.text()).toContain('Your saved response has been cleared.');
     expect(wrapper.text()).toContain('Group details could not refresh');
-    expect(wrapper.text()).not.toContain('Unsaved changes');
+    expect(wrapper.text()).not.toContain('Unsaved response');
     expect(wrapper.find('#meetup-availability > [role="alert"]').exists()).toBe(false);
   });
   it('clears old success when editing again and preserves a failed save draft', async () => {

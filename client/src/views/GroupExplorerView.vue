@@ -567,6 +567,16 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
 
       <template v-if="seeker || currentGroup || currentOffer || reads.matching.loaded || reads.request.error">
       <section class="card group-panel joining-section" aria-labelledby="joining-mode-heading">
+        <!-- Someone already in a group for this show cannot change how they
+             joined it, so the chooser is only a dead end for them. They are
+             shown the one thing still open to them: looking at the others. -->
+        <template v-if="currentGroup">
+          <h2 id="joining-mode-heading">You’re in a group for this show</h2>
+          <div class="group-actions">
+            <RouterLink :to="{ path: '/groups', query: { ...(concertId ? { concertId } : {}), mode: 'direct' } }" class="btn btn--primary">View other groups</RouterLink>
+          </div>
+        </template>
+        <template v-else>
         <h2 id="joining-mode-heading">How do you want to find a group?</h2>
         <p class="group-status" role="status">{{ enrollmentSummary }} Viewing a pathway does not change this.</p>
         <div class="joining-modes" role="group" aria-label="Ways to find a group">
@@ -587,6 +597,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
           <p>You can compare groups while remaining on the automatic match list. To send a direct request, explicitly switch your active method first.</p>
           <button type="button" class="btn btn--primary" :disabled="busy || !canSwitchMode" @click="requestMethodChange('direct')">Switch to Browse and choose</button>
         </div>
+        </template>
 
       <section v-if="displayedMode === 'algorithm'" class="card group-panel automatic-matching" aria-label="Automatic matching progress">
         <p class="group-kicker mono">Your next step</p>
