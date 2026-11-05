@@ -38,7 +38,6 @@ const {
     <nav v-if="id" class="group-actions">
       <button type="button" class="btn btn--ghost" @click="router.push('/meetups')">All plans</button>
       <button type="button" class="btn btn--ghost" :disabled="refreshing || busy" @click="refreshPlanner">Refresh planner</button>
-      <span class="meetup-live" role="status"><span aria-hidden="true"></span>{{ liveLabel }}{{ refreshing ? ' · Updating…' : '' }}</span>
     </nav>
     <p v-if="error" class="group-error" role="alert">{{ error }}</p>
     <p v-if="busy" class="loading-state" role="status"><LoadingSpinner />Updating your meetup plan…</p>
@@ -53,7 +52,7 @@ const {
       <p v-if="!boards.length && !error && creationContext?.policy?.canSchedule !== false">No meetups yet. Start one from your group or a companion chat.</p>
       </template>
     <template v-else-if="board"
-      ><div class="meetup-context"><span>{{ board.participantCount }} participants</span><strong>{{ statuses[board.status] ?? "Plan updated" }}</strong></div>
+      >
       <section v-if="board.status === 'proposed' || board.status === 'confirmed'" class="meetup-role-note meetup-recovery" aria-label="Planning is locked">
         <p>{{ board.status === 'confirmed' ? 'This plan is confirmed.' : 'Waiting for organizer approval.' }} Changes are locked, but you can still chat.</p>
         <p v-if="!capabilities.canReopen">Ask an organizer to reopen planning to make changes.</p>
@@ -67,7 +66,6 @@ const {
       <p v-if="syncNote" class="group-muted" role="status">{{ syncNote }}</p>
       <section id="meetup-availability" v-show="activeStep === 'availability'" role="tabpanel" aria-labelledby="meetup-tab-availability" class="card group-panel meetup-availability meetup-workspace">
         <h2>Select the times you are available</h2>
-        <p class="group-muted">Click or tap a half-hour block to select it; drag across several to paint your availability. Darker green means more saved availability.</p>
         <div class="meetup-time-layout">
           <MeetupAvailabilityGrid :grid="board.grid" :participant-count="board.participantCount" v-model:selected="selectedTimes" :disabled="busy || contributionsLocked" />
           <aside class="meetup-time-context" aria-labelledby="meetup-group-availability-heading">
@@ -85,24 +83,23 @@ const {
         </div>
         <fieldset class="meetup-response-controls" :disabled="busy || contributionsLocked">
           <label class="group-check"><input v-model="unavailable" type="checkbox" />I can't make any of these times</label>
-          <p :class="availabilityDirty ? 'meetup-unsaved' : 'group-muted'" role="status">{{ availabilityDirty ? 'Unsaved response' : 'Your response' }}: {{ responseLabel }}</p>
         </fieldset>
         <details class="meetup-disclosure meetup-journey">
           <summary>My private starting point <span class="meetup-audience meetup-audience--private">Only you &middot; Optional</span></summary>
           <p class="group-muted">Where will you be travelling from? Add an approximate starting point to your selected times to help compare journeys. Other participants cannot see it. This does not suggest a meeting place.</p>
           <fieldset class="meetup-travel-fields" :disabled="busy || contributionsLocked">
             <label>Travel method<select v-model="position.travelMode"><option value="transit">Public transport</option><option value="drive">Car</option></select></label>
-            <MeetupLocationSearch :meetup-id="id" :reset-key="journeySearchKey" label="Private starting point" placeholder="e.g. your nearest MRT or approximate starting area" :disabled="busy || contributionsLocked" selection-hint="Private starting point selected. Press Apply to selected times, then save." @selected="selectJourney" @selection-invalidated="invalidateJourney" />
-            <details class="meetup-manual-entry"><summary>Enter coordinates manually</summary>
+            <MeetupLocationSearch :meetup-id="id" :reset-key="journeySearchKey" label="Private starting point" placeholder="e.g. your nearest MRT or approximate starting area" :disabled="busy || contributionsLocked" selection-hint="Private starting point selected. Save your availability to keep it." @selected="selectJourney" @selection-invalidated="invalidateJourney" />
+            <details class="meetup-manual-entry"><summary>Cannot find your location?</summary>
               <div class="group-controls">
                 <label>Location label<input v-model="position.label" maxlength="100" placeholder="e.g. Tampines MRT" @input="editJourney('label')" /></label>
                 <label>Latitude<input v-model="position.latitude" type="number" min="-90" max="90" step="any" placeholder="No location supplied" @input="editJourney('latitude')" /></label>
                 <label>Longitude<input v-model="position.longitude" type="number" min="-180" max="180" step="any" placeholder="No location supplied" @input="editJourney('longitude')" /></label>
               </div>
             </details>
-            <button type="button" class="btn btn--ghost" :disabled="busy || contributionsLocked || !selectedSlotCount" @click="assignJourney">Apply to selected times</button>
+            <p v-if="position.label && validCoordinates(position)" class="group-muted">Starting point: {{ position.label }}</p>
             <p v-if="!selectedSlotCount" class="group-muted">Pick your times first.</p>
-            <p v-if="journeyDirty" class="meetup-unsaved" role="status">Not applied yet. Press Apply to selected times.</p>
+            <p v-if="journeyDirty" class="meetup-unsaved" role="status">Not saved yet. Save your availability to keep it.</p>
             <p v-if="feedback.journey" class="group-success" role="status">{{ feedback.journey }}</p>
             <p v-if="failures.journey" class="group-error" role="alert">{{ failures.journey }}</p>
           </fieldset>
@@ -127,8 +124,7 @@ const {
       <p v-if="availabilityDirty || journeyDirty" class="meetup-role-note" role="status">You have unsaved time changes. Recommendations use saved availability.</p>
       <form class="card group-panel meetup-place-editor" @submit.prevent="addPlace">
         <h2>{{ editingPlaceId ? 'Correct your meeting-place suggestion' : 'Suggest a meeting place' }}</h2>
-        <span class="meetup-audience meetup-audience--shared">Shared with this group</span>
-        <p class="group-muted">Suggest a public landmark or entrance where everyone could meet. This is separate from your private starting point. Adding a place invites votes; it does not set the final plan.</p>
+        <p class="group-muted">Suggest a public landmark or entrance where everyone could meet. This is separate from your private starting point.</p>
         <p v-if="editingPlaceId" class="meetup-role-note" role="status">Renaming keeps the saved coordinates. Choose a new search result or edit coordinates to move the meeting place. Existing votes for this place will be cleared when you save a correction. Participants can review the change and vote again.</p>
         <fieldset class="meetup-travel-fields" :disabled="busy || contributionsLocked">
           <MeetupLocationSearch :meetup-id="id" :reset-key="placeSearchKey" label="Shared meeting place" placeholder="e.g. Funan entrance or a public meeting landmark" :disabled="busy || contributionsLocked" :selection-hint="editingPlaceId ? 'Replacement selected. Press Save place correction to share it.' : 'Selection is not saved. Press Add place to share it.'" @selected="selectPlace" @selection-invalidated="invalidatePlace" />
@@ -340,12 +336,12 @@ const {
 .meetup-journey .meetup-travel-fields > button { justify-self: start; }
 .meetup-manual-entry { border-top: 1px solid var(--panel-edge); padding-top: .8rem; }
 .meetup-manual-entry > summary { color: var(--text-300); font-size: var(--step--1); }
-.meetup-place-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-top: 1rem; }
+.meetup-place-row { display: flex; flex-direction: column; align-items: stretch; gap: 1rem; padding-top: 1rem; }
 .meetup-place-row h3 { margin-bottom: .35rem; }
 .meetup-place-row .btn { flex-shrink: 0; }
 .meetup-place-row .btn[aria-pressed="true"] { border-color: var(--mint-400); color: var(--mint-400); }
-.meetup-place-actions { justify-content: flex-end; flex-wrap: wrap; }
-.meetup-place-row > div:first-child { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
+.meetup-place-actions { justify-content: flex-start; flex-wrap: wrap; width: 100%; }
+.meetup-place-row > div:first-child { min-width: 0; overflow-wrap: anywhere; }
 .meetup-place-row + .meetup-place-row { border-top: var(--border-soft); margin-top: 1rem; }
 .meetup-preferred-place { color: var(--mint-400); font-size: var(--step--1); font-weight: 600; }
 .meetup-ranking-context { display: grid; gap: .45rem; padding: .8rem 1rem; border-left: 2px solid var(--accent-400); background: var(--surface-interactive); color: var(--text-300); font-size: var(--step--1); line-height: 1.6; }
@@ -554,6 +550,7 @@ const {
 .meetup-place-editor .meetup-travel-fields { margin-bottom: 0; }
 .meetup-place-editor .meetup-travel-fields > .group-check { margin-bottom: 0; }
 .meetup-place-editor .meetup-travel-fields > button { display: block; margin-top: var(--space-5); }
+.meetup-place-editor .meetup-travel-fields > .group-actions { margin-top: var(--space-5); }
 .meetup-travel-fields legend {
   font-weight: 600;
   padding-bottom: var(--space-3);

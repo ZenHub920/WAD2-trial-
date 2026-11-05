@@ -211,7 +211,6 @@ onBeforeUnmount(() => {
       <strong class="meetup-coverage" :data-level="coverageLevel(count(inspected), participantCount)">{{ count(inspected) }} of {{ participantCount }} available</strong>
       <span>{{ selectedSet.has(inspected.startsAt) ? 'You’re available' : 'Not selected' }}</span>
     </div>
-    <p v-if="cells.length" class="availability-grid__hint">Arrow keys move; Space selects.</p>
   </div>
 </template>
 

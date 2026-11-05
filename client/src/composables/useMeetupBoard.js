@@ -212,7 +212,7 @@ export function useMeetupBoard(props) {
     }
     if (!capabilities.value.canContribute) return { title: 'View the planning progress', body: 'Your current permissions allow you to inspect this plan. Contribution controls follow the current planning permissions.', label: 'View planning discussion', step: 'review', target: '.meetup-discussion' };
     if (availabilityDirty.value) return { title: 'Save your time changes', body: 'Your selected times are still a private draft. Recommendations and other participants use your last saved availability until you save.', label: 'Review and save my times', step: 'availability', target: '.meetup-save-bar .btn--primary' };
-    if (journeyDirty.value) return { title: 'Apply your optional journey details', body: 'These starting-point or travel changes have not been applied. Apply them to selected times, then save your availability. You can also leave the starting point blank.', label: 'Review journey details', step: 'availability', target: '.meetup-journey' };
+    if (journeyDirty.value) return { title: 'Save your optional journey details', body: 'These starting-point or travel changes have not been saved yet. Save your availability to keep them. You can also leave the starting point blank.', label: 'Review journey details', step: 'availability', target: '.meetup-journey' };
     if (placeDirty.value) return { title: editingPlaceId.value ? 'Save your place correction' : 'Share your place suggestion', body: 'This place is still a draft. Saving shares it with participants; it does not select a final time or approve a meetup.', label: 'Review my place draft', step: 'places', target: '.meetup-place-editor input[required]' };
     if (comment.value.trim()) return { title: 'Finish your discussion message', body: 'Your message has not been posted. Review it in the discussion before leaving this planner.', label: 'Review my message', step: 'review', target: '.meetup-discussion textarea' };
     if (capabilities.value.canPropose && recommendationsInvalid.value) return { title: 'Refresh the recommendations', body: 'Your saved contributions are kept. Refresh the options before choosing the final time and place.', label: 'Reload recommendations', refresh: true };
@@ -337,6 +337,15 @@ export function useMeetupBoard(props) {
       if (!keepDraft) availabilityResponse.value = savedAvailabilityResponse.value;
       if (keepDraft) for (const start of Object.keys(nextSlots)) if (slots.value[start]) nextSlots[start] = slots.value[start];
       slots.value = nextSlots;
+      if (!keepDraft || !hasOriginDraft.value) {
+        const savedOrigin = Object.values(nextSlots).find(slot => slot.selected && validCoordinates(slot));
+        const savedMode = Object.values(nextSlots).find(slot => slot.selected)?.travelMode;
+        Object.assign(position, savedOrigin
+          ? { latitude: savedOrigin.latitude, longitude: savedOrigin.longitude, label: savedOrigin.label ?? '', travelMode: savedOrigin.travelMode ?? 'transit' }
+          : { latitude: '', longitude: '', label: '', travelMode: savedMode ?? position.travelMode });
+        journeyLookup.value = null;
+        appliedJourney.value = journeySnapshot();
+      }
       for (const [start, point] of slotLookups) if (!nextSlots[start]
         || ['label', 'latitude', 'longitude'].some(field => String(nextSlots[start][field]) !== String(point[field]))) slotLookups.delete(start);
       const firstLoad = !board.value;
@@ -547,6 +556,7 @@ export function useMeetupBoard(props) {
   async function saveAvailability() {
     if (busy.value) return;
     clearNotice('availability');
+    if (!applyJourney()) { failures.availability = failures.journey; return; }
     const selected = Object.values(slots.value).filter(slot => slot.selected);
     if (selected.some(slot => (slot.label?.trim() || coordinate(slot.latitude) || coordinate(slot.longitude)
       || (slot.latitude !== null && slot.latitude !== '' && slot.latitude !== undefined)
@@ -588,12 +598,11 @@ export function useMeetupBoard(props) {
     );
     if (ok) feedback.journey = '';
   }
-  function assignJourney() {
-    failures.journey = ''; feedback.journey = ''; feedback.availability = '';
-    if (contributionsLocked.value || busy.value || !selectedSlotCount.value) return;
+  function applyJourney() {
+    failures.journey = '';
     if (hasOriginDraft.value && !validCoordinates(position)) {
-      failures.journey = 'Select a starting location from the search results, or enter both valid coordinates under Advanced/manual entry.';
-      return;
+      failures.journey = 'Select a starting location from the search results, or enter both valid coordinates manually.';
+      return false;
     }
     for (const [start, slot] of Object.entries(slots.value)) if (slot.selected) {
       slot.travelMode = position.travelMode;
@@ -604,8 +613,9 @@ export function useMeetupBoard(props) {
       }
     }
     appliedJourney.value = journeySnapshot();
-    feedback.journey = `Journey details applied to ${selectedSlotCount.value} selected ${selectedSlotCount.value === 1 ? 'time' : 'times'}. ${availabilityDirty.value ? 'Not saved yet. Save to share.' : 'These details already match your saved availability.'}`;
+    return true;
   }
+  function assignJourney() { feedback.journey = ''; return applyJourney(); }
   async function addPlace() {
     if (busy.value) return;
     clearNotice('places');
