@@ -241,7 +241,7 @@ watch(() => currentUser.value?.id, userId => {
                 <span class="thread__time">{{ when(thread.at) }}</span>
               </span>
               <span class="thread__preview" :class="{ 'thread__preview--muted': thread.muted }">{{ thread.preview }}</span>
-              <span class="thread__context"><span class="thread__kind">{{ thread.kind }}</span>{{ thread.context }}</span>
+              <span class="thread__context"><span class="thread__kind" :class="`thread__kind--${thread.kind.toLowerCase()}`">{{ thread.kind }}</span>{{ thread.context }}</span>
             </span>
             <span v-if="thread.unread > 0" class="thread__unread" :aria-label="`${thread.unread} unread messages`">{{ thread.unread > 9 ? '9+' : thread.unread }}</span>
             <span class="thread__arrow" aria-hidden="true">&rsaquo;</span>
@@ -419,6 +419,10 @@ watch(() => currentUser.value?.id, userId => {
 }
 .threads > li:last-child .thread { border-bottom: 0; }
 .thread__kind { margin-right: var(--space-2); padding: 0 var(--space-2); border-radius: var(--radius-pill); background: var(--ink-750); color: var(--accent-400); font-weight: 650; }
+/* Each kind of chat has its own colour: groups jade, tickets amber, companions orchid. */
+.thread__kind--group { background: color-mix(in srgb, var(--signal-good) 14%, transparent); color: var(--signal-good); }
+.thread__kind--ticket { background: color-mix(in srgb, var(--amber-400) 16%, transparent); color: var(--amber-400); }
+.thread__kind--companion { background: color-mix(in srgb, var(--mint-400) 16%, transparent); color: var(--mint-400); }
 .inbox__blocked { display: grid; justify-items: start; gap: var(--space-3); margin-top: var(--space-5); }
 .thread--unread { border-left-color: var(--accent-400); background: color-mix(in srgb, var(--accent-400) 5%, var(--ink-800)); }
 .thread:hover {

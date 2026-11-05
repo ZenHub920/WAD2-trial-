@@ -386,8 +386,13 @@ onUnmounted(() => {
 <style scoped>
 .channel {
   max-width: 800px;
-  display: grid;
+  /* Fill the screen below the site header so the message box sits at the bottom. */
+  display: flex;
+  flex-direction: column;
   gap: var(--space-4);
+  min-height: calc(100dvh - var(--header-height) - 1px);
+  box-sizing: border-box;
+  padding-bottom: 0;
 }
 .channel__head {
   display: flex;
@@ -533,6 +538,13 @@ onUnmounted(() => {
 .composer {
   display: flex;
   gap: var(--space-3);
+  /* Pushed to the bottom of the screen, and kept there while scrolling. */
+  position: sticky;
+  bottom: 0;
+  margin-top: auto;
+  padding-block: var(--space-3);
+  background: var(--glass-tint);
+  backdrop-filter: var(--glass-blur);
 }
 .composer__input {
   flex: 1;
