@@ -91,6 +91,41 @@ async function markRead(id) {
     if (active()) readingId.value = '';
   }
 }
+/** "3 hours ago", like an updates feed; older than a week shows the date. */
+function ago(value) {
+  const at = Date.parse(value?.includes?.('T') ? value : `${String(value).replace(' ', 'T')}Z`);
+  if (!Number.isFinite(at)) return '';
+  const minutes = Math.round((Date.now() - at) / 60000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+  const days = Math.round(hours / 24);
+  return days <= 7 ? `${days} ${days === 1 ? 'day' : 'days'} ago` : formatDateTime(value);
+}
+/** A round icon and a "View …" link for each kind of update. */
+const KINDS = {
+  chat: { icon: 'chat', link: 'View conversation' },
+  group: { icon: 'group', link: 'View group' },
+  match: { icon: 'match', link: 'View match' },
+  meetup: { icon: 'meetup', link: 'View meetup' },
+  feedback: { icon: 'feedback', link: 'Leave feedback' },
+};
+const kindOf = item => KINDS[item.category] ?? { icon: 'group', link: 'View details' };
+async function markAllRead() {
+  const scope = context();
+  const unread = items.value.filter(item => !item.readAt);
+  if (!current(scope) || !unread.length || readingId.value) return;
+  readingId.value = 'all';
+  try {
+    await Promise.all(unread.map(item => api.readNotification(item.id)));
+    if (current(scope)) { for (const item of unread) item.readAt = new Date().toISOString(); unreadCount.value = 0; }
+  } catch {
+    if (current(scope)) { error.value = 'Could not mark everything as read. Please try again.'; void load({ replace: true }); }
+  } finally {
+    if (current(scope)) readingId.value = '';
+  }
+}
 function target(item) {
   if (item.path === '/kaki/chat' || item.path === '/chat') return '/messages';
   return item.path === '/marketplace' ? '/concerts' : item.path;
@@ -198,26 +233,39 @@ onUnmounted(() => {
     <Transition name="notification-panel" @before-leave="element => element.setAttribute('inert', '')">
     <section v-if="open" id="notification-popover" ref="panel" class="notification-popover" tabindex="-1" aria-labelledby="notification-popover-title" :aria-busy="loading">
       <header class="notification-popover__head">
-        <div><p class="notification-popover__eyebrow">Your latest updates</p><div class="notification-popover__title-row"><h2 id="notification-popover-title">Notifications</h2><span v-if="unreadCount" class="notification-popover__total">{{ unreadCount }} unread</span></div></div>
-        <button type="button" class="notification-popover__close" aria-label="Close notifications" @click="close">×</button>
+        <h2 id="notification-popover-title">Updates</h2>
+        <div class="notification-popover__head-actions">
+          <button v-if="unreadCount" type="button" class="notification-popover__all" :disabled="Boolean(readingId)" @click="markAllRead">Mark all read</button>
+          <button type="button" class="notification-popover__icon" :disabled="loading" aria-label="Refresh" title="Refresh" @click="load"><LoadingSpinner v-if="loading && items.length" /><svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7" /><path d="M20 4v7h-7" /></svg><span class="notification-popover__sr">Refresh</span></button>
+          <button type="button" class="notification-popover__icon" aria-label="Close notifications" @click="close">×</button>
+        </div>
       </header>
-      <div class="notification-popover__tools">
-        <RouterLink to="/profile#notifications" @click="dismiss">Notification preferences</RouterLink>
-        <button type="button" :disabled="loading" @click="load"><LoadingSpinner v-if="loading && items.length" /><svg v-else viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 8a7 7 0 0 1 11.5-2L20 12M4 12l2.5 6A7 7 0 0 0 18 16"/></svg>Refresh</button>
-      </div>
       <p v-if="error" class="notification-popover__error" role="alert">{{ error }}</p>
       <p v-if="countError" class="notification-popover__error" role="alert">{{ countError }}</p>
-      <p v-if="loading && !items.length" class="loading-state"><LoadingSpinner /> Loading notifications…</p>
-      <div v-else-if="!items.length && !error" class="notification-popover__empty"><strong>No notifications yet.</strong><p>Messages, group requests and meetup updates will appear here.</p></div>
+      <p v-if="loading && !items.length" class="loading-state notification-popover__pad"><LoadingSpinner /> Loading updates…</p>
+      <div v-else-if="!items.length && !error" class="notification-popover__empty"><strong>No updates yet.</strong><p>Messages, group requests and meetup updates will appear here.</p></div>
       <ul v-if="items.length" class="notification-popover__list">
-        <li v-for="item in items" :key="item.id" :class="{ 'notification-popover__unread': !item.readAt }">
-          <RouterLink :to="target(item)" @click="follow(item)">{{ titles[item.title] ?? item.title }}</RouterLink>
-          <p class="notification-popover__meta">{{ formatDateTime(item.createdAt) }} · {{ item.readAt ? 'Read' : 'Unread' }}</p>
-          <button v-if="!item.readAt" type="button" class="notification-popover__read" :disabled="Boolean(readingId)" @click="markRead(item.id)">
-            <LoadingSpinner v-if="readingId === item.id" /><svg v-else viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> Mark read
-          </button>
+        <li v-for="item in items" :key="item.id" class="update" :class="{ 'notification-popover__unread update--unread': !item.readAt }">
+          <span class="update__icon" :class="`update__icon--${kindOf(item).icon}`" aria-hidden="true">
+            <svg v-if="kindOf(item).icon === 'chat'" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4V5Z" /></svg>
+            <svg v-else-if="kindOf(item).icon === 'meetup'" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M4 10h16M9 3v4M15 3v4" /></svg>
+            <svg v-else-if="kindOf(item).icon === 'match'" viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z" /></svg>
+            <svg v-else-if="kindOf(item).icon === 'feedback'" viewBox="0 0 24 24"><path d="m12 4 2.5 5 5.5.8-4 3.9.9 5.5L12 16.6 7.1 19.2l.9-5.5-4-3.9 5.5-.8L12 4Z" /></svg>
+            <svg v-else viewBox="0 0 24 24"><circle cx="9" cy="9" r="3" /><circle cx="17" cy="10" r="2.5" /><path d="M3 19c0-3 2.7-5 6-5s6 2 6 5M15 19c0-2 1-3.5 3-3.5s3 1.5 3 3.5" /></svg>
+          </span>
+          <div class="update__body">
+            <RouterLink :to="target(item)" class="update__title" @click="follow(item)">{{ titles[item.title] ?? item.title }}</RouterLink>
+            <RouterLink :to="target(item)" class="update__link" tabindex="-1" @click="follow(item)">{{ kindOf(item).link }} <span aria-hidden="true">›</span></RouterLink>
+          </div>
+          <div class="update__side">
+            <time :datetime="item.createdAt" :title="formatDateTime(item.createdAt)">{{ ago(item.createdAt) }}</time>
+            <button v-if="!item.readAt" type="button" class="notification-popover__read update__dot" :disabled="Boolean(readingId)" title="Mark as read" @click="markRead(item.id)">
+              <LoadingSpinner v-if="readingId === item.id" /><span class="notification-popover__sr">Mark read</span>
+            </button>
+          </div>
         </li>
       </ul>
+      <footer class="notification-popover__foot"><RouterLink to="/profile#notifications" @click="dismiss">Notification preferences</RouterLink></footer>
     </section>
     </Transition>
   </div>
@@ -270,10 +318,9 @@ onUnmounted(() => {
   top: calc(100% + var(--space-3));
   right: 0;
   z-index: 120;
-  width: min(380px, calc(100vw - 32px));
-  max-height: min(70dvh, 560px);
+  width: min(440px, calc(100vw - 32px));
+  max-height: min(75dvh, 620px);
   overflow-y: auto;
-  padding: var(--space-4);
   border: 1px solid var(--floating-edge);
   border-radius: var(--radius-lg);
   background: var(--surface-floating);
@@ -282,106 +329,51 @@ onUnmounted(() => {
   transform-origin: top right;
   overscroll-behavior: contain;
 }
-.notification-popover__head, .notification-popover__tools {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--space-2);
+/* Header: title on the left, actions on the right, a hairline underneath. */
+.notification-popover__head {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--border-hairline);
+  background: var(--surface-floating);
 }
-.notification-popover__head h2 {
-  font-size: var(--step-1);
-}
-.notification-popover__title-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-.notification-popover__head > div { flex: 1; min-width: 0; }
-.notification-popover__eyebrow { margin-bottom: var(--space-1); color: var(--text-300); font-size: .75rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
-.notification-popover__total { display: inline-flex; align-items: center; min-height: 24px; padding: .15rem .45rem; border: 1px solid color-mix(in srgb, var(--accent-400) 35%, var(--panel-edge)); border-radius: 5px; background: var(--accent-glow); color: var(--accent-400); font-size: .68rem; font-weight: 600; letter-spacing: normal; }
-.notification-popover__close {
-  flex: none;
-  font-size: var(--step-1);
-}
-.notification-popover__tools {
-  margin-block: var(--space-3);
-  padding: var(--space-2);
-  border: var(--border-hairline);
-  border-radius: var(--radius-sm);
-  background: var(--ink-850);
-  font-size: var(--step--1);
-}
-.notification-popover__tools a { min-height: 44px; display: inline-flex; align-items: center; padding-inline: var(--space-1); text-underline-offset: .25em; }
-.notification-popover__tools button, .notification-popover__read {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 44px;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--panel-edge);
-  border-radius: var(--radius-sm);
-  background: var(--ink-800);
-  color: var(--accent-400);
-  font-weight: 550;
-  box-shadow: inset 0 1px 0 var(--panel-highlight);
-  transition: border-color var(--dur-fast), background-color var(--dur-fast), box-shadow var(--dur-fast), transform var(--dur-fast) var(--ease-settle);
-}
-.notification-popover__tools button:hover:not(:disabled), .notification-popover__read:hover:not(:disabled) { border-color: var(--accent-400); background: var(--ink-750); }
-.notification-popover__tools button:active:not(:disabled), .notification-popover__read:active:not(:disabled) { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0, 0, 0, .1); }
-.notification-popover__tools button:disabled, .notification-popover__read:disabled { opacity: .55; cursor: wait; }
-.notification-popover__error {
-  color: var(--rose-400);
-  font-size: var(--step--1);
-}
-.notification-popover__empty {
-  padding-block: var(--space-5);
-  color: var(--text-300);
-  text-align: center;
-}
+.notification-popover__head h2 { margin: 0; font-size: var(--step-1); color: var(--text-100); }
+.notification-popover__head-actions { display: flex; align-items: center; gap: var(--space-1); }
+.notification-popover__all { border: 0; background: none; color: var(--signal-good); font: inherit; font-size: var(--step--1); font-weight: 650; cursor: pointer; padding: var(--space-2); }
+.notification-popover__all:disabled { opacity: .55; cursor: wait; }
+.notification-popover__icon { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-300); font-size: var(--step-1); cursor: pointer; }
+.notification-popover__icon:hover:not(:disabled) { background: var(--ink-750); color: var(--text-100); }
+.notification-popover__icon svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.notification-popover__sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.notification-popover__pad { padding: var(--space-4); }
+.notification-popover__error { padding: var(--space-2) var(--space-4) 0; color: var(--rose-400); font-size: var(--step--1); }
+.notification-popover__empty { padding: var(--space-6) var(--space-4); color: var(--text-300); text-align: center; }
 .notification-popover__empty strong { display: block; color: var(--text-100); font-size: var(--step--1); }
 .notification-popover__empty p { max-width: 30ch; margin: var(--space-2) auto 0; font-size: var(--step--1); }
-.notification-popover__list {
-  list-style: none;
-  padding: 0;
-  display: grid;
-  gap: var(--space-2);
-}
-.notification-popover__list li {
-  padding: var(--space-3);
-  display: grid;
-  gap: var(--space-1);
-  border: var(--border-hairline);
-  border-left: 3px solid transparent;
-  border-radius: var(--radius-sm);
-  overflow-wrap: anywhere;
-}
-.notification-popover__list li.notification-popover__unread {
-  border-left-color: var(--accent-400);
-  background: color-mix(in srgb, var(--accent-400) 5%, var(--ink-800));
-}
-.notification-popover__list a {
-  font-size: var(--step--1);
-  color: var(--text-200);
-  text-decoration: none;
-  font-weight: 550;
-  line-height: 1.5;
-}
-.notification-popover__list a:hover {
-  color: var(--accent-400);
-  text-decoration: underline;
-}
-.notification-popover__meta {
-  margin-top: var(--space-1);
-  color: var(--text-400);
-  font-size: var(--step--1);
-}
-.notification-popover__read {
-  font-size: var(--step--1);
-  justify-self: start;
-  margin-top: var(--space-2);
-}
+/* Feed rows: icon, text, then time and an unread dot; unread rows are tinted. */
+.notification-popover__list { list-style: none; margin: 0; padding: 0; }
+.update { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: var(--space-3); align-items: start; padding: var(--space-4); border-bottom: var(--border-hairline); overflow-wrap: anywhere; }
+.update:last-child { border-bottom: 0; }
+.update--unread { background: color-mix(in srgb, var(--ink-700) 55%, transparent); }
+.update__icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; color: #fff; }
+.update__icon svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.update__icon--chat { background: #1971c2; }
+.update__icon--group { background: var(--signal-good); }
+.update__icon--match { background: #c2255c; }
+.update__icon--meetup { background: #d9480f; }
+.update__icon--feedback { background: #9c36b5; }
+.update__body { display: grid; gap: var(--space-2); min-width: 0; }
+.update__title { color: var(--text-200); font-size: var(--step-0); line-height: 1.4; text-decoration: none; }
+.update--unread .update__title { color: var(--text-100); font-weight: 700; }
+.update__title:hover { text-decoration: underline; }
+.update__link { justify-self: start; color: var(--signal-good); font-size: var(--step--1); font-weight: 650; text-decoration: none; }
+.update__link:hover { text-decoration: underline; }
+.update__side { display: grid; justify-items: end; gap: var(--space-3); }
+.update__side time { color: var(--text-400); font-size: var(--step--1); white-space: nowrap; }
+.update__dot { display: grid; place-items: center; width: 12px; height: 12px; padding: 0; border: 0; border-radius: 50%; background: #e03131; cursor: pointer; }
+.update__dot:hover:not(:disabled) { box-shadow: 0 0 0 4px color-mix(in srgb, #e03131 25%, transparent); }
+.update__dot:disabled { cursor: wait; }
+.notification-popover__foot { padding: var(--space-3) var(--space-4); border-top: var(--border-hairline); font-size: var(--step--1); text-align: center; }
 .notification-panel-enter-active { transition: opacity 180ms var(--ease-settle), transform 220ms var(--ease-settle); }
 .notification-panel-leave-active { pointer-events: none; transition: opacity 120ms var(--ease-out), transform 140ms var(--ease-out); }
 .notification-panel-enter-from, .notification-panel-leave-to { opacity: 0; transform: translateY(-6px) scale(.99); }
@@ -389,7 +381,7 @@ onUnmounted(() => {
   .notification-panel-enter-active, .notification-panel-leave-active { transition: none; }
   .notification-panel-enter-from, .notification-panel-leave-to,
   .notification-bell__button:active, .notification-popover__close:active,
-  .notification-popover__tools button:active:not(:disabled), .notification-popover__read:active:not(:disabled) { transform: none; }
+  .notification-popover__read:active:not(:disabled) { transform: none; }
 }
 @media (max-width: 1100px) {
   .notification-bell {

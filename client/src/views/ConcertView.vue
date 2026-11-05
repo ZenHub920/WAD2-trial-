@@ -321,6 +321,7 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
       <SetlistReel :artist="concert.concert.artist" :setlist="setlist" />
       <SetlistEditor
         v-if="sessionReady && currentUser?.isOperator"
+        class="setlist-editor-card"
         :concert-id="id"
         :setlist="setlist"
         @saved="setlist = $event"
@@ -446,6 +447,10 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
   isolation: isolate;
 }
 
+/* Same space below the operator's setlist card as between the other cards. */
+.setlist-editor-card {
+  margin-bottom: var(--space-6);
+}
 .my-result {
   display: grid;
   gap: var(--space-3);

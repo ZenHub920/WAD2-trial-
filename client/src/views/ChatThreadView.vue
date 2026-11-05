@@ -235,7 +235,12 @@ function timeOf(value) {
 <style scoped>
 .chat {
   max-width: 680px;
-  padding-block: var(--space-5) var(--space-9);
+  /* Fill the screen below the header: messages scroll, the box sits at the bottom. */
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - var(--header-height));
+  box-sizing: border-box;
+  padding-block: var(--space-5) var(--space-4);
 }
 
 .about {
@@ -286,7 +291,8 @@ function timeOf(value) {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  height: min(60vh, 560px);
+  flex: 1 1 auto;
+  min-height: 0;
   margin-top: var(--space-4);
   padding: var(--space-4) var(--space-2);
   overflow-y: auto;
@@ -332,6 +338,7 @@ function timeOf(value) {
 /* ---- Composer --------------------------------------------------------- */
 
 .composer {
+  flex: none;
   display: flex;
   align-items: flex-end;
   gap: var(--space-2);

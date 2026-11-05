@@ -311,7 +311,7 @@ async function leave() {
     </header>
     <GroupPreferencesGate @saved="load">
       <section v-if="group" class="member-workspace" aria-label="Selected group links">
-        <div class="member-workspace__context"><p class="member-eyebrow">Your group workspace · <RouterLink class="member-workspace__concert" :to="`/concerts/${encodeURIComponent(group.concertId)}`">View concert</RouterLink></p><strong>{{ canStartCoordination ? 'From meeting the group to making a plan.' : 'Your group, conversations and previous plans.' }}</strong><p>{{ canStartCoordination ? 'Compare availability, choose a meeting point and coordinate your concert day.' : 'Return to your group conversation or review an existing meetup. Your saved group information remains available.' }}</p></div>
+        <div class="member-workspace__context"><h2 class="member-workspace__title">Your group workspace <RouterLink class="member-workspace__concert" :to="`/concerts/${encodeURIComponent(group.concertId)}`">View concert</RouterLink></h2><p>{{ canStartCoordination ? 'Compare availability, choose a meeting point and coordinate your concert day.' : 'Return to your group conversation or review an existing meetup. Your saved group information remains available.' }}</p></div>
         <div class="member-workspace__primary">
           <button v-if="canOpenMeetup" type="button" class="btn btn--primary" @click="router.push(meetupLink({ partyId: id }))">{{ canPlanMeetup ? meetupLabel({ partyId: id }) : 'View meetup history' }}</button>
           <RouterLink class="btn btn--ghost" :to="`/groups/${encodeURIComponent(id)}/channel`">Messages</RouterLink>
@@ -475,7 +475,8 @@ async function leave() {
 .member-workspace__primary { display:flex; flex-wrap:wrap; gap:var(--space-2); }
 .member-workspace__links { grid-column:1/-1; display:flex; flex-wrap:wrap; gap:var(--space-2) var(--space-5); padding-top:var(--space-3); border-top:var(--border-hairline); font-size:var(--step--1); }
 .member-workspace__links-label { color:var(--text-300); font-size:var(--step--2); text-transform:uppercase; letter-spacing:.08em; }
-.member-workspace__concert { text-transform:none; letter-spacing:normal; font-weight:500; }
+.member-workspace__title { display:flex; align-items:baseline; flex-wrap:wrap; gap:var(--space-1) var(--space-3); margin:0; font-size:var(--step-1); color:var(--text-100); }
+.member-workspace__concert { font-family:var(--font-body); font-size:var(--step--1); font-weight:500; text-transform:none; letter-spacing:normal; }
 .member-workspace__links a { display:inline-flex; align-items:center; min-height:32px; text-underline-offset:.25em; }
 .member-roster__list { display:grid; gap:2px; margin:0; padding:0; list-style:none; }
 /* Chat-app style rows: round picture, name over a quiet status line, role on the right. */
@@ -508,10 +509,12 @@ async function leave() {
 .member-settings__content { display:grid; gap:var(--space-4); padding:0 var(--space-4) var(--space-4); }
 .member-settings__content > .card { box-shadow:none; }
 .member-publish { border-left:3px solid var(--accent-400); }
-.member-invite-tools { padding:var(--space-3) var(--space-4); border:var(--border-hairline); border-radius:var(--radius-md); background:var(--ink-900); }
+.member-invite-tools { padding:var(--space-2) var(--space-4) var(--space-3); border:var(--border-hairline); border-radius:var(--radius-md); background:var(--ink-900); }
 .member-invite-tools summary { cursor:pointer; color:var(--text-200); font-size:var(--step--1); }
 .member-invite-tools summary span { margin-left:var(--space-2); color:var(--text-400); font-size:var(--step--2); }
-.member-invite-tools__content { display:grid; gap:var(--space-3); justify-items:start; padding-top:var(--space-4); }
+.member-invite-tools__content { display:grid; gap:var(--space-3); justify-items:start; padding-top:0; }
+/* Keep the opened invite tools compact: little space between the heading and the button. */
+.member-invite-tools[open] > summary { margin-bottom:var(--space-2); }
 .member-invite-tools__content > label { width:100%; }
 @media(max-width:680px) { .member-workspace { grid-template-columns:minmax(0,1fr); padding:var(--space-4); } .member-workspace__primary .btn { flex:1; } .member-settings > summary { padding:var(--space-4); } .member-settings__content { padding-inline:var(--space-3); } }
 @media(prefers-reduced-motion:reduce) { .member-settings summary svg { transition:none; } }
