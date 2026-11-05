@@ -21,7 +21,6 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import BackArrow from '../components/BackArrow.vue';
 import { useRouter } from 'vue-router';
 import { api, formatDate } from '../api.js';
-import MeetupEntryCard from '../components/MeetupEntryCard.vue';
 import { fetchChatUpdates } from '../chatPages.js';
 import { onChatEvent, connectionState, refreshUnread } from '../chatLive.js';
 import UserAvatar from '../components/UserAvatar.vue';
@@ -455,7 +454,6 @@ watch(() => props.id, async () => {
       </Teleport>
     </header>
 
-    <MeetupEntryCard v-if="conversation && !closed && !loading" :scope="{ kakiConversationId: id }" label="Meetup planner for this pair" class="pair-meetup-entry" />
 
     <!-- ------------------------------------------------------------ states -->
     <p v-if="notice" class="notice notice--ok">{{ notice }}</p>
@@ -634,7 +632,6 @@ watch(() => props.id, async () => {
 </template>
 
 <style scoped>
-.pair-meetup-entry { margin-inline:var(--space-4); }
 .thread {
   display: flex;
   flex-direction: column;

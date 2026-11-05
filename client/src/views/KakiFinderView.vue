@@ -370,7 +370,7 @@ function backToDeck() {
         <div class="kaki__guide-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M10 22c-4-3-6-6-6-10a6 6 0 0 1 12-1 6 6 0 0 1 12 1c0 5-5 9-12 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg></div>
         <h3>Same show.<br> Someone new.</h3>
         <p>Your filters set the scene. Your private preferences help order the profiles.</p>
-        <ol><li><strong>Explore one at a time</strong><span>See their concert vibe and match reasons.</span></li><li><strong>Like when it feels right</strong><span>It becomes a match when they like you too.</span></li><li><strong>Make a plan together</strong><span>Open a chat after a mutual match, then plan your meetup.</span></li></ol>
+        <ol><li><strong>Explore one at a time</strong><span>See their concert vibe and match reasons.</span></li><li><strong>Like when it feels right</strong><span>It becomes a match when they like you too.</span></li><li><strong>Chat and make plans</strong><span>Open a chat after a mutual match and plan your concert day together.</span></li></ol>
       </aside>
     </section>
 
@@ -380,11 +380,7 @@ function backToDeck() {
       <!-- Say what order this is in. Ranked or not, the viewer should never
            have to guess whether the deck means anything. -->
       <p v-if="ranking" class="rank-note loading-state" role="status"><LoadingSpinner />Ranking your matches…</p>
-      <p v-else-if="ranked" class="rank-note rank-note--on">
-        Ordered by how well you match, using your questionnaire answers.
-        <span v-if="stablePartnerId">Your strongest mutual match is first.</span>
-      </p>
-      <p v-else class="rank-note">
+      <p v-else-if="!ranked" class="rank-note">
         Filtered, not ranked.
         <RouterLink to="/profile#preferences">Tell us what you enjoy</RouterLink>
         and we will order these by how well you match.
@@ -396,11 +392,14 @@ function backToDeck() {
         <template v-else-if="swipeError.message === 'concert_finished'"><p>This concert has finished. New likes and skips are closed; your previous choices and conversations are kept.</p><button type="button" class="btn btn--ghost" @click="stage = 'filters'; swipeError = null; loadFinder()">Refresh available concerts</button><RouterLink to="/kaki/history">Companion history</RouterLink></template>
         <p v-else>Your choice has not been saved. Try the same profile again.</p>
       </div>
-      <p v-if="!ranking && deck.length === 0" class="kaki__state">
-        {{ deckEmptyState.message }}
-        <RouterLink v-if="deckEmptyState.kind === 'reviewed'" to="/kaki/history">Review your choices</RouterLink>
-        <button class="btn btn--text" @click="stage = 'filters'">Change filters</button>
-      </p>
+      <div v-if="!ranking && deck.length === 0" class="card kaki__empty-card" role="status">
+        <h3 class="kaki__empty-title">WHOOPS!</h3>
+        <p>{{ deckEmptyState.kind === 'reviewed' ? 'There is no one else available right now. Try changing your preferences to find more companions.' : deckEmptyState.message }}</p>
+        <div class="kaki__empty-actions">
+          <button type="button" class="btn btn--primary" @click="stage = 'filters'">Change preferences</button>
+          <RouterLink v-if="deckEmptyState.kind === 'reviewed'" to="/kaki/history" class="btn btn--ghost">Review your choices</RouterLink>
+        </div>
+      </div>
       <SwipeDeck
         v-else-if="!ranking && swipeError?.message !== 'concert_finished'"
         :items="deck"
@@ -958,4 +957,8 @@ function backToDeck() {
   .range__track input:active::-webkit-slider-thumb { transform: none; }
   .range__track input:active::-moz-range-thumb { transform: none; }
 }
+.kaki__empty-card { display: grid; justify-items: center; gap: var(--space-3, .75rem); padding: 2rem 1.5rem; text-align: center; max-width: 32rem; margin: 1.5rem auto; }
+.kaki__empty-title { margin: 0; font-size: 1.5rem; letter-spacing: .04em; }
+.kaki__empty-card p { margin: 0; color: var(--text-300); }
+.kaki__empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: .75rem; margin-top: .5rem; }
 </style>

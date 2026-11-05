@@ -130,32 +130,17 @@ test('sole-organizer proposal rolls back its approval, selected plan, version an
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM notifications WHERE event_key LIKE ?").get(`meetup:${id}:confirmed:%`).n, 0);
 });
 
-test('mutual Kaki partners still each approve their own authenticated session and can explicitly reopen', async t => {
+test('mutual Kaki partners cannot create a pair meetup board; they coordinate in chat', async t => {
   const { repos, call } = await fixture(t);
   for (const user of ['kakiA', 'kakiB']) repos.participation.join(user, 'c1', 'ga_standing', 'doors');
   repos.kaki.setDecision('kakiA', 'c1', 'kakiB', 'like'); repos.kaki.setDecision('kakiB', 'c1', 'kakiA', 'like');
   const kakiConversationId = repos.kakiChat.openFor({ concertId: 'c1', me: 'kakiA', other: 'kakiB' }).id;
-  const id = (await call('/meetups', 'kakiA', 'POST', { kakiConversationId, title: 'Our pair meetup', startsAt, endsAt })).body.meetup.id;
-  const path = `/meetups/${id}`;
-  const placeId = (await call(`${path}/places`, 'kakiB', 'POST', { label: 'Pair entrance', latitude: 1.31, longitude: 103.86 })).body.place.id;
-  const version = repos.meetups.access('kakiA', id).version;
-  const proposed = await call(`${path}/propose`, 'kakiA', 'POST', { version, startsAt, placeId, acknowledgeNoAvailability: true });
-  assert.equal(proposed.body.proposal.confirmed, false);
-  const revision = proposed.body.proposal.version;
-  const beforeApproval = (await call(path, 'kakiB')).body.meetup;
-  assert.deepEqual(beforeApproval.requiredApprovers.sort(), ['kakiA', 'kakiB']);
-  assert.deepEqual(beforeApproval.approvals, []);
-  assert.equal((await call(`${path}/approve`, 'outsider', 'POST', { version: revision })).status, 404);
-  assert.equal((await call(`${path}/approve`, 'kakiA', 'POST', { version: revision })).body.approval.confirmed, false);
-  assert.equal((await call(path, 'kakiB')).body.meetup.status, 'proposed');
-  assert.equal((await call(`${path}/approve`, 'kakiB', 'POST', { version: revision })).body.approval.confirmed, true);
-  assert.equal((await call(`${path}/reopen`, 'kakiB', 'POST', { version: revision })).status, 200);
-  const reopened = (await call(path, 'kakiA')).body.meetup;
-  assert.equal(reopened.status, 'planning'); assert.deepEqual(reopened.approvals, []);
-  assert.equal(reopened.places.length, 1);
+  const created = await call('/meetups', 'kakiA', 'POST', { kakiConversationId, title: 'Our pair meetup', startsAt, endsAt });
+  assert.equal(created.status, 403);
+  assert.equal(created.body.error, 'pair_meetups_disabled');
 });
 
-test('single-group and Kaki planner events keep their own participant scopes', async t => {
+test('single-group planner events stay scoped and Kaki pairs cannot open a planner', async t => {
   const { repos, call, events } = await fixture(t);
   const group = await call('/meetups', 'hostA', 'POST', { partyId: 'pA', title: 'One group', startsAt, endsAt });
   assert.equal(group.status, 200);
@@ -165,6 +150,6 @@ test('single-group and Kaki planner events keep their own participant scopes', a
   repos.kaki.setDecision('kakiB', 'c1', 'kakiA', 'like');
   const conversation = repos.kakiChat.openFor({ concertId: 'c1', me: 'kakiA', other: 'kakiB' });
   const pair = await call('/meetups', 'kakiB', 'POST', { kakiConversationId: conversation.id, title: 'Kaki pair', startsAt, endsAt });
-  assert.equal(pair.status, 200);
-  assert.deepEqual(events.map(event => event.recipient).sort(), ['kakiA', 'kakiB']);
+  assert.equal(pair.status, 403);
+  assert.deepEqual(events, []);
 });
