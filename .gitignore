@@ -6,6 +6,14 @@ data/
 *.db
 *.db-wal
 *.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+# Audited, synthetic snapshot only; runtime databases remain ignored.
+!test/fixtures/encore-demo.sqlite
 .env
 .env.*
 !.env.example
