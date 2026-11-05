@@ -107,8 +107,15 @@ test('private preference setup: registration opens the welcome questionnaire and
     await page.locator('#email').fill(`setup-${data.suffix}@example.test`);
     await page.locator('#password').fill('Example-only-passphrase-2026!');
     await page.getByRole('button', { name: 'Create account', exact: true }).click();
-    // Sign-up opens the welcome page, which goes straight to the questionnaire.
+    // Sign-up opens the welcome page: About you first, then the questionnaire.
     await expect(page).toHaveURL(url => url.pathname === '/welcome');
+    await expect(page.getByRole('heading', { name: 'About you', exact: true })).toBeVisible();
+    await page.getByLabel('Age range').selectOption('21-24');
+    await page.getByLabel('Home region').selectOption('central');
+    await page.getByLabel('Gender').selectOption('unspecified');
+    await page.getByLabel('Companion preference').selectOption('any');
+    await page.getByLabel('English').check();
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Your matching preferences', exact: true })).toBeVisible();
     await expect(page.getByText('Private · Only you can see your answers', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Skip for now' })).toHaveCount(0);
@@ -120,9 +127,14 @@ test('private preference setup: registration opens the welcome questionnaire and
     await expect(page.getByRole('heading', { name: 'Your matching preferences', exact: true })).toBeVisible();
     await page.getByRole('button', { name: "meet someone I'd go to more concerts with", exact: true }).click();
     const save = page.waitForRequest(req => req.url().includes('/api/me/preferences') && req.method() === 'PUT');
-    await page.getByRole('button', { name: 'Save preferences', exact: true }).click();
+    // Answers save as they change; Next walks the tabs and finishes on the last one.
+    for (let tab = 0; tab < 3; tab++) await page.getByRole('button', { name: 'Next', exact: true }).last().click();
+    await page.getByRole('button', { name: 'Next: your concert vibe', exact: true }).click();
     expect(Object.keys((await save).postDataJSON()).sort()).toEqual(['about', 'avoid', 'dealbreakers', 'quiz', 'wants']);
-    await expect(page.getByText('You can change your preferences anytime on your Profile page.')).toBeVisible();
+    // Then the six concert-vibe ratings, also required.
+    await expect(page.getByRole('heading', { name: 'Your concert vibe', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Save my vibe', exact: true }).click();
+    await expect(page.getByText('You can change your preferences and vibe anytime on your Profile page.')).toBeVisible();
     await page.getByRole('link', { name: 'Continue', exact: true }).click();
     // Group discovery can immediately add its selected concert to the query.
     await expect(page).toHaveURL(url => url.pathname === '/groups');

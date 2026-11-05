@@ -77,7 +77,8 @@ export function createUserController(repos, sessions, images = null) {
 }
 
 function ownUser(user) {
-  return { ...publicUser(user), isOperator: Boolean(user.is_operator) };
+  // aboutComplete: whether the required "About you" step has been saved.
+  return { ...publicUser(user), isOperator: Boolean(user.is_operator), aboutComplete: user.about_saved !== false };
 }
 
 function validateRegistration(body = {}) {

@@ -75,6 +75,7 @@ harness.post('/__test/fixture', (req, res, next) => {
     for (const [who, id] of Object.entries(users)) {
       repos.users.create(makeUser(id, { display_name: who, email: `${id}@example.test` }));
       repos.users.setAvatar(id, FIXTURE_AVATAR);
+      db.prepare('UPDATE users SET about_saved = 1 WHERE id = ?').run(id); // "About you" already done
       repos.membership.savePreferences(id, { about: ['supper', 'singalong'], wants: ['supper'], avoid: [] });
       const token = randomBytes(32).toString('hex');
       repos.sessions.create(createHash('sha256').update(token).digest('hex'), id, Date.now() + 3600000);

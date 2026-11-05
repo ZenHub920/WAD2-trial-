@@ -5,7 +5,7 @@
  * Shows real profile data and optional photos. Shared interests are only
  * labelled as shared when both profiles have the relevant vibe scores.
  */
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { avatarFor, sharedInterests } from '../../kaki.js';
 import { LABELS, formatShortDate } from '../../api.js';
 import UserAvatar from '../UserAvatar.vue';
@@ -17,6 +17,8 @@ const props = defineProps({
 });
 
 const avatar = computed(() => avatarFor(props.person.user));
+const photoFailed = ref(false);
+watch(() => props.person.user.avatarUrl, () => { photoFailed.value = false; });
 
 const interests = computed(() => {
   const { shared, theirs } = sharedInterests(props.viewer, props.person.user);
@@ -30,10 +32,13 @@ const interests = computed(() => {
   <article class="kaki-card">
     <div
       class="kaki-card__portrait"
+      :class="{ 'kaki-card__portrait--photo': person.user.avatarUrl && !photoFailed }"
       :style="{ background: avatar.bg, color: avatar.fg }"
       role="presentation"
     >
-      <UserAvatar :src="person.user.avatarUrl" :name="person.user.displayName" :size="112" />
+      <!-- The face fills the whole picture area; a coloured initial only when there is no photo. -->
+      <img v-if="person.user.avatarUrl && !photoFailed" class="kaki-card__photo" :src="person.user.avatarUrl" alt="" @error="photoFailed = true" />
+      <UserAvatar v-else :src="null" :name="person.user.displayName" :size="112" />
     </div>
 
     <div class="kaki-card__body">
@@ -81,6 +86,22 @@ const interests = computed(() => {
   aspect-ratio: 16 / 7;
   min-height: 150px;
   flex-shrink: 0;
+}
+/* With a photo the picture area is a little taller and the face fills it. */
+.kaki-card__portrait--photo {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+}
+.kaki-card__photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 30%;
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 

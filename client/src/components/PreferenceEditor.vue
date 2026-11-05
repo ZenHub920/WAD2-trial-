@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { api } from "../api.js";
 import LoadingSpinner from "./LoadingSpinner.vue";
 import PreferenceQuiz from "./PreferenceQuiz.vue";
@@ -10,8 +10,18 @@ const props = defineProps({
   /** Refuse to save with nothing chosen in any section. */
   requireOne: Boolean,
   submitLabel: { type: String, default: "Save preferences" },
+  /**
+   * Save on every change (a moment after the last one) instead of a Save
+   * button. The footer then shows the save status and a Next button that
+   * walks through the four tabs; Next on the last tab emits "done".
+   */
+  autosave: Boolean,
+  /** '' | 'saving' | 'saved' | 'error', from the parent that does the saving. */
+  saveState: { type: String, default: "" },
+  /** The Next button's label on the last tab. */
+  doneLabel: { type: String, default: "Continue" },
 });
-const emit = defineEmits(["save"]);
+const emit = defineEmits(["save", "done"]);
 const concepts = ref([]),
   error = ref("");
 const loading = ref(true);
@@ -122,6 +132,8 @@ function keepCustom(intent) {
 }
 onUnmounted(() => {
   alive = false;
+  // Leaving the page should not drop a change that was about to save.
+  if (props.autosave && autosaveArmed) flushAutosave();
   for (const timer of Object.values(timers)) clearTimeout(timer);
 });
 const labels = {
@@ -138,8 +150,56 @@ onMounted(async () => {
     error.value = "Could not load the preference choices. Please reopen this page to try again.";
   } finally {
     loading.value = false;
+    // The quiz reports its saved answers as it loads; only later changes save.
+    setTimeout(() => { autosaveArmed = true; }, 0);
   }
 });
+/** The answers in the shape the server stores. */
+function buildAnswers() {
+  const answers = { quiz: quizAnswers.value, dealbreakers: dealbreakers.value };
+  for (const k of ["about", "wants", "avoid"])
+    answers[k] = [
+      ...selected.value[k].map((id) => ({
+        text: originalText.value[k][id] ?? concepts.value.find((c) => c.id === id)?.label ?? id,
+        conceptId: id,
+      })),
+      ...customList(k).map((text) => ({ text, custom: true })),
+    ];
+  return answers;
+}
+const hasAnswers = () => ["quiz", "about", "wants", "avoid"].some(answerCount);
+
+// Autosave: wait for the saved answers to settle in, then save a moment after
+// each change. Nothing is sent while every section is empty, because the
+// server needs at least one answer.
+let autosaveArmed = false, autosaveTimer;
+function flushAutosave() {
+  clearTimeout(autosaveTimer);
+  if (props.autosave && hasAnswers()) emit("save", buildAnswers());
+}
+watch(() => JSON.stringify([quizAnswers.value, selected.value, custom.value, dealbreakers.value]), () => {
+  if (!props.autosave || !autosaveArmed) return;
+  error.value = "";
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(flushAutosave, 700);
+});
+
+const TAB_ORDER = ["quiz", "about", "wants", "avoid"];
+const onLastTab = computed(() => activeIntent.value === TAB_ORDER.at(-1));
+/** Next tab, or finish on the last one (saving anything still waiting). */
+function next() {
+  if (!onLastTab.value) {
+    activeIntent.value = TAB_ORDER[TAB_ORDER.indexOf(activeIntent.value) + 1];
+    return;
+  }
+  if (props.requireOne && !hasAnswers()) {
+    error.value = "Answer at least one sentence or choose one preference before continuing.";
+    return;
+  }
+  flushAutosave();
+  emit("done");
+}
+
 function save() {
   if (Object.values(drafts.value).some((text) => text.trim())) {
     error.value =
@@ -182,6 +242,7 @@ function save() {
       </button>
     </div>
     <PreferenceQuiz v-show="activeIntent === 'quiz'" :initial="quizAnswers" :busy="busy"
+      :done-text="autosave ? 'That\'s the last sentence. Press Next to carry on.' : undefined"
       @change="quizAnswers = $event" />
     <section v-for="(label, intent) in labels" v-show="activeIntent === intent" :key="intent"
       class="preference-editor__content" :aria-label="label">
@@ -239,7 +300,15 @@ function save() {
         </div>
       </div>
     </section>
-    <footer class="preference-editor__footer">
+    <footer v-if="autosave" class="preference-editor__footer">
+      <p class="preference-editor__status" :class="`preference-editor__status--${saveState || 'idle'}`" role="status">
+        {{ saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? '✓ Saved' : saveState === 'error' ? 'Not saved yet. Your changes are kept; keep editing or press Next to retry.' : 'Your answers save automatically.' }}
+      </p>
+      <button type="button" class="btn btn--primary" :disabled="!concepts.length" @click="next">
+        {{ onLastTab ? doneLabel : 'Next' }}
+      </button>
+    </footer>
+    <footer v-else class="preference-editor__footer">
       <p class="group-muted">Save to apply your quiz answers and preferences.</p>
       <button class="btn btn--primary" :disabled="busy || !concepts.length">
         <LoadingSpinner v-if="saving" />{{ saving ? 'Saving…' : submitLabel }}
@@ -526,6 +595,9 @@ function save() {
 .preference-editor__footer p {
   font-size: var(--step--1);
 }
+.preference-editor__status { margin: 0; color: var(--text-300); }
+.preference-editor__status--saved { color: var(--signal-good); font-weight: 600; }
+.preference-editor__status--error { color: var(--signal-bad); }
 .preference-editor__footer .btn {
   flex: none;
   min-height: 44px;

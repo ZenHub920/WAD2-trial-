@@ -167,6 +167,13 @@ const ADDED_COLUMNS = [
 ];
 
 function migrate(target) {
+  // "About you" (age, area, gender, languages) became a required first step.
+  // New accounts start without it; accounts that existed before keep working.
+  const userColumns = target.prepare('PRAGMA table_info(users)').all();
+  if (userColumns.length && !userColumns.some((c) => c.name === 'about_saved')) {
+    target.exec('ALTER TABLE users ADD COLUMN about_saved INTEGER NOT NULL DEFAULT 0');
+    target.exec('UPDATE users SET about_saved = 1');
+  }
   for (const [table, column, type] of ADDED_COLUMNS) {
     const existing = target.prepare(`PRAGMA table_info(${table})`).all();
     if (existing.length === 0) continue; // table not created yet

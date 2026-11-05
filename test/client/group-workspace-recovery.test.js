@@ -139,43 +139,37 @@ describe('independent group workspace reads', () => {
 
 });
 
-describe('honest historical group presentation', () => {
-  it('separates past, current-day, future and cancelled groups without hiding old conversations', async () => {
+describe('upcoming groups only', () => {
+  it('shows only upcoming and current-day groups: past and cancelled groups are left out', async () => {
     api.hostedGroups.mockResolvedValue({ groups: [
       group('future', 'Next concert crew'), { ...group('ongoing', 'Tonight crew'), eventDate: '2026-11-04', eventTime: '08:00:00' },
       { ...group('past', 'Old concert crew'), eventDate: '2026-11-03' }, { ...group('cancelled', 'Cancelled crew'), status: 'cancelled' },
     ] });
     const { wrapper } = await mountPage(GroupConnectionsView, { path: '/groups/connect' });
     expect(wrapper.findAll('.owned-card')).toHaveLength(2);
-    expect(wrapper.get('#historical-groups').text()).toContain('Old concert crew');
-    expect(wrapper.get('#historical-groups').text()).toContain('Past concert');
-    expect(wrapper.get('#historical-groups').find('a[href="/groups/past/channel"]').exists()).toBe(true);
-    expect(wrapper.get('#historical-groups').findAll('button')).toHaveLength(0);
+    expect(wrapper.find('#historical-groups').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('Old concert crew');
+    expect(wrapper.text()).not.toContain('Past concert groups');
     expect(wrapper.text()).not.toContain('Cancelled groups');
     expect(wrapper.get('#owned-heading').element.parentElement.textContent).not.toContain('upcoming or ongoing');
   });
 
-  it('uses the event timezone for ongoing joined groups and keeps historical meetup access', async () => {
+  it('uses the event timezone for ongoing joined groups and leaves past ones out', async () => {
     vi.setSystemTime(new Date('2026-11-04T01:00:00Z')); // Los Angeles is still on 3 November.
     api.currentGroupMemberships.mockResolvedValue({ groups: [
       { id: 'la', name: 'Los Angeles crew', artist: 'LA artist', eventDate: '2026-11-03', eventTimezone: 'America/Los_Angeles', source: 'friend' },
       { id: 'sg', name: 'Singapore history', artist: 'SG artist', eventDate: '2026-11-03', eventTimezone: 'Asia/Singapore', source: 'friend' },
     ] });
-    plans.value = [{ id: 'old-plan', scope: { partyId: 'sg' }, status: 'confirmed', endsAt: Date.now() - 1000 }];
-    const { wrapper, router } = await mountPage(GroupConnectionsView, { path: '/groups/connect' });
+    const { wrapper } = await mountPage(GroupConnectionsView, { path: '/groups/connect' });
     expect(wrapper.get('.owned-card--joined').text()).toContain('Los Angeles crew');
-    expect(wrapper.get('#historical-groups').text()).toContain('Singapore history');
-    await button(wrapper, 'View meetup history').trigger('click'); await flushPromises();
-    expect(router.currentRoute.value.path).toBe('/meetups/old-plan');
-    expect(router.currentRoute.value.query.from).toBe('groups');
+    expect(wrapper.text()).not.toContain('Singapore history');
   });
 
-  it('keeps date-unavailable records visible without labelling them upcoming or cancelled', async () => {
+  it('does not list a group without a valid date as upcoming', async () => {
     api.hostedGroups.mockResolvedValue({ groups: [{ ...group('undated', 'Undated crew'), eventDate: 'bad-date' }] });
     const { wrapper } = await mountPage(GroupConnectionsView, { path: '/groups/connect' });
-    expect(wrapper.get('#historical-groups').text()).toContain('Date unavailable');
-    expect(wrapper.text()).toContain('Past concerts & undated groups (1)');
     expect(wrapper.findAll('.owned-card')).toHaveLength(0);
+    expect(wrapper.text()).toContain('No groups owned');
     expect(wrapper.text()).not.toContain('Cancelled groups');
   });
 

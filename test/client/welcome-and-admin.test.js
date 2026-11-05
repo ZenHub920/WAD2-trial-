@@ -14,14 +14,18 @@ import PreferenceEditor from '../../client/src/components/PreferenceEditor.vue';
 import { api } from '../../client/src/api.js';
 import { myPreferences, loadMyPreferences, saveMyPreferences } from '../../client/src/groupPreferences.js';
 import { mountPage, button } from './helpers.js';
+import { currentUser } from '../../client/src/auth.js';
+
+const VIBE = { singalong: 2, photography: 1, dancing: 3, quiet: 0, queue_early: 2, merch: 1 };
 
 vi.mock('../../client/src/api.js', async (importOriginal) => ({ ...await importOriginal(), api: {
-  preferenceConcepts: vi.fn(), preferenceQuiz: vi.fn(),
+  preferenceConcepts: vi.fn(), preferenceQuiz: vi.fn(), updateProfile: vi.fn(),
   verificationQueue: vi.fn(), reviewVerification: vi.fn(),
 } }));
 vi.mock('../../client/src/auth.js', async () => {
   const { ref } = await import('vue');
-  return { currentUser: ref({ id: 'me', displayName: 'Ari' }), sessionReady: ref(true) };
+  const currentUser = ref(null);
+  return { currentUser, sessionReady: ref(true), setCurrentUser: user => { currentUser.value = user; } };
 });
 vi.mock('../../client/src/groupPreferences.js', async () => {
   const { ref } = await import('vue');
@@ -40,11 +44,23 @@ const pending = (id = 't1') => ({
 beforeEach(() => {
   vi.resetAllMocks();
   myPreferences.value = null;
+  // Most tests are about preferences, so the vibe is already rated.
+  currentUser.value = { id: 'me', displayName: 'Ari', vibe: VIBE };
   api.preferenceConcepts.mockResolvedValue({ concepts: [{ id: 'singalong', label: 'Singalong' }] });
   api.preferenceQuiz.mockResolvedValue({ cards: [{ id: 'energy', prompt: 'My concert energy is…', options: [{ id: 'loud', text: 'Loud and lively' }] }] });
   loadMyPreferences.mockImplementation(async () => myPreferences.value);
   saveMyPreferences.mockImplementation(async (answers) => { myPreferences.value = answers; return answers; });
 });
+
+
+/** Answer one sentence, then press Next through the tabs to finish (answers autosave). */
+async function finishPreferences(wrapper) {
+  const editor = wrapper.findComponent(PreferenceEditor);
+  await button(editor, 'Loud and lively').trigger('click');
+  for (let tab = 0; tab < 3; tab++) await button(editor, 'Next').trigger('click');
+  await button(editor, 'Next: your concert vibe').trigger('click');
+  await flushPromises();
+}
 
 describe('WelcomeView', () => {
   it('shows only the private questionnaire, with no banner or explainer panel', async () => {
@@ -59,14 +75,11 @@ describe('WelcomeView', () => {
 
   it('after saving, says preferences can be changed in Profile and continues to ?next=', async () => {
     const { wrapper } = await mountPage(WelcomeView, { path: '/welcome?next=%2Fgroups' });
-    const editor = wrapper.findComponent(PreferenceEditor);
-    await button(editor, 'Loud and lively').trigger('click');
-    await editor.get('form').trigger('submit');
-    await flushPromises();
+    await finishPreferences(wrapper);
 
     expect(saveMyPreferences).toHaveBeenCalledOnce();
-    expect(wrapper.text()).toContain('Your preferences are saved');
-    expect(wrapper.text()).toContain('You can change your preferences anytime on your Profile page');
+    expect(wrapper.text()).toContain("You're all set");
+    expect(wrapper.text()).toContain('You can change your preferences and vibe anytime on your Profile page');
     const links = wrapper.findAll('a');
     expect(links.find((a) => a.text() === 'Continue').attributes('href')).toBe('/groups');
     expect(links.find((a) => a.text() === 'Profile page').attributes('href')).toBe('/profile#preferences');
@@ -75,14 +88,11 @@ describe('WelcomeView', () => {
   it('cannot be skipped: there is no skip button and it says saving is required', async () => {
     const { wrapper } = await mountPage(WelcomeView, { path: '/welcome' });
     expect(wrapper.findAll('button').some((b) => b.text() === 'Skip for now')).toBe(false);
-    expect(wrapper.get('.welcome__required').text()).toContain('Save your preferences to start using Encore');
+    expect(wrapper.get('.welcome__required').text()).toContain('Pick at least one thing to start using Encore');
   });
 
   async function saveOne(wrapper) {
-    const editor = wrapper.findComponent(PreferenceEditor);
-    await button(editor, 'Loud and lively').trigger('click');
-    await editor.get('form').trigger('submit');
-    await flushPromises();
+    await finishPreferences(wrapper);
   }
 
   it('continues to the concert list when there is no ?next=', async () => {
@@ -97,13 +107,65 @@ describe('WelcomeView', () => {
     expect(wrapper.findAll('a').find((a) => a.text() === 'Continue').attributes('href')).toBe('/concerts');
   });
 
+  it('asks for the six concert-vibe ratings after preferences, then continues', async () => {
+    currentUser.value = { id: 'me', displayName: 'Ari', vibe: {} };
+    api.updateProfile.mockResolvedValue({ profile: {} });
+    const { wrapper } = await mountPage(WelcomeView, { path: '/welcome?next=%2Fgroups' });
+    await saveOne(wrapper);
+    expect(wrapper.get('h1').text()).toBe('Your concert vibe');
+    const sliders = wrapper.findAll('input[type="range"]');
+    expect(sliders).toHaveLength(6);
+    await sliders[0].setValue(4);
+    await button(wrapper, 'Save my vibe').trigger('click'); await flushPromises();
+    expect(api.updateProfile).toHaveBeenCalledExactlyOnceWith({ vibe: { singalong: 4, photography: 2, dancing: 2, quiet: 2, queue_early: 2, merch: 2 } });
+    expect(currentUser.value.vibe.singalong).toBe(4);
+    expect(wrapper.text()).toContain("You're all set");
+    expect(wrapper.findAll('a').find((a) => a.text() === 'Continue').attributes('href')).toBe('/groups');
+  });
+
+  it('goes straight to the vibe step when preferences are already saved', async () => {
+    currentUser.value = { id: 'me', displayName: 'Ari', vibe: {} };
+    myPreferences.value = { about: [{ conceptId: 'singalong' }], wants: [], avoid: [] };
+    const { wrapper } = await mountPage(WelcomeView, { path: '/welcome' });
+    await flushPromises();
+    expect(wrapper.get('h1').text()).toBe('Your concert vibe');
+    expect(wrapper.findComponent(PreferenceEditor).exists()).toBe(false);
+  });
+
+  it('starts a new member on About you, requires a language, then moves on to preferences', async () => {
+    currentUser.value = { id: 'me', displayName: 'Ari', vibe: VIBE, aboutComplete: false };
+    api.updateProfile.mockResolvedValue({ profile: {} });
+    const { wrapper } = await mountPage(WelcomeView, { path: '/welcome' });
+    await flushPromises();
+    expect(wrapper.get('h1').text()).toBe('About you');
+    expect(wrapper.find('input[type="text"]').exists()).toBe(false); // no display name: it was asked at sign-up
+    const selects = wrapper.findAll('select');
+    expect(selects).toHaveLength(4);
+    for (const [select, value] of [[selects[0], '25-29'], [selects[1], 'east'], [selects[2], 'f'], [selects[3], 'any']]) await select.setValue(value);
+    await wrapper.get('form').trigger('submit'); await flushPromises();
+    expect(wrapper.text()).toContain('Choose at least one language.');
+    expect(api.updateProfile).not.toHaveBeenCalled();
+    await wrapper.get('input[type="checkbox"][value="en"]').setValue(true);
+    await wrapper.get('form').trigger('submit'); await flushPromises();
+    expect(api.updateProfile).toHaveBeenCalledExactlyOnceWith({ ageBand: '25-29', homeRegion: 'east', gender: 'f', companionGenderPref: 'any', languages: ['en'] });
+    expect(currentUser.value.aboutComplete).toBe(true);
+    expect(wrapper.get('h1').text()).toBe('Your matching preferences');
+  });
+
+  it('saves answers as they change, with no Save button', async () => {
+    const { wrapper } = await mountPage(WelcomeView, { path: '/welcome' });
+    const editor = wrapper.findComponent(PreferenceEditor);
+    expect(editor.findAll('button').some((b) => b.text() === 'Save preferences')).toBe(false);
+    await button(editor, 'Loud and lively').trigger('click');
+    await new Promise((resolve) => setTimeout(resolve, 800)); await flushPromises();
+    expect(saveMyPreferences).toHaveBeenCalledOnce();
+    expect(editor.text()).toContain('Saved');
+  });
+
   it('keeps the questionnaire open with an error when saving fails', async () => {
     saveMyPreferences.mockRejectedValue(new Error('offline'));
     const { wrapper } = await mountPage(WelcomeView, { path: '/welcome' });
-    const editor = wrapper.findComponent(PreferenceEditor);
-    await button(editor, 'Loud and lively').trigger('click');
-    await editor.get('form').trigger('submit');
-    await flushPromises();
+    await finishPreferences(wrapper);
     expect(wrapper.get('[role="alert"]').text()).toContain('Could not save your answers');
     expect(wrapper.findComponent(PreferenceEditor).exists()).toBe(true);
   });

@@ -73,6 +73,9 @@ export function createUserRepo(db) {
         vibe: 'vibe_json',
       };
       const entries = Object.entries(changes).map(([key, value]) => [columns[key], key === 'languages' || key === 'vibe' ? JSON.stringify(value) : value]);
+      // Saving any "About you" detail completes that required first step.
+      if (['ageBand', 'homeRegion', 'gender', 'companionGenderPref', 'languages'].some((key) => key in changes))
+        entries.push(['about_saved', 1]);
       if (entries.length) {
         db.prepare(`UPDATE users SET ${entries.map(([column]) => `${column} = ?`).join(', ')} WHERE id = ?`)
           .run(...entries.map(([, value]) => value), id);

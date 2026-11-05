@@ -119,6 +119,15 @@
      berry that sit with the violet palette, unlike the plainer status colours. */
   --signal-good: #24705a;
   --signal-bad: #b3325f;
+  /* One colour per concert vibe, so each reads at a glance. */
+  --vibe-singalong: #c2255c;
+  --vibe-photography: #1971c2;
+  --vibe-dancing: #d9480f;
+  --vibe-quiet: #2b8a3e;
+  --vibe-queue_early: #0b7285;
+  --vibe-merch: #9c36b5;
+  /* Mixed into a vibe colour for its text and bar: darker on light, lighter on dark. */
+  --vibe-ink-base: #000;
 
   /* ---- Colour: highlight -------------------------------------------------
    * Gold is the complement of Encore's purple. It is kept for the few things
@@ -239,6 +248,13 @@
   --danger-soft: rgba(255, 122, 122, 0.14);
   --signal-good: #72d9b8;
   --signal-bad: #ff8db2;
+  --vibe-singalong: #f783ac;
+  --vibe-photography: #74c0fc;
+  --vibe-dancing: #ffa94d;
+  --vibe-quiet: #8ce99a;
+  --vibe-queue_early: #66d9e8;
+  --vibe-merch: #e599f7;
+  --vibe-ink-base: #fff;
   --highlight: #ffbf55;
   --highlight-soft: rgba(255, 191, 85, 0.14);
   --highlight-ink: #ffcf70;

@@ -25,6 +25,8 @@ const props = defineProps({
   /** Previously saved `[{ card, option }]`, so returning shows the answers. */
   initial: { type: Array, default: () => [] },
   busy: Boolean,
+  /** Shown under the last sentence. */
+  doneText: { type: String, default: "That's the last sentence. Save your answers below." },
 });
 const emit = defineEmits(['change']);
 
@@ -114,7 +116,7 @@ defineExpose({ answers });
         <button v-if="!onLast" type="button" class="btn btn--ghost" :disabled="busy" @click="skip">
           {{ picked[card.id] ? 'Next' : 'Skip this one' }}
         </button>
-        <p v-else class="quiz__done">That's the last sentence. Save your answers below.</p>
+        <p v-else class="quiz__done">{{ doneText }}</p>
       </footer>
     </template>
   </section>

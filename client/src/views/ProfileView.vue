@@ -117,24 +117,27 @@ const savePreferencesMessages = {
   unknown_quiz_option: 'The sentences changed since this page loaded. Reload the page and answer again.',
 };
 
-async function savePreferences(answers) {
-  if (prefSaving.value) return;
+/** The editor saves as it changes; Next on its last tab finishes. */
+const prefState = ref('');
+let prefSave = Promise.resolve();
+function autosavePreferences(answers) {
   const context = operationContext();
-  prefSaving.value = true;
+  prefState.value = 'saving';
   prefError.value = '';
-  prefNotice.value = '';
-  try {
-    await saveMyPreferences(answers);
-    if (!isCurrent(context)) return;
-    prefNotice.value = 'Saved. Groups and companion matching now use these.';
-    prefEditing.value = false;
-    if (settingUp.value) await continueAfterSetup();
-  } catch (e) {
-    if (!isCurrent(context)) return;
-    prefError.value = savePreferencesMessages[e?.message] ?? 'Could not save your answers. Please try again.';
-  } finally {
-    if (isCurrent(context)) prefSaving.value = false;
-  }
+  prefSave = saveMyPreferences(answers)
+    .then(() => { if (isCurrent(context)) prefState.value = 'saved'; })
+    .catch((e) => {
+      if (!isCurrent(context)) return;
+      prefState.value = 'error';
+      prefError.value = savePreferencesMessages[e?.message] ?? 'Could not save your answers. Please try again.';
+    });
+}
+async function preferencesDone() {
+  await prefSave;
+  if (prefState.value === 'error') return;
+  prefNotice.value = 'Saved. Groups and companion matching now use these.';
+  prefEditing.value = false;
+  if (settingUp.value) await continueAfterSetup();
 }
 
 const ageBands = ['18-20', '21-24', '25-29', '30-34', '35+'];
@@ -389,11 +392,12 @@ async function save() {
         <PreferenceEditor
           v-if="!prefLoading && myPreferences !== undefined && showPreferenceEditor"
           :initial="myPreferences ?? undefined"
-          :busy="prefSaving"
-          :saving="prefSaving"
+          autosave
+          :save-state="prefState"
           require-one
-          :submit-label="settingUp ? 'Save and continue' : 'Save answers'"
-          @save="savePreferences"
+          :done-label="settingUp ? 'Done, continue' : 'Done'"
+          @save="autosavePreferences"
+          @done="preferencesDone"
         />
         <div v-if="settingUp" class="profile__setup-footer">
           <p class="profile__hint">Automatic matching needs saved preferences. You can return here before switching it on.</p>

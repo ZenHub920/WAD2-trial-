@@ -2,13 +2,14 @@
  * The router's sign-in and preferences gate, run before every navigation.
  *
  * Protected pages need a session. Once signed in, a member must save their
- * matching preferences before using anything else: every page except the ones
- * listed below sends them to /welcome, which returns them to where they were
- * heading (?next=) after saving.
+ * "About you" details, matching preferences and concert vibe before using anything else:
+ * every page except the ones listed below sends them to /welcome, which
+ * returns them to where they were heading (?next=) after saving.
  */
 import { watch } from 'vue';
 import { currentUser, sessionReady } from './auth.js';
 import { loadMyPreferences } from './groupPreferences.js';
+import { vibeComplete } from './vibe.js';
 
 /** Pages a signed-in member can open before saving preferences. */
 export const OPEN_BEFORE_PREFERENCES = new Set(['welcome', 'login']);
@@ -31,6 +32,8 @@ export async function guardRoute(to) {
     return to.meta?.requiresAuth ? { path: '/login', query: { redirect: to.fullPath } } : true;
   }
   if (OPEN_BEFORE_PREFERENCES.has(to.name)) return true;
+  if (currentUser.value.aboutComplete === false || !vibeComplete(currentUser.value.vibe))
+    return { name: 'welcome', query: { next: to.fullPath } };
   try {
     if (!(await loadMyPreferences())) return { name: 'welcome', query: { next: to.fullPath } };
   } catch {

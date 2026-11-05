@@ -100,7 +100,8 @@ describe('private questionnaire placement', () => {
     const { wrapper, router } = await mountPage(ProfileView, { path: '/profile?setup=1#preferences' });
     const editor = wrapper.findComponent(PreferenceEditor);
     await button(editor, 'Loud and lively').trigger('click');
-    await editor.get('form').trigger('submit');
+    for (let tab = 0; tab < 3; tab++) await button(editor, 'Next').trigger('click');
+    await button(editor, 'Done, continue').trigger('click');
     await flushPromises();
     expect(saveMyPreferences).toHaveBeenCalledWith({ quiz: [{ card: 'energy', option: 'loud' }], dealbreakers: [], about: [], wants: [], avoid: [] });
     expect(router.currentRoute.value.path).toBe('/concerts');

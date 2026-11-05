@@ -16,6 +16,7 @@ export function mapUser(row) {
     // Enumerate fields so private database columns cannot leak through spreads.
     avatar_path: row.avatar_path ?? null,
     ...(Object.hasOwn(row, 'is_operator') ? { is_operator: Boolean(row.is_operator) } : {}),
+    ...(Object.hasOwn(row, 'about_saved') ? { about_saved: Boolean(row.about_saved) } : {}),
     created_at: row.created_at,
   };
 }

@@ -99,7 +99,9 @@ describe('profile saved actions and account isolation', () => {
     saveMyPreferences.mockResolvedValue({ about: ['singalong'] });
     const { wrapper, router } = await mountPage(ProfileView, { path: '/profile?setup=1', stubs: isolated });
     const replace = vi.spyOn(router, 'replace').mockRejectedValueOnce(new Error('navigation interrupted'));
-    wrapper.findComponent({ name: 'PreferenceEditor' }).vm.$emit('save', { about: ['singalong'] });
+    const editor = wrapper.findComponent({ name: 'PreferenceEditor' });
+    editor.vm.$emit('save', { about: ['singalong'] });
+    editor.vm.$emit('done');
     await flushPromises();
     expect(saveMyPreferences).toHaveBeenCalledTimes(1);
     expect(wrapper.text()).toContain('Saved. Groups and companion matching now use these.');

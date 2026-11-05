@@ -107,6 +107,7 @@ try {
       languages: ['en'], vibe: account.vibe, reliability: 0.8,
     });
     ids[account.n] = user.id;
+    db.prepare('UPDATE users SET about_saved = 1 WHERE id = ?').run(user.id);
     if (account.picture !== false) {
       const file = `test-account-${account.n}.png`;
       writeFileSync(join(avatarDir, file), facePng(account.bg, account.skin));

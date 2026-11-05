@@ -49,11 +49,6 @@ const canOpenMeetup = (group, scope) => hasMeetup(scope) || meetupDatePolicy({ e
 const activeGroups = computed(() => hosted.value.filter(g => g.status !== 'cancelled' && groupEligibility(g).eligible));
 const joinedGroups = computed(() => attendance.value.filter(g => !hosted.value.some(owned => owned.id === g.id)));
 const upcomingJoinedGroups = computed(() => joinedGroups.value.filter(g => groupEligibility(g).eligible));
-const historicalGroups = computed(() => [
-  ...hosted.value.filter(g => g.status !== 'cancelled' && !groupEligibility(g).eligible).map(g => ({ ...g, owned: true })),
-  ...joinedGroups.value.filter(g => !groupEligibility(g).eligible).map(g => ({ ...g, owned: false })),
-]);
-const historicalTitle = computed(() => historicalGroups.value.some(group => groupEligibility(group).reason === 'concert_date_unavailable') ? 'Past concerts & undated groups' : 'Past concert groups');
 const membershipSource = { friend: 'Joined through a friend invitation', join: 'Joined through an approved request', proposal: 'Joined through matching', direct: 'Joined through an approved direct application', algorithm: 'Joined through a confirmed automatic match' };
 const pendingJoins = computed(() => joins.value.filter(j => j.status === 'pending'));
 const pageTitle = computed(() => mode.value === 'create' ? 'Create a group' : 'My groups');
@@ -412,9 +407,8 @@ async function openCreatedDraft() {
     </template>
 
     <template v-else-if="!groupsLoading">
-      <nav v-if="mode === 'dashboard' && (myRequests.length || historicalGroups.length || meetupAttentionCount || upcomingMeetupCount)" class="workspace-overview" aria-label="Group workspace sections">
+      <nav v-if="mode === 'dashboard' && (myRequests.length || meetupAttentionCount || upcomingMeetupCount)" class="workspace-overview" aria-label="Group workspace sections">
         <a v-if="myRequests.length" href="#my-requests-heading" class="workspace-overview__attention"><span class="workspace-overview__value">{{ myRequests.length }}</span><span>Waiting to join<small>Requests you’ve sent</small></span></a>
-        <a v-if="historicalGroups.length" href="#historical-groups"><span class="workspace-overview__value">{{ historicalGroups.length }}</span><span>{{ historicalTitle }}<small>Conversations and group history</small></span></a>
         <RouterLink v-if="meetupAttentionCount || upcomingMeetupCount" to="/meetups" :class="{ 'workspace-overview__attention': meetupAttentionCount }"><span class="workspace-overview__value">{{ meetupAttentionCount || upcomingMeetupCount }}</span><span>Meetup plans<small>{{ meetupAttentionCount ? `${meetupAttentionCount} need your attention` : `${upcomingMeetupCount} upcoming confirmed` }}</small></span></RouterLink>
       </nav>
       <template v-if="mode === 'dashboard'">
@@ -473,14 +467,6 @@ async function openCreatedDraft() {
             </article>
           </div>
         </details>
-        <details v-if="historicalGroups.length" id="historical-groups" class="card group-panel history"><summary>{{ historicalTitle }} ({{ historicalGroups.length }})</summary><div class="history-list">
-          <article v-for="g in historicalGroups" :key="g.id" class="historical-group">
-            <div class="section-heading"><h3>{{ groupTitle(g) }}</h3><span class="group-state">{{ groupEligibility(g).reason === 'concert_finished' ? 'Past concert' : 'Date unavailable' }}</span></div>
-            <p class="group-muted">{{ g.artist }} · {{ g.eventDate || 'Concert date unavailable' }} · {{ g.owned ? 'Group you own' : membershipSource[g.assignmentOrigin ?? g.source] ?? 'Group member' }}</p>
-            <p class="group-muted">{{ groupEligibility(g).reason === 'concert_finished' ? 'This concert day has ended. Your group and conversation remain available.' : 'A valid concert date is needed before starting new coordination. Your existing group remains available.' }}</p>
-            <div class="group-actions"><RouterLink :to="`/groups/${encodeURIComponent(g.id)}/channel`" class="btn btn--primary">Open group chat</RouterLink><RouterLink :to="`/groups/${encodeURIComponent(g.id)}/members`" class="btn btn--ghost">{{ g.owned ? 'Manage group' : 'View group' }}</RouterLink><button v-if="hasMeetup({ partyId: g.partyId ?? g.id })" type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: g.partyId ?? g.id }))">View meetup history</button></div>
-          </article>
-        </div></details>
       </template>
 
     </template>
@@ -682,7 +668,6 @@ async function openCreatedDraft() {
 .historical-group + .historical-group { padding-top:var(--space-4); border-top:var(--border-hairline); }
 .historical-group h3 { min-width:0; overflow-wrap:anywhere; }
 .group-read-feedback { padding:var(--space-3); border-left:2px solid var(--amber-400); background:var(--panel-bg); }
-#historical-groups { scroll-margin-top:calc(var(--header-height) + var(--space-4)); }
 @media (max-width: 600px) {
   .page-heading {
     align-items: flex-start;
