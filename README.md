@@ -1041,18 +1041,3 @@ the default heap). 2 500 seekers per concert is the tested ceiling.
 **External integrations need keys.** Ticketmaster, OneMap, LTA and data.gov.sg all degrade
 to "unavailable" with a stated reason without credentials. Nothing breaks; those panels just
 report that they have no data.
-
----
-
-## Further reading
-
-- **[docs/ALGORITHM.md](docs/ALGORITHM.md)** — the formal specification: problem statement,
-  constraints, derivation, proofs, baselines, metrics, solver registry and guarantee ledger
-- **Source comments** — unusually load-bearing in this codebase. The headers of
-  [registry.js](server/src/matching/registry.js),
-  [classify.js](server/src/matching/classify.js),
-  [traitScoring.js](server/src/services/traitScoring.js),
-  [companionRecommendations.js](server/src/services/companionRecommendations.js) and
-  [realtime.js](server/src/services/realtime.js) explain *why* each design decision was made
-  and what the alternatives would have cost. They are worth reading before changing those
-  modules.
