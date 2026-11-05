@@ -30,7 +30,6 @@ transport data, and post-concert feedback that feeds reliability back into match
 8. [Frontend](#frontend)
 9. [Testing](#testing)
 10. [Project layout](#project-layout)
-11. [Current status and known gaps](#current-status-and-known-gaps)
 
 ---
 
@@ -303,8 +302,10 @@ checked as actual curve points rather than merely the right length.
 
 ## The matching algorithm
 
-The full specification is in **[docs/ALGORITHM.md](docs/ALGORITHM.md)** — read that for the
-formal treatment. This is the working summary.
+Everything below describes what the code in [server/src/matching/](server/src/matching/) and
+[recommendationRepository.js](server/src/db/recommendationRepository.js) actually does. The
+engine is pure — no database, no HTTP, no clock — which is what makes it benchmarkable and
+unit-testable in isolation.
 
 ### Why Hospital/Residents, not plain Gale–Shapley
 
@@ -317,142 +318,218 @@ So the domain is modelled with the two-sided structure that genuinely exists in 
 
 | Side | Who | Capacity |
 |---|---|---|
-| **Party** (the "hospital") | A user holding tickets, or forming a group, with `q` open slots | `q ≥ 1` |
+| **Party** (the "hospital") | A user hosting a group for one concert | `q >= 1` (`queueable_places`) |
 | **Seeker** (the "resident") | A user looking to join exactly one party for that concert | `1` |
 
-This is the **Hospital/Residents** problem, the many-to-one generalisation of stable
-marriage, and it keeps every Gale–Shapley guarantee: a stable matching always exists,
-deferred acceptance finds one in time linear in the acceptable pairs, and the
-seeker-proposing version is **seeker-optimal**.
+This is **Hospital/Residents**, the many-to-one generalisation of stable marriage, and it
+keeps every Gale–Shapley guarantee: a stable matching always exists, deferred acceptance
+finds one in time linear in the acceptable pairs, and the seeker-proposing version is
+**seeker-optimal**.
 
-### Step 1 — Hard constraints (feasibility gate)
+### Step 1 — Hard constraints
 
-`checkFeasibility(seeker, party)` in [compatibility.js](server/src/matching/compatibility.js).
-A pair appears on **neither** preference list unless all hold:
+`checkFeasibility()` in [compatibility.js](server/src/matching/compatibility.js). A pair
+appears on **neither** preference list unless all of these hold, which is what makes the
+lists *incomplete* rather than complete permutations — the case HR handles natively:
 
-1. Same concert
-2. Not a self-match (`seeker.user_id ≠ party.host_user_id`)
-3. **Affordability** — `seeker.spend_band_max ≥ party.spend_band`
-4. **Gender preference**, checked in *both* directions
-5. **Age policy** — if either side set a strict policy, the other's band must fall in tolerance
-6. Neither user is on the other's blocklist
+| # | Constraint | Rejection reason |
+|---|---|---|
+| 1 | Same concert | `different_concert` |
+| 2 | `seeker.user_id !== party.host_user_id` | `self_match` |
+| 3 | Neither user is on the other's blocklist (checked both directions) | `blocked` |
+| 4 | `seeker.spend_band_max >= party.spend_band` | `unaffordable` |
+| 5 | Gender preference, enforced symmetrically | `seeker_gender_pref` / `host_gender_pref` |
+| 6 | Age policy | `below_party_min_age` / `age_gap_outside_tolerance` |
 
-These are not decoration: a companion-matching product without them is unsafe, and they are
-what make the preference lists *incomplete* rather than complete permutations — precisely
-the case the HR variant handles natively.
+**Gender** is a three-valued preference, not a "same only" flag. `companion_gender_pref` is
+`any`, `male` or `female`; `any` accepts everyone, otherwise the other side's stored gender
+must be that one. Both directions are checked, so either side can exclude the pair.
 
-### Step 2 — Derived preference lists
+**Age has two different rules**, which is easy to misread:
 
-Nobody ranks hundreds of strangers by hand, so the system **computes** both orderings from a
-weighted score. `scorePair()` produces eight normalised components in `[0,1]`:
+- `party.strict_age_policy` sets a **floor** — the seeker's band must be at or above
+  `party.min_age_band`. One-directional.
+- `seeker.strict_age_policy` sets a **symmetric band gap** — the distance between the two
+  bands must be within `seeker.age_tolerance` (default `1`).
 
-| Component | Definition |
+The blocklist check is guarded behind a non-empty blocklist because the common case is empty
+and building two template strings per pair is measurable across millions of pairs.
+
+### Step 2 — Preference lists
+
+Nobody ranks hundreds of strangers by hand, so both orderings are **computed**.
+`buildPreferences()` in [preferences.js](server/src/matching/preferences.js) enumerates
+pairs **grouped by concert**, so the cost is the sum over concerts of the local product
+rather than every seeker against every party. This partition is sound because cross-concert
+pairs are infeasible anyway, so the feasibility graph is genuinely disconnected along that
+boundary.
+
+#### The base score
+
+`scorePair()` computes eight components in `[0,1]` once per pair, then combines them under
+**two different weight vectors**:
+
+| Component | Rule |
 |---|---|
-| `section` | exact match 1.0 · adjacent tier 0.6 · otherwise 0.2 |
+| `section` | exact match `1.0` · adjacent tier `0.6` · unknown or distant `0.2` |
 | `vibe` | cosine similarity of the two 6-dimensional vibe vectors |
-| `arrival` | 1.0 same plan · 0.5 adjacent · 0.0 opposite ends |
-| `plans` | Jaccard index of desired-activity sets |
-| `language` | 1.0 if any shared language, else 0.0 |
-| `region` | 1.0 same · 0.5 adjacent · 0.2 otherwise (hand-built adjacency graph, not a distance metric) |
-| `reliability` | counterpart's reliability, `+0.1` if verified, capped at 1 |
-| `budget_fit` | `1 − (spend_band_max − spend_band) / 3` |
-
-**The weights are deliberately asymmetric:**
+| `arrival` | same `1.0` · adjacent `0.5` · opposite ends `0.0` · unknown `0.5` |
+| `plans` | Jaccard index of desired activities; **`0.5` when neither side wants extras** — neutral, not incompatible |
+| `language` | `1.0` if any shared language, else `0.0` |
+| `region` | same `1.0` · adjacent `0.5` · otherwise `0.2`, from a hand-built adjacency graph, not a distance metric |
+| `reliability` | the counterpart's reliability, defaulting to `0.5`, capped at `1` — **directional**: each side judges the *other's* |
+| `budgetFit` | `max(0, 1 - gap / 3)` where `gap = spend_band_max - spend_band` |
 
 ```
-SEEKER→PARTY   section .22  vibe .24  arrival .12  plans .14
-               language .08  region .06  reliability .10  budget_fit .04
+SEEKER->PARTY   section .22  vibe .24  arrival .12  plans .14
+                language .08  region .06  reliability .10  budgetFit .04
 
-PARTY→SEEKER   section .12  vibe .22  arrival .10  plans .12
-               language .08  region .06  reliability .26  budget_fit .04
+PARTY->SEEKER   section .12  vibe .22  arrival .10  plans .12
+                language .08  region .06  reliability .26  budgetFit .04
 ```
 
-A party exposing tickets bears the no-show risk, so `reliability` dominates its ranking; a
-seeker is buying an experience, so `section` and `vibe` dominate theirs. (Both vectors are
-asserted to sum to 1 at module load.)
+A host bears the no-show risk, so `reliability` dominates the party's ranking (`.26` against
+`.10`); a seeker is buying an experience, so `section` and `vibe` dominate theirs. Both
+vectors are asserted to sum to `1` at module load.
 
-**This asymmetry is essential, not cosmetic.** If both sides ranked by the same symmetric
+**The asymmetry is load-bearing, not cosmetic.** If both sides ranked by the same symmetric
 score, every agent would agree on the ordering, the instance would be trivial, and greedy
 assignment would find the single reachable stable matching. The asymmetry is what makes this
-a genuine stable-matching problem with the possibility of preference cycles and blocking
-pairs.
+a genuine stable-matching problem where preference cycles and blocking pairs can exist.
 
-Ties break by ascending entity id after rounding to 6 decimal places, so ordering is total
-and deterministic — which keeps runs reproducible and keeps the instance in the strict-
-preference regime where HR's guarantees apply without weak/strong/super-stability
-complications.
+Cosine similarity was the largest cost in preference construction — six property lookups per
+side and two square roots, per pair — so each user's vibe vector and its magnitude are
+computed once and cached in a `WeakMap` keyed by the vibe object. Nothing is mutated and the
+cache is collected with the data it describes.
+
+#### What the live app actually ranks on
+
+The weighted score above is the **default** scorer. For real group matching the service
+injects its own, so the live ordering is a **60/40 blend** —
+[recommendationRepository.js:92](server/src/db/recommendationRepository.js#L92):
+
+```js
+seekerToParty: 0.6 * base.seekerToParty + 0.4 * discovery.seekerScore
+partyToSeeker: 0.6 * base.partyToSeeker + 0.4 * discovery.groupScore
+```
+
+`discovery` is the questionnaire comparison (`compareProfiles`); `base` is the
+eight-component score. Three things about this matter:
+
+- **You are matched against the group, not its host.** `aggregateParty()` replaces the host's
+  profile with the group's: vibe is the **mean across all active members**, languages are the
+  **union**, reliability is the **mean**. A five-person group with one unreliable member
+  scores accordingly.
+- **Dealbreakers zero the pair.** If the discovery comparison reports `blocked`, both
+  directions are forced to `0` rather than merely penalised.
+- **Feasibility is checked per member, not just the host.** `feasible()` runs
+  `checkFeasibility` against the host *and every active member*, so one blocked member
+  excludes the whole group. It also applies the questionnaire's `preferenceEligibility` gate.
+
+A party with no `group_settings` row — a legacy or unconfigured listing — falls back to the
+plain weighted score with no discovery term.
+
+#### Two overrides that outrank score
+
+`buildPreferences` takes two more options the service supplies, and both change the ordering
+in ways the raw score cannot express:
+
+- **`preferredPairs`** — `sortCandidates` sorts by the `preferred` flag **before** score, so a
+  seeker's explicitly prioritised groups form a **hard tier above everything else**, however
+  poorly they score. A deliberate product decision: an explicit choice beats a computed one.
+- **`declinedPairs`** — an already-declined pair is skipped entirely, so a rejected offer is
+  never re-proposed in a later round.
+
+#### Tie-breaking
+
+Scores are rounded to 6 decimals so they are stable across platforms, then ties break by
+ascending id. The ordering is therefore **total and deterministic**, which keeps runs
+reproducible and keeps the instance in the strict-preference regime where the HR guarantees
+apply without weak/strong/super-stability complications.
 
 ### Step 3 — Seeker-proposing deferred acceptance
 
 [galeShapley.js](server/src/matching/galeShapley.js):
 
 ```
-free ← queue of all seekers with a non-empty preference list
+free <- queue of all seekers with a non-empty preference list
 while free is not empty:
-    s ← free.pop()
+    s <- free.pop()
     if s has exhausted pref[s]: s is unmatched; continue
-    p ← pref[s][s.next++]
+    p <- pref[s][s.next++]
 
-    if |assigned[p]| < capacity[p]:
-        assign s to p                            -- free slot
+    if |held[p]| < capacity[p]:
+        accept s provisionally
     else:
-        w ← member of assigned[p] with the WORST rank under p
+        w <- the member of held[p] with the WORST rank under p
         if rank[p][s] < rank[p][w]:
-            unassign w; free.push(w)             -- evict, w resumes proposing
-            assign s to p
+            evict w; free.push(w)        -- w resumes proposing down its own list
+            accept s
         else:
-            free.push(s)                         -- rejected; try next party
+            free.push(s)                 -- rejected; s tries its next party
 ```
 
 Two data-structure choices make the complexity claim real:
 
-- **`rank[p]` is a `Map`** from seeker id to list position, built once. Without it, every
-  "does `p` prefer `s` to `w`?" test is a linear scan and the algorithm degrades to `O(n²q)`.
-- **`assigned[p]` is a max-heap keyed by rank** ([maxHeap.js](server/src/matching/maxHeap.js)),
-  so finding and evicting the worst member are `O(1)` and `O(log q)`. It is a *max*-heap
-  because rank 0 is the most preferred, so "worst" means largest.
+- **`partyRanks` is a `Map`** from seeker id to list position, built once by
+  `buildRankMaps()`. The inner loop asks "does `p` prefer `s` to `w`?" once per proposal;
+  answering by scanning the list is linear and drags the whole algorithm to `O(n^2 q)`. With
+  rank maps it is `O(1)`.
+- **`held[p]` is a max-heap keyed by rank** ([maxHeap.js](server/src/matching/maxHeap.js)),
+  so reading the worst member is `O(1)` and evicting is `O(log q)`. It is a *max*-heap
+  because rank `0` is most preferred, so "worst" means the largest rank value.
 
-Total cost: **`O(E log q)`**, `E` = acceptable pairs — effectively linear.
+Total cost: **`O(E log q)`** where `E` is the number of acceptable pairs.
 
-**Termination** is straightforward: each iteration advances exactly one seeker's pointer
-through a finite list, pointers never move backwards, so total work is bounded by `Σ|pref[s]| = E`.
+**Termination:** each iteration advances exactly one seeker's pointer through a finite list
+and pointers never move backwards, so total work is bounded by the sum of the list lengths,
+which is `E`.
 
-Proposal order is deterministic (seekers sorted by id) purely so traces and tests are
-reproducible — the *result* is order-independent, since deferred acceptance converges to the
-same seeker-optimal matching regardless.
+Proposal order is deterministic (seekers sorted by id) so traces and tests reproduce. The
+*result* is order-independent — deferred acceptance converges to the same seeker-optimal
+matching regardless of proposal order.
 
-### Step 4 — Stability verification
+With `trace: true` every `accept` / `evict` / `reject` event is recorded, which is what the
+round page animates.
 
-A pair `(s, p)` **blocks** matching `M` if:
+### Step 4 — Verification
 
-1. `s` and `p` are mutually acceptable and `(s,p) ∉ M`, **and**
-2. `s` is unmatched or strictly prefers `p` to `M(s)`, **and**
+Two checks run after every solve, and they are not the same check.
+
+**`assertIndividuallyRational()`** holds for *every* solver: nobody may be assigned to a
+party absent from their preference list, and no party may exceed capacity. A violation is a
+bug regardless of what the solver promised, so it always throws.
+
+**`findBlockingPairs()`** tests stability. A pair `(s, p)` blocks matching `M` when:
+
+1. `s` and `p` are mutually acceptable and the pair is not already in `M`, **and**
+2. `s` is unmatched or strictly prefers `p` to its current assignment, **and**
 3. `p` has a free slot or strictly prefers `s` to its worst current member
 
-`findBlockingPairs()` enumerates every acceptable pair and tests all three in `O(E)`. It
-runs after every round, **inside the transaction boundary**, so an unstable result can never
-be committed. The verdict is stored with the round — every matching in the database carries
-a proof of its own stability.
+The implementation is `O(E)` with two optimisations: each party's worst held rank is
+precomputed so condition 3 is `O(1)` per pair, and because each seeker's list is in
+descending preference order the scan **breaks** as soon as it reaches their current
+assignment — everything after it is worse by construction.
 
-### The solver registry and the guarantee ledger
+In [matchingService.js](server/src/services/matchingService.js) this runs **inside the
+transaction**, so an unstable result can never be committed, and the verdict is stored with
+the round. Every matching in the database carries a proof of its own stability.
 
-This is the part that goes beyond a textbook implementation, and the reasoning is worth
-reading in [registry.js](server/src/matching/registry.js) and
-[classify.js](server/src/matching/classify.js).
+### Instance classification and the solver registry
 
-`classifyInstance()` reports the **narrowest** class that fits, because narrower classes
-carry stronger guarantees:
+`classifyInstance()` in [classify.js](server/src/matching/classify.js) reports the
+**narrowest** class that fits, because narrower classes carry stronger guarantees:
 
 | Class | Condition | Solver |
 |---|---|---|
 | `empty` | either side empty | — |
 | `one_to_one` | all capacities = 1 (Stable Marriage) | deferred acceptance |
 | `one_to_many` | some capacity > 1 (Hospital/Residents) | deferred acceptance |
-| `with_couples` | ≥1 **reciprocated** `linked_request_id` (HRC) | none exact yet |
-| `with_lower_quotas` | ≥1 party with `min_size > 1` (HRLQ) | none exact yet |
+| `with_couples` | at least one **reciprocated** `linked_request_id` (HRC) | none exact — relaxed |
+| `with_lower_quotas` | at least one party with `min_size > 1` (HRLQ) | none exact — relaxed |
 | `peer_to_peer` | one pool, no parties (Stable Roommates) | Irving's algorithm |
 
-A link counts only when reciprocated — a one-sided link is malformed data or a withdrawn
+A link counts only when **reciprocated** — a one-sided link is malformed data or a withdrawn
 partner, and treating it as a couple would change the problem being solved without anyone
 asking. A `min_size` of 0 or 1 is not a constraint.
 
@@ -461,28 +538,42 @@ mixed instance — solve the singles with HR, the linked pairs separately, union
 That silently destroys stability: a single and a member of a linked pair can form a blocking
 pair across the partition, and neither sub-solve would ever examine it. An instance may be
 split only where the feasibility graph is *disconnected*. Partitioning by concert is sound
-for exactly that reason; partitioning by couples or capacity is not. The classifier
-therefore describes the whole instance and never splits it.
+for exactly that reason; partitioning by couples or by capacity is not. So the classifier
+describes the whole instance and never splits it.
 
-`selectSolver()` then takes the strongest-guarantee solver that can run. If none models
+[registry.js](server/src/matching/registry.js) holds all four algorithms with what each may
+claim. `selectSolver()` takes the strongest-guarantee solver that can run; if none models
 every feature present, the strongest *partial* solver runs on the **relaxed** instance and
-the dropped constraints are recorded — because a solver that ignored a constraint did not
-solve the problem it was given, so its guarantees do not carry over. Stability is downgraded
-to `not_guaranteed`, optimality to `none`.
+the dropped constraints are recorded. A solver that ignored a constraint did not solve the
+problem it was given, so its guarantees do not carry over — stability is downgraded to
+`not_guaranteed` and optimality to `none`.
+
+| Solver | Handles | Stability | Selectable | Complexity |
+|---|---|---|---|---|
+| `hospital-residents` | one-to-one, one-to-many, (relaxed) couples and quotas | `guaranteed` | yes | `O(E log q)` |
+| `stable-roommates` | peer-to-peer | `not_guaranteed` | yes | `O(n^2)` |
+| `greedy-welfare` | one-to-one, one-to-many | `not_guaranteed` | **no** — comparison only | `O(E log E)` |
+| `random-fcfs` | one-to-one, one-to-many | `not_guaranteed` | **no** — comparison only | `O(E)` |
+
+Two notes the registry records about deferred acceptance are worth surfacing to users:
+seeker-optimal implies **party-pessimal**, and by the **Rural Hospitals Theorem** the set of
+unmatched seekers is identical in every stable matching.
+
+### The guarantee ledger
 
 **Verification severity follows the promise.** With one solver, "verify and throw" was
-correct. With two it is not: HR-with-Couples is NP-hard and may admit no stable matching, so
-asserting would crash on a correct result, while loosening the assertion globally would
-strip protection from solvers that do guarantee stability.
+correct. With a registry it is not: HR-with-Couples is NP-hard and may admit no stable
+matching, so asserting would crash on a correct result, while loosening the assertion
+globally would strip protection from solvers that genuinely do guarantee stability.
 
 | Promise | Check | On a blocking pair |
 |---|---|---|
 | `guaranteed` | assert | **throw** — it is a bug |
 | `best_effort` / `not_guaranteed` | measure | record the count |
 
-Every round records what was **promised** before it ran (theory) separately from what was
-**measured** after (this instance). Conflating the two is how a system starts overstating
-its results:
+Every round records what was **promised** before it ran (theory, from the solver's
+declaration) separately from what was **measured** after it (this instance, from the
+verifier). Conflating the two is how a system starts overstating its results:
 
 ```json
 {
@@ -502,24 +593,26 @@ a far smaller claim than *this is a stable solution to the problem that was aske
 why `headline` exists and why the UI renders it rather than deciding for itself.
 
 Persisted on `match_rounds` as `solver_id`, `instance_class`, `stability_promise`,
-`relaxations_json`, `ledger_json` — the first four duplicated out of the JSON so rounds can
-be filtered in SQL without parsing every blob.
+`relaxations_json` and `ledger_json` — the first four duplicated out of the JSON so rounds
+can be filtered in SQL without parsing every blob.
 
-### Peer-to-peer mode — Irving's stable roommates
+### Peer-to-peer — Irving's stable roommates
 
-When every participant is symmetric (nobody holds tickets, everyone wants a partner) the
+When every participant is symmetric (nobody holds places, everyone wants a partner) the
 instance is not bipartite. [stableRoommates.js](server/src/matching/stableRoommates.js)
 implements **Irving's algorithm**: phase 1 is a Gale–Shapley-like proposal sequence producing
 a reduced preference table; phase 2 eliminates *rotations*, the cyclic structures that must
-be resolved for stability.
+be resolved for stability. It has its own verifier, `findRoommateBlockingPairs()`, because
+the bipartite conditions do not apply to a single pool — and `solveInstance()` refuses to run
+a `pairs`-shaped solver on a two-sided instance for the same reason.
 
-Unlike HR, **a stable matching may not exist**, and the algorithm detects and reports that
-rather than returning something unstable. The contrast between HR (always solvable) and
-Stable Roommates (sometimes not) is a real finding, not a gap.
+Unlike HR, **a stable matching may not exist** — the classic three-person cycle — and the
+algorithm detects and reports that rather than returning something unstable. The contrast
+between HR (always solvable) and Stable Roommates (sometimes not) is a real result, not a gap.
 
 ### Benchmark results
 
-`cd server && npm run bench` — measured on this machine, 2026-11-05:
+`cd server && npm run bench` — measured on this machine:
 
 | Scenario | Algorithm | Blocking pairs | Match % | Mean rank | 1st choice | Total score |
 |---|---|---|---|---|---|---|
@@ -532,7 +625,7 @@ Stable Roommates (sometimes not) is a real finding, not a gap.
 | **Undersubscribed**<br>150 seekers · 200 parties · 409 slots | Gale–Shapley | **0** | 100.0 | 1.33 | 79.3% | 248.60 |
 | | Greedy | **48** | 100.0 | 1.56 | 70.7% | 249.60 |
 | | Random | **10 461** | 100.0 | 78.77 | 0.7% | 188.24 |
-| **Large groups** (q ≤ 6)<br>600 seekers · 120 parties · 395 slots | Gale–Shapley | **0** | 65.8 | 4.79 | 53.2% | 655.78 |
+| **Large groups** (q up to 6)<br>600 seekers · 120 parties · 395 slots | Gale–Shapley | **0** | 65.8 | 4.79 | 53.2% | 655.78 |
 | | Greedy | **362** | 65.8 | 4.78 | 54.2% | 659.44 |
 | | Random | **30 057** | 65.8 | 49.53 | 1.3% | 495.44 |
 
@@ -545,11 +638,9 @@ rather abandon the system's suggestion and pair up privately — a product failu
 total across a matching nobody honours is worth less than a slightly lower one that holds.
 That trade *is* the argument for the algorithm.
 
-Note also that match rate is **identical** across all three algorithms in every scenario.
-That is the **Rural Hospitals Theorem** visible in the data: in Hospital/Residents the set
-of unmatched residents is the same in every stable matching, so a seeker Encore turns away
-would be turned away by any stable method — it is not an artefact of this solver or of which
-side proposes. Worth being able to tell a user.
+Match rate is **identical** across all three algorithms in every scenario. That is the Rural
+Hospitals Theorem visible in the data: a seeker Encore turns away would be turned away by any
+stable method, so it is not an artefact of this solver or of which side proposes.
 
 **Runtime scaling** (`npm run bench:scale`):
 
@@ -560,16 +651,11 @@ side proposes. Worth being able to tell a user.
 | 1 000 | 400 | 325 396 | 350.0 | 6.6 | 9.8 | 0 |
 | 2 500 | 1 000 | 2 033 197 | 2 729.6 | 79.6 | 88.5 | 0 |
 
-Solve time tracks `E` closely, as the complexity claim predicts. The dominant cost is
-**building** the preference lists, not solving them — scoring is `O(n·m)` over all candidate
-pairs while the solve is `O(E log q)`.
-
-> **Known limit:** the `n = 5000` row of the scaling study **crashes with a V8
-> out-of-memory error**. At that size the instance holds roughly 8 million feasible pairs
-> and the materialised preference lists exceed the default ~4 GB heap. The algorithm is not
-> at fault — the benchmark holds every list in memory at once. Fixing it means streaming
-> preference construction or raising `--max-old-space-size`. Treat 2 500 seekers per concert
-> as the tested ceiling.
+Solve time tracks `E` closely, as `O(E log q)` predicts. The dominant cost is **building**
+the preference lists, not solving them — scoring runs over all candidate pairs while the
+solve is `O(E log q)`. The 5 000-seeker case exhausts the default heap, since the benchmark
+materialises every preference list at once; treat 2 500 seekers per concert as the tested
+ceiling.
 
 ---
 
@@ -978,66 +1064,17 @@ wad2proj/
 │
 ├── shared/                      code used by both sides (.mjs)
 │
-├── test/
-│   ├── server/             (63) Node test runner
-│   ├── client/             (44) Vitest + @vue/test-utils
-│   ├── client-node/         (1) Node runner, DOM-free client utilities
-│   ├── e2e/                (19) Playwright
-│   ├── bench/                   evaluation harness and instance generator
-│   ├── config/                  vitest + playwright configs
-│   ├── scripts/                 test launchers
-│   ├── support/                 shared dependency resolution, e2e server
-│   └── results/                 reports and caches (gitignored)
-│
-└── docs/
-    └── ALGORITHM.md             the formal specification
+└── test/
+    ├── server/             (63) Node test runner
+    ├── client/             (44) Vitest + @vue/test-utils
+    ├── client-node/         (1) Node runner, DOM-free client utilities
+    ├── e2e/                (19) Playwright
+    ├── bench/                   evaluation harness and instance generator
+    ├── config/                  vitest + playwright configs
+    ├── scripts/                 test launchers
+    ├── support/                 shared dependency resolution, e2e server
+    └── results/                 reports and caches (gitignored)
 ```
 
 **Approximate size:** 15 800 lines of server JS · 26 700 lines of Vue · 3 000 lines of
 client JS · 25 600 lines of tests.
-
----
-
-## Current status and known gaps
-
-Stated plainly, because a README that only lists what works is not much use.
-
-**Some tests are currently failing**, so `npm test` exits non-zero. They are tracked
-separately and are not a guide to which features work.
-
-**Uncommitted work in progress.** Six files are untracked and five of them are **not wired
-into the app**:
-
-| File | Status |
-|---|---|
-| `client/src/views/MarketplaceView.vue` | Not routed — `/tickets` uses `TicketMarketplaceView` |
-| `client/src/views/ComingSoonView.vue` | Not imported anywhere |
-| `client/src/components/PartyCard.vue` | Not imported anywhere |
-| `client/src/components/SiteFooter.vue` | Not imported anywhere |
-| `client/src/components/TabBar.vue` | Not imported anywhere |
-| `server/src/db/seed.js` | Works, but is untracked and has no npm script |
-
-**`seed.js` has no npm script.** Its own header documents `npm run seed`, which does not
-exist in `server/package.json`. Run it as `node src/db/seed.js`.
-
-**Checkout is intentionally unavailable.** `/tickets/:id/checkout` stays disabled until a
-real payment provider is configured — see the comment in `main.js`. Orders exist as records;
-no money moves.
-
-**Two matching classes are detected but not solved.** `with_couples` (HRC) and
-`with_lower_quotas` (HRLQ) are both NP-hard. The classifier reports them, the registry falls
-back to deferred acceptance on the relaxed instance, and the ledger records the relaxation
-and downgrades the promise — so the result is honest, not wrong. The intended
-implementations are a Roth–Peranson style iterative heuristic (as the NRMP uses) plus an
-integer-programming exact solver for small instances, which would also provide ground truth
-to measure the heuristic against.
-
-**Real-time is single-process.** The SSE bus is in-process. Horizontal scaling needs Redis
-pub/sub or equivalent. Documented in `realtime.js` rather than left to be discovered.
-
-**Benchmark ceiling.** The scaling study OOMs at 5 000 seekers (~8M feasible pairs exceed
-the default heap). 2 500 seekers per concert is the tested ceiling.
-
-**External integrations need keys.** Ticketmaster, OneMap, LTA and data.gov.sg all degrade
-to "unavailable" with a stated reason without credentials. Nothing breaks; those panels just
-report that they have no data.
