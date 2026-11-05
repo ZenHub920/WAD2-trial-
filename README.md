@@ -116,7 +116,9 @@ For each eligible pair, the core compatibility scorer examines **eight factors**
 7. Reliability
 8. Budget fit
 
-The seeker and the group receive **separate directional scores**, with different factor weights. For example, the group-side scoring gives applicant reliability a **26%** weight.
+The seeker and the group receive **separate directional scores**, with different factor weights. For example, the group-side scoring gives applicant reliability a **26%** weight, because a host carries the no-show risk.
+
+A seeker is scored against the **group as a whole**, not just its host: concert vibe and reliability are averaged across every active member and languages are pooled, so adding a member changes the group's score. Feasibility is checked the same way — a block against any one member rules out the whole group.
 
 For groups with an enhanced discovery profile, directional scores combine:
 
@@ -195,21 +197,21 @@ SQLite transactions protect multi-step operations. Uploaded ticket and profile i
 | Provider | ENCORE use | Notes |
 | --- | --- | --- |
 | **Ticketmaster Discovery API** | Singapore event discovery | Backend-held API key; normalized events may be stored locally |
-| **Google Maps Platform** | Meetup location search and routing/travel context | **Current provider replacing OneMap**, per the latest project update; enable only the Google services used by the current implementation |
+| **Google Maps Platform** | Picking a meetup location: the map, place search and reverse lookup in the planner | Runs **in the browser** via `VITE_GOOGLE_MAPS_API_KEY`; Maps JavaScript API with Places API (New) |
+| **OneMap** | Nearby MRT stations and bus stops, and route lookups behind the transport panel | Runs **server-side** and is still in active use; `ONEMAP_*` settings |
 | **LTA DataMall** | Bus/train service information, nearby transport/parking context where supported | Optional account key; information may be unavailable |
 | **NEA via data.gov.sg** | Weather forecasts and rainfall context | Forecast availability depends on the time horizon and provider |
 | **Spotify embeds** | Supported track previews on concert pages | An embedded media feature, not a fifth backend data API |
 
 External data is not guaranteed to be fresh or available. The application should communicate missing information rather than inventing travel times, transport statuses, or forecasts.
 
-**Google Maps migration note:** This README reflects the newer provider you specified. The archived `proj 7.zip` code snapshot still contains OneMap calls and `ONEMAP_*` settings in `server/src/services/singaporeTravel.js`. To run Google Maps functionality, use the **updated code** containing the Google Maps adapter. Do not assume a Google Maps key will work with the archived OneMap implementation.
+**How the two map providers divide the work.** Google Maps did not replace OneMap; they do different jobs. Google Maps runs **client-side** and is used only for choosing a location in the meetup planner (`client/src/components/GooglePlaceSearch.vue`). OneMap runs **server-side** in `server/src/services/singaporeTravel.js` and still supplies every nearby-transport and routing lookup. A Google key changes only the location picker; transport data continues to come from OneMap and LTA regardless.
 
 ## Local setup
 
 ### Prerequisites
 
 - **Node.js 20 or newer** and npm (or the project's configured pnpm version)
-- Access to the full repository, including shared modules and test configuration
 - Optional provider credentials for external APIs
 
 ### 1. Install dependencies
@@ -237,10 +239,10 @@ TICKETMASTER_API_KEY=
 LTA_ACCOUNT_KEY=
 DATA_GOV_SG_API_KEY=
 
-# Google Maps (new integration)
-# Set the EXACT variable expected by your updated Google Maps service.
-# Example only — not verified against the archived proj 7 source:
-# GOOGLE_MAPS_API_KEY=
+# OneMap — nearby MRT/bus lookups and routing (optional)
+# ONEMAP_EMAIL=
+# ONEMAP_PASSWORD=
+# ONEMAP_TOKEN=
 
 # Optional email
 # SMTP_HOST=
@@ -257,7 +259,19 @@ DATA_GOV_SG_API_KEY=
 
 **Important:** Do not commit `.env`, secrets, session files, uploaded private images, or the local database to source control. Restrict Google Maps API keys by allowed API/service and appropriate application restrictions. Use separate development and production credentials.
 
-Optional settings supported by the archived server include `ENCORE_DB`, `ENCORE_AVATAR_DIR`, `ENCORE_TICKET_IMAGE_DIR`, `CORS_ALLOWED_ORIGINS`, `ENABLE_BACKGROUND_JOBS`, `TRUST_PROXY`, and provider request-budget settings.
+Other supported settings: `ENCORE_DB`, `ENCORE_AVATAR_DIR`, `ENCORE_TICKET_IMAGE_DIR`, `CORS_ALLOWED_ORIGINS`, `ENABLE_BACKGROUND_JOBS`, `TRUST_PROXY`, `ENCORE_USE_SYSTEM_CA`, and the provider budget caps `TICKETMASTER_DAILY_LIMIT`, `TICKETMASTER_MAX_PAGES`, `TICKETMASTER_MIN_INTERVAL_MS`, `ONEMAP_DAILY_LIMIT`, `LTA_DAILY_LIMIT`, `CONCERT_SYNC_INTERVAL_MS` and `CONCERT_CACHE_TTL_MS`.
+
+### 2b. Configure the client environment (Google Maps)
+
+The Google Maps key is read by the **browser**, not the server, so it belongs in **`client/.env.local`** and must carry Vite's `VITE_` prefix. Copy `client/.env.example`:
+
+```dotenv
+# Google Maps JavaScript API key, with Places API (New) enabled.
+# Restrict it to your site in Google Cloud.
+VITE_GOOGLE_MAPS_API_KEY=
+```
+
+Without this key the meetup planner cannot search for or pick locations — see *Important limitations*.
 
 ### 3. Start the backend
 
@@ -301,7 +315,16 @@ cd server
 npm run seed:test-accounts
 ```
 
-The seeder is intended for a local development database and writes a database backup before adding fixtures. **Do not run it against real user data or a production database.** Other demo fixtures under `test/local-demo/` may require project-specific setup and should likewise be treated as development-only.
+Every account it creates signs in with the password `EncoreTest123!` (for example `test3@gmail.com`). The seeder writes a database backup before adding fixtures and is safe to re-run. **Do not run it against real user data or a production database.**
+
+A second option is the **sanitised demo database** committed at `test/fixtures/encore-demo.sqlite` — 21 demo accounts, 71 concerts, 7 groups, 5 ticket listings and 2 meetups, with `demo.alice@example.test` as an operator. Point the server at a copy rather than the file itself, so the working tree stays clean:
+
+```bash
+cp test/fixtures/encore-demo.sqlite server/data/demo.sqlite
+cd server && ENCORE_DB=./data/demo.sqlite npm run dev
+```
+
+The demo passwords are not recorded in the repository — ask whoever added the snapshot if you need to sign in as one of those accounts.
 
 ## Testing
 
@@ -314,15 +337,17 @@ ENCORE uses complementary test types:
 | **Integration** | APIs, authentication, group admissions, database state, permissions | Node.js test runner + Express + isolated SQLite |
 | **End-to-end** | Complete browser journeys including matching, chats, groups, meetups and responsive navigation | Playwright / Chromium |
 
-Representative test files visible in the inspected source snapshot include:
+All test infrastructure lives in the top-level `test/` directory and reuses the client's installed tooling, so there is no second `node_modules` to install:
 
-- `test/client/confirmation-dialog.test.js`
-- `test/client/availability-grid.test.js`
-- `test/client-node/group-comparison.test.js`
-- `test/e2e/first-time-group-meetup-ux.spec.js`
-- `test/e2e/group-matching-recovery.spec.js`
+| Location | Runner | Files |
+| --- | --- | --- |
+| `test/server/` | Node test runner | 63 |
+| `test/client/` | Vitest + Vue Test Utils | 44 |
+| `test/client-node/` | Node test runner, DOM-free client utilities | 1 |
+| `test/e2e/` | Playwright | 19 specs |
+| `test/bench/` | Matching evaluation harness (not a test suite) | — |
 
-The root test scripts also refer to server-side test runners and test configuration in the **full repository**. Those files could not all be verified from the recovered archive, so confirm they are present before running the root commands.
+Configuration is in `test/config/` and the launchers are in `test/scripts/`.
 
 From the repository root:
 
@@ -334,11 +359,19 @@ npm run test:all    # all of the above
 
 For a first-time Playwright setup, install its supported browser binaries as instructed by Playwright (for example, `npx playwright install chromium` from `client/`). E2E tests may start local servers and create isolated fixtures; inspect the repository's test configuration before running them against any non-development environment.
 
-**Do not infer passing results from the presence of test files.** Run the suites and record the actual result and date when reporting coverage or success.
+**Do not infer passing results from the presence of test files.** Run the suites and record the actual result and date when reporting coverage or success. Some suites currently fail on `main`, so `npm test` exits non-zero; check the current state before quoting any figure.
+
+The matching engine also has a benchmark harness, which produces the comparison against the greedy and random baselines:
+
+```bash
+cd server
+npm run bench          # algorithm comparison
+npm run bench:scale    # runtime scaling study
+```
 
 ## Security and privacy
 
-Implemented architectural safeguards in the inspected code include:
+Safeguards implemented in the code:
 
 - Cookie-backed authentication with server-managed sessions and HttpOnly session tokens.
 - Authorization checks on protected routes, hosted-group actions, chats, and operator endpoints.
@@ -371,12 +404,13 @@ Security controls do not replace deployment-specific hardening. Production deplo
 │   │   ├── matching/       # Matching solvers, scoring, verification
 │   │   └── db/             # SQLite schema, repositories, migrations
 │   └── .env               # Local config — do not commit
-├── shared/                 # Cross-layer shared rules (full repository)
+├── shared/                 # Rules shared by client and server (.mjs)
 ├── test/
 │   ├── server/            # Backend/unit/integration tests
 │   ├── client/            # Vue component tests
 │   ├── e2e/               # Playwright journeys
-│   └── local-demo/        # Local development scenarios
+│   ├── bench/             # Matching evaluation harness
+│   └── fixtures/          # Sanitised demo database
 └── package.json           # Root test scripts
 ```
 
@@ -386,7 +420,8 @@ Security controls do not replace deployment-specific hardening. Production deplo
 - **Matching is not compulsory:** Algorithms propose compatible assignments; actual membership depends on required approvals and available places.
 - **Stability has defined assumptions:** Standard Hospitals/Residents rounds can be verified as stable. More complex or relaxed matching models must not be advertised as having that same universal guarantee.
 - **Live data depends on providers:** Concert discovery, routes, transport updates, and weather may be unavailable or delayed.
-- **Provider migration matters:** The newest intended maps provider is Google Maps. Older source snapshots using OneMap must be updated before the README's Google Maps description matches their runtime behaviour.
+- **The meetup planner needs a Google Maps key:** without `VITE_GOOGLE_MAPS_API_KEY` in `client/.env.local`, the planner's location picker renders "The map could not load" and a location cannot be chosen at all. The older OneMap-backed picker (`MeetupLocationSearch.vue`) is still in the repository but is no longer rendered by any page, so there is currently no fallback.
+- **Two map providers, different jobs:** Google Maps handles location picking in the browser; OneMap still serves every nearby-transport and routing lookup from the server. Neither replaces the other.
 
 ---
 
