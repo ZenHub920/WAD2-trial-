@@ -148,7 +148,6 @@ async function saveVibe() {
     </section>
 
     <section v-else-if="step === 'editing'" class="welcome__panel welcome__form" aria-labelledby="welcome-form">
-      <p class="welcome__private">Private · Only you can see your answers</p>
       <h1 id="welcome-form">Your matching preferences</h1>
       <p class="welcome__required">Pick at least one thing to start using Encore. Your answers save as you go, and you can change them anytime.</p>
       <p v-if="error" class="welcome__error" role="alert">{{ error }}</p>

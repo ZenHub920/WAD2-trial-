@@ -556,7 +556,7 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
           </div>
         </div>
         <p class="group-muted">{{ originLabels[currentGroup.assignmentOrigin] ?? 'You’re in' }} · {{ currentGroup.remainingCapacity }} {{ currentGroup.remainingCapacity === 1 ? 'spot' : 'spots' }} still open. You can be in one group per concert.</p>
-        <div class="group-actions">
+        <div class="current-group__actions">
           <RouterLink :to="`/groups/${encodeURIComponent(currentGroup.partyId ?? currentGroup.id)}/members`" class="btn btn--primary">See your group</RouterLink>
           <RouterLink :to="`/groups/${encodeURIComponent(currentGroup.partyId ?? currentGroup.id)}/channel`" class="btn btn--ghost">Group messages</RouterLink>
           <button v-if="canPlanMeetup || meetupPlans.some(plan => plan.scope?.partyId === (currentGroup.partyId ?? currentGroup.id))" type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: currentGroup.partyId ?? currentGroup.id }))">{{ meetupLabel({ partyId: currentGroup.partyId ?? currentGroup.id }) }}</button>
@@ -1114,4 +1114,10 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
 .request-note textarea:focus-visible { outline:2px solid var(--accent-400); outline-offset:1px; }
 /* The plain line shown when no group suits the person. */
 .no-groups { margin:0; padding:var(--space-4) 0; text-align:left; }
+/* "You're going with" buttons: always a 2 × 2 grid of equal-width buttons
+   (a single column only on very small phones). */
+.current-group__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 15rem)); gap: var(--space-2); max-width: 100%; }
+@media (max-width: 560px) { .current-group__actions { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 360px) { .current-group__actions { grid-template-columns: 1fr; } }
+.current-group__actions .btn { width: 100%; justify-content: center; text-align: center; white-space: normal; }
 </style>

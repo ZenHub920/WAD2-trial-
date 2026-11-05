@@ -160,7 +160,10 @@ watch(() => [board.value?.status, board.value?.selected_place_id, activeStep.val
           </div>
         </article>
       </section>
-      <button type="button" class="btn btn--ghost meetup-review-link" :disabled="!stepUnlocked('review')" @click="showStep('review')">Next: finalise meetup <span aria-hidden="true">→</span></button>
+      <div class="meetup-step-nav">
+        <button type="button" class="btn btn--ghost" @click="showStep('availability')"><span aria-hidden="true">←</span> Back: share availability</button>
+        <button type="button" class="btn btn--ghost" :disabled="!stepUnlocked('review')" @click="showStep('review')">Next: finalise meetup <span aria-hidden="true">→</span></button>
+      </div>
       </div>
       <div id="meetup-review" v-show="activeStep === 'review'" role="tabpanel" aria-labelledby="meetup-tab-review" class="meetup-workspace meetup-review-workspace">
       <p v-if="feedback.review" class="group-success" role="status">{{ feedback.review }}</p>
@@ -260,6 +263,9 @@ watch(() => [board.value?.status, board.value?.selected_place_id, activeStep.val
         </div>
       </section>
       <section v-if="capabilities.canCancel" class="meetup-management" aria-label="Manage this meetup"><button type="button" class="btn btn--danger-ghost meetup-cancel" :disabled="busy" @click="requestOrganizerAction('cancel')">Cancel meetup</button></section>
+      <div class="meetup-step-nav">
+        <button type="button" class="btn btn--ghost" @click="showStep('places')"><span aria-hidden="true">←</span> Back: suggest places</button>
+      </div>
       </div></template
     >
     <ConfirmDialog :open="Boolean(confirmAction)" :busy="busy" :title="confirmAction === 'reopen' ? (board?.status === 'proposed' ? 'Withdraw proposal and reopen planning?' : 'Reopen planning?') : 'Cancel this meetup?'" :body="confirmAction === 'reopen' ? 'The selected time and place will be cleared. Availability, places, votes and discussion are kept. Previous approvals will no longer authorize the plan; all required organizers must approve a new proposal. Participants will be notified.' : 'This meetup will become read-only. Participants will be notified.'" :confirm-label="confirmAction === 'reopen' ? 'Reopen planning' : 'Cancel meetup'" cancel-label="Keep current plan" :danger="confirmAction === 'cancel'" @cancel="confirmAction = null" @confirm="organizerAction" />
@@ -333,6 +339,8 @@ watch(() => [board.value?.status, board.value?.selected_place_id, activeStep.val
 .meetup-approval-progress { padding: .85rem 1rem; border: var(--border-soft); border-radius: var(--radius-sm); background: var(--surface-interactive); }
 .meetup-approval-progress p { margin: .5rem 0 0; }
 .meetup-reopen { justify-self: start; }
+/* Back on the left, Next on the right, at the end of each step. */
+.meetup-step-nav { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-3); }
 .meetup-management { border-top: var(--border-soft); padding-top: 1.25rem; display: grid; justify-items: start; gap: .75rem; }
 .meetup-journey .meetup-travel-fields { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 1rem; }
 .meetup-journey .meetup-travel-fields > button { justify-self: start; }
@@ -415,7 +423,7 @@ watch(() => [board.value?.status, board.value?.selected_place_id, activeStep.val
   outline-offset: 1px;
 }
 .meetup-steps button > span {
-  grid-row: span 2;
+  /* One row now that the steps have no subtitle: number and title share a centre line. */
   display: grid;
   place-items: center;
   width: 1.65rem;

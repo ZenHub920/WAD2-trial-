@@ -33,7 +33,7 @@ export function meetupPresentation(plan) {
   const detail = counts ? `${counts.respondedCount} of ${plan.participantCount ?? 0} responded; ${counts.unavailableCount} cannot make these times`
     : `${plan.availabilityParticipantCount ?? 0} of ${plan.participantCount ?? 0} shared their times`;
   return { label: isMeetupHistorical(plan) ? 'Past · Planning' : 'Planning in progress',
-    action: readyToFinalise ? 'Review meetup recommendations' : responded ? 'View planning board' : 'Share availability',
+    action: readyToFinalise ? 'Review meetup' : responded ? 'View planning board' : 'Share availability',
     detail, stage: readyToFinalise ? 'review' : responded ? 'places' : 'availability' };
 }
 

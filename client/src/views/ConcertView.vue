@@ -318,7 +318,7 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
       </header>
 
       <!-- Directly under group matching, as the running order for this show. -->
-      <SetlistReel :artist="concert.concert.artist" :setlist="setlist" />
+      <SetlistReel class="setlist-editor-card" :artist="concert.concert.artist" :setlist="setlist" />
       <SetlistEditor
         v-if="sessionReady && currentUser?.isOperator"
         class="setlist-editor-card"
@@ -447,7 +447,7 @@ const needsReplyCount = computed(() => pendingProposals.value.filter(proposal =>
   isolation: isolate;
 }
 
-/* Same space below the operator's setlist card as between the other cards. */
+/* Same space below the setlist cards as between the other cards. */
 .setlist-editor-card {
   margin-bottom: var(--space-6);
 }

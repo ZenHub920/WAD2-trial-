@@ -66,7 +66,7 @@ describe('WelcomeView', () => {
   it('shows only the private questionnaire, with no banner or explainer panel', async () => {
     const { wrapper } = await mountPage(WelcomeView, { path: '/welcome' });
     expect(wrapper.get('h1').text()).toBe('Your matching preferences');
-    expect(wrapper.text()).toContain('Private · Only you can see your answers');
+    expect(wrapper.text()).not.toContain('Private · Only you can see your answers');
     expect(wrapper.text()).not.toContain('What are preferences for?');
     expect(wrapper.text()).not.toContain('Welcome to Encore');
     // No extra click: the editor is already on the page.

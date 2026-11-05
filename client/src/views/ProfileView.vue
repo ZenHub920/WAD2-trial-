@@ -374,7 +374,7 @@ async function save() {
            read these answers, which is why it is here and not in either. -->
       <section id="preferences" class="profile__card profile__card--private" :class="{ 'next-step': !settingUp && myPreferences === null }" aria-labelledby="profile-preferences">
         <div class="profile__preference-heading">
-          <div><p class="profile__private-label">Private · Only you can see your answers</p><h2 id="profile-preferences">{{ settingUp ? 'A few answers. A better fit.' : 'Your matching preferences' }}</h2></div>
+          <div><h2 id="profile-preferences">{{ settingUp ? 'A few answers. A better fit.' : 'Your matching preferences' }}</h2></div>
           <button v-if="!settingUp && myPreferences" type="button" class="btn btn--ghost" :aria-expanded="prefEditing" @click="prefEditing = !prefEditing">{{ prefEditing ? 'Close editor' : 'Edit private preferences' }}</button>
         </div>
         <ul class="profile__points">
@@ -408,7 +408,6 @@ async function save() {
 
       <template v-if="!settingUp">
       <section id="your-vibe" class="profile__card profile__card--public" aria-labelledby="profile-vibe">
-        <p class="profile__public-label">Public · Visible to other members</p>
         <div class="profile__card-head"><h2 id="profile-vibe">Your concert vibe</h2><SaveBadge :state="cardStatus.vibe" /></div>
         <p v-if="saveError && errorCard === 'vibe'" class="profile__error" role="alert">{{ saveError }} <RouterLink v-if="sessionExpired" to="/login">Sign in</RouterLink></p>
         <p class="profile__hint">These six interests appear on your public concert profile. Your matching questionnaire stays private.</p>

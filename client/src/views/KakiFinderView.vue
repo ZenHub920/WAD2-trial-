@@ -254,7 +254,7 @@ function backToDeck() {
         :disabled="swipePending || ranking"
         @click="stage === 'matched' ? backToDeck() : stage = 'filters'"
       />
-      <div class="kaki__identity"><p class="kaki__eyebrow mono">Kaki finder</p><h1 class="kaki__title">Find a companion</h1></div>
+      <div class="kaki__identity"><h1 class="kaki__title">Find a companion</h1></div>
       <div class="kaki__actions">
         <RouterLink
           to="/kaki/history" class="kaki__icon-btn" aria-label="Companion history"
@@ -297,7 +297,6 @@ function backToDeck() {
     <!-- --------------------------------------------------------- Filters -->
     <section v-else-if="stage === 'filters'" class="kaki__panel kaki__filter-workspace" aria-labelledby="kaki-filter-heading">
       <div class="kaki__filter-main">
-      <p class="kaki__eyebrow mono">Start with the show</p>
       <h2 id="kaki-filter-heading" class="kaki__h2">Filter people</h2>
       <p class="kaki__hint">People appear at concerts you have joined. A like becomes a match only when you both like each other.</p>
 
