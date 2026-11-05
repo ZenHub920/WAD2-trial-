@@ -149,7 +149,7 @@ async function request(slot) {
     }
     submitted.value = group;
     if (!await animate(slot, 'right') || !alive || token !== epoch) return;
-    announcement.value = `Request sent to ${groupName(group)}. Check Your applications for its queue position and deadline.`;
+    announcement.value = `Request sent to ${groupName(group)}. Track it in My groups.`;
   } catch {
     if (alive && token === epoch) announcement.value = 'Could not send your application. Your group card has been kept. Please try again.';
   } finally {
@@ -229,7 +229,7 @@ function cardStyle(slot) {
       <div class="comparison-deck__tools"><p class="comparison-deck__progress">{{ state.nextIndex }} of {{ state.groups.length }}</p><button type="button" class="btn btn--ghost" :disabled="locked" @click="instructionsVisible = true">How this works</button></div>
     </div>
     <p v-if="!canApply && !submitted" class="comparison-deck__notice">You can compare groups, but can’t send a request right now.</p>
-    <p v-if="submitted" class="comparison-deck__notice" role="status">Request sent to <strong>{{ groupName(submitted) }}</strong>. Track it under Your requests.</p>
+    <p v-if="submitted" class="comparison-deck__notice" role="status">Request sent to <strong>{{ groupName(submitted) }}</strong>. Track it in My groups.</p>
     <div v-if="visibleCount" class="comparison-deck__pair">
       <div v-for="(group, slot) in state.slots" :key="slot" class="comparison-deck__position">
         <div v-if="group" :key="group.id" class="comparison-deck__candidate" :class="{ 'comparison-deck__candidate--favorite': state.favoriteId === group.id, 'comparison-deck__candidate--dragging': drag?.slot === slot }" :style="cardStyle(slot)" :data-comparison-slot="slot" tabindex="0" role="group" :aria-label="`${groupName(group)}. Enter to keep; left arrow to skip; right arrow to request to join.`" :aria-disabled="locked" @click="onCardClick($event, slot)" @keydown="onKeydown($event, slot)" @pointerdown="onPointerDown($event, slot)" @pointermove="onPointerMove" @pointerup="onPointerUp" @pointercancel="clearPointer">

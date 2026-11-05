@@ -1,21 +1,17 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, LABELS, SECTION_OPTIONS, ARRIVAL_OPTIONS } from '../api.js';
 import { useMeetupSummaries } from '../composables/useMeetupSummaries.js';
 import { meetupDestination, meetupActionForScope, meetupNeedsAttention, isMeetupHistorical, meetupsForScope } from '../utils/meetupSummaries.js';
 import { concertGroupCreationEligibility, concertParticipationEligibility } from '../../../shared/concertEligibility.mjs';
 import { meetupDatePolicy } from '../../../shared/meetupDates.mjs';
-import GroupFilters from '../components/GroupFilters.vue';
-import GroupListingCard from '../components/GroupListingCard.vue';
-import GroupApplicationCard from '../components/GroupApplicationCard.vue';
-import MatchProposalCard from '../components/MatchProposalCard.vue';
 import GroupNavigation from '../components/GroupNavigation.vue';
-import ConfirmDialog from '../components/ConfirmDialog.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import GroupAvatar from '../components/GroupAvatar.vue';
 import AvatarPicker from '../components/AvatarPicker.vue';
 import GroupPreferencesGate from '../components/GroupPreferencesGate.vue';
+import BackArrow from '../components/BackArrow.vue';
 import '../assets/groups.css';
 import { currentUser } from '../auth.js';
 
@@ -26,18 +22,12 @@ const upcomingMeetupCount = computed(() => meetupPlans.value.filter(plan => plan
 const meetupLink = scope => meetupDestination(meetupPlans.value, scope, { from: 'groups' });
 const meetupLabel = scope => meetupActionForScope(meetupPlans.value, scope);
 const hasMeetup = scope => meetupsForScope(meetupPlans.value, scope).length > 0;
-const hosted = ref([]), candidates = ref([]), connections = ref([]), joins = ref([]);
+const hosted = ref([]), joins = ref([]);
 const attendance = ref([]), myRequests = ref([]);
 const automaticOffers = ref([]);
 const groupReads = reactive({});
-const loading = ref(false), busy = ref(false), candidateError = ref('');
+const busy = ref(false);
 const error = ref(''), message = ref(''), refreshWarning = ref('');
-const connectionFeedback = ref(null);
-const offset = ref(0), total = ref(0);
-/** One screen of candidates; the server pages in the same size. */
-const PAGE_SIZE = 20;
-const hasPreviousPage = computed(() => offset.value > 0);
-const hasNextPage = computed(() => offset.value + PAGE_SIZE < total.value);
 const allConcerts = ref([]), hostConcertId = ref('');
 const concertNow = ref(Date.now()), concertNotice = ref('');
 const eligibleConcerts = computed(() => allConcerts.value.filter(concert => concertGroupCreationEligibility(concert, concertNow.value).eligible));
@@ -52,14 +42,11 @@ const attempted = ref(false);
 const capacityValid = computed(() => Number.isInteger(hostForm.capacity) && hostForm.capacity >= 1);
 const fieldState = filled => ({ 'field-ok': filled, 'field-error': attempted.value && !filled });
 const groupTitle = g => g.name || g.group?.name || g.artist;
-const filters = reactive({ query: '', section: '', minCapacity: 0, spendBand: '', arrival: '', activity: '', vibe: '', sort: 'compatibility' });
-const mode = computed(() => ['create', 'connections'].includes(route.query.view) ? route.query.view : 'dashboard');
+const mode = computed(() => route.query.view === 'create' ? 'create' : 'dashboard');
 const concertId = computed(() => typeof route.query.concertId === 'string' ? route.query.concertId : '');
 const groupEligibility = group => concertParticipationEligibility({ event_date: group.eventDate, event_timezone: group.eventTimezone }, concertNow.value);
-const connectionEligible = connection => groupEligibility(connection.partyA).eligible && groupEligibility(connection.partyB).eligible;
 const canOpenMeetup = (group, scope) => hasMeetup(scope) || meetupDatePolicy({ event_date: group.eventDate, event_time: group.eventTime, event_timezone: group.eventTimezone }, concertNow.value).canSchedule;
 const activeGroups = computed(() => hosted.value.filter(g => g.status !== 'cancelled' && groupEligibility(g).eligible));
-const cancelledGroups = computed(() => hosted.value.filter(g => g.status === 'cancelled'));
 const joinedGroups = computed(() => attendance.value.filter(g => !hosted.value.some(owned => owned.id === g.id)));
 const upcomingJoinedGroups = computed(() => joinedGroups.value.filter(g => groupEligibility(g).eligible));
 const historicalGroups = computed(() => [
@@ -68,50 +55,11 @@ const historicalGroups = computed(() => [
 ]);
 const historicalTitle = computed(() => historicalGroups.value.some(group => groupEligibility(group).reason === 'concert_date_unavailable') ? 'Past concerts & undated groups' : 'Past concert groups');
 const membershipSource = { friend: 'Joined through a friend invitation', join: 'Joined through an approved request', proposal: 'Joined through matching', direct: 'Joined through an approved direct application', algorithm: 'Joined through a confirmed automatic match' };
-const sourceGroup = computed(() => activeGroups.value.find(g => g.id === route.query.groupId) ?? null);
-const sourceId = computed(() => sourceGroup.value?.id ?? '');
-const connectionScopeId = computed(() => typeof route.query.groupId === 'string' ? route.query.groupId : sourceId.value);
-// Discovery applies search, filters and sorting before pagination. Filtering the
-// returned page again drops compatibility-reason matches and falsifies totals.
-const visible = computed(() => candidates.value);
-const hasConnectionFilters = computed(() => Boolean(filters.query.trim() || filters.section || filters.minCapacity
-  || filters.spendBand || filters.arrival || filters.activity || filters.vibe));
-function clearConnectionFilters() {
-  Object.assign(filters, { query: '', section: '', minCapacity: 0, spendBand: '', arrival: '', activity: '', vibe: '' });
-}
 const pendingJoins = computed(() => joins.value.filter(j => j.status === 'pending'));
-const historicalJoins = computed(() => joins.value.filter(j => j.status !== 'pending'));
-const admissionQueues = computed(() => {
-  const entries = [
-    ...pendingJoins.value.map(record => ({ kind: 'direct', key: `direct:${record.id}`, record })),
-    ...automaticOffers.value.map(record => ({ kind: 'algorithm', key: `algorithm:${record.id}`, record })),
-  ].sort((a, b) => (a.record.queueOrder ?? Number.MAX_SAFE_INTEGER) - (b.record.queueOrder ?? Number.MAX_SAFE_INTEGER)
-    || String(a.record.createdAt ?? '').localeCompare(String(b.record.createdAt ?? '')) || a.key.localeCompare(b.key));
-  const queues = new Map();
-  for (const entry of entries) {
-    const partyId = entry.record.partyId;
-    if (!queues.has(partyId)) {
-      const group = hosted.value.find(owned => owned.id === partyId);
-      queues.set(partyId, { partyId, name: group ? groupTitle(group) : `${entry.record.hostName}'s group`, artist: entry.record.artist, entries: [] });
-    }
-    queues.get(partyId).entries.push(entry);
-  }
-  return [...queues.values()];
-});
-const incomingCount = computed(() => pendingJoins.value.length + automaticOffers.value.length);
-const shownConnections = computed(() => mode.value === 'connections'
-  ? connections.value.filter(c => c.partyA.id === connectionScopeId.value || c.partyB.id === connectionScopeId.value)
-  : connections.value);
-const incoming = computed(() => shownConnections.value.filter(c => c.incoming && c.status === 'pending'));
-const outgoing = computed(() => shownConnections.value.filter(c => !c.incoming && c.status === 'pending'));
-const accepted = computed(() => shownConnections.value.filter(c => c.status === 'accepted'));
-const declined = computed(() => shownConnections.value.filter(c => c.status === 'declined'));
-const canConnect = computed(() => Boolean(sourceGroup.value?.settings?.published && sourceGroup.value.settings.connect_open));
-const pageTitle = computed(() => mode.value === 'create' ? 'Create a group' : mode.value === 'connections' ? 'Connect groups' : 'My groups');
+const pageTitle = computed(() => mode.value === 'create' ? 'Create a group' : 'My groups');
 const sectionName = key => LABELS.section[key] ?? key;
-const describe = c => `${c.partyA.name || c.partyA.hostName} (${sectionName(c.partyA.section)}) ↔ ${c.partyB.name || c.partyB.hostName} (${sectionName(c.partyB.section)}), ${c.partyA.artist}`;
-let generation = 0, sessionGeneration = 0, operationGeneration = 0, viewGeneration = 0, alive = true, filterTimer, concertClock;
-const groupSourceKeys = ['owned', 'joined', 'myRequests', 'connections', 'applications', 'offers'];
+let sessionGeneration = 0, operationGeneration = 0, viewGeneration = 0, alive = true, concertClock;
+const groupSourceKeys = ['owned', 'joined', 'myRequests', 'applications', 'offers'];
 const sources = {
   concerts: { label: 'concerts', load: () => api.concerts(), apply: result => {
     allConcerts.value = result.concerts; concertNow.value = Date.now(); selectConcert(concertId.value);
@@ -133,7 +81,6 @@ const sources = {
   } },
   joined: { label: 'joined groups', load: () => api.currentGroupMemberships(), apply: result => { attendance.value = result.groups ?? result.memberships ?? []; } },
   myRequests: { label: 'your join requests', load: () => api.groupJoinRequests({ scope: 'own' }), apply: result => { myRequests.value = result.requests.filter(r => r.userId === currentUser.value?.id && r.status === 'pending'); } },
-  connections: { label: 'invitations', load: () => api.groupConnections(), apply: result => { connections.value = result.connections; } },
   applications: { label: 'applications', load: () => api.hostedGroupJoinRequests(), apply: result => { joins.value = result.requests.filter(j => j.hostId === currentUser.value?.id); } },
   offers: { label: 'automatic offers', load: () => api.myProposals(), apply: result => { automaticOffers.value = result.proposals.filter(proposal => proposal.role === 'host' && proposal.status === 'proposed'); } },
 };
@@ -141,39 +88,13 @@ const reads = reactive(Object.fromEntries(Object.keys(sources).map(key => [key, 
 const groupsLoading = computed(() => groupSourceKeys.every(key => !reads[key].loaded && !reads[key].error) && groupSourceKeys.some(key => reads[key].loading));
 const creationDisabled = computed(() => busy.value || reads.concerts.loading || Boolean(uncertainCreation.value));
 const contextIsCurrent = (session, user) => alive && session === sessionGeneration && user === currentUser.value?.id;
-const notificationContext = computed(() => {
-  const query = route.query;
-  const scopeMatches = partyId => typeof query.groupId !== 'string' || partyId === query.groupId;
-  if (typeof query.requestId === 'string') return { source: 'applications', target: `join-request-${query.requestId}`,
-    found: joins.value.some(record => record.id === query.requestId && scopeMatches(record.partyId)) };
-  if (typeof query.proposalId === 'string') return { source: 'offers', target: `matching-proposal-${query.proposalId}`,
-    found: automaticOffers.value.some(record => record.id === query.proposalId && scopeMatches(record.partyId)) };
-  if (typeof query.connectionId === 'string') return { source: 'connections', target: `group-connection-${query.connectionId}`,
-    found: shownConnections.value.some(record => record.id === query.connectionId) };
-  return null;
-});
-const unavailableContext = computed(() => {
-  const context = notificationContext.value;
-  return context && reads[context.source].loaded && !reads[context.source].loading && !reads[context.source].error && !context.found;
-});
-let focusedContext = '';
-watch(() => [route.fullPath, currentUser.value?.id, notificationContext.value?.found,
-  notificationContext.value?.target, groupsLoading.value], async () => {
-  const context = notificationContext.value;
-  if (!context?.found || mode.value === 'create') return;
-  const key = `${currentUser.value?.id}:${route.fullPath}:${context.target}`;
-  const view = viewGeneration;
-  if (key === focusedContext) return;
-  await nextTick();
-  if (!alive || view !== viewGeneration || key !== `${currentUser.value?.id}:${route.fullPath}:${context.target}`
-    || notificationContext.value?.target !== context.target || !notificationContext.value?.found) return;
-  const element = document.getElementById(context.target);
-  if (!element) return;
-  for (let parent = element.parentElement; parent; parent = parent.parentElement) if (parent.tagName === 'DETAILS') parent.open = true;
-  focusedContext = key;
-  element.focus({ preventScroll: true });
-  element.scrollIntoView?.({ block: 'center', behavior: 'auto' });
-}, { flush: 'post' });
+
+/** Join-request notifications open the group's own page, where hosts review requests. */
+watch(() => route.fullPath, () => {
+  const { groupId, requestId, proposalId } = route.query;
+  if (typeof groupId === 'string' && (typeof requestId === 'string' || typeof proposalId === 'string'))
+    void router.replace({ path: `/groups/${encodeURIComponent(groupId)}/members`, hash: '#join-requests' });
+}, { immediate: true });
 
 function unavailableConcertMessage(concert) {
   const reason = concert && concertGroupCreationEligibility(concert, concertNow.value).reason;
@@ -199,116 +120,12 @@ function viewLink(view, group) {
   return { path: '/groups/connect', query: { concertId: group?.concertId || concertId.value || undefined, view: view || undefined, groupId: group?.id } };
 }
 
-/** SQLite writes UTC timestamps without a zone marker. */
-function whenConnected(value) {
-  if (!value) return '';
-  const date = new Date(value.includes('T') ? value : `${value.replace(' ', 'T')}Z`);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
-function otherParty(connection) {
-  const { partyA, partyB, initiatorPartyId, incoming } = connection;
-  const initiator = partyA.id === initiatorPartyId ? partyA : partyB;
-  const receiver = initiator === partyA ? partyB : partyA;
-  return incoming ? initiator : receiver;
-}
-
-const connectionGroupName = group => group.name || `${group.hostName}'s group`;
-const connectionName = connection => connectionGroupName(otherParty(connection));
-function candidateInvitation(group) {
-  return connections.value.find(connection => [connection.partyA.id, connection.partyB.id].includes(sourceId.value)
-    && [connection.partyA.id, connection.partyB.id].includes(group.id)) ?? group.invitation;
-}
-function invitationLabel(invitation) {
-  if (invitation.status === 'accepted') return invitation.canCoordinate === false ? 'Connected · shared coordination unavailable' : 'Connected';
-  if (invitation.status === 'declined') return 'Invitation declined';
-  if (invitation.unavailableReason) return 'This invitation is no longer available.';
-  return invitation.incoming === true ? 'Invitation received — your reply is needed'
-    : invitation.incoming === false ? 'Invitation sent — waiting for the other host' : 'Invitation pending';
-}
-const canAcceptInvitation = connection => connection.canAccept ?? connectionEligible(connection);
-const canDeclineInvitation = connection => connection.canDecline ?? (connection.incoming && connection.status === 'pending');
-const canWithdrawInvitation = connection => connection.canWithdraw ?? (!connection.incoming && connection.status === 'pending');
-const canCoordinate = connection => connection.canCoordinate !== false;
-const feedbackCanCoordinate = computed(() => {
-  const latest = connections.value.find(connection => connection.id === connectionFeedback.value?.connectionId);
-  return latest ? latest.status === 'accepted' && canCoordinate(latest) : connectionFeedback.value?.canCoordinate;
-});
 const groupApplications = id => pendingJoins.value.filter(record => record.partyId === id).length;
 const groupOffers = id => automaticOffers.value.filter(record => record.partyId === id).length;
 const readyForHost = record => record.canHostRespond !== false && record.queueStatus !== 'waiting';
 const groupAttention = id => pendingJoins.value.filter(record => record.partyId === id && readyForHost(record)).length
   + automaticOffers.value.filter(record => record.partyId === id && !record.hostApproved && readyForHost(record)).length;
 const queueStatusKnown = computed(() => reads.applications.loaded && !reads.applications.error && reads.offers.loaded && !reads.offers.error);
-/** Keep a confirmed write visible even if a subsequent list refresh fails. */
-async function connectionAction(kind, target) {
-  if (busy.value) return;
-  const session = sessionGeneration, user = currentUser.value?.id, fromId = sourceId.value;
-  const view = viewGeneration;
-  connectionFeedback.value = null;
-  await act(async () => {
-    const result = kind === 'invite' ? await api.inviteGroup(fromId, target.id)
-      : kind === 'withdraw' ? await api.cancelGroupInvite(target.id)
-        : await api.respondToGroup(target.id, kind);
-    if (!contextIsCurrent(session, user)) return;
-    const connection = result.connection;
-    if (kind === 'withdraw') {
-      connections.value = connections.value.filter(record => record.id !== target.id);
-      candidates.value = candidates.value.map(group => group.invitation?.id === target.id ? { ...group, invitation: null } : group);
-    } else if (connection?.id) {
-      connections.value = [connection, ...connections.value.filter(record => record.id !== connection.id)];
-      candidates.value = candidates.value.map(group => [connection.partyA.id, connection.partyB.id].includes(group.id)
-        ? { ...group, invitation: { id: connection.id, status: connection.status } } : group);
-    }
-    const name = kind === 'invite' ? connectionGroupName(target) : connectionName(target);
-    const feedback = kind === 'invite' ? `Invitation sent to ${name}. Their host must accept before a shared chat opens.`
-      : kind === 'accept' ? connection?.canCoordinate === false
-        ? `Connected with ${name}. Shared coordination is currently unavailable.`
-        : `Connected with ${name}. Your groups’ memberships stay separate.`
-        : kind === 'decline' ? `Invitation from ${name} declined. No shared chat was created.`
-          : `Invitation to ${name} withdrawn. You can invite this group again later.`;
-    if (view === viewGeneration) connectionFeedback.value = { kind, name, connectionId: connection?.id ?? target.id, canCoordinate: connection?.canCoordinate !== false,
-      fromId, targetId: target.id, feedback };
-    return { feedback };
-  }, { view });
-}
-
-const confirming = ref(null);
-const confirmCopy = computed(() => {
-  const state = confirming.value;
-  if (!state) return { title: '', body: '', label: 'Confirm' };
-  const host = otherParty(state.connection).hostName;
-  return state.kind === 'decline'
-    ? { title: 'Decline this invitation?', body: `${host}'s group will not be connected to yours. The decision remains in your invitation history.`, label: 'Decline' }
-    : { title: 'Cancel this invitation?', body: `Your invitation to ${host}'s group will be withdrawn. You can invite them again later.`, label: 'Cancel invitation' };
-});
-
-async function runConfirmed() {
-  const state = confirming.value;
-  if (!state) return;
-  confirming.value = null;
-  await connectionAction(state.kind === 'decline' ? 'decline' : 'withdraw', state.connection);
-}
-
-async function loadCandidates() {
-  const current = ++generation, group = sourceGroup.value, user = currentUser.value?.id;
-  candidates.value = []; total.value = 0;
-  candidateError.value = '';
-  if (mode.value !== 'connections' || !group || !canConnect.value) { loading.value = false; return; }
-  loading.value = true;
-  try {
-    const result = await api.connectionCandidates(group.concertId, group.id, {
-      offset: offset.value, q: filters.query, section: filters.section, arrival: filters.arrival,
-      spendBand: filters.spendBand, minCapacity: filters.minCapacity, activity: filters.activity, vibe: filters.vibe, sort: filters.sort,
-    });
-    if (alive && current === generation && currentUser.value?.id === user) { candidates.value = result.groups; total.value = result.total; }
-  } catch (e) {
-    if (alive && current === generation && currentUser.value?.id === user) candidateError.value = 'Could not load groups to connect with. Please try again.';
-  } finally {
-    if (alive && current === generation) loading.value = false;
-  }
-}
 
 async function loadSource(key, { force = false } = {}) {
   const state = reads[key], source = sources[key];
@@ -347,23 +164,16 @@ async function retryOwnedGroup(groupId) {
     if (contextIsCurrent(session, user) && sequence === reads.owned.sequence) state.error = 'Setup details could not be loaded.';
   } finally { if (contextIsCurrent(session, user) && sequence === reads.owned.sequence && groupReads[groupId]) state.loading = false; }
 }
-watch(() => [sourceGroup.value, canConnect.value, mode.value], () => { void loadCandidates(); });
 
 watch(() => [route.query.view, route.query.groupId, route.query.concertId], () => {
   viewGeneration++;
-  focusedContext = '';
-  message.value = ''; connectionFeedback.value = null; offset.value = 0; confirming.value = null;
-});
-watch(() => Object.values(filters), () => {
-  clearTimeout(filterTimer);
-  filterTimer = setTimeout(() => { offset.value = 0; loadCandidates(); }, 250);
+  message.value = '';
 });
 watch(() => currentUser.value?.id, () => {
-  sessionGeneration++; operationGeneration++; generation++;
+  sessionGeneration++; operationGeneration++;
   for (const id of Object.keys(groupReads)) delete groupReads[id];
-  hosted.value = []; attendance.value = []; myRequests.value = []; connections.value = []; joins.value = []; automaticOffers.value = []; candidates.value = []; error.value = ''; message.value = ''; refreshWarning.value = '';
-  createdDraftId.value = ''; createdDraftNote.value = ''; uncertainCreation.value = null; busy.value = false; candidateError.value = '';
-  connectionFeedback.value = null;
+  hosted.value = []; attendance.value = []; myRequests.value = []; joins.value = []; automaticOffers.value = []; error.value = ''; message.value = ''; refreshWarning.value = '';
+  createdDraftId.value = ''; createdDraftNote.value = ''; uncertainCreation.value = null; busy.value = false;
   hostForm.name = ''; hostForm.notes = ''; hostImage.value = null; attempted.value = false;
   allConcerts.value = []; hostConcertId.value = ''; concertNotice.value = '';
   for (const state of Object.values(reads)) { state.sequence++; state.loading = false; state.loaded = false; state.error = ''; }
@@ -374,10 +184,12 @@ watch(concertId, id => {
 });
 
 onMounted(() => {
+  // Arriving straight after asking to join a group from Find a group.
+  if (route.query.sent === '1') message.value = 'Request sent. The host will review it; you can track or cancel it below.';
   concertClock = setInterval(() => { concertNow.value = Date.now(); }, 60000);
   void loadSource('concerts'); void refresh();
 });
-onUnmounted(() => { alive = false; sessionGeneration++; generation++; clearTimeout(filterTimer); clearInterval(concertClock); });
+onUnmounted(() => { alive = false; sessionGeneration++; clearInterval(concertClock); });
 
 async function act(operation, { view } = {}) {
   if (busy.value) return;
@@ -398,17 +210,6 @@ async function act(operation, { view } = {}) {
       if (!contextIsCurrent(session, userId)) return;
       if (view !== undefined && view !== viewGeneration) return;
       error.value = ({
-        group_not_open_to_connections: 'Both groups must be published and open to meeting other groups. Update your group settings first.',
-        group_owner_required: 'Only the group host can send a connection invitation.',
-        receiving_host_required: 'Only the receiving group’s host can answer this invitation.',
-        sending_host_required: 'Only the sending group’s host can withdraw this invitation.',
-        invitation_already_exists: 'These groups already have an invitation or connection. Review the latest invitation status below.',
-        invitation_already_answered: 'This invitation was already answered. Review its current status below.',
-        invitation_not_found: 'This invitation is no longer available. The connection list has been refreshed.',
-        incompatible_group_preferences: 'These groups no longer meet each other’s preferences. Explore another group.',
-        blocked_pair: 'This connection is unavailable. Explore another group.',
-        connection_unavailable: 'This connection is unavailable. The current participation or safety settings prevent access.',
-        concert_finished: 'This concert day has ended. Existing shared chats remain available; new connections are closed.',
         group_changed_withdraw_and_resubmit: 'The group changed after this application. Ask the applicant to review it, withdraw and apply again.',
         preferences_changed_withdraw_and_resubmit: 'The applicant changed their preferences. They must withdraw and apply again with their latest answers.',
         group_unavailable: 'There is no eligible place available now. Review the updated capacity and group settings.',
@@ -426,6 +227,18 @@ async function act(operation, { view } = {}) {
       })[e.message] ?? (e.status === 409 ? 'This group or request has changed. Review the latest information before trying again.' : 'Could not update the group. Please try again.');
     }
   } finally { if (contextIsCurrent(session, userId) && operationId === operationGeneration) busy.value = false; }
+}
+/** Requests sent from Find a group are tracked and cancelled here. */
+function requestDate(value) {
+  if (!value) return '';
+  const date = new Date(typeof value === 'number' ? value : value.includes('T') ? value : `${value.replace(' ', 'T')}Z`);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+}
+async function cancelRequest(request) {
+  await act(async () => {
+    await api.withdrawGroupJoin(request.id);
+    return { feedback: 'Request cancelled. Any held spot is released to the next person.' };
+  });
 }
 async function retry() {
   const session = sessionGeneration, user = currentUser.value?.id;
@@ -475,7 +288,7 @@ async function host() {
     }
     if (!contextIsCurrent(session, userId)) return;
     createdDraftId.value = result.party.id;
-    createdDraftNote.value = 'Your draft group was created. Open it to continue setup.';
+    createdDraftNote.value = 'Your group was created. Open it to invite friends.';
     const warnings = [];
     try { await api.configureGroup(result.party.id, { expectedFriends: 0 }); }
     catch { warnings.push('its settings still need to be saved in Manage group'); }
@@ -485,7 +298,7 @@ async function host() {
       catch { warnings.push('its picture could not be saved; add a picture in Manage group'); }
     }
     if (!contextIsCurrent(session, userId)) return;
-    if (warnings.length) createdDraftNote.value = `Your draft group was created, but ${warnings.join(' and ')}.`;
+    if (warnings.length) createdDraftNote.value = `Your group was created, but ${warnings.join(' and ')}.`;
     // Keep partial setup warnings visible instead of losing them on navigation.
     else if (route.fullPath === submission.path && mode.value === 'create') await openCreatedDraft();
   });
@@ -508,8 +321,8 @@ async function reconcileCreation(submission) {
   } else if (!existing.length) {
     uncertainCreation.value = null; createdDraftNote.value = '';
     error.value = submission.conflict
-      ? 'You may already belong to another group for this concert. Review Groups I joined in My groups before trying to create another group. Your answers are kept.'
-      : 'No created group was found. Your answers are kept; try Create draft group again.';
+      ? 'You may already belong to another group for this concert. Review Groups you joined in My groups before trying to create another group. Your answers are kept.'
+      : 'No created group was found. Your answers are kept; try Create group again.';
   } else {
     createdDraftNote.value = 'Your group records need to be reviewed in My groups before another group can be created.';
   }
@@ -534,30 +347,22 @@ async function openCreatedDraft() {
   <div class="container groups-page">
     <GroupNavigation class="groups-page__nav" />
     <header class="page-heading">
-      <div>
+      <div :class="{ 'page-heading__title--back': mode === 'create' }">
+        <BackArrow v-if="mode === 'create'" :to="viewLink()" label="Back to My groups" />
         <h1>{{ pageTitle }}</h1>
-        <p v-if="mode === 'dashboard'">Groups you own and groups you have joined, with requests and next steps in one place.</p>
-        <p v-else-if="mode === 'create'">Start with a draft, then invite friends and publish when your group is ready.</p>
-        <p v-else>Meet another group at the same concert. Connecting groups does not merge their members.</p>
       </div>
-      <div v-if="mode === 'dashboard'" class="group-actions"><RouterLink to="/meetups" class="btn btn--ghost">My meetups</RouterLink></div>
+      <div v-if="mode === 'dashboard'" class="group-actions"><RouterLink :to="viewLink('create')" class="btn btn--primary">+ Create group</RouterLink><RouterLink to="/meetups" class="btn btn--ghost">My meetups</RouterLink></div>
     </header>
     <GroupPreferencesGate :summary="mode === 'dashboard'" @saved="retry">
     <p v-if="error" class="group-error" role="alert">{{ error }} <button class="btn btn--ghost" :disabled="busy || groupsLoading" @click="retry">Retry</button></p>
     <p v-if="message" class="group-success" role="status">{{ message }}</p>
-    <div v-if="connectionFeedback" class="connection-action-feedback" aria-label="Connection next step">
-      <template v-if="connectionFeedback.kind === 'accept'"><template v-if="feedbackCanCoordinate"><strong>Your shared chat is ready.</strong><RouterLink class="btn btn--primary" :to="`/groups/connections/${encodeURIComponent(connectionFeedback.connectionId)}/channel`">Open shared chat</RouterLink><p class="group-muted">Say hello to both groups, then plan an optional meetup. Both hosts approve a shared meetup plan.</p></template><template v-else><strong>Shared coordination is currently unavailable.</strong><p class="group-muted">The current participation or safety settings prevent access. Your groups remain connected.</p></template></template>
-      <template v-else-if="connectionFeedback.kind === 'invite'"><strong>Waiting for the other host</strong><a href="#group-connections">View sent invitation or withdraw it</a></template>
-      <template v-else><strong>{{ connectionFeedback.kind === 'decline' ? 'Invitation declined' : 'Invitation withdrawn' }}</strong><a href="#group-connections">Review group connections</a></template>
-    </div>
     <p v-if="refreshWarning" class="group-muted" role="status">{{ refreshWarning }} <button type="button" class="btn btn--ghost" :disabled="busy || groupsLoading" @click="retry">Retry refresh</button></p>
-    <p v-if="busy && !confirming" class="loading-state" role="status"><LoadingSpinner />Updating your groups and connections…</p>
+    <p v-if="busy" class="loading-state" role="status"><LoadingSpinner />Updating your groups…</p>
     <p v-if="groupsLoading" class="loading-state" role="status"><LoadingSpinner />Loading your groups…</p>
     <template v-for="(state, key) in reads" :key="key">
       <p v-if="state.error" class="group-read-feedback group-muted" role="status">{{ state.error }} {{ state.loaded ? 'Showing the last loaded details.' : 'Other group sections are still available.' }} <button type="button" class="btn btn--ghost" :disabled="state.loading || busy" @click="retrySource(key)">Retry {{ sources[key].label }}</button></p>
       <p v-else-if="state.loading && !groupsLoading" class="group-muted" role="status">Loading {{ sources[key].label }}…</p>
     </template>
-    <p v-if="unavailableContext" class="group-read-feedback" role="status">This notification’s item is no longer available here. It may have been resolved, removed, or your access may have changed. Your available groups, requests and conversations are shown below. <RouterLink to="/groups/connect">Open My groups</RouterLink></p>
 
     <template v-if="mode === 'create'">
       <form class="card group-panel create-form" novalidate @submit.prevent="host">
@@ -566,18 +371,17 @@ async function openCreatedDraft() {
         <section class="form-section">
           <h2>Name your group</h2>
           <div class="form-grid">
-            <label class="form-wide">Group name<input v-model="hostForm.name" type="text" maxlength="60" required placeholder="e.g. Front Row Crew" :disabled="creationDisabled" :class="fieldState(Boolean(hostForm.name.trim()))" :aria-invalid="attempted && !hostForm.name.trim()"><span v-if="attempted && !hostForm.name.trim()" class="field-message">Enter a name for your group.</span><span v-else class="field-hint">This is what other people see. Up to 60 characters.</span></label>
             <div class="form-wide group-picture-field">
               <span>Group picture <span class="field-hint">(optional)</span></span>
               <AvatarPicker :src="hostImage" :name="hostForm.name" :busy="creationDisabled" :size="72" @select="image => hostImage = image" @remove="hostImage = null">
                 <template #preview><GroupAvatar :src="hostImage" :name="hostForm.name" :size="72" /></template>
               </AvatarPicker>
             </div>
+            <label class="form-wide">Group name<input v-model="hostForm.name" type="text" maxlength="60" required placeholder="e.g. Front Row Crew" :disabled="creationDisabled" :class="fieldState(Boolean(hostForm.name.trim()))" :aria-invalid="attempted && !hostForm.name.trim()"><span v-if="attempted && !hostForm.name.trim()" class="field-message">Enter a name for your group.</span><span v-else class="field-hint">This is what other people see. Up to 60 characters.</span></label>
           </div>
         </section>
         <section class="form-section">
           <h2>Concert and group preferences</h2>
-          <p class="group-muted">Your group stays private as a draft until you publish it from Manage group. You can invite friends there first. Your saved preferences are added to the group automatically.</p>
           <div class="form-grid">
             <label class="form-wide">Concert<select v-model="hostConcertId" required :disabled="creationDisabled || !eligibleConcerts.length" :aria-describedby="concertNotice ? 'creation-concert-notice' : reads.concerts.loaded && !eligibleConcerts.length ? 'creation-concert-empty' : undefined"><option value="" disabled>{{ reads.concerts.loading ? 'Loading concerts…' : reads.concerts.error ? 'Concert options unavailable' : eligibleConcerts.length ? 'Choose an upcoming concert' : 'No upcoming concerts available' }}</option><option v-for="c in eligibleConcerts" :key="c.id" :value="c.id">{{ c.artist }}, {{ c.event_date }}</option></select></label>
             <p v-if="concertNotice" id="creation-concert-notice" class="form-wide group-muted" role="status">{{ concertNotice }}</p>
@@ -598,67 +402,64 @@ async function openCreatedDraft() {
         </section>
         <section class="form-section">
           <h2>Optional extras</h2>
-          <label>Group notes (visible after publishing)<textarea v-model="hostForm.notes" maxlength="2000" rows="3" :disabled="creationDisabled"></textarea></label>
+          <label>Group notes (visible to people looking for a group)<textarea v-model="hostForm.notes" maxlength="2000" rows="3" :disabled="creationDisabled"></textarea></label>
           <fieldset><legend>Group activities</legend><label v-for="(name, id) in LABELS.plans" :key="id" class="group-check"><input v-model="hostForm.plans[id]" type="checkbox" :disabled="creationDisabled">{{ name }}</label></fieldset>
         </section>
-        <div class="group-actions"><button class="btn btn--primary" :disabled="creationDisabled || !selectedConcertEligible">{{ busy ? 'Creating…' : 'Create draft group' }}</button><RouterLink :to="viewLink()" class="btn btn--ghost">Back to My groups</RouterLink></div>
+        <div class="group-actions"><button class="btn btn--primary" :disabled="creationDisabled || !selectedConcertEligible">{{ busy ? 'Creating…' : 'Create group' }}</button><RouterLink :to="viewLink()" class="btn btn--ghost">Back to My groups</RouterLink></div>
         </template>
         <template v-else><h2>Your group is ready to open</h2><p role="status">{{ createdDraftNote }}</p><div class="group-actions"><button type="button" class="btn btn--primary" :disabled="busy" @click="host">Open created group</button><RouterLink :to="viewLink()" class="btn btn--ghost">Back to My groups</RouterLink></div></template>
       </form>
     </template>
 
     <template v-else-if="!groupsLoading">
-      <nav v-if="mode === 'dashboard'" class="workspace-overview" aria-label="Group workspace sections">
-        <a href="#owned-heading"><span class="workspace-overview__value">{{ activeGroups.length + upcomingJoinedGroups.length }}</span><span>Upcoming &amp; ongoing groups<small>Chat, plan and manage</small></span></a>
+      <nav v-if="mode === 'dashboard' && (myRequests.length || historicalGroups.length || meetupAttentionCount || upcomingMeetupCount)" class="workspace-overview" aria-label="Group workspace sections">
         <a v-if="myRequests.length" href="#my-requests-heading" class="workspace-overview__attention"><span class="workspace-overview__value">{{ myRequests.length }}</span><span>Waiting to join<small>Requests you’ve sent</small></span></a>
         <a v-if="historicalGroups.length" href="#historical-groups"><span class="workspace-overview__value">{{ historicalGroups.length }}</span><span>{{ historicalTitle }}<small>Conversations and group history</small></span></a>
-        <a v-if="admissionQueues.length || historicalJoins.length" href="#join-requests" :class="{'workspace-overview__attention':incomingCount}"><span class="workspace-overview__value">{{ queueStatusKnown ? incomingCount : '—' }}</span><span>Requests &amp; offers<small>{{ !queueStatusKnown ? 'Some request details are unavailable' : incomingCount ? 'Review in arrival order' : 'View past requests' }}</small></span></a>
-        <a v-if="incoming.length || outgoing.length || accepted.length || declined.length" href="#group-connections" :class="{'workspace-overview__attention':incoming.length}"><span class="workspace-overview__value">{{ incoming.length || accepted.length }}</span><span>Group connections<small>{{ incoming.length ? `${incoming.length} invitations need a reply` : 'Invitations and shared chats' }}</small></span></a>
         <RouterLink v-if="meetupAttentionCount || upcomingMeetupCount" to="/meetups" :class="{ 'workspace-overview__attention': meetupAttentionCount }"><span class="workspace-overview__value">{{ meetupAttentionCount || upcomingMeetupCount }}</span><span>Meetup plans<small>{{ meetupAttentionCount ? `${meetupAttentionCount} need your attention` : `${upcomingMeetupCount} upcoming confirmed` }}</small></span></RouterLink>
       </nav>
-      <template v-if="mode === 'dashboard' || !sourceGroup">
-        <p v-if="mode === 'connections'" class="group-muted" role="status">{{ route.query.groupId ? 'This group is historical, unavailable, cancelled, or not owned by you. Choose an upcoming or ongoing group below. Existing conversations remain in My groups.' : 'Choose an upcoming or ongoing group to connect with other groups.' }}</p>
+      <template v-if="mode === 'dashboard'">
         <section v-if="mode === 'dashboard' && myRequests.length" class="owned-section" aria-labelledby="my-requests-heading">
           <div class="section-heading"><h2 id="my-requests-heading">Groups you’ve asked to join</h2><span class="group-muted">{{ myRequests.length }} waiting for a host</span></div>
           <article v-for="r in myRequests" :key="r.id" class="card group-panel">
-            <h3>{{ r.groupName || `${r.hostName}’s group` }}</h3>
+            <div class="request-card__top"><GroupAvatar :src="r.imageUrl" :name="r.groupName || r.hostName" :size="52" /><h3>{{ r.groupName || `${r.hostName}’s group` }}</h3></div>
             <p class="group-muted">{{ r.artist }} · Hosted by {{ r.hostName }} · <strong>Waiting for the host</strong></p>
             <p class="group-muted">{{ r.seatReserved ? 'A spot is held for you until the host replies.' : `No spot held yet — you’re number ${r.queuePosition ?? '?'} in line.` }}</p>
-            <div class="group-actions"><RouterLink class="btn btn--ghost" :to="{ path: '/groups', query: { concertId: r.concertId } }">View or cancel request</RouterLink></div>
+            <p v-if="requestDate(r.expiresAt)" class="group-muted">Sent {{ requestDate(r.createdAt) }} · expires {{ requestDate(r.expiresAt) }}</p>
+            <div class="group-actions"><button type="button" class="btn btn--danger-ghost" :disabled="busy" @click="cancelRequest(r)">Cancel request</button></div>
           </article>
         </section>
         <details open class="owned-section group-dropdown" aria-labelledby="owned-heading">
-          <summary class="section-heading"><h2 id="owned-heading">{{ mode === 'connections' ? 'Choose one of your groups' : 'Groups you own' }}</h2><span v-if="reads.owned.loaded" class="group-muted">{{ activeGroups.length }} upcoming or ongoing</span><span class="group-dropdown__chevron" aria-hidden="true"></span></summary>
+          <summary class="section-heading"><h2 id="owned-heading">Groups you own</h2><span class="group-dropdown__chevron" aria-hidden="true"></span></summary>
           <div v-if="activeGroups.length" class="owned-grid">
             <article v-for="g in activeGroups" :key="g.id" class="card group-panel owned-card">
               <div class="owned-card__top">
                 <GroupAvatar :src="g.imageUrl" :name="groupTitle(g)" :size="52" />
                 <div class="owned-card__title"><h3>{{ groupTitle(g) }}</h3></div>
-                <span class="group-state" :class="{ 'group-state--published': g.settings?.published }">{{ groupReads[g.id] ? 'Setup unavailable' : g.settings?.published ? 'Published' : 'Draft' }}</span>
+                <span class="group-state" :class="{ 'group-state--published': g.settings?.published }">{{ groupReads[g.id] ? 'Setup unavailable' : g.settings?.published ? 'Listed' : 'Setting up' }}</span>
               </div>
               <p class="owned-card__concert group-muted"><span v-if="g.name">{{ g.artist }}</span><span>{{ g.eventDate }} · {{ sectionName(g.section) }}</span></p>
               <p>{{ g.memberCount }} {{ g.memberCount === 1 ? 'member' : 'members' }} · {{ g.remainingCapacity }} places remaining</p>
-              <div class="owned-card__status"><p class="group-muted">You host this group. {{ groupReads[g.id] ? 'Publication settings could not be checked.' : g.settings?.published ? (g.settings.connect_open ? 'Open to meeting other groups.' : 'Group connections are off. Change this in Manage group.') : 'Invite friends, then publish from Manage group.' }}</p>
+              <div class="owned-card__status"><p class="group-muted">You host this group. {{ groupReads[g.id] ? 'Publication settings could not be checked.' : g.settings?.published ? 'People looking for a group can find and join it.' : 'Finish its setup in Manage group.' }}</p>
               <p v-if="groupReads[g.id]" class="group-read-feedback" role="status">{{ groupReads[g.id].error }} <button type="button" class="btn btn--ghost" :disabled="groupReads[g.id].loading || busy" @click="retryOwnedGroup(g.id)">Retry {{ groupTitle(g) }} setup</button></p>
               <p v-if="queueStatusKnown && (groupApplications(g.id) || groupOffers(g.id))" class="group-attention">{{ groupApplications(g.id) }} pending {{ groupApplications(g.id) === 1 ? 'application' : 'applications' }} · {{ groupOffers(g.id) }} automatic {{ groupOffers(g.id) === 1 ? 'offer' : 'offers' }}. {{ groupAttention(g.id) ? 'A request is ready for your review.' : 'Waiting for an earlier request or the companion’s approval.' }}</p>
               <p v-else-if="reads.applications.error || reads.offers.error" class="group-muted">Request status could not be fully checked. Retry the affected request section above.</p></div>
               <div class="owned-card__actions">
-                <a v-if="mode === 'dashboard' && queueStatusKnown && groupAttention(g.id)" class="btn btn--primary" :href="`#group-queue-${g.id}`">Review requests</a>
+                <RouterLink v-if="mode === 'dashboard' && queueStatusKnown && groupAttention(g.id)" class="btn btn--primary" :to="`/groups/${encodeURIComponent(g.id)}/members#join-requests`">Review requests</RouterLink>
                 <RouterLink v-if="mode === 'dashboard'" :to="`/groups/${encodeURIComponent(g.id)}/channel`" class="btn" :class="g.settings?.published && !groupAttention(g.id) ? 'btn--primary' : 'btn--ghost'">Open group chat</RouterLink>
-                <RouterLink :to="mode === 'connections' ? viewLink('connections', g) : `/groups/${encodeURIComponent(g.id)}/members`" class="btn" :class="mode === 'connections' || !g.settings?.published ? 'btn--primary' : 'btn--ghost'">{{ mode === 'connections' ? 'Connect this group' : 'Manage group' }}</RouterLink>
-                <RouterLink v-if="mode === 'dashboard'" :to="viewLink('connections', g)" class="btn btn--ghost">Group connections</RouterLink>
+                <RouterLink :to="`/groups/${encodeURIComponent(g.id)}/members`" class="btn" :class="!g.settings?.published ? 'btn--primary' : 'btn--ghost'">Manage group</RouterLink>
                 <button v-if="canOpenMeetup(g, { partyId: g.id })" type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: g.id }))">{{ meetupLabel({ partyId: g.id }) }}</button>
               </div>
             </article>
           </div>
-          <div v-else-if="reads.owned.loaded" class="card group-panel empty-state"><h3>No upcoming groups you own</h3><p>{{ historicalGroups.some(g => g.owned) ? 'Your previous groups and conversations are available below. Create a draft for your next concert when you are ready.' : 'Create a draft for your next concert, then invite friends or publish it for new companions.' }}</p><RouterLink :to="viewLink('create')" class="btn btn--primary">Create a group</RouterLink></div>
+          <p v-else-if="reads.owned.loaded" class="group-muted section-empty">No groups owned</p>
         </details>
       </template>
 
       <template v-if="mode === 'dashboard'">
-        <details v-if="upcomingJoinedGroups.length" open class="owned-section group-dropdown" aria-labelledby="joined-heading">
-          <summary class="section-heading"><h2 id="joined-heading">Groups I joined</h2><span class="group-muted">{{ upcomingJoinedGroups.length }} upcoming or ongoing</span><span class="group-dropdown__chevron" aria-hidden="true"></span></summary>
-          <div class="owned-grid">
+        <details open class="owned-section group-dropdown" aria-labelledby="joined-heading">
+          <summary class="section-heading"><h2 id="joined-heading">Groups you joined</h2><span class="group-dropdown__chevron" aria-hidden="true"></span></summary>
+          <p v-if="!upcomingJoinedGroups.length && reads.joined.loaded" class="group-muted section-empty">No groups joined</p>
+          <div v-else-if="upcomingJoinedGroups.length" class="owned-grid">
             <article v-for="g in upcomingJoinedGroups" :key="g.id" class="card group-panel owned-card owned-card--joined">
               <div class="owned-card__top"><GroupAvatar :src="g.imageUrl ?? g.group?.imageUrl" :name="groupTitle(g)" :size="52" /><div class="owned-card__title"><h3>{{ groupTitle(g) }}</h3><p v-if="g.name || g.group?.name" class="group-muted">{{ g.artist }}</p></div></div>
               <p class="owned-card__concert group-muted">{{ g.eventDate }}<span v-if="g.host?.displayName">{{ g.host.displayName }}'s group</span></p>
@@ -680,82 +481,10 @@ async function openCreatedDraft() {
             <div class="group-actions"><RouterLink :to="`/groups/${encodeURIComponent(g.id)}/channel`" class="btn btn--primary">Open group chat</RouterLink><RouterLink :to="`/groups/${encodeURIComponent(g.id)}/members`" class="btn btn--ghost">{{ g.owned ? 'Manage group' : 'View group' }}</RouterLink><button v-if="hasMeetup({ partyId: g.partyId ?? g.id })" type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: g.partyId ?? g.id }))">View meetup history</button></div>
           </article>
         </div></details>
-        <section v-if="admissionQueues.length || historicalJoins.length" id="join-requests" class="card group-panel requests-panel" aria-labelledby="requests-heading">
-          <p class="workspace-eyebrow">Host review</p>
-          <div class="section-heading"><h2 id="requests-heading">Join requests</h2><span class="group-muted">{{ queueStatusKnown ? `${incomingCount} in your queues` : 'Some request details are unavailable' }}</span></div>
-          <p class="group-muted">Each group has one arrival-order queue for direct applications and automatic proposals. Review the first request only. Later requests may be waiting without a held place; every request expires 48 hours after it was created.</p>
-          <p v-if="!admissionQueues.length && queueStatusKnown" class="group-muted">No pending requests to join your groups.</p>
-          <section v-for="queue in admissionQueues" :id="`group-queue-${queue.partyId}`" :key="queue.partyId" class="admission-queue" tabindex="-1">
-            <div class="section-heading"><h3>{{ queue.name }}</h3><span class="queue-summary">{{ queue.entries.filter(entry => entry.record.seatReserved).length }} {{ queueStatusKnown ? 'places held' : 'known places held' }} · {{ queue.entries.length }} {{ queueStatusKnown ? 'requests' : 'loaded requests' }}</span></div>
-            <p class="group-muted">{{ queue.artist }} · A held request can be approved when it reaches the front, even when no additional places remain.</p>
-            <div v-for="entry in queue.entries" :id="`${entry.kind === 'direct' ? 'join-request' : 'matching-proposal'}-${entry.record.id}`" :key="entry.key" class="group-context-target" tabindex="-1"><GroupApplicationCard v-if="entry.kind === 'direct'" :application="entry.record" :busy="busy" @respond="action => act(() => api.respondGroupJoin(entry.record.id, action))" /><MatchProposalCard v-else :proposal="entry.record" @updated="retry" /></div>
-          </section>
-          <details v-if="historicalJoins.length" class="history"><summary>Past join requests ({{ historicalJoins.length }})</summary><div class="history-list">
-            <div v-for="j in historicalJoins" :id="`join-request-${j.id}`" :key="j.id" class="group-context-target" tabindex="-1"><GroupApplicationCard :application="j" :busy="busy" /></div>
-          </div></details>
-        </section>
-        <details v-if="cancelledGroups.length" class="card group-panel history"><summary>Cancelled groups ({{ cancelledGroups.length }})</summary><div class="history-list"><article v-for="g in cancelledGroups" :key="g.id" class="cancelled-group"><h3>{{ groupTitle(g) }} <span class="group-state">Cancelled</span></h3><p class="group-muted">{{ g.eventDate }} · {{ sectionName(g.section) }}</p><RouterLink :to="`/groups/${encodeURIComponent(g.id)}/members`">View group history</RouterLink></article></div></details>
       </template>
 
-      <template v-if="mode === 'connections' && sourceGroup">
-        <section class="card group-panel selected-group">
-          <p class="workspace-eyebrow">Connecting from: {{ groupTitle(sourceGroup) }}</p>
-          <div class="owned-card__top"><GroupAvatar :src="sourceGroup.imageUrl" :name="groupTitle(sourceGroup)" :size="52" /><div class="owned-card__title"><h2>{{ groupTitle(sourceGroup) }}</h2><p v-if="sourceGroup.name" class="group-muted">{{ sourceGroup.artist }}</p></div><span class="group-state" :class="{ 'group-state--published': sourceGroup.settings?.published }">{{ groupReads[sourceId] ? 'Setup unavailable' : sourceGroup.settings?.published ? 'Published' : 'Draft' }}</span></div>
-          <p>{{ sourceGroup.eventDate }} · {{ sectionName(sourceGroup.section) }} · {{ sourceGroup.memberCount }} {{ sourceGroup.memberCount === 1 ? 'member' : 'members' }}</p>
-          <p v-if="groupReads[sourceId]" class="group-read-feedback" role="status">Setup details could not be loaded. <button type="button" class="btn btn--ghost" :disabled="groupReads[sourceId].loading || busy" @click="retryOwnedGroup(sourceId)">Retry {{ groupTitle(sourceGroup) }} setup</button></p>
-          <p v-else-if="!canConnect" class="group-muted">Publish this group and enable “Open to meeting other groups” in Manage group before sending invitations.</p>
-          <p v-else class="group-muted">Open to meeting other groups at this concert.</p>
-          <div class="group-actions"><RouterLink :to="`/groups/${encodeURIComponent(sourceId)}/members`" class="btn btn--ghost">Manage group</RouterLink><button v-if="canOpenMeetup(sourceGroup, { partyId: sourceId })" type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: sourceId }))">{{ meetupLabel({ partyId: sourceId }) }}</button></div>
-        </section>
-        <section class="connection-guide" aria-label="How group connections work">
-          <h2>Meet another group, stay your own group</h2>
-          <p>Discover a group → Send an invitation → Their host replies → Open your shared chat → Plan an optional meetup.</p>
-          <p class="group-muted">An invitation does not assign or move anyone. After acceptance, current members of both groups can chat together. Both hosts must approve a connected-group meetup.</p>
-          <a v-if="incoming.length" class="btn btn--primary" href="#group-connections">Reply to {{ incoming.length }} {{ incoming.length === 1 ? 'received invitation' : 'received invitations' }}</a>
-          <a v-else-if="outgoing.length || accepted.length || declined.length" href="#group-connections">View invitations and shared chats</a>
-        </section>
-
-      </template>
-
-      <section v-if="sourceGroup || ((mode === 'dashboard' || mode === 'connections') && (incoming.length || outgoing.length || accepted.length || declined.length))" id="group-connections" class="card group-panel connections">
-        <p class="workspace-eyebrow">Meet beyond your group</p>
-        <h2>{{ mode === 'dashboard' ? 'Group connections and invitations' : 'This group’s connections' }}</h2>
-        <div v-if="incoming.length" class="invites">
-          <h3 class="invites__title">Received <span class="invites__count tabular">{{ incoming.length }}</span></h3>
-          <article v-for="c in incoming" :id="`group-connection-${c.id}`" :key="c.id" class="invite invite--received group-context-target" tabindex="-1"><div class="invite__context"><span class="connection-state connection-state--attention">{{ canAcceptInvitation(c) ? invitationLabel(c) : 'This invitation is no longer available.' }}</span><p class="invite__who">{{ describe(c) }}</p><p v-if="canAcceptInvitation(c)" class="group-muted">Accept to open a shared chat for both groups. Your members stay in their existing group.</p><p v-else :id="`connection-eligibility-${c.id}`" class="group-muted">{{ c.unavailableReason || 'The connection requirements have changed.' }}<template v-if="!connectionEligible(c)"> This concert is unavailable for new connections. You can decline the invitation; existing conversations remain available.</template></p></div><div class="invite__actions"><button type="button" class="btn btn--success" :disabled="busy || !canAcceptInvitation(c)" :aria-describedby="!canAcceptInvitation(c) ? `connection-eligibility-${c.id}` : undefined" :aria-label="`Accept the invitation from ${otherParty(c).hostName}`" @click="connectionAction('accept', c)">Accept</button><button v-if="canDeclineInvitation(c)" type="button" class="btn btn--danger-ghost" :disabled="busy" :aria-label="`Decline the invitation from ${otherParty(c).hostName}`" @click="confirming = { kind: 'decline', connection: c }">Decline</button></div></article>
-        </div>
-        <div class="connected">
-          <h3 class="invites__title">Connected</h3>
-          <p v-if="!accepted.length" class="group-muted">No connected groups yet. Publish your group and invite another group to connect.</p>
-          <article v-for="c in accepted" :id="`group-connection-${c.id}`" :key="c.id" class="connection group-context-target" tabindex="-1"><span class="connection-state connection-state--accepted">Groups connected</span><p class="invite__who">{{ describe(c) }}</p><details v-if="c.partyA.notes || c.partyB.notes" class="connection-notes"><summary>Host notes</summary><p v-if="c.partyA.notes" class="group-notes"><strong>{{ c.partyA.hostName }}:</strong> {{ c.partyA.notes }}</p><p v-if="c.partyB.notes" class="group-notes"><strong>{{ c.partyB.hostName }}:</strong> {{ c.partyB.notes }}</p></details><p v-if="!canCoordinate(c)" class="group-muted" role="status">{{ c.unavailableReason || 'Shared coordination is currently unavailable. The current participation or safety settings prevent access.' }}</p><div class="connection__foot"><span class="connection__since">Connected {{ whenConnected(c.respondedAt) }}</span><template v-if="canCoordinate(c)"><RouterLink class="btn btn--primary" :to="`/groups/connections/${encodeURIComponent(c.id)}/channel`">Open shared chat</RouterLink><button v-if="canOpenMeetup(c.partyA, { connectionId: c.id })" type="button" class="btn btn--ghost" @click="router.push(meetupLink({ connectionId: c.id }))">{{ groupEligibility(c.partyA).eligible ? meetupLabel({ connectionId: c.id }) : 'View meetup history' }}</button></template></div></article>
-        </div>
-        <div v-if="outgoing.length" class="invites">
-          <h3 class="invites__title">Sent <span class="invites__count tabular">{{ outgoing.length }}</span></h3>
-          <article v-for="c in outgoing" :id="`group-connection-${c.id}`" :key="c.id" class="invite group-context-target" tabindex="-1"><div class="invite__context"><span class="connection-state">{{ invitationLabel(c) }}</span><p class="invite__who">{{ describe(c) }}</p><p class="group-muted">{{ c.unavailableReason || 'No shared chat yet. The receiving host must accept; you can withdraw while it is pending.' }}</p></div><button v-if="canWithdrawInvitation(c)" type="button" class="btn btn--danger-ghost" :disabled="busy" :aria-label="`Cancel your invitation to ${otherParty(c).hostName}`" @click="confirming = { kind: 'cancel', connection: c }">Withdraw pending invitation</button></article>
-        </div>
-        <details v-if="declined.length" class="history"><summary>Declined invitations ({{ declined.length }})</summary><div class="history-list"><article v-for="c in declined" :id="`group-connection-${c.id}`" :key="c.id" class="invite group-context-target" tabindex="-1"><span class="connection-state">Invitation declined</span><p class="invite__who">{{ describe(c) }}</p><p class="group-muted">This invitation is closed. Your groups were not connected.</p></article></div></details>
-      </section>
-      <template v-if="mode === 'connections' && sourceGroup && canConnect">
-          <section class="card group-panel"><h2>Find another group</h2><GroupFilters :filters="filters" /></section>
-          <p v-if="loading" class="loading-state" role="status"><LoadingSpinner />Loading groups…</p>
-          <p v-else-if="candidateError" class="group-read-feedback" role="status">{{ candidateError }} <button type="button" class="btn btn--ghost" :disabled="busy" @click="loadCandidates">Retry connection groups</button></p>
-          <div v-else-if="visible.length" class="group-grid"><GroupListingCard v-for="g in visible" :key="g.id" :group="g">
-            <template v-if="candidateInvitation(g)"><p class="connection-state">{{ invitationLabel(candidateInvitation(g)) }}</p><p v-if="connectionFeedback?.kind === 'invite' && connectionFeedback.fromId === sourceId && connectionFeedback.targetId === g.id" class="group-muted" role="status">Invitation sent to {{ connectionGroupName(g) }}. Their host decides whether to connect.</p><RouterLink v-if="candidateInvitation(g).status === 'accepted' && canCoordinate(candidateInvitation(g))" class="btn btn--primary" :to="`/groups/connections/${encodeURIComponent(candidateInvitation(g).id)}/channel`">Open shared chat</RouterLink><a v-else-if="candidateInvitation(g).status === 'pending'" href="#group-connections">{{ candidateInvitation(g).incoming ? 'Review received invitation' : 'View invitation' }}</a><p v-else class="group-muted">{{ candidateInvitation(g).unavailableReason || 'This invitation is closed. Explore another group below.' }}</p></template>
-            <template v-else><p class="group-muted">Ask their host to connect your groups. A shared chat opens only after they accept.</p><button class="btn btn--primary" :disabled="busy" @click="connectionAction('invite', g)">Invite group to connect</button></template>
-          </GroupListingCard></div>
-          <div v-else class="card group-panel empty-state"><h3>{{ hasConnectionFilters ? 'No groups match your filters' : 'No suitable groups are available to connect with right now.' }}</h3><p>{{ hasConnectionFilters ? 'Adjust or clear your filters to explore more compatible groups.' : 'These recommendations reflect your selected group and both groups’ preferences. Only published groups open to connections at this concert appear here.' }}</p><p v-if="shownConnections.length" class="group-muted">Your existing invitations and connections remain available above.</p><div class="group-actions"><button v-if="hasConnectionFilters" type="button" class="btn btn--primary" :disabled="busy || loading" @click="clearConnectionFilters">Clear connection filters</button><button type="button" class="btn btn--ghost" :disabled="busy || loading" @click="loadCandidates">Check groups again</button></div></div>
-          <!-- A page button exists only when that page does. -->
-          <nav class="group-actions" aria-label="Connection candidates pages">
-            <button v-if="hasPreviousPage" class="btn btn--ghost" :disabled="busy || loading" @click="offset = Math.max(0, offset - PAGE_SIZE); loadCandidates()">Previous {{ PAGE_SIZE }}</button>
-            <span>{{ total }} results</span>
-            <button v-if="hasNextPage" class="btn btn--ghost" :disabled="busy || loading" @click="offset += PAGE_SIZE; loadCandidates()">Next {{ PAGE_SIZE }}</button>
-          </nav>
-          <p class="group-muted connection-results-scope">Results are for {{ groupTitle(sourceGroup) }} at {{ sourceGroup.artist }}. Groups must meet both groups’ current connection requirements.</p>
-        </template>
     </template>
     </GroupPreferencesGate>
-
-    <ConfirmDialog :open="Boolean(confirming)" :title="confirmCopy.title" :body="confirmCopy.body" :confirm-label="confirmCopy.label" cancel-label="Keep it" danger :busy="busy" @confirm="runConfirmed" @cancel="confirming = null" />
   </div>
 </template>
 
@@ -767,9 +496,6 @@ async function openCreatedDraft() {
 .group-dropdown__chevron::before { content:''; width:8px; height:8px; border-right:2px solid var(--text-300); border-bottom:2px solid var(--text-300); transform:translateY(-2px) rotate(45deg); transition:transform .2s; }
 .group-dropdown:not([open]) .group-dropdown__chevron::before { transform:translateX(-2px) rotate(-45deg); }
 .group-dropdown > summary:hover .group-dropdown__chevron { background:color-mix(in srgb,var(--accent-400) 15%,transparent); }
-.connection-action-feedback,.connection-guide { display:grid; gap:var(--space-3); padding:var(--space-4); border:var(--border-soft); border-left:3px solid var(--accent-400); border-radius:var(--radius-md); background:var(--panel-bg); min-width:0; overflow-wrap:anywhere; }
-.connection-action-feedback .btn,.connection-guide .btn { justify-self:start; white-space:normal; }
-.connection-guide h2 { font-size:var(--step-0); }
 .workspace-eyebrow { margin:0; color:var(--accent-400); font:600 .68rem var(--font-mono); letter-spacing:.08em; text-transform:uppercase; }
 .workspace-overview { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,15rem),1fr)); gap:var(--space-3); }
 .workspace-overview a { display:flex; align-items:center; gap:var(--space-4); padding:var(--space-4) var(--space-5); border:1px solid var(--panel-edge); border-radius:var(--radius-md); background:var(--panel-bg); box-shadow:var(--panel-shadow); color:var(--text-100); text-decoration:none; transition:border-color var(--dur-fast),transform var(--dur-fast) var(--ease-settle); }
@@ -779,9 +505,12 @@ async function openCreatedDraft() {
 .workspace-overview a > span:last-child { min-width:0; font-size:var(--step--1); font-weight:650; }
 .workspace-overview small { display:block; margin-top:var(--space-1); color:var(--text-400); font-size:var(--step--2); font-weight:400; }
 .workspace-overview a.workspace-overview__attention { border-left:3px solid var(--amber-400); }
-.requests-panel { border-left:3px solid var(--amber-400); scroll-margin-top:calc(var(--header-height) + var(--space-4)); }
-.queue-summary { padding:var(--space-1) var(--space-2); border:var(--border-hairline); border-radius:var(--radius-sm); background:var(--ink-900); color:var(--text-300); font-size:var(--step--2); }
-#owned-heading,#group-connections { scroll-margin-top:calc(var(--header-height) + var(--space-4)); }
+/* A sent request shows the group's picture beside its name. */
+.request-card__top { display:flex; align-items:center; gap:var(--space-3); min-width:0; }
+.request-card__top h3 { margin:0; min-width:0; overflow-wrap:anywhere; }
+/* A quiet line when a section has no groups. */
+.section-empty { margin:0; padding:var(--space-2) 0 var(--space-3); }
+#owned-heading { scroll-margin-top:calc(var(--header-height) + var(--space-4)); }
 .page-heading, .section-heading, .owned-card__top {
   display: flex;
   align-items: center;
@@ -792,6 +521,14 @@ async function openCreatedDraft() {
 .page-heading > div {
   display: grid;
   gap: var(--space-2);
+}
+/* The back arrow sits beside the Create a group title. */
+.page-heading__title--back { display:flex !important; align-items:center; gap:var(--space-3); }
+/* Create group and My meetups stay side by side next to the title. */
+.page-heading > .group-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: nowrap;
 }
 .page-heading p {
   color: var(--text-300);
@@ -868,6 +605,26 @@ async function openCreatedDraft() {
   gap: var(--space-2);
   font-size: var(--step--1);
 }
+/* Picture, button and hint on one centred row, the hint on a single line. */
+.group-picture-field :deep(.picker) {
+  gap: var(--space-4);
+}
+.group-picture-field :deep(.picker__actions) {
+  grid-auto-flow: column;
+  align-items: center;
+  gap: var(--space-3);
+}
+.group-picture-field :deep(.picker__hint) {
+  max-width: none;
+}
+.group-picture-field :deep(.picker__error) {
+  grid-column: 1 / -1;
+}
+@media (max-width: 620px) {
+  .group-picture-field :deep(.picker__actions) {
+    grid-auto-flow: row;
+  }
+}
 .create-form {
   max-width: 54rem;
   width: 100%;
@@ -918,13 +675,6 @@ async function openCreatedDraft() {
 .history-list {
   margin-top: var(--space-4);
 }
-.admission-queue {
-  display: grid;
-  gap: var(--space-3);
-  padding-top: var(--space-4);
-  border-top: var(--border-hairline);
-  min-width:0;
-}
 .join-request, .cancelled-group, .historical-group {
   display: grid;
   gap: var(--space-2);
@@ -933,102 +683,12 @@ async function openCreatedDraft() {
 .historical-group h3 { min-width:0; overflow-wrap:anywhere; }
 .group-read-feedback { padding:var(--space-3); border-left:2px solid var(--amber-400); background:var(--panel-bg); }
 #historical-groups { scroll-margin-top:calc(var(--header-height) + var(--space-4)); }
-.connections {
-  display: grid;
-  gap: var(--space-5);
-}
-.connections > .workspace-eyebrow { margin-bottom:calc(-1 * var(--space-4)); }
-.invites, .connected {
-  display: grid;
-  gap: var(--space-3);
-}
-.invites__title {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding-bottom: var(--space-2);
-  border-bottom: var(--border-hairline);
-  color: var(--text-300);
-  font-size: var(--step--2);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.invites__count {
-  display: grid;
-  place-items: center;
-  min-width: 20px;
-  height: 20px;
-  padding-inline: 6px;
-  border-radius: var(--radius-pill);
-  background: var(--accent-500);
-  color: #fff;
-  font-size: var(--step--2);
-  letter-spacing: 0;
-}
-.invite, .connection {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border: var(--border-hairline);
-  border-radius: var(--radius-md);
-  background: var(--ink-850);
-  box-shadow:inset 0 1px 0 var(--panel-highlight);
-}
-.invite--received { border-left:3px solid var(--amber-400); }
-.invite__context { display:grid; gap:var(--space-2); min-width:0; flex:1 1 20rem; }
-.connection-state { width:fit-content; max-width:100%; padding:3px var(--space-2); border:var(--border-hairline); border-radius:var(--radius-pill); background:var(--ink-900); color:var(--text-300); font-size:var(--step--2); }
-.connection-state--attention { color:var(--amber-400); border-color:color-mix(in srgb,var(--amber-400) 45%,var(--panel-edge)); }
-.connection-state--accepted { color:var(--mint-400); border-color:color-mix(in srgb,var(--mint-400) 35%,var(--panel-edge)); }
-.connection-notes { width:100%; padding:var(--space-3); border:var(--border-hairline); border-radius:var(--radius-sm); background:var(--ink-900); }
-.connection-notes summary { cursor:pointer; color:var(--text-300); font-size:var(--step--1); }
-.connection-notes[open] summary { margin-bottom:var(--space-3); }
-.connection {
-  display: grid;
-  justify-items: start;
-}
-.invite__who {
-  min-width: 0;
-  color: var(--text-200);
-  font-size: var(--step--1);
-}
-.invite__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-.connection__foot {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  width: 100%;
-  margin-top: var(--space-2);
-}
-.connection__since {
-  margin-right: auto;
-  color: var(--text-400);
-  font-size: var(--step--2);
-}
 @media (max-width: 600px) {
   .page-heading {
     align-items: flex-start;
   }
   .form-grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .invite {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-  .invite__actions {
-    width: 100%;
-  }
-  .invite__actions .btn {
-    flex: 1;
   }
 }
 @media(prefers-reduced-motion:reduce) { .workspace-overview a { transition:none; } .workspace-overview a:hover,.workspace-overview a:active { transform:none; } }

@@ -215,16 +215,6 @@ export const api = {
   readGroupChannel: (partyId) =>
     request(`/group-channels/${encodeURIComponent(partyId)}/read`, { method: 'POST' }),
 
-  /* Accepted connections share a room across both groups' current members. */
-  connectionChannels: () => request('/me/connection-channels'),
-  connectionChannelsUnread: () => request('/connection-channels/unread'),
-  connectionChannel: (connectionId, options = {}) => request(`/connection-channels/${encodeURIComponent(connectionId)}?${new URLSearchParams(options)}`),
-  connectionChannelMessage: (connectionId, messageId) => request(`/connection-channels/${encodeURIComponent(connectionId)}/messages/${encodeURIComponent(messageId)}`),
-  sendConnectionChannelMessage: (connectionId, body, replyTo = null) => request(`/connection-channels/${encodeURIComponent(connectionId)}/messages`, { method: 'POST', body: JSON.stringify({ body, replyTo }) }),
-  editConnectionChannelMessage: (connectionId, messageId, body) => request(`/connection-channels/${encodeURIComponent(connectionId)}/messages/${encodeURIComponent(messageId)}`, { method: 'PATCH', body: JSON.stringify({ body }) }),
-  deleteConnectionChannelMessage: (connectionId, messageId) => request(`/connection-channels/${encodeURIComponent(connectionId)}/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE' }),
-  readConnectionChannel: (connectionId) => request(`/connection-channels/${encodeURIComponent(connectionId)}/read`, { method: 'POST' }),
-  setConnectionChannelBackground: (connectionId, background) => request(`/connection-channels/${encodeURIComponent(connectionId)}/background`, { method: 'PUT', body: JSON.stringify({ background }) }),
 
   blockedUsers: () => request('/me/blocked'),
   blockUser: (userId) => request(`/users/${encodeURIComponent(userId)}/block`, { method: 'PUT' }),
@@ -282,12 +272,7 @@ export const api = {
   removeGroupPreference: (id) => request(`/group-preferences/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   hostedGroups: () => request('/me/hosted-groups'),
   attendanceGroups: () => request('/me/attendance-groups'),
-  connectionCandidates: (id, fromPartyId,params={}) => request(`/group-connections/candidates/${encodeURIComponent(id)}?${new URLSearchParams({...params,fromPartyId})}`),
-  groupConnections: () => request('/me/group-connections'),
-  inviteGroup: (fromPartyId, toPartyId) => request('/group-connections', { method: 'POST', body: JSON.stringify({ fromPartyId, toPartyId }) }),
-  respondToGroup: (id, action) => request(`/group-connections/${encodeURIComponent(id)}/respond`, { method: 'POST', body: JSON.stringify({ action }) }),
   /** Withdraw an invitation you sent; only the sending host may. */
-  cancelGroupInvite: (id) => request(`/group-connections/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   round: (roundId) => request(`/rounds/${roundId}`),
   roundTrace: (roundId, limit = 2000) => request(`/rounds/${roundId}/trace?limit=${limit}`),

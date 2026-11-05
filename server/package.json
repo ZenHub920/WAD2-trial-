@@ -13,6 +13,7 @@
     "test": "node ../test/scripts/run-node-tests.mjs server",
     "test:community": "node ../test/scripts/scoped-feature-tests.mjs",
     "operator:grant": "node src/db/grantOperator.js",
+    "seed:test-accounts": "node src/db/seedTestAccounts.js",
     "sync:concerts": "node src/db/syncTicketmaster.js",
     "push:keys": "node src/config/generatePushKeys.js",
     "bench": "node ../test/bench/evaluate.js",

@@ -411,8 +411,7 @@ describe('group discovery historical and mutation feedback consistency', () => {
     api.groupJoinRequests.mockResolvedValue({ requests: [pending] });
     const { wrapper } = await mountExplorer({ path: '/groups?concertId=concert-1' });
     expect(wrapper.text()).toContain('This concert has finished. New group matching is closed');
-    expect(wrapper.text()).toContain('Your requests');
-    expect(button(wrapper, 'Cancel request').exists()).toBe(true);
+    expect(wrapper.text()).not.toContain('Your requests');
     await button(wrapper, 'See all').trigger('click');
     expect(button(wrapper, 'Request sent').element.disabled).toBe(true);
     await button(wrapper, 'View automatic matching').trigger('click');
@@ -421,9 +420,9 @@ describe('group discovery historical and mutation feedback consistency', () => {
     expect(api.requestGroupJoin).not.toHaveBeenCalled(); expect(api.findMyGroup).not.toHaveBeenCalled();
   });
 
-  it('distinguishes a saved application from a failed refresh and immediately enforces the single pending application limit', async () => {
+  it('distinguishes a saved application from a failed refresh, enforces the single pending application limit and opens My groups', async () => {
     api.requestGroupJoin.mockResolvedValue({ request: { id: 'request-1', status: 'pending', seatReserved: true } });
-    const { wrapper } = await mountExplorer({ path: '/groups?concertId=concert-1' });
+    const { wrapper, router } = await mountExplorer({ path: '/groups?concertId=concert-1' });
     await button(wrapper, 'See all').trigger('click');
     await button(wrapper, 'Ask to join').trigger('click');
     await field(wrapper, 'Say hi to the host').setValue('Looking forward to supper!');
@@ -435,8 +434,9 @@ describe('group discovery historical and mutation feedback consistency', () => {
     expect(wrapper.text()).toContain('Your change was saved. The latest group details could not be loaded');
     expect(wrapper.text()).not.toContain('Something went wrong');
     expect(button(wrapper, 'Request sent').element.disabled).toBe(true);
-    expect(button(wrapper, 'Cancel request').exists()).toBe(true);
     expect(wrapper.find('textarea').exists()).toBe(false);
+    expect(router.currentRoute.value.path).toBe('/groups/connect');
+    expect(router.currentRoute.value.query.sent).toBe('1');
   });
 
   it('retains an unsuccessful application note and does not claim that a request was sent', async () => {
@@ -456,7 +456,7 @@ describe('group discovery historical and mutation feedback consistency', () => {
       api.groupJoinRequests.mockResolvedValue({ requests: [{ ...pending, groupName: 'Supper crew', applicationNote: 'My saved introduction' }] });
       throw new TypeError('response lost after server commit');
     });
-    const { wrapper } = await mountExplorer({ path: '/groups?concertId=concert-1' });
+    const { wrapper, router } = await mountExplorer({ path: '/groups?concertId=concert-1' });
     await button(wrapper, 'See all').trigger('click'); await button(wrapper, 'Ask to join').trigger('click');
     await field(dialog(wrapper), 'Say hi to the host').setValue('My saved introduction');
     await button(dialog(wrapper), 'Send request').trigger('click'); await flushPromises();
@@ -465,23 +465,10 @@ describe('group discovery historical and mutation feedback consistency', () => {
     expect(api.groupJoinRequests.mock.calls.at(-1)).toEqual([{ scope: 'own', concertId: 'concert-1' }]);
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
     expect(wrapper.text()).toContain('My saved introduction');
-    expect(button(wrapper, 'Cancel request').exists()).toBe(true);
+    expect(router.currentRoute.value.path).toBe('/groups/connect');
     expect(button(wrapper, 'Request sent').element.disabled).toBe(true);
     expect(wrapper.text()).not.toContain('Something went wrong');
     expect(api.findGroupMatch).not.toHaveBeenCalled(); expect(api.setJoiningMode).not.toHaveBeenCalled();
-  });
-
-  it('immediately retires a withdrawn request when the successful write is followed by a failed refresh', async () => {
-    api.groupJoinRequests.mockResolvedValue({ requests: [pending] }); api.withdrawGroupJoin.mockResolvedValue({});
-    const { wrapper } = await mountExplorer({ path: '/groups?concertId=concert-1' });
-    api.discoverGroups.mockRejectedValueOnce(new Error('read interrupted'));
-    api.groupJoinRequests.mockRejectedValueOnce(new Error('request history read interrupted'));
-    await button(wrapper, 'Cancel request').trigger('click'); await flushPromises();
-    expect(api.withdrawGroupJoin).toHaveBeenCalledExactlyOnceWith('request-1');
-    expect(wrapper.text()).toContain('Request cancelled.');
-    expect(wrapper.text()).toContain('Your change was saved.');
-    expect(wrapper.text()).toContain('You cancelled this');
-    expect(wrapper.findAll('button').some(item => item.text() === 'Cancel request')).toBe(false);
   });
 
   it('uses server attempt history after refresh without starting another matching round', async () => {

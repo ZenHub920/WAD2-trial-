@@ -3,7 +3,7 @@ import { flushPromises } from '@vue/test-utils';
 import { nextTick } from 'vue';
 
 vi.mock('../../../client/src/api.js', async () => ({ notificationRevision: (await import('vue')).ref(0), api: {
-  kakiUnread: vi.fn(), groupChannelsUnread: vi.fn(), connectionChannelsUnread: vi.fn(),
+  kakiUnread: vi.fn(), groupChannelsUnread: vi.fn(),
 } }));
 
 /** Minimal EventSource stand-in that lets a test emit server events. */
@@ -23,7 +23,6 @@ beforeEach(async () => {
   ({ api } = await import('../../../client/src/api.js'));
   api.kakiUnread.mockResolvedValue({ total: 2 });
   api.groupChannelsUnread.mockResolvedValue({ total: 1 });
-  api.connectionChannelsUnread.mockResolvedValue({ total: 0 });
   auth = await import('../../../client/src/auth.js');
   live = await import('../../../client/src/chatLive.js');
 });

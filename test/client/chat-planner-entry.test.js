@@ -3,7 +3,6 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import KakiChatView from '../../client/src/views/KakiChatView.vue';
 import GroupChannelView from '../../client/src/views/GroupChannelView.vue';
-import ConnectionChannelView from '../../client/src/views/ConnectionChannelView.vue';
 import { api } from '../../client/src/api.js';
 import { currentUser } from '../../client/src/auth.js';
 import { invalidateMeetupSummaries } from '../../client/src/composables/useMeetupSummaries.js';
@@ -23,7 +22,7 @@ async function mountPage(view, { props }) {
 vi.mock('../../client/src/api.js', async original => ({ ...await original(), api: {
   kakiConversation: vi.fn(), kakiChatBackgrounds: vi.fn(), markKakiRead: vi.fn(),
   groupChannel: vi.fn(), groupChannelCandidates: vi.fn(),
-  connectionChannel: vi.fn(), readConnectionChannel: vi.fn(), createMeetup: vi.fn(),
+  createMeetup: vi.fn(),
   meetups: vi.fn(), meetupContext: vi.fn(),
 } }));
 vi.mock('../../client/src/auth.js', async () => {
@@ -46,14 +45,11 @@ beforeEach(() => {
   api.markKakiRead.mockResolvedValue({});
   api.groupChannel.mockResolvedValue({ channel: { id: 'group-1', isHost: true, concert: { artist: 'Test artist', venue: 'Stadium' }, members: [{ id: 'viewer', displayName: 'Ari' }], messages: [], page: { nextCursor: null } } });
   api.groupChannelCandidates.mockResolvedValue({ candidates: [] });
-  api.connectionChannel.mockResolvedValue({ channel: { id: 'connection-1', name: 'Alpha + Beta', concert: { artist: 'Test artist' }, partyA: { id: 'a', name: 'Alpha' }, partyB: { id: 'b', name: 'Beta' }, members: [{ id: 'viewer', displayName: 'Ari', partyId: 'a' }], messages: [], page: { nextCursor: null }, background: 'default' } });
-  api.readConnectionChannel.mockResolvedValue({});
 });
 
 const rooms = [
   { name: 'pair', view: KakiChatView, id: 'pair-1', key: 'kakiConversationId', label: 'Meetup planner for this pair', text: 'Meet up, just the two of you', method: 'kakiConversation', denied: 403 },
   { name: 'group', view: GroupChannelView, id: 'group-1', key: 'partyId', label: 'Meetup planner for this group', text: 'Bring the group together', method: 'groupChannel', denied: 404 },
-  { name: 'connected groups', view: ConnectionChannelView, id: 'connection-1', key: 'connectionId', label: 'Meetup planner for both connected groups', text: 'One meetup for both groups', method: 'connectionChannel', denied: 404 },
 ];
 
 describe('planner entry in its chat context', () => {

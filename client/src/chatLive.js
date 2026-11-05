@@ -32,7 +32,7 @@ const handlers = new Set();
 
 let source = null;
 let unreadRequest = 0;
-const unreadByKind = { companion: 0, group: 0, connection: 0 };
+const unreadByKind = { companion: 0, group: 0 };
 
 /**
  * Subscribe to chat events. Returns an unsubscribe function.
@@ -57,8 +57,8 @@ export async function refreshUnread() {
     return;
   }
   try {
-    const kinds = ['companion', 'group', 'connection'];
-    const results = await Promise.allSettled([api.kakiUnread(), api.groupChannelsUnread(), api.connectionChannelsUnread()]);
+    const kinds = ['companion', 'group'];
+    const results = await Promise.allSettled([api.kakiUnread(), api.groupChannelsUnread()]);
     if (currentUser.value?.id !== userId || request !== unreadRequest) return;
     results.forEach((result, index) => {
       if (result.status === 'fulfilled' && Number.isFinite(result.value.total)) unreadByKind[kinds[index]] = result.value.total;
@@ -89,15 +89,15 @@ function connect() {
     dispatch('ready', {});
   });
 
-  for (const type of ['message', 'message-updated', 'read', 'group-message', 'group-read', 'group-members', 'connection-message', 'connection-read', 'connection-members', 'meetup-updated']) {
+  for (const type of ['message', 'message-updated', 'read', 'group-message', 'group-read', 'group-members', 'meetup-updated']) {
     stream.addEventListener(type, (event) => {
       if (!current()) return;
       let data;
       try { data = JSON.parse(event.data); } catch { return; }
 
       // Each endpoint applies its own room-membership rules before counting.
-      const ownRead = ['read', 'group-read', 'connection-read'].includes(type) && data.readerId === userId;
-      if (['message', 'group-message', 'group-members', 'connection-message', 'connection-members'].includes(type)
+      const ownRead = ['read', 'group-read'].includes(type) && data.readerId === userId;
+      if (['message', 'group-message', 'group-members'].includes(type)
         || ownRead) refreshUnread();
       if (ownRead) notificationRevision.value++;
       dispatch(type, data);

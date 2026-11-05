@@ -34,23 +34,3 @@ test('group vetoes exclude discovery, direct requests, and automatic feasibility
     assert.equal(repos.recommendations.pairScore(repos.groups.seeker('s', 'c1'), repos.parties.findById('p')).seekerToParty, 0);
   } finally { db.close(); }
 });
-
-test('a later preference change is rechecked when a group invitation is accepted', () => {
-  const db = createTestDb();
-  try {
-    const repos = createRepositories(db);
-    for (const id of ['a', 'b']) repos.users.create(makeUser(id));
-    repos.concerts.create({ id: 'c1', artist: 'Artist', venue: 'Hall', city: 'Singapore', event_date: '2030-01-01' });
-    for (const id of ['a', 'b']) {
-      repos.parties.create(makeParty(`p${id}`, makeUser(id)));
-      repos.membership.configure(id, `p${id}`);
-      repos.membership.savePreferences(id, { about: ['supper'], wants: [], avoid: [] });
-      repos.membership.publish(id, `p${id}`, { connectOpen: true });
-    }
-    const invitation = repos.groups.invite('a', 'pa', 'pb');
-    assert.equal(invitation.status, 'pending');
-    repos.membership.savePreferences('a', { about: ['singalong'], wants: [], avoid: [] });
-    repos.membership.savePreferences('b', { about: [], wants: [], avoid: ['singalong'], dealbreakers: ['singalong'] });
-    assert.equal(repos.groups.respond('b', invitation.id, 'accept').error, 'incompatible_group_preferences');
-  } finally { db.close(); }
-});

@@ -188,8 +188,10 @@ export function createMembershipRepo(db, repos) {
       db.prepare("DELETE FROM membership_conflicts WHERE party_id=?").run(id);
       attach(p, user, "host");
       db.prepare(
-        `INSERT INTO group_settings(party_id,expected_friends) VALUES(?,?)
-        ON CONFLICT(party_id) DO UPDATE SET expected_friends=excluded.expected_friends,published=0,version=version+1`,
+        // Groups are listed as soon as they are set up; there is no draft step.
+        // Changing the size keeps the listing and does not unsettle applicants.
+        `INSERT INTO group_settings(party_id,expected_friends,published) VALUES(?,?,1)
+        ON CONFLICT(party_id) DO UPDATE SET expected_friends=excluded.expected_friends`,
       ).run(id, expected);
       db.prepare(
         "UPDATE group_settings SET stranger_slots=? WHERE party_id=?",
@@ -216,12 +218,14 @@ export function createMembershipRepo(db, repos) {
         throw communityError("group_member_required", 403);
       const members = db
         .prepare(
-          `SELECT m.user_id AS id,u.display_name AS name,m.source,
+          `SELECT m.user_id AS id,u.display_name AS name,u.avatar_path,m.source,
         pref.answers_json IS NOT NULL AS answered FROM group_memberships m JOIN users u ON u.id=m.user_id
         LEFT JOIN group_member_preferences pref ON pref.party_id=m.party_id AND pref.user_id=m.user_id
         WHERE m.party_id=? AND m.status='active' ORDER BY m.joined_at,m.user_id`,
         )
-        .all(id);
+        .all(id)
+        // Members show their profile picture in the roster.
+        .map(({ avatar_path, ...m }) => ({ ...m, avatarUrl: avatar_path ? `/api/avatars/${avatar_path}` : null }));
       const concert = repos.concerts.findById(p.concert_id);
       return {
         partyId: id,
@@ -264,8 +268,8 @@ export function createMembershipRepo(db, repos) {
       )
         throw communityError("members_or_preferences_incomplete");
       db.prepare(
-        "UPDATE group_settings SET published=1,connect_open=? WHERE party_id=?",
-      ).run(input.connectOpen === true ? 1 : 0, id);
+        "UPDATE group_settings SET published=1,connect_open=0 WHERE party_id=?",
+      ).run(id);
       return settings(id);
     }).immediate,
     invite: db.transaction((user, id) => {
@@ -326,9 +330,8 @@ export function createMembershipRepo(db, repos) {
       db.prepare(
         "UPDATE group_friend_invites SET accepted_by=?,accepted_at=datetime('now') WHERE id=?",
       ).run(user, invite.id);
-      db.prepare(
-        "UPDATE group_settings SET published=0,version=version+1 WHERE party_id=?",
-      ).run(p.id);
+      // A friend filling a reserved place keeps the group listed and leaves
+      // pending requests valid: it is not a change applicants must re-confirm.
       return { partyId: p.id };
     }).immediate,
     leave: db.transaction((user, id) => {

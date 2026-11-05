@@ -42,25 +42,6 @@ test('several messages from one person are a single notification', async ({ brow
   } finally { await alice.context.close(); await bob.context.close(); }
 });
 
-test('mark read keeps a non-chat notification as history', async ({ browser, request }) => {
-  const data = await fixture(request);
-  const host = await person(browser, data, 'hostA');
-  const other = await person(browser, data, 'hostB');
-  try {
-    // A group invite notifies the receiving group's host.
-    await api(host.context, '/group-connections', 'POST', { fromPartyId: data.parties.a, toPartyId: data.parties.b });
-    await other.page.goto('/concerts');
-    await expect(bell(other.page)).toHaveAttribute('aria-label', /1 unread/);
-    await bell(other.page).click();
-    const popover = other.page.locator('#notification-popover');
-    await expect(popover.locator('.notification-popover__meta').filter({ hasText: /· Unread$/ })).toBeVisible();
-    await popover.getByRole('button', { name: 'Mark read' }).click();
-    await expect(popover.getByRole('button', { name: 'Mark read' })).toHaveCount(0);
-    await expect(popover.getByText(/· Read/)).toBeVisible();
-    await expect(bell(other.page)).toHaveAttribute('aria-label', 'Notifications');
-  } finally { await host.context.close(); await other.context.close(); }
-});
-
 test('turning off chat notifications in the profile stops new ones', async ({ browser, request }) => {
   const data = await fixture(request);
   const alice = await person(browser, data, 'hostA');

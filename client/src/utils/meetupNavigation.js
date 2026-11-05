@@ -1,4 +1,4 @@
-const scopeKeys = ['partyId', 'connectionId', 'kakiConversationId'];
+const scopeKeys = ['partyId', 'kakiConversationId'];
 
 // Scope IDs remain opaque. Vue Router encodes them; membership and organizer
 // permissions are still checked by the API at the destination.
@@ -23,7 +23,6 @@ export function meetupRouteForScope(scope, { from } = {}) {
 export function meetupScopeOf(plan = {}) {
   return normalizeMeetupScope(plan.scope ?? {
     partyId: plan.partyId ?? plan.party_id,
-    connectionId: plan.connectionId ?? plan.connection_id,
     kakiConversationId: plan.kakiConversationId ?? plan.kaki_conversation_id,
   });
 }
@@ -31,7 +30,6 @@ export function meetupScopeOf(plan = {}) {
 export function meetupConversationRoute(scope) {
   const normalized = normalizeMeetupScope(scope);
   if (normalized.partyId) return `/groups/${encodeURIComponent(normalized.partyId)}/channel`;
-  if (normalized.connectionId) return `/groups/connections/${encodeURIComponent(normalized.connectionId)}/channel`;
   if (normalized.kakiConversationId) return `/kaki/chat/${encodeURIComponent(normalized.kakiConversationId)}`;
   return '/meetups';
 }

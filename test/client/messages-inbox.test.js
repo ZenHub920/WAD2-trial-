@@ -14,7 +14,7 @@ vi.mock('../../client/src/auth.js', async () => {
 });
 vi.mock('../../client/src/api.js', async (original) => ({ ...await original(), api: {
   kakiConversations: vi.fn(), kakiMatches: vi.fn(), conversations: vi.fn(),
-  groupChannels: vi.fn(), connectionChannels: vi.fn(), blockedUsers: vi.fn(),
+  groupChannels: vi.fn(), blockedUsers: vi.fn(),
 } }));
 
 const companion = {
@@ -37,7 +37,6 @@ beforeEach(() => {
   api.kakiMatches.mockResolvedValue({ matches: [] });
   api.conversations.mockResolvedValue({ conversations: [ticket] });
   api.groupChannels.mockResolvedValue({ channels: [channel] });
-  api.connectionChannels.mockResolvedValue({ channels: [] });
   api.blockedUsers.mockResolvedValue({ blocked: [] });
 });
 

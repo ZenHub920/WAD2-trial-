@@ -133,9 +133,7 @@ test("host and friend supply preferences, publish together and keep friend place
     );
   assert.equal(
     (
-      await api(`/groups/${party}/publish`, "host", "POST", {
-        connectOpen: true,
-      })
+      await api(`/groups/${party}/publish`, "host", "POST", {})
     ).status,
     200,
   );

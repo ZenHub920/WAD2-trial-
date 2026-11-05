@@ -37,13 +37,13 @@ test('groups: past concert guard, draft creation, invitation, publication and or
     const concertSelect = host.page.getByLabel(/^Concert/);
     await expect(concertSelect).toBeVisible();
     await expect(concertSelect.locator(`option[value="${past.id}"]`)).toHaveCount(0);
-    await expect(host.page.getByRole('button', { name: 'Create draft group', exact: true })).toBeDisabled();
+    await expect(host.page.getByRole('button', { name: 'Create group', exact: true })).toBeDisabled();
     await capture(host.page, 'past-concert-blocked');
     const rejected = await host.context.request.post(`${origin}/api/concerts/${past.id}/parties`, { headers: { Origin: origin }, data: { name: 'Bypass attempt', capacity: 2, section: 'standing_pen', spend_band: 2, arrival_plan: 'doors', plans: {} } });
     expect(rejected.status()).toBe(409); expect(await rejected.json()).toEqual({ error: 'concert_no_longer_upcoming' });
     await concertSelect.selectOption(future.id);
     await host.page.getByLabel(/^Group name/).fill(groupName);
-    await host.page.getByRole('button', { name: 'Create draft group', exact: true }).click();
+    await host.page.getByRole('button', { name: 'Create group', exact: true }).click();
     await expect(host.page).toHaveURL(/\/groups\/[^/]+\/members$/);
     const groupId = new URL(host.page.url()).pathname.split('/')[2];
     await host.page.getByRole('spinbutton', { name: "Friends you'll invite", exact: true }).fill('1');
@@ -56,8 +56,8 @@ test('groups: past concert guard, draft creation, invitation, publication and or
     await friend.page.getByRole('button', { name: 'Accept invitation', exact: true }).click();
     await expect(friend.page.getByRole('heading', { name: 'Members (2)', exact: true })).toBeVisible();
     await host.page.reload();
-    await host.page.getByRole('button', { name: 'Publish group', exact: true }).click();
-    await expect(host.page.getByText('Group published.', { exact: true })).toBeVisible();
+    // Groups are listed as soon as they are set up, and stay listed when a friend joins.
+    await expect(host.page.getByRole('button', { name: 'Publish group', exact: true })).toHaveCount(0);
     expect((await api(host.context, `/groups/${groupId}/membership`)).group.settings.published).toBe(1);
 
     await host.page.goto('/groups/connect');
@@ -100,18 +100,15 @@ test('groups: past concert guard, draft creation, invitation, publication and or
   } finally { await host.context.close(); await friend.context.close(); }
 });
 
-for (const scope of ['hosted', 'connected', 'kaki']) test(`${scope} planning: explicit submission, approval integrity, visible recovery, preserved contributions and fresh confirmation`, async ({ browser, request }) => {
+for (const scope of ['hosted', 'kaki']) test(`${scope} planning: explicit submission, approval integrity, visible recovery, preserved contributions and fresh confirmation`, async ({ browser, request }) => {
   const data = await fixture(request);
   const a = await person(browser, data, scope === 'kaki' ? 'seeker' : 'hostA');
-  const b = await person(browser, data, scope === 'connected' ? 'hostB' : scope === 'kaki' ? 'outsider' : 'friendA');
+  const b = await person(browser, data, scope === 'kaki' ? 'outsider' : 'friendA');
   const stranger = await person(browser, data, scope === 'kaki' ? 'hostB' : 'outsider');
   const errors = []; for (const actor of [a,b]) actor.page.on('pageerror', error => errors.push(error.message));
   try {
     let target;
-    if (scope === 'connected') {
-      const { connection } = await api(a.context, '/group-connections', 'POST', { fromPartyId: data.parties.a, toPartyId: data.parties.b });
-      await api(b.context, `/group-connections/${connection.id}/respond`, 'POST', { action: 'accept' }); target = { connectionId: connection.id };
-    } else if (scope === 'kaki') target = { kakiConversationId: await chatPair(data, a, b) };
+    if (scope === 'kaki') target = { kakiConversationId: await chatPair(data, a, b) };
     else target = { partyId: data.parties.a };
     const { meetup } = await api(a.context, '/meetups', 'POST', { ...timing, ...target });
     for (const actor of [a,b]) await api(actor.context, `/meetups/${meetup.id}/availability`, 'PUT', { windows: [{ startsAt: timing.startsAt, endsAt: timing.endsAt, travelMode: 'transit' }] });

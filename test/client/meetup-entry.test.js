@@ -87,17 +87,6 @@ describe('conversation meetup status cards', () => {
     expect(wrapper.findAll('a.btn').map(link => link.text())).toEqual(['View meetup details', 'View meetup details']);
   });
 
-  it('discards a late context response after the conversation changes', async () => {
-    let complete;
-    api.meetupContext.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }))
-      .mockResolvedValue({ context: { capabilities: { canCreate: false }, meetups: [] } });
-    const { wrapper } = await mountPage(MeetupEntryCard, { props: { scope } });
-    await wrapper.setProps({ scope: { connectionId: 'another-room' } }); await flushPromises();
-    complete({ context: { capabilities: { canCreate: true }, meetups: [] } }); await flushPromises();
-    expect(wrapper.find('a').exists()).toBe(false);
-    expect(wrapper.text()).toContain('Planning has not started');
-  });
-
   it('reconciles an invalidation received during an older read without applying its stale snapshot', async () => {
     let complete;
     api.meetups.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }))

@@ -178,44 +178,6 @@ export function createRecommendationRepo(db, repos) {
       else if (!groups.length) state = repos.groups.hasVisibleGroups(user, concert) ? 'groups_unavailable' : 'no_eligible_groups';
       return { groups, discovery: { state, eligibleCount: groups.length } };
     },
-    groups(user, concert, source) {
-      const candidates = repos.groups.connectionCandidates(
-        user,
-        concert,
-        source,
-      );
-      if (candidates.error)
-        throw communityError(candidates.error, candidates.status);
-      const from = repos.parties.findById(source);
-      const sourceProfile = repos.membership.profile(source);
-      return candidates
-        .map((c) => {
-          const result = compareProfiles(
-            sourceProfile,
-            repos.membership.profile(c.id),
-          );
-          const target = repos.parties.findById(c.id);
-          const logistics =
-            [
-              from.section === target.section,
-              from.arrival_plan === target.arrival_plan,
-              from.spend_band === target.spend_band,
-            ].filter(Boolean).length / 3;
-          return {
-            ...c,
-            compatibility:
-              Math.round((0.7 * result.score + 0.3 * logistics) * 10000) /
-              10000,
-            reasons: result.reasons,
-            confidence: result.confidence,
-            profile: groupPreferenceSummary(repos.membership.profile(c.id)),
-          };
-        })
-        .sort(
-          (a, b) =>
-            b.compatibility - a.compatibility || a.id.localeCompare(b.id),
-        );
-    },
     setJoiningMode: db.transaction((user, concert, mode) => {
       if (!["direct", "algorithm"].includes(mode)) throw communityError("invalid_joining_mode", 400);
       if (!repos.concerts.findById(concert)) throw communityError("concert_not_found", 404);
@@ -354,6 +316,7 @@ export function createRecommendationRepo(db, repos) {
             seeker: {
               id: seeker.id,
               displayName: seeker.display_name,
+              avatarUrl: seeker.avatar_path ? `/api/avatars/${seeker.avatar_path}` : null,
               ageBand: seeker.age_band,
               languages: seeker.languages,
               vibe: seeker.vibe,

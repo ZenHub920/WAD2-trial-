@@ -452,7 +452,7 @@ export function useMeetupBoard(props) {
   }
   onMounted(() => {
     stopEvents = onChatEvent((type, data) => {
-      if (type === 'ready' || ['group-members', 'connection-members'].includes(type)
+      if (type === 'ready' || type === 'group-members'
         || (type === 'meetup-updated' && (!props.id || data.meetupId === props.id))) scheduleRefresh();
     });
     window.addEventListener('focus', scheduleRefresh);

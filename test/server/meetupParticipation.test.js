@@ -148,29 +148,6 @@ test('confirmed plans remain valid for later members and disclose only their own
   assert.equal(repos.meetups.detail('late', id).confirmationContext, null, 'legacy confirmation time remains unknown');
 });
 
-test('connected meetups record their confirmation context only after both explicit host approvals', t => {
-  const { db, repos } = fixture(t);
-  repos.parties.create(makeParty('p2', makeUser('host2'), { capacity: 1 }));
-  repos.membership.configure('host', 'p1', { expectedFriends: 1 });
-  repos.membership.configure('host2', 'p2', { expectedFriends: 0 });
-  for (const [host, party, members] of [['host', 'p1', ['host', 'friend']], ['host2', 'p2', ['host2']]]) {
-    for (const member of members) repos.membership.saveAnswers(member, party, {});
-    repos.membership.publish(host, party, { connectOpen: true });
-  }
-  const connectionId = repos.groups.invite('host', 'p1', 'p2').id;
-  repos.groups.respond('host2', connectionId, 'accept');
-  const { id } = repos.meetups.create('host', { connectionId, title: 'Together', startsAt, endsAt });
-  const placeId = repos.meetups.place('friend', id, place).id;
-  const proposal = repos.meetups.propose('host', id, { placeId, startsAt,
-    version: repos.meetups.access('host', id).version, acknowledgeNoAvailability: true });
-  assert.equal(proposal.confirmed, false);
-  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM meetup_confirmation_context WHERE meetup_id=?').get(id).n, 0);
-  assert.equal(repos.meetups.approve('host', id, proposal.version).confirmed, false);
-  assert.equal(repos.meetups.approve('host2', id, proposal.version).confirmed, true);
-  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM meetup_confirmation_context WHERE meetup_id=?').get(id).n, 1);
-  assert.equal(repos.meetups.detail('friend', id).confirmationContext.confirmedBeforeJoined, false);
-});
-
 test('availability HTTP endpoints enforce response semantics and return no other participant response identities', async t => {
   const { repos, id } = fixture(t), app = express(); app.use(express.json());
   app.use((req, res, next) => { if (req.headers['x-test-user']) req.user = { id: req.headers['x-test-user'] }; next(); });

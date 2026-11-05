@@ -33,7 +33,6 @@ const KakiFinderView = () => import('./views/KakiFinderView.vue');
 const KakiChatListView = () => import('./views/KakiChatListView.vue');
 const KakiChatView = () => import('./views/KakiChatView.vue');
 const GroupChannelView = () => import('./views/GroupChannelView.vue');
-const ConnectionChannelView = () => import('./views/ConnectionChannelView.vue');
 const ProfileHistoryView = () => import('./views/ProfileHistoryView.vue');
 const ProfileView = () => import('./views/ProfileView.vue');
 const PublicProfileView = () => import('./views/PublicProfileView.vue');
@@ -81,7 +80,6 @@ const router = createRouter({
     { path: '/kaki', name: 'kaki', component: KakiFinderView, meta: { title: 'Find a companion', requiresAuth: true } },
     { path: '/groups', name: 'groups', component: GroupExplorerView, meta: { title: 'Groups', requiresAuth: true } },
     { path: '/groups/connect', name: 'group-connections', component: GroupConnectionsView, meta: { title: 'My groups', requiresAuth: true } },
-    { path: '/groups/connections/:id/channel', name: 'connection-channel', component: ConnectionChannelView, props: true, meta: { title: 'Connected groups chat', requiresAuth: true } },
     {
       // The group's shared room. Membership is the host's to grant, so this
       // 404s for anybody they have not added.
@@ -135,7 +133,7 @@ router.beforeEach(guardRoute);
 
 router.afterEach((to) => {
   const title = to.name === 'group-connections'
-    ? ({ create: 'Create a group', connections: 'Connect groups' }[to.query.view] ?? 'My groups')
+    ? (to.query.view === 'create' ? 'Create a group' : 'My groups')
     : to.meta?.title;
   document.title = title && title !== 'Encore' ? `${title} | Encore` : 'Encore';
 });

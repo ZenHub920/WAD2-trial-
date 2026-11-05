@@ -1,7 +1,5 @@
-import { randomUUID } from 'node:crypto';
 import { checkFeasibility, scorePair } from '../matching/compatibility.js';
 import { groupImageUrl } from '../presentation/groupIdentity.js';
-import { preferenceEligibility } from '../services/preferenceEligibility.js';
 import { concertParticipationEligibility } from '../../../shared/concertEligibility.mjs';
 
 const fail = (error, status = 409) => ({ error, status });
@@ -44,54 +42,6 @@ export function createGroupDiscoveryRepo(db, repos) {
       spendBand: party.spend_band, arrivalPlan: party.arrival_plan,
       plans: party.plans, vibe: party.host.vibe, notes: party.notes, status: party.status,
     };
-  };
-  const validConnectionPair = (userId, fromId, toId) => {
-    const from = repos.parties.findById(fromId);
-    const to = repos.parties.findById(toId);
-    if (!from || !to) return fail('group_not_found', 404);
-    if (from.host_user_id !== userId) return fail('group_owner_required', 403);
-    if (from.id === to.id || from.host_user_id === to.host_user_id) return fail('cannot_connect_own_groups', 400);
-    if (from.concert_id !== to.concert_id) return fail('different_concert', 400);
-    const historical = coordinationError(from.concert_id);
-    if (historical) return historical;
-    if ([from, to].some(p => p.status === 'cancelled' || isTicket(p.id))) return fail('group_unavailable');
-    const blocklist = repos.users.blocklist();
-    if (blocked(from.host_user_id, to.host_user_id, blocklist)) return fail('blocked_pair', 403);
-    for(const p of [from,to]) {
-      const settings=repos.membership.settings(p.id);
-      if(!settings||!settings.published||!settings.connect_open)return fail('group_not_open_to_connections');
-    }
-    const members = p => [p.host_user_id, ...db.prepare("SELECT user_id FROM group_memberships WHERE party_id=? AND status='active'").all(p.id).map(r => r.user_id)];
-    const fromMembers = members(from), toMembers = members(to);
-    if (fromMembers.some(a => toMembers.some(b => blocked(a, b, blocklist)))) return fail('blocked_pair', 403);
-    if (!preferenceEligibility(repos.membership.profile(from.id), repos.membership.profile(to.id)).eligible)
-      return fail('incompatible_group_preferences');
-    return { from, to };
-  };
-  const connectionRow = id => db.prepare('SELECT * FROM group_connections WHERE id = ?').get(id);
-  const connectionDetails = (row, userId) => {
-    const a = repos.parties.findById(row.party_a_id);
-    const b = repos.parties.findById(row.party_b_id);
-    const destination = row.initiator_party_id === a.id ? b : a;
-    const initiator = destination === a ? b : a;
-    const incoming = destination.host_user_id === userId;
-    const canDecline = row.status === 'pending' && incoming;
-    const canWithdraw = row.status === 'pending' && !incoming
-      && initiator.host_user_id === userId;
-    const pairAvailable = row.status === 'pending'
-      && !validConnectionPair(destination.host_user_id, destination.id, initiator.id).error;
-    const canAccept = canDecline && pairAvailable;
-    // Reuse the room's read-only authorization check. Neither existing room
-    // state nor the presence of this invitation grants coordination access.
-    const canCoordinate = row.status === 'accepted' && repos.connectionChannels.canAccess(userId, row.id);
-    const unavailableReason = row.status === 'pending' && !pairAvailable
-      ? 'This invitation is no longer available. The connection requirements have changed.'
-      : row.status === 'accepted' && !canCoordinate
-        ? 'Shared coordination is currently unavailable. The current participation or safety settings prevent access.' : null;
-    return { id: row.id, status: row.status, initiatorPartyId: row.initiator_party_id,
-      createdAt: row.created_at, respondedAt: row.responded_at,
-      incoming, canAccept, canDecline, canWithdraw, canCoordinate, unavailableReason,
-      partyA: card(a), partyB: card(b) };
   };
   return {
     seeker,
@@ -201,80 +151,5 @@ export function createGroupDiscoveryRepo(db, repos) {
         AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.source_party_id = p.id) ORDER BY created_at, id`)
         .all(userId).map(r => card(repos.parties.findById(r.id)));
     },
-    connectionCandidates(userId, concertId, fromId) {
-      const from = repos.parties.findById(fromId);
-      if (!from) return fail('group_not_found', 404);
-      if (from.host_user_id !== userId) return fail('group_owner_required', 403);
-      if (from.concert_id !== concertId) return fail('different_concert', 400);
-      if (coordinationError(concertId)) return [];
-      if (from.status === 'cancelled' || isTicket(from.id)) return fail('group_unavailable');
-      const settings = repos.membership.settings(fromId);
-      if (!settings || !settings.published || !settings.connect_open) return [];
-      return db.prepare("SELECT id FROM parties WHERE concert_id = ? AND status <> 'cancelled' AND host_user_id <> ? ORDER BY id")
-        .all(concertId, userId).filter(r => !isTicket(r.id)).map(r => repos.parties.findById(r.id))
-        .filter(p => !validConnectionPair(userId, fromId, p.id).error).map(p => {
-          const [a, b] = [fromId, p.id].sort();
-          const invitation = db.prepare('SELECT id, status FROM group_connections WHERE party_a_id = ? AND party_b_id = ?').get(a, b);
-          const details = invitation ? connectionDetails(connectionRow(invitation.id), userId) : null;
-          // Candidate cards already carry group identity; keep only invitation
-          // context and capabilities rather than duplicating both group cards.
-          const { partyA, partyB, ...summary } = details ?? {};
-          return { ...card(p), invitation: details ? summary : null };
-        });
-    },
-    invite: db.transaction((userId, fromId, toId) => {
-      const pair = validConnectionPair(userId, fromId, toId);
-      if (pair.error) return pair;
-      const [a, b] = [fromId, toId].sort();
-      const id = `gc_${randomUUID()}`;
-      const result = db.prepare(`INSERT INTO group_connections (id, party_a_id, party_b_id, initiator_party_id)
-        VALUES (?, ?, ?, ?) ON CONFLICT (party_a_id, party_b_id) DO NOTHING`).run(id, a, b, fromId);
-      if (!result.changes) return fail('invitation_already_exists');
-      return connectionDetails(connectionRow(id), userId);
-    }).immediate,
-    connections(userId) {
-      return db.prepare(`SELECT gc.* FROM group_connections gc
-        JOIN parties a ON a.id = gc.party_a_id JOIN parties b ON b.id = gc.party_b_id
-        WHERE a.host_user_id = ? OR b.host_user_id = ? ORDER BY gc.created_at DESC, gc.id`)
-        .all(userId, userId).map(r => connectionDetails(r, userId));
-    },
-    /**
-     * Withdraw an invitation you sent.
-     *
-     * `respond` is the receiving host's door and refuses anybody else, so the
-     * sender had no way to take an invitation back. The row is deleted rather
-     * than marked: a withdrawn invitation is not a decision either host should
-     * keep seeing, and deleting frees the (party_a_id, party_b_id) unique pair
-     * so the same two groups can be introduced again later. A DECLINE still
-     * writes its status and stays — that one is a record.
-     */
-    cancel: db.transaction((userId, id) => {
-      const row = connectionRow(id);
-      if (!row) return fail('invitation_not_found', 404);
-      const initiator = repos.parties.findById(row.initiator_party_id);
-      if (!initiator || initiator.host_user_id !== userId) return fail('sending_host_required', 403);
-      if (row.status !== 'pending') return fail('invitation_already_answered');
-      const removed = db.prepare("DELETE FROM group_connections WHERE id = ? AND status = 'pending'").run(id);
-      if (!removed.changes) return fail('invitation_already_answered');
-      return { id, status: 'cancelled' };
-    }).immediate,
-    respond: db.transaction((userId, id, action) => {
-      if (!['accept', 'decline'].includes(action)) return fail('invalid_decision', 400);
-      const row = connectionRow(id);
-      if (!row) return fail('invitation_not_found', 404);
-      const destinationId = row.initiator_party_id === row.party_a_id ? row.party_b_id : row.party_a_id;
-      const destination = repos.parties.findById(destinationId);
-      if (destination.host_user_id !== userId) return fail('receiving_host_required', 403);
-      if (row.status !== 'pending') return fail('invitation_already_answered');
-      // Recheck cancellation and blocks at response time, including stale inboxes.
-      if (action === 'accept') {
-        const pair = validConnectionPair(userId, destinationId, row.initiator_party_id);
-        if (pair.error) return pair;
-      }
-      const changed = db.prepare(`UPDATE group_connections SET status = ?, responded_at = datetime('now')
-        WHERE id = ? AND status = 'pending'`).run(action === 'accept' ? 'accepted' : 'declined', id);
-      if (!changed.changes) return fail('invitation_already_answered');
-      return connectionDetails(connectionRow(id), userId);
-    }).immediate,
   };
 }

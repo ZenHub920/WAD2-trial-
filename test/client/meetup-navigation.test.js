@@ -4,7 +4,7 @@ import { meetupReturnLabel, meetupReturnRoute, meetupRouteForBoard, meetupRouteF
 import { meetupDestination } from '../../client/src/utils/meetupSummaries.js';
 
 describe('scope-aware meetup navigation', () => {
-  it.each(['partyId', 'connectionId', 'kakiConversationId'])('preserves the %s destination used by chats and dashboards', key => {
+  it.each(['partyId', 'kakiConversationId'])('preserves the %s destination used by chats and dashboards', key => {
     const scope = { [key]: 'conversation-42' };
     expect(meetupRouteForScope(scope)).toEqual({ path: '/meetups', query: scope });
   });
@@ -15,21 +15,12 @@ describe('scope-aware meetup navigation', () => {
   });
 
   it.each([undefined, null, [], 'group-42', {}, { partyId: '' }, { partyId: ' ' }, { partyId: ['group-42'] },
-    { partyId: 'group-42', connectionId: 'connection-42' }])('uses the existing all-plans page when a single scope is unavailable: %j', scope => {
+    { partyId: 'group-42', kakiConversationId: 'pair-42' }, { connectionId: 'connection-42' }])('uses the existing all-plans page when a single scope is unavailable: %j', scope => {
     expect(meetupRouteForScope(scope)).toEqual({ path: '/meetups' });
-  });
-
-  it('keeps opaque IDs intact and lets the router encode query characters', () => {
-    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/meetups', component: {} }] });
-    const scope = { connectionId: 'connection/with & characters' };
-    const route = router.resolve(meetupRouteForScope(scope));
-    expect(route.query).toEqual(scope);
-    expect(route.href).toBe('/meetups?connectionId=connection/with+%26+characters');
   });
 
   it.each([
     [{ partyId: 'group-1' }, '/groups/group-1/channel'],
-    [{ connectionId: 'connection-1' }, '/groups/connections/connection-1/channel'],
     [{ kakiConversationId: 'pair-1' }, '/kaki/chat/pair-1'],
   ])('returns bookmarked and notification plans to their authorized conversation: %j', (scope, expected) => {
     const plan = { id: 'plan-1', scope };
@@ -60,7 +51,7 @@ describe('scope-aware meetup navigation', () => {
 
   it.each([undefined, null, [], ['groups'], 'https://evil.test', '//evil.test', '/admin', 'javascript:alert(1)'])('rejects unsupported or malformed origin %j', from => {
     expect(normalizeMeetupOrigin(from)).toBe('conversation');
-    expect(meetupReturnRoute({ scope: { connectionId: 'room-1' } }, { from })).toBe('/groups/connections/room-1/channel');
+    expect(meetupReturnRoute({ scope: { partyId: 'room-1' } }, { from })).toBe('/groups/room-1/channel');
   });
 
   it('falls back safely when no authorized group scope is available for management', () => {

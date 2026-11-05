@@ -89,7 +89,7 @@ harness.post('/__test/fixture', (req, res, next) => {
       db.prepare('UPDATE parties SET name=? WHERE id=?').run(`${name} ${suffix}`, parties[key]);
       repos.membership.configure(users[host], parties[key], { expectedFriends: 1, strangerPlaces: 2 });
       repos.membership.acceptInvite(users[friend], repos.membership.invite(users[host], parties[key]).token);
-      repos.membership.publish(users[host], parties[key], { connectOpen: true });
+      repos.membership.publish(users[host], parties[key]);
     }
     repos.seekers.create(makeSeeker(`e2e_seeker_${suffix}`, makeUser(users.seeker), { concert_id: concertId }));
     repos.recommendations.setJoiningMode(users.seeker, concertId, req.body?.mode ?? 'direct');

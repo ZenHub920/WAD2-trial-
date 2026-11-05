@@ -3,12 +3,10 @@ import { computed } from 'vue';
 import { useRoute } from 'vue-router';
 const route = useRoute();
 const concertQuery = computed(() => typeof route.query.concertId === 'string' ? { concertId: route.query.concertId } : {});
-const active = computed(() => route.path === '/groups' ? 'browse' : route.query.view === 'create' ? 'create' : route.query.view === 'connections' ? 'connections' : 'mine');
+const active = computed(() => route.path === '/groups' ? 'browse' : 'mine');
 const links = computed(() => [
   { id: 'browse', label: 'Find a group', to: { path: '/groups', query: concertQuery.value } },
   { id: 'mine', label: 'My groups', to: { path: '/groups/connect', query: concertQuery.value } },
-  { id: 'connections', label: 'Group connections', to: { path: '/groups/connect', query: { ...concertQuery.value, view: 'connections' } } },
-  { id: 'create', label: 'Create group', to: { path: '/groups/connect', query: { ...concertQuery.value, view: 'create' } } },
 ]);
 </script>
 

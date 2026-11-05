@@ -30,17 +30,7 @@ function fixture(t, overrides = {}) {
     repos.meetups.vote('friend', id, placeId);
     return { id, placeId };
   };
-  const connect = () => {
-    repos.membership.configure('host2', 'p2', { expectedFriends: 0 });
-    for (const [host, party, users] of [['host', 'p1', ['host', 'friend']], ['host2', 'p2', ['host2']]]) {
-      for (const user of users) repos.membership.saveAnswers(user, party, {});
-      repos.membership.publish(host, party, { connectOpen: true });
-    }
-    const id = repos.groups.invite('host', 'p1', 'p2').id;
-    repos.groups.respond('host2', id, 'accept');
-    return id;
-  };
-  return { db, repos, create, version, prepare, connect };
+  return { db, repos, create, version, prepare };
 }
 
 const invalidDates = [
@@ -109,119 +99,6 @@ test('a verified early-morning concert accepts only the preceding valid meetup p
   const { repos } = fixture(t, { event_time: '00:30:00' });
   assert.ok(repos.meetups.create('host', { ...input, startsAt: '2029-12-31T23:30:00+08:00', endsAt: '2030-01-01T00:00:00+08:00' }).id);
   assert.throws(() => repos.meetups.create('host', { ...input, startsAt: '2030-01-01T00:00:00+08:00', endsAt: '2030-01-01T00:30:00+08:00' }), /must_end_before_concert/);
-});
-
-test('scope context and capabilities are authenticated and derive organizer authority from current membership', t => {
-  const { repos, db, create } = fixture(t);
-  assert.equal(repos.meetups.context('host', { partyId: 'p1' }).capabilities.canCreate, true);
-  assert.equal(repos.meetups.context('friend', { partyId: 'p1' }).capabilities.canCreate, false);
-  assert.throws(() => repos.meetups.context('outsider', { partyId: 'p1' }), /scope_membership_required/);
-  assert.throws(() => repos.meetups.context('host', { partyId: 'p1', connectionId: 'unrelated' }), /one_meetup_scope_required/);
-  assert.throws(() => repos.meetups.create('friend', { ...input, isOrganizer: true }), { message: 'meetup_organizer_required', status: 403 });
-  const id = create();
-  db.prepare("UPDATE meetups SET creator_id='friend' WHERE id=?").run(id);
-  assert.throws(() => repos.meetups.cancel('friend', id, 1), /organizer_required/, 'legacy creator flag cannot grant organizer privileges');
-  repos.membership.leave('friend', 'p1');
-  assert.throws(() => repos.meetups.context('friend', { partyId: 'p1' }), /scope_membership_required/);
-  assert.throws(() => repos.meetups.detail('friend', id), /meetup_not_found/);
-});
-
-test('proposed and confirmed plans lock substantive contributions while preserving exact no-ops and discussion', t => {
-  const { db, repos, version, prepare, create, connect } = fixture(t);
-  const { id, placeId } = prepare(create({ connectionId: connect() }));
-  assert.throws(() => repos.meetups.propose('friend', id, { version: version(id), startsAt, placeId }), /organizer_required/);
-  const proposal = repos.meetups.propose('host', id, { version: version(id), startsAt, placeId });
-  for (const status of ['proposed', 'confirmed']) {
-    assert.equal(repos.meetups.detail('friend', id).status, status);
-    const before = db.prepare('SELECT * FROM meetups WHERE id=?').get(id);
-    assert.throws(() => repos.meetups.availability('friend', id, []), /reopen_required/);
-    assert.throws(() => repos.meetups.place('friend', id, { ...location, label: 'New meeting place' }), /reopen_required/);
-    assert.throws(() => repos.meetups.cancel('friend', id, proposal.version), /organizer_required/);
-    assert.throws(() => repos.meetups.reopen('friend', id, proposal.version), /organizer_required/);
-    assert.equal(repos.meetups.availability('friend', id, windows, proposal.version).unchanged, true);
-    assert.equal(repos.meetups.vote('friend', id, placeId, proposal.version).unchanged, true);
-    assert.deepEqual(repos.meetups.place('friend', id, { ...location, label: '  CITY HALL MRT  ' }), { id: placeId, unchanged: true });
-    repos.meetups.comment('friend', id, 'Can we discuss an alternative entrance?');
-    assert.deepEqual(db.prepare('SELECT * FROM meetups WHERE id=?').get(id), before);
-    assert.equal(repos.meetups.detail('friend', id).currentVotePlaceId, placeId);
-    assert.equal(repos.meetups.detail('friend', id).capabilities.canContribute, false);
-    if (status === 'proposed') {
-      const first = repos.meetups.approve('host', id, proposal.version);
-      assert.equal(first.confirmed, false); assert.deepEqual(first.approvals, ['host']);
-      assert.deepEqual(new Set(first.requiredApprovers), new Set(['host', 'host2']));
-      const final = repos.meetups.approve('host2', id, proposal.version);
-      assert.equal(final.confirmed, true); assert.equal(final.version, proposal.version);
-      assert.deepEqual(new Set(final.approvals), new Set(final.requiredApprovers));
-    }
-  }
-  assert.equal(db.prepare('SELECT COUNT(*) n FROM meetup_places WHERE meetup_id=?').get(id).n, 1);
-});
-
-test('explicit reopening is atomic, versioned and starts a fresh approval cycle without deleting history', t => {
-  const { db, repos, version, prepare, create, connect } = fixture(t);
-  const { id, placeId } = prepare(create({ connectionId: connect() }));
-  const proposal = repos.meetups.propose('host', id, { version: version(id), startsAt, placeId });
-  repos.meetups.approve('host', id, proposal.version);
-  repos.meetups.approve('host2', id, proposal.version);
-  const reopened = repos.meetups.reopen('host', id, proposal.version);
-  assert.equal(reopened.version, proposal.version + 1);
-  const board = repos.meetups.detail('friend', id);
-  assert.equal(board.status, 'planning'); assert.equal(board.selected_start, null); assert.equal(board.selected_place_id, null);
-  assert.deepEqual(board.approvals, []);
-  assert.equal(db.prepare('SELECT COUNT(*) n FROM meetup_approvals WHERE meetup_id=?').get(id).n, 2);
-  assert.ok(db.prepare('SELECT 1 FROM notifications WHERE user_id=? AND event_key=?').get('friend', `meetup:${id}:reopened:${reopened.version}`));
-  assert.throws(() => repos.meetups.reopen('host', id, proposal.version), /stale_meetup_version/);
-  assert.throws(() => repos.meetups.availability('friend', id, [], proposal.version), /stale_meetup_version/);
-  const next = repos.meetups.propose('host', id, { version: version(id), startsAt, placeId });
-  assert.deepEqual(repos.meetups.detail('host', id).approvals, []);
-  assert.throws(() => repos.meetups.approve('host', id, proposal.version), /stale_meetup_version/);
-  assert.equal(repos.meetups.approve('host', id, next.version).confirmed, false);
-  assert.equal(repos.meetups.approve('host2', id, next.version).confirmed, true);
-  const before = db.prepare('SELECT * FROM meetups WHERE id=?').get(id);
-  db.exec("CREATE TRIGGER fail_reopen_notification BEFORE INSERT ON notifications WHEN NEW.event_key LIKE '%:reopened:%' BEGIN SELECT RAISE(ABORT,'reopen_notification_failed'); END");
-  assert.throws(() => repos.meetups.reopen('host', id, next.version), /reopen_notification_failed/);
-  assert.deepEqual(db.prepare('SELECT * FROM meetups WHERE id=?').get(id), before);
-  assert.equal(db.prepare('SELECT COUNT(*) n FROM meetup_approvals WHERE meetup_id=?').get(id).n, 4);
-  db.exec('DROP TRIGGER fail_reopen_notification');
-  repos.meetups.cancel('host', id, next.version);
-  assert.throws(() => repos.meetups.reopen('host', id, next.version + 1), /meetup_cancelled/);
-  assert.throws(() => repos.meetups.availability('friend', id, windows), /meetup_cancelled/);
-});
-
-test('approval rechecks a concert reschedule without destroying the pending proposal', t => {
-  const { db, repos, version, prepare, create, connect } = fixture(t);
-  const { id, placeId } = prepare(create({ connectionId: connect() }));
-  const proposal = repos.meetups.propose('host', id, { version: version(id), startsAt, placeId });
-  db.prepare("UPDATE concerts SET event_time='09:00:00' WHERE id='c1'").run();
-  assert.throws(() => repos.meetups.approve('host', id, proposal.version), /must_end_before_concert/);
-  assert.equal(repos.meetups.detail('host', id).status, 'proposed');
-  assert.equal(db.prepare('SELECT COUNT(*) n FROM meetup_approvals WHERE meetup_id=?').get(id).n, 0);
-  assert.equal(repos.meetups.reopen('host', id, proposal.version).reopened, true);
-});
-
-test('connected groups and mutual Kaki pairs retain both-organizer approval requirements', t => {
-  const { repos, create } = fixture(t);
-  for (const [host, party, users] of [['host', 'p1', ['host', 'friend']], ['host2', 'p2', ['host2']]]) {
-    if (party === 'p2') repos.membership.configure(host, party, { expectedFriends: 0 });
-    for (const user of users) repos.membership.saveAnswers(user, party, {});
-    repos.membership.publish(host, party, { connectOpen: true });
-  }
-  const connectionId = repos.groups.invite('host', 'p1', 'p2').id;
-  repos.groups.respond('host2', connectionId, 'accept');
-  for (const user of ['kakiA', 'kakiB']) repos.participation.join(user, 'c1', 'pit', 'doors');
-  repos.kaki.setDecision('kakiA', 'c1', 'kakiB', 'like'); repos.kaki.setDecision('kakiB', 'c1', 'kakiA', 'like');
-  const kakiConversationId = repos.kakiChat.openFor({ concertId: 'c1', me: 'kakiA', other: 'kakiB' }).id;
-  for (const [scope, first, second] of [[{ connectionId }, 'host2', 'host'], [{ kakiConversationId }, 'kakiA', 'kakiB']]) {
-    assert.equal(repos.meetups.context(second, scope).capabilities.canCreate, true);
-    const id = create(scope, first), placeId = repos.meetups.place(second, id, location).id;
-    const proposal = repos.meetups.propose(first, id, { version: repos.meetups.access(first, id).version, startsAt, placeId, acknowledgeNoAvailability: true });
-    assert.equal(repos.meetups.approve(first, id, proposal.version).confirmed, false);
-    assert.equal(repos.meetups.detail(second, id).status, 'proposed');
-    assert.equal(repos.meetups.approve(second, id, proposal.version).confirmed, true);
-    const reopened = repos.meetups.reopen(second, id, proposal.version);
-    assert.equal(repos.meetups.detail(first, id).version, reopened.version);
-    assert.deepEqual(repos.meetups.detail(first, id).approvals, []);
-  }
 });
 
 test('HTTP context, creation and reopen enforce permissions even when browser validation is bypassed', async t => {

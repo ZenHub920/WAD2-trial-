@@ -34,6 +34,7 @@ export function createProposalRepo(db, repos = null) {
       hostName: p.host_name,
       hostUserId: p.host_user_id,
       seekerName: p.seeker_name,
+      seekerAvatarUrl: p.seeker_avatar_path ? `/api/avatars/${p.seeker_avatar_path}` : null,
 
       status: p.status,
       resolutionReason: p.resolution_reason ?? null,
@@ -62,6 +63,7 @@ export function createProposalRepo(db, repos = null) {
       p.host_user_id,
       h.display_name AS host_name,
       su.display_name AS seeker_name,
+      su.avatar_path AS seeker_avatar_path,
       sr.user_id AS seeker_user_id,
       p.concert_id,
       mr.seeker_score,

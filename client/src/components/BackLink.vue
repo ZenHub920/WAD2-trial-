@@ -22,7 +22,6 @@ const previous = typeof window !== 'undefined' ? window.history.state?.back ?? n
 
 const PLACES = [
   [/^\/groups\/connect\?(.*&)?view=create/, 'Create group'],
-  [/^\/groups\/connect\?(.*&)?view=connections/, 'Connect groups'],
   [/^\/groups\/connect/, 'My groups'],
   [/^\/groups\/invite\//, 'invitation'],
   [/^\/groups\/[^/]+\/members/, 'Manage group'],

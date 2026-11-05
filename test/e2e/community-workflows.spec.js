@@ -28,11 +28,6 @@ async function api(context, path, method = 'GET', body) {
   expect(response.ok(), `${path}: ${await response.text()}`).toBeTruthy();
   return response.json();
 }
-async function connect(context, receiver, data) {
-  const { connection } = await api(context, '/group-connections', 'POST', { fromPartyId: data.parties.a, toPartyId: data.parties.b });
-  await api(receiver, `/group-connections/${connection.id}/respond`, 'POST', { action: 'accept' });
-  return connection.id;
-}
 async function plannerSnippet(locator, name) {
   // Hide the fixed global header only during section captures, so it does not
   // overlap the middle of a taller-than-viewport screenshot.
@@ -65,8 +60,8 @@ test('direct search: comparing sends no request; applying waits for host approva
     expect(requests).toHaveLength(1);
     expect(requests[0].seatReserved).toBe(true);
     expect((await api(seeker.context, '/me/current-group-memberships')).groups).toHaveLength(0);
-    await host.page.goto('/groups/connect');
-    await host.page.getByRole('button', { name: 'Approve group place', exact: true }).click();
+    await host.page.goto(`/groups/${data.parties.a}/members#join-requests`);
+    await host.page.locator('#join-requests').getByRole('button', { name: 'Accept', exact: true }).click();
     await seeker.page.reload();
     await expect(seeker.page.getByRole('heading', { name: `Supper crew ${data.suffix}`, exact: true })).toBeVisible();
     expect((await api(seeker.context, '/me/current-group-memberships')).groups[0].partyId).toBe(data.parties.a);
@@ -168,193 +163,6 @@ test('automatic matching: joining the pool then finding a match produces an offe
     expect(memberships).toHaveLength(1);
     expect(memberships[0].partyId).toBe(proposal.partyId);
   } finally { await seeker.context.close(); for (const host of Object.values(hosts)) await host.context.close(); }
-});
-
-test('group connection: invitation acceptance opens one shared room for both groups and their friends', async ({ browser, request }) => {
-  const data = await fixture(request);
-  const a = await person(browser, data, 'hostA'), b = await person(browser, data, 'hostB');
-  const friend = await person(browser, data, 'friendB'), outsider = await person(browser, data, 'outsider');
-  try {
-    await a.page.goto(`/groups/connect?view=connections&groupId=${data.parties.a}&concertId=${data.concertId}`);
-    await a.page.getByRole('button', { name: 'Invite group to connect', exact: true }).click();
-    await b.page.goto('/groups/connect');
-    await b.page.getByRole('button', { name: 'Accept the invitation from hostA', exact: true }).click();
-    const link = b.page.locator('[aria-label="Connection next step"]').getByRole('link', { name: 'Open shared chat', exact: true });
-    await expect(link).toBeVisible();
-    const path = await link.getAttribute('href');
-    await expect(b.page.locator('#group-connections .connection').getByRole('link', { name: 'Open shared chat', exact: true })).toHaveAttribute('href', path);
-    await link.click();
-    await expect(b.page.getByRole('textbox', { name: 'Message both groups' })).toBeVisible();
-    await friend.page.goto(path);
-    await expect(friend.page.getByRole('textbox', { name: 'Message both groups' })).toBeVisible();
-    await outsider.page.goto(path);
-    await expect(outsider.page.getByRole('heading', { name: 'Shared coordination is currently unavailable.', exact: true })).toBeVisible();
-    await expect(outsider.page.getByRole('alert')).toContainText('current participation or safety settings');
-    await expect(outsider.page.getByRole('textbox', { name: 'Message both groups' })).toHaveCount(0);
-  } finally { await Promise.all([a, b, friend, outsider].map(p => p.context.close())); }
-});
-
-test('shared chat: send, cross-user reply, edit and deletion survive reload', async ({ browser, request }) => {
-  const data = await fixture(request);
-  const a = await person(browser, data, 'hostA'), b = await person(browser, data, 'friendB'), hostB = await person(browser, data, 'hostB');
-  try {
-    const id = await connect(a.context, hostB.context, data), path = `/groups/connections/${id}/channel`;
-    await a.page.goto(path);
-    await a.page.getByRole('textbox', { name: 'Message both groups' }).fill('Meet at the north entrance');
-    await a.page.getByRole('button', { name: 'Send', exact: true }).click();
-    await b.page.goto(path);
-    await expect(b.page.getByText('Meet at the north entrance', { exact: true })).toBeVisible();
-    await b.page.getByRole('button', { name: 'Reply', exact: true }).click();
-    await b.page.getByRole('textbox', { name: 'Message both groups' }).fill('See you there');
-    await b.page.getByRole('button', { name: 'Send', exact: true }).click();
-    await b.page.getByRole('button', { name: 'Edit', exact: true }).click();
-    await b.page.getByRole('textbox', { name: 'Message both groups' }).fill('See you at six');
-    await b.page.getByRole('button', { name: 'Save edit', exact: true }).click();
-    await b.page.reload();
-    await expect(b.page.getByText('See you at six', { exact: true })).toBeVisible();
-    await b.page.getByRole('button', { name: 'Delete', exact: true }).click();
-    await b.page.getByRole('button', { name: 'Delete message', exact: true }).click();
-    await a.page.reload();
-    await expect(a.page.getByText('Message deleted', { exact: true })).toBeVisible();
-    await expect(a.page.getByText('See you at six', { exact: true })).toHaveCount(0);
-  } finally { await Promise.all([a, b, hostB].map(p => p.context.close())); }
-});
-
-test('meeting planner: save car availability, choose a time and place, and require both hosts', async ({ browser, request }) => {
-  const data = await fixture(request);
-  const a = await person(browser, data, 'hostA'), b = await person(browser, data, 'hostB');
-  try {
-    const connectionId = await connect(a.context, b.context, data);
-    await a.page.goto(`/meetups?connectionId=${connectionId}`);
-    await a.page.getByLabel('Title', { exact: true }).fill('Before the show');
-    await a.page.getByLabel('Earliest meeting time').fill('2030-01-01T16:00');
-    await a.page.getByLabel('Latest meeting time').fill('2030-01-01T17:00');
-    await a.page.getByRole('button', { name: 'Create planning board', exact: true }).click();
-    await expect(a.page.getByRole('heading', { name: 'Before the show' })).toBeVisible();
-    const availability = a.page.locator('section').filter({ has: a.page.getByRole('heading', { name: 'Select the times you are available', exact: true }) });
-    await availability.locator('[data-availability-start]').first().click();
-    const journey = availability.locator('.meetup-journey');
-    await journey.locator('summary').first().click();
-    await journey.getByRole('combobox').first().selectOption('drive');
-    await journey.locator('.meetup-manual-entry > summary').click();
-    await journey.getByLabel('Location label', { exact: true }).first().fill('City Hall MRT');
-    await journey.getByLabel('Latitude', { exact: true }).first().fill('1.293');
-    await journey.getByLabel('Longitude', { exact: true }).first().fill('103.852');
-    await a.page.getByRole('button', { name: 'Apply to selected times', exact: true }).click();
-    await a.page.getByRole('button', { name: 'Save my times', exact: true }).click();
-    await expect(a.page.getByText('Your availability has been saved.', { exact: true })).toBeVisible();
-    const path = new URL(a.page.url()).pathname;
-    const { meetup: saved } = await api(a.context, path);
-    expect(saved.availability[0]).toMatchObject({ travel_mode: 'drive', latitude: 1.293, longitude: 103.852, starts_at: Date.parse('2030-01-01T08:00:00Z') });
-    await a.page.locator('[data-planner-step="places"]').click();
-    await a.page.getByLabel('Place name', { exact: true }).fill('Stadium sheltered entrance');
-    const placeForm = a.page.locator('form').filter({ has: a.page.getByRole('heading', { name: 'Suggest a meeting place', exact: true }) });
-    await placeForm.locator('.meetup-manual-entry > summary').click();
-    await placeForm.getByLabel('Latitude', { exact: true }).fill('1.3028');
-    await placeForm.getByLabel('Longitude', { exact: true }).fill('103.8743');
-    await a.page.getByRole('button', { name: 'Add place', exact: true }).click();
-    await a.page.locator('[data-planner-step="review"]').click();
-    await expect(a.page.locator('.meetup-ranking-context')).toContainText(/straight-line|insufficient/i);
-    await expect(a.page.locator('.meetup-option')).toHaveCount(1);
-    await expect(a.page.locator('.meetup-option')).toContainText(/distance|journey/i);
-    const { meetup: withPlace } = await api(a.context, path);
-    await a.page.getByRole('button', { name: 'Compare other options', exact: true }).click();
-    const picker = a.page.locator('.meetup-picker');
-    await expect(picker).toBeVisible();
-    await expect(picker.getByRole('combobox', { name: 'Place', exact: true })).toHaveValue(withPlace.places[0].id);
-    await expect(picker.getByRole('combobox', { name: 'Time', exact: true })).toHaveValue(String(saved.availability[0].starts_at));
-    await expect(a.page.getByRole('button', { name: 'Compare travel options', exact: true })).toHaveCount(0);
-    await a.page.getByRole('button', { name: 'Propose this time & place', exact: true }).click();
-    await submitReviewedProposal(a.page);
-    await a.page.locator('[data-planner-step="review"]').click();
-    await a.page.getByRole('button', { name: 'Approve plan', exact: true }).click();
-    await expect(a.page.locator('.meetup-context').getByText('Awaiting required approvals', { exact: true })).toBeVisible();
-    await b.page.goto(path);
-    await b.page.locator('[data-planner-step="review"]').click();
-    await b.page.getByRole('button', { name: 'Approve plan', exact: true }).click();
-    await expect(b.page.locator('.meetup-context').getByText('Meetup confirmed', { exact: true })).toBeVisible();
-    await b.page.reload();
-    await expect(b.page.locator('.meetup-context').getByText('Meetup confirmed', { exact: true })).toBeVisible();
-  } finally { await a.context.close(); await b.context.close(); }
-});
-
-test('notifications: a real chat event appears in the inbox, can be marked read and opens its room', async ({ browser, request }) => {
-  const data = await fixture(request);
-  const a = await person(browser, data, 'hostA'), b = await person(browser, data, 'hostB');
-  try {
-    const id = await connect(a.context, b.context, data);
-    await api(a.context, `/connection-channels/${id}/messages`, 'POST', { body: 'Ready for the concert?' });
-    await b.page.goto('/groups/connect');
-    await b.page.getByRole('button', { name: /^Notifications/ }).click();
-    const panel = b.page.getByRole('region', { name: 'Notifications', exact: true });
-    const message = panel.locator('li').filter({ hasText: /message/i }).first();
-    await expect(message).toBeVisible();
-    await message.getByRole('button', { name: 'Mark read', exact: true }).click();
-    await expect(message).toHaveCount(0);
-    expect((await api(b.context, '/me/notifications')).notifications.filter(n => n.category === 'chat')).toHaveLength(0);
-    await api(a.context, `/connection-channels/${id}/messages`, 'POST', { body: 'Another message after clearing the notification' });
-    await panel.getByRole('button', { name: 'Refresh', exact: true }).click();
-    await expect(message).toBeVisible();
-    await message.getByRole('link').click();
-    await expect(b.page.getByRole('textbox', { name: 'Message both groups' })).toBeVisible();
-    await expect(b.page.getByText('Ready for the concert?', { exact: true })).toBeVisible();
-  } finally { await a.context.close(); await b.context.close(); }
-});
-
-test('availability heatmap: drag paints/erases and updates another member live without losing their draft', async ({ browser, request }) => {
-  const data = await fixture(request);
-  const a = await person(browser, data, 'hostA'), b = await person(browser, data, 'hostB');
-  try {
-    const connectionId = await connect(a.context, b.context, data);
-    const { meetup } = await api(a.context, '/meetups', 'POST', {
-      connectionId, title: 'Live heatmap plan', startsAt: '2030-01-01T08:00:00Z', endsAt: '2030-01-01T09:30:00Z',
-    });
-    const path = `/meetups/${meetup.id}`;
-    // Seed saved contributions before making a new unsaved draft, so a live
-    // refresh can be checked without replacing that person's local edits.
-    await api(b.context, `${path}/availability`, 'PUT', { windows: [{ startsAt: '2030-01-01T09:00:00Z', endsAt: '2030-01-01T09:30:00Z' }] });
-    const { place } = await api(a.context, `${path}/places`, 'POST', { label: 'Shared public entrance', latitude: 1.3, longitude: 103.85, sheltered: true });
-    await api(b.context, `${path}/vote`, 'PUT', { placeId: place.id });
-    await a.page.goto(`/groups/connections/${connectionId}/channel`);
-    await a.page.getByRole('region', { name: 'Meetup planner for both connected groups' }).getByRole('link', { name: 'Review meetup recommendations', exact: true }).click();
-    await expect(a.page).toHaveURL(new RegExp(path));
-    await a.page.locator('[data-planner-step="availability"]').click();
-    await b.page.goto(path);
-    const cells = a.page.locator('[data-availability-start]');
-    await expect(cells).toHaveCount(3);
-    await expect(cells.first()).toHaveAttribute('aria-label', /16:00–16:30/);
-    await cells.first().scrollIntoViewIfNeeded();
-    await cells.last().scrollIntoViewIfNeeded();
-    const first = await cells.first().boundingBox(), last = await cells.last().boundingBox();
-    await a.page.mouse.move(first.x + first.width / 2, first.y + first.height / 2);
-    await a.page.mouse.down();
-    await a.page.mouse.move(last.x + last.width / 2, last.y + last.height / 2, { steps: 8 });
-    await a.page.mouse.up();
-    await expect(a.page.locator('[data-availability-start][aria-pressed="true"]')).toHaveCount(3);
-    await a.page.getByRole('button', { name: 'Save my times', exact: true }).click();
-    const other = b.page.locator('[data-availability-start]');
-    await expect(other.first()).toHaveAttribute('aria-label', /1 of 4 available/);
-    await a.page.locator('.meetup-availability').screenshot({ path: test.info().outputPath('heatmap-desktop.png') });
-    // Keep an unsaved member selection and discussion while the host erases.
-    await other.nth(1).click();
-    await b.page.locator('[data-planner-step="review"]').click();
-    await b.page.getByLabel('Message', { exact: true }).fill('My unsaved discussion');
-    await b.page.locator('[data-planner-step="availability"]').click();
-    await cells.first().click();
-    await a.page.getByRole('button', { name: 'Save my times', exact: true }).click();
-    await expect(other.first()).toHaveAttribute('aria-label', /0 of 4 available/);
-    await expect(other.nth(1)).toHaveAttribute('aria-pressed', 'true');
-    await expect(b.page.locator('#meetup-review').getByLabel('Message', { exact: true })).toHaveValue('My unsaved discussion');
-    await expect(b.page.getByText('Unsaved changes', { exact: true })).toBeVisible();
-    await a.page.reload();
-    await expect(a.page.locator('[data-availability-start][aria-pressed="true"]')).toHaveCount(2);
-    // A phone-sized view retains native keyboard/tap controls and usable cells.
-    await b.page.setViewportSize({ width: 390, height: 844 });
-    await expect(other.first()).toBeVisible();
-    await other.first().focus(); await b.page.keyboard.press('Space');
-    await expect(other.first()).toHaveAttribute('aria-pressed', 'true');
-    await b.page.locator('.availability-grid').screenshot({ path: test.info().outputPath('heatmap-mobile.png') });
-  } finally { await a.context.close(); await b.context.close(); }
 });
 
 test('nearby transport: before-meetup checks use the meeting place and after-concert checks use the venue', async ({ browser, request }) => {

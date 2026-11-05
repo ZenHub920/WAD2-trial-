@@ -54,13 +54,8 @@ function publishGroup(id) {
   if (!p || p.status === 'cancelled' || repos.membership.settings(id)) return;
   repos.membership.configure(p.host_user_id, id, { expectedFriends: 0 });
   repos.membership.saveAnswers(p.host_user_id, id, { about: ['supper'] });
-  repos.membership.publish(p.host_user_id, id, { connectOpen: true });
+  repos.membership.publish(p.host_user_id, id);
 }
-const invite = (who = 'hostA', fromPartyId = 'pA', toPartyId = 'pB') => {
-  publishGroup(fromPartyId);
-  publishGroup(toPartyId);
-  return call('/group-connections', who, 'POST', { fromPartyId, toPartyId });
-};
 const round = () => matching.run('c1', { batchKey: randomUUID() });
 const directJoin = (user, party) => {
   repos.recommendations.setJoiningMode(user, repos.parties.findById(party).concert_id, 'direct');
@@ -96,7 +91,7 @@ test('discovery reports generic unavailable eligibility without disclosing unpub
   repos.parties.setStatus('pB', 'cancelled');
   repos.membership.configure(cookies.hostAId, 'pA', { strangerPlaces: 0 });
   repos.membership.saveAnswers(cookies.hostAId, 'pA', { about: ['supper'] });
-  repos.membership.publish(cookies.hostAId, 'pA', { connectOpen: true });
+  repos.membership.publish(cookies.hostAId, 'pA');
   const full = await call('/groups/discover/c1', 'seeker');
   assert.deepEqual(full.body.discovery, { state: 'groups_unavailable', eligibleCount: 0, filteredCount: 0 });
   db.prepare("UPDATE group_settings SET published=0 WHERE party_id='pA'").run();
@@ -260,92 +255,6 @@ test('expired proposals release capacity, reopen requests and preserve history',
   assert.equal(db.prepare("SELECT COUNT(*) n FROM match_proposals WHERE status = 'expired'").get().n, 1);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM match_results').get().n, 1);
 });
-test('invitations require source ownership, same concert, distinct hosts and available unblocked groups', async () => {
-  assert.equal((await invite(null)).status, 401);
-  assert.equal((await invite('other')).status, 403);
-  assert.equal((await invite('hostA', 'pA', 'pA')).status, 400);
-  assert.throws(()=>repos.parties.create(makeParty('pA2', makeUser(cookies.hostAId))),/already_in_concert_group/);
-  repos.parties.create(makeParty('pC', makeUser(cookies.hostBId), { concert_id: 'c2' }));
-  assert.equal((await invite('hostA', 'pA', 'pC')).status, 400);
-  repos.users.block(cookies.hostBId, cookies.hostAId);
-  assert.equal((await invite()).status, 403);
-  assert.equal((await call('/group-connections/candidates/c1?fromPartyId=pA', 'hostA')).body.groups.length, 0);
-  db.prepare('DELETE FROM blocks').run();
-  repos.parties.setStatus('pB', 'cancelled');
-  assert.equal((await invite()).status, 409);
-});
-test('canonical invitation uniqueness prevents duplicate and reversed invitations', async () => {
-  const concurrent = await Promise.all([invite(), invite('hostB', 'pB', 'pA')]);
-  assert.deepEqual(concurrent.map(r => r.status).sort(), [201, 409]);
-  assert.equal((await invite()).status, 409);
-  assert.equal((await invite('hostB', 'pB', 'pA')).status, 409);
-  assert.equal(db.prepare('SELECT COUNT(*) n FROM group_connections').get().n, 1);
-  assert.throws(() => db.prepare(`INSERT INTO group_connections (id, party_a_id, party_b_id, initiator_party_id)
-    VALUES ('bad', 'pB', 'pA', 'pA')`).run(), /CHECK/);
-});
-test('only receiving hosts respond, accepted connections appear for both and do not change matching or tickets', async () => {
-  round();
-  const state = () => ['parties', 'match_proposals', 'match_results', 'tickets'].map(t => db.prepare(`SELECT * FROM ${t} ORDER BY id`).all());
-  const snapshot = state();
-  const id = (await invite()).body.connection.id;
-  assert.equal((await call(`/group-connections/${id}/respond`, 'hostA', 'POST', { action: 'accept' })).status, 403);
-  assert.equal((await call(`/group-connections/${id}/respond`, 'other', 'POST', { action: 'accept' })).status, 403);
-  assert.equal((await call('/me/group-connections', 'other')).body.connections.length, 0);
-  assert.equal((await call(`/group-connections/${id}/respond`, 'hostB', 'POST', { action: 'accept' })).status, 200);
-  assert.equal((await call(`/group-connections/${id}/respond`, 'hostB', 'POST', { action: 'decline' })).status, 409);
-  for (const host of ['hostA', 'hostB']) assert.equal((await call('/me/group-connections', host)).body.connections[0].status, 'accepted');
-  assert.deepEqual(state(), snapshot);
-});
-test('only the sending host may withdraw an invitation, and withdrawing frees the pair', async () => {
-  const id = (await invite()).body.connection.id;
-  // The receiving host answers; they do not withdraw. Nor does a bystander.
-  assert.equal((await call(`/group-connections/${id}`, 'hostB', 'DELETE')).status, 403);
-  assert.equal((await call(`/group-connections/${id}`, 'other', 'DELETE')).status, 403);
-  assert.equal((await call(`/group-connections/${id}`, null, 'DELETE')).status, 401);
-  assert.equal((await call('/me/group-connections', 'hostB')).body.connections.length, 1);
-
-  assert.equal((await call(`/group-connections/${id}`, 'hostA', 'DELETE')).status, 200);
-  // Gone for both sides, not merely hidden from the sender.
-  for (const host of ['hostA', 'hostB']) {
-    assert.equal((await call('/me/group-connections', host)).body.connections.length, 0);
-  }
-  assert.equal(db.prepare('SELECT COUNT(*) n FROM group_connections').get().n, 0);
-
-  // Withdrawn is not a verdict: the same two groups can be introduced again.
-  const second = await invite();
-  assert.equal(second.status, 201);
-  assert.notEqual(second.body.connection.id, id);
-
-  // Twice is a no-op, and an answered invitation is not withdrawable.
-  assert.equal((await call(`/group-connections/${id}`, 'hostA', 'DELETE')).status, 404);
-  const live = second.body.connection.id;
-  assert.equal((await call(`/group-connections/${live}/respond`, 'hostB', 'POST', { action: 'accept' })).status, 200);
-  assert.equal((await call(`/group-connections/${live}`, 'hostA', 'DELETE')).status, 409);
-  assert.equal((await call('/me/group-connections', 'hostA')).body.connections[0].status, 'accepted');
-});
-test('one active hosted group is enforced, history remains, and declined invitations stay final', async () => {
-  assert.throws(()=>repos.parties.create(makeParty('pA2', makeUser(cookies.hostAId))),/already_in_concert_group/);
-  const first = (await invite()).body.connection.id;
-  assert.equal((await call(`/group-connections/${first}/respond`, 'hostB', 'POST', { action: 'decline' })).status, 200);
-  assert.equal((await invite()).status, 409);
-  repos.parties.setStatus('pA','cancelled');
-  repos.parties.create(makeParty('pA2', makeUser(cookies.hostAId)));
-  publishGroup('pA2');
-  assert.equal((await call('/me/hosted-groups', 'hostA')).body.groups.length, 2);
-  const candidates = await call('/group-connections/candidates/c1?fromPartyId=pA2', 'hostA');
-  assert.equal(candidates.body.groups[0].invitation, null);
-  assert.equal((await invite('hostA', 'pA2', 'pB')).status, 201);
-  assert.equal((await call('/group-connections/candidates/c1?fromPartyId=pA', 'other')).status, 403);
-});
-test('acceptance rechecks blocks and cancellation after invitation creation', async () => {
-  const id = (await invite()).body.connection.id;
-  repos.users.block(cookies.hostAId, cookies.hostBId);
-  assert.equal((await call(`/group-connections/${id}/respond`, 'hostB', 'POST', { action: 'accept' })).status, 403);
-  db.prepare('DELETE FROM blocks').run();
-  repos.parties.setStatus('pA', 'cancelled');
-  assert.equal((await call(`/group-connections/${id}/respond`, 'hostB', 'POST', { action: 'accept' })).status, 409);
-  assert.equal((await call(`/group-connections/${id}/respond`, 'hostB', 'POST', { action: 'decline' })).status, 200);
-});
 test('client filters cover text, seating, capacity, spending, arrival, plans, vibe, saved state and ranking', () => {
   const groups = repos.groups.discover(cookies.seekerId, 'c1');
   const a = { ...groups[0], preferred: true, compatibility: 0.7 };
@@ -496,7 +405,7 @@ test('expanding full stranger capacity reopens discovery and cancellation releas
   repos.recommendations.respond(cookies.hostAId, join.id, 'accept');
   assert.equal(repos.parties.findById('pA').status, 'matched');
   repos.membership.configure(cookies.hostAId, 'pA', { strangerPlaces: 2 });
-  repos.membership.publish(cookies.hostAId, 'pA', { connectOpen: true });
+  repos.membership.publish(cookies.hostAId, 'pA');
   assert.equal(repos.parties.findById('pA').status, 'open');
   assert.equal(repos.recommendations.individual(cookies.otherId, 'c1').some(p => p.id === 'pA'), true);
   repos.membership.configure(cookies.hostAId, 'pA', { expectedFriends: 1 });
@@ -519,64 +428,6 @@ test('attendance membership and closed seeker requests exclude ineligible indivi
   assert.deepEqual(repos.recommendations.individual(cookies.seekerId, 'c1'), []);
   repos.groups.reopen(cookies.seekerId, 'c1');
   assert.equal(repos.recommendations.individual(cookies.seekerId, 'c1').some(p => p.id === 'pB'), true);
-});
-
-test('connections require both groups to publish and opt in, including acceptance after opt out', async () => {
-  const post = () => call('/group-connections', 'hostA', 'POST', { fromPartyId: 'pA', toPartyId: 'pB' });
-  assert.equal((await post()).body.error, 'group_not_open_to_connections');
-  assert.equal((await call('/group-connections/candidates/c1?fromPartyId=pA', 'hostA')).body.total, 0);
-  publishGroup('pA');
-  assert.equal((await post()).status, 409);
-  repos.membership.configure(cookies.hostBId, 'pB', {});
-  repos.membership.saveAnswers(cookies.hostBId, 'pB', { about: ['supper'] });
-  repos.membership.publish(cookies.hostBId, 'pB');
-  assert.equal((await post()).status, 409);
-  assert.equal(repos.recommendations.groups(cookies.hostAId, 'c1', 'pA').length, 0);
-  repos.membership.publish(cookies.hostBId, 'pB', { connectOpen: true });
-  const connection = (await post()).body.connection;
-  repos.membership.publish(cookies.hostAId, 'pA', { connectOpen: false });
-  assert.equal((await call(`/group-connections/${connection.id}/respond`, 'hostB', 'POST', { action: 'accept' })).body.error, 'group_not_open_to_connections');
-  assert.equal(repos.groups.connections(cookies.hostAId)[0].status, 'pending');
-});
-
-test('connection actionability reflects both hosts and stale requirements without exposing safety details', async () => {
-  const created = await invite();
-  const id = created.body.connection.id;
-  const sender = repos.groups.connections(cookies.hostAId)[0];
-  assert.equal(sender.canAccept, false); assert.equal(sender.canDecline, false);
-  assert.equal(sender.canWithdraw, true); assert.equal(sender.canCoordinate, false);
-  let receiver = repos.groups.connections(cookies.hostBId)[0];
-  assert.equal(receiver.canAccept, true); assert.equal(receiver.canDecline, true);
-  assert.equal(receiver.canWithdraw, false); assert.equal(receiver.unavailableReason, null);
-  db.prepare('UPDATE group_settings SET connect_open=0 WHERE party_id=?').run('pA');
-  receiver = (await call('/me/group-connections', 'hostB')).body.connections[0];
-  assert.equal(receiver.canAccept, false); assert.equal(receiver.canDecline, true);
-  assert.equal(receiver.unavailableReason, 'This invitation is no longer available. The connection requirements have changed.');
-  assert.equal((await call(`/group-connections/${id}/respond`, 'hostB', 'POST', { action: 'accept' })).status, 409);
-  db.prepare('UPDATE group_settings SET connect_open=1 WHERE party_id=?').run('pA');
-  repos.users.block(cookies.hostAId, cookies.hostBId);
-  const blocked = repos.groups.connections(cookies.hostBId)[0];
-  assert.equal(blocked.canAccept, false);
-  assert.equal(blocked.unavailableReason, receiver.unavailableReason);
-  assert.doesNotMatch(JSON.stringify(blocked), /blocked_pair|blocker|blockedUser/);
-  const denied = await call(`/group-connections/${id}/respond`, 'hostB', 'POST', { action: 'accept' });
-  assert.equal(denied.status, 403); assert.equal(denied.body.error, 'connection_unavailable');
-  assert.equal((await call(`/group-connections/${id}/respond`, 'hostB', 'POST', { action: 'decline' })).status, 200);
-});
-
-test('accepted coordination availability reuses room authorization without altering connection or memberships', async () => {
-  const id = (await invite()).body.connection.id;
-  const accepted = await call(`/group-connections/${id}/respond`, 'hostB', 'POST', { action: 'accept' });
-  assert.equal(accepted.body.connection.canCoordinate, true);
-  assert.equal(accepted.body.connection.canAccept, false);
-  assert.equal(accepted.body.connection.canWithdraw, false);
-  const before = db.prepare('SELECT * FROM group_memberships ORDER BY party_id,user_id').all();
-  repos.users.block(cookies.hostAId, cookies.hostBId);
-  const current = repos.groups.connections(cookies.hostBId)[0];
-  assert.equal(current.status, 'accepted'); assert.equal(current.canCoordinate, false);
-  assert.equal(current.unavailableReason, 'Shared coordination is currently unavailable. The current participation or safety settings prevent access.');
-  assert.deepEqual(db.prepare('SELECT * FROM group_memberships ORDER BY party_id,user_id').all(), before);
-  assert.equal(db.prepare('SELECT COUNT(*) n FROM connection_channel_members').get().n, 0);
 });
 
 test('supported recommendation reasons retain strongest evidence for repeated concepts', () => {

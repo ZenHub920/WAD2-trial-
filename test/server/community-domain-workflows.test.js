@@ -68,15 +68,21 @@ test("one host per concert and one active membership are enforced without removi
     "left",
   );
 });
-test("friend links are single use, expiring and hashed; publication waits for all responses", () => {
+test("friend links are single use, expiring and hashed; groups are listed on setup and stay listed as friends join", () => {
   repos.membership.configure("h1", "p1", { expectedFriends: 1 });
+  // No draft step: setting the group up lists it.
+  assert.equal(repos.membership.settings("p1").published, 1);
   const invite = repos.membership.invite("h1", "p1");
   assert.notEqual(
     db.prepare("SELECT token_hash FROM group_friend_invites").get().token_hash,
     invite.token,
   );
   assert.throws(() => repos.membership.publish("h1", "p1"), /incomplete/);
+  const versionBefore = repos.membership.settings("p1").version;
   repos.membership.acceptInvite("friend", invite.token);
+  // A friend filling a reserved place keeps the listing and pending requests valid.
+  assert.equal(repos.membership.settings("p1").published, 1);
+  assert.equal(repos.membership.settings("p1").version, versionBefore);
   assert.throws(
     () => repos.membership.acceptInvite("outsider", invite.token),
     /used/,
@@ -88,7 +94,7 @@ test("friend links are single use, expiring and hashed; publication waits for al
     avoid: [],
   });
   assert.equal(
-    repos.membership.publish("h1", "p1", { connectOpen: true }).published,
+    repos.membership.publish("h1", "p1").published,
     1,
   );
   const profile = repos.membership.profile("p1");
@@ -147,7 +153,7 @@ test("recommendations use member answers, preserve opposite intent, and publish 
       .individual("seeker", "c1")
       .some((g) => g.id === "p1"),
   );
-  repos.membership.publish("h1", "p1", { connectOpen: true });
+  repos.membership.publish("h1", "p1");
   assert.equal(
     createMatchingService({ db, repos })
       .preview("c1")
@@ -246,27 +252,6 @@ test("notification hooks are persistent, recipient scoped, deduplicated and obey
     recipientIds: ["friend"],
   });
   assert.equal(repos.notifications.unread("friend"), 2, "a second thread gets its own");
-});
-
-test('group notifications identify the exact owned queue, invitation and accepted shared room', () => {
-  const request = directRequest('seeker', 'p1');
-  const hostRequest = repos.notifications.list('h1').find(item => item.title === 'A seeker requested to join your group');
-  assert.equal(hostRequest.path, `/groups/connect?groupId=p1&requestId=${request.id}#join-requests`);
-  repos.recommendations.respond('h1', request.id, 'reject');
-  const response = repos.notifications.list('seeker').find(item => item.title === 'Your group join request was updated');
-  assert.equal(response.path, `/groups?concertId=c1&mode=direct&requestId=${request.id}#group-request-${request.id}`);
-  for (const [host, party] of [['h1', 'p1'], ['h2', 'p2']]) {
-    repos.membership.configure(host, party, { expectedFriends: 0 });
-    repos.membership.saveAnswers(host, party, answers);
-    repos.membership.publish(host, party, { connectOpen: true });
-  }
-  const connection = repos.groups.invite('h1', 'p1', 'p2');
-  const received = repos.notifications.list('h2').find(item => item.title === 'A group invited your group to connect');
-  assert.equal(received.path, `/groups/connect?view=connections&groupId=p2&connectionId=${connection.id}#group-connections`);
-  repos.groups.respond('h2', connection.id, 'accept');
-  const accepted = repos.notifications.list('h1').find(item => item.title === 'Your group invitation was updated');
-  assert.equal(accepted.path, `/groups/connections/${connection.id}/channel`);
-  assert.equal(repos.connectionChannels.canAccess('h1', connection.id), true);
 });
 
 test('matching notifications distinguish host review, seeker review and confirmed membership', () => {
@@ -378,38 +363,6 @@ test("meetup availability and private locations produce real-place recommendatio
   repos.membership.leave("friend", "p1");
   assert.throws(() => repos.meetups.detail("friend", id), /not_found/);
 });
-test("connected groups require both hosts to approve and never expose locations to unrelated users", () => {
-  for (const [host, party] of [["h1", "p1"], ["h2", "p2"]]) {
-    repos.membership.configure(host, party, { expectedFriends: 0 });
-    repos.membership.saveAnswers(host, party, answers);
-    repos.membership.publish(host, party, { connectOpen: true });
-  }
-  const c = repos.groups.invite("h1", "p1", "p2");
-  repos.groups.respond("h2", c.id, "accept");
-  const { id } = createFutureMeetup("h1", {
-    ...windowInput,
-    partyId: undefined,
-    connectionId: c.id,
-  });
-  const place = repos.meetups.place("h1", id, {
-    label: "Cafe",
-    latitude: 1.3,
-    longitude: 103.8,
-  });
-  const m = repos.meetups.detail("h1", id);
-  const p = repos.meetups.propose("h1", id, {
-    version: m.version,
-    placeId: place.id,
-    startsAt: windowInput.startsAt,
-    acknowledgeNoAvailability: true,
-  });
-  assert.equal(p.confirmed, false);
-  assert.throws(() => repos.meetups.approve('friend', id, p.version), /not_found/);
-  assert.equal(repos.meetups.approve("h1", id, p.version).confirmed, false);
-  assert.equal(repos.meetups.approve("h2", id, p.version).confirmed, true);
-  repos.users.block("h1", "h2");
-  assert.throws(() => repos.meetups.detail("h2", id), /not_found/);
-});
 test("weather warns only for the covered time and degrades safely on errors", async () => {
   const now = Date.parse("2030-01-01T10:00:00+08:00");
   let calls = 0;
@@ -518,38 +471,6 @@ test("feedback cannot be manufactured by joining after a concert", () => {
       }),
     /participants_required/,
   );
-});
-test("friends-only groups allow zero stranger places and still connect socially", () => {
-  for (const [host, party] of [
-    ["h1", "p1"],
-    ["h2", "p2"],
-  ]) {
-    repos.membership.configure(host, party, {
-      expectedFriends: 0,
-      strangerPlaces: 0,
-    });
-    repos.membership.saveAnswers(host, party, answers);
-    repos.membership.publish(host, party, { connectOpen: true });
-  }
-  assert.equal(repos.parties.findById("p1").capacity, 0);
-  assert.equal(repos.parties.findById("p1").remaining_capacity, 0);
-  assert.equal(repos.recommendations.individual("seeker", "c1").length, 0);
-  assert.equal(repos.recommendations.groups("h1", "c1", "p1").length, 1);
-  assert.equal(repos.groups.invite("h1", "p1", "p2").status, "pending");
-});
-test("member blocks cannot be bypassed by posting a connection invitation directly", () => {
-  repos.membership.configure("h1", "p1", { expectedFriends: 1 });
-  const invitation = repos.membership.invite("h1", "p1");
-  repos.membership.acceptInvite("friend", invitation.token);
-  for (const u of ["h1", "friend"])
-    repos.membership.saveAnswers(u, "p1", answers);
-  repos.membership.publish("h1", "p1", { connectOpen: true });
-  repos.membership.configure("h2", "p2", { expectedFriends: 0 });
-  repos.membership.saveAnswers("h2", "p2", answers);
-  repos.membership.publish("h2", "p2", { connectOpen: true });
-  repos.users.block("friend", "h2");
-  assert.equal(repos.groups.invite("h1", "p1", "p2").error, "blocked_pair");
-  assert.equal(repos.recommendations.groups("h1", "c1", "p1").length, 0);
 });
 test("all community migrations repeat without discarding preferences, members or feedback", () => {
   repos.membership.configure("h1", "p1", { expectedFriends: 0 });
@@ -665,33 +586,6 @@ test("legacy seven-day meetup boards remain readable and accept every bounded he
   assert.throws(() => repos.meetups.create("h1", {
     ...windowInput, endsAt: new Date(endsAt + SLOT_MS).toISOString(),
   }), /invalid_meetup_window/);
-});
-
-test("departed members stop contributing meetup votes and cancelled connections lose access", () => {
-  repos.membership.configure("h1", "p1", { expectedFriends: 1 });
-  repos.membership.acceptInvite("friend", repos.membership.invite("h1", "p1").token);
-  for (const [host, party, members] of [
-    ["h1", "p1", ["h1", "friend"]], ["h2", "p2", ["h2"]],
-  ]) {
-    if (party === "p2") repos.membership.configure(host, party, { expectedFriends: 0 });
-    for (const user of members) repos.membership.saveAnswers(user, party, answers);
-    repos.membership.publish(host, party, { connectOpen: true });
-  }
-  const connection = repos.groups.invite("h1", "p1", "p2");
-  repos.groups.respond("h2", connection.id, "accept");
-  const { id } = createFutureMeetup("h1", {
-    ...windowInput, partyId: undefined, connectionId: connection.id,
-  });
-  const place = repos.meetups.place("h1", id, {
-    label: "Station", latitude: 1.3, longitude: 103.8,
-  });
-  repos.meetups.vote("friend", id, place.id);
-  assert.equal(repos.meetups.detail("h1", id).places[0].votes, 1);
-  repos.membership.leave("friend", "p1");
-  assert.equal(repos.meetups.detail("h1", id).places[0].votes, 0);
-  assert.throws(() => repos.meetups.detail("friend", id), /not_found/);
-  repos.membership.cancel("h2", "p2");
-  assert.throws(() => repos.meetups.detail("h1", id), /not_found/);
 });
 
 test("unknown meetup travel distances remain unknown and do not beat measured travel", () => {
@@ -826,29 +720,6 @@ test("pending join preference changes notify requester and host atomically and r
   assert.equal(repos.notifications.unread("seeker"), seekerBefore + 2);
 });
 
-test("feedback opens after the Singapore event day and a connection alone is insufficient", (t) => {
-  repos.membership.configure("h1", "p1", { expectedFriends: 1 });
-  repos.membership.acceptInvite("friend", repos.membership.invite("h1", "p1").token);
-  for (const [host, party, members] of [
-    ["h1", "p1", ["h1", "friend"]], ["h2", "p2", ["h2"]],
-  ]) {
-    if (party === "p2") repos.membership.configure(host, party, { expectedFriends: 0 });
-    for (const user of members) repos.membership.saveAnswers(user, party, answers);
-    repos.membership.publish(host, party, { connectOpen: true });
-  }
-  repos.groups.respond("h2", repos.groups.invite("h1", "p1", "p2").id, "accept");
-  // Publish/connect before the event ends; feedback then uses historical rows.
-  db.prepare("UPDATE concerts SET event_date='2020-01-01' WHERE id='c1'").run();
-  db.prepare("UPDATE parties SET created_at='2019-12-01 00:00:00'").run();
-  db.prepare("UPDATE group_memberships SET joined_at='2019-12-01 00:00:00'").run();
-  let now = Date.parse("2020-01-01T15:59:59.999Z");
-  t.mock.method(Date, "now", () => now);
-  const input = { partyId: "p1", ratedUserId: "friend", showedUp: true, rating: 5 };
-  assert.throws(() => repos.feedback.submit("h1", input), /concert_not_finished/);
-  now++;
-  assert.throws(() => repos.feedback.submit("h1", { ...input, ratedUserId: "h2" }), /participants_required/);
-  assert.equal(repos.feedback.submit("h1", input).submitted, true);
-});
 test("explicit departed memberships cannot regain planning or feedback through legacy proposals", () => {
   const round = createMatchingService({ db, repos }).run("c1", { batchKey: "departed-legacy" });
   const proposal = db.prepare("SELECT * FROM match_proposals WHERE round_id=?").get(round.roundId);

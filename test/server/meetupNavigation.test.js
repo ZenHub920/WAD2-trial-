@@ -152,36 +152,6 @@ test('enriched summaries and creation safeguards preserve current membership and
   assert.throws(() => repos.meetups.detail('member', id), /meetup_not_found/);
 });
 
-test('connected hosts see their current approval state and cannot mistake an existing approval for pending work', t => {
-  const { repos } = fixture(t);
-  repos.parties.create(makeParty('p2', makeUser('otherHost'), { capacity: 1, name: 'Encore crew' }));
-  repos.membership.configure('otherHost', 'p2', { expectedFriends: 0 });
-  for (const [party, host, members] of [['p1', 'host', ['host', 'member']], ['p2', 'otherHost', ['otherHost']]]) {
-    for (const user of members) repos.membership.saveAnswers(user, party, {});
-    repos.membership.publish(host, party, { connectOpen: true });
-  }
-  const connectionId = repos.groups.invite('host', 'p1', 'p2').id;
-  repos.groups.respond('otherHost', connectionId, 'accept');
-  const { id } = repos.meetups.create('host', { ...input, partyId: undefined, connectionId });
-  const placeId = repos.meetups.place('member', id, place).id;
-  const proposal = repos.meetups.propose('host', id, { version: repos.meetups.access('host', id).version, placeId, startsAt, acknowledgeNoAvailability: true });
-  repos.meetups.approve('host', id, proposal.version);
-  const summary = repos.meetups.list('host')[0];
-  assert.deepEqual(summary.scope, { connectionId });
-  assert.equal(summary.scopeLabel, 'Purple crew + Encore crew');
-  assert.equal(summary.returnPath, `/groups/connections/${connectionId}/channel`);
-  assert.equal(summary.approvalCount, 1); assert.equal(summary.requiredApprovalCount, 2);
-  assert.equal(summary.hasApproved, true); assert.equal(summary.capabilities.canApprove, false);
-  assert.equal(repos.meetups.detail('host', id).capabilities.canApprove, false);
-  assert.equal(repos.meetups.list('otherHost')[0].capabilities.canApprove, true);
-  assert.equal(repos.meetups.list('member')[0].capabilities.canApprove, false);
-  assert.equal(repos.meetups.approve('host', id, proposal.version).confirmed, false, 'HTTP/API retry remains harmless');
-  repos.meetups.approve('otherHost', id, proposal.version);
-  assert.equal(repos.meetups.list('member')[0].status, 'confirmed');
-  repos.meetups.reopen('host', id, proposal.version);
-  assert.equal(repos.meetups.list('host')[0].hasApproved, false);
-});
-
 test('meetup notifications link to the relevant stage without duplicate retry notifications', t => {
   const { db, repos } = fixture(t), { id } = repos.meetups.create('host', input);
   const note = suffix => db.prepare('SELECT resource_path FROM notifications WHERE event_key=?').get(`meetup:${id}:${suffix}`)?.resource_path;

@@ -47,26 +47,5 @@ export function registerGroupDiscoveryRoutes(router, { repos, requireUser }) {
     send(res, repos.groups.removePreference(req.user.id, req.params.partyId), 'preference'));
   router.get('/me/hosted-groups', requireUser, (req, res) =>
     send(res, repos.groups.hosted(req.user.id), 'groups'));
-  router.get('/group-connections/candidates/:concertId', requireUser, concertExists, (req, res) => {
-    if (typeof req.query.fromPartyId !== 'string' || !req.query.fromPartyId) return res.status(400).json({ error: 'source_group_required' });
-    try{return page(req,res,repos.recommendations.groups(req.user.id,req.params.concertId,req.query.fromPartyId));}
-    catch(e){if(e.status)return res.status(e.status).json({error:e.message});throw e;}
-  });
-  router.get('/me/group-connections', requireUser, (req, res) =>
-    send(res, repos.groups.connections(req.user.id), 'connections'));
-  router.post('/group-connections', requireUser, (req, res) => {
-    const { fromPartyId, toPartyId } = req.body ?? {};
-    if (typeof fromPartyId !== 'string' || typeof toPartyId !== 'string') return res.status(400).json({ error: 'group_ids_required' });
-    return send(res, connectionResult(repos.groups.invite(req.user.id, fromPartyId, toPartyId)), 'connection', 201);
-  });
-  router.post('/group-connections/:id/respond', requireUser, (req, res) =>
-    send(res, connectionResult(repos.groups.respond(req.user.id, req.params.id, req.body?.action)), 'connection'));
-  // Withdrawing is the sender's counterpart to responding, so it gets its own
-  // verb rather than an action the respond route would have to refuse by host.
-  router.delete('/group-connections/:id', requireUser, (req, res) =>
-    send(res, repos.groups.cancel(req.user.id, req.params.id), 'connection'));
 }
 
-// Preserve authorization and status codes without identifying a private block.
-const connectionResult = result => result?.error === 'blocked_pair'
-  ? { error: 'connection_unavailable', status: result.status } : result;

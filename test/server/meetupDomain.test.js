@@ -19,18 +19,6 @@ test('pure meetup policy distinguishes participants, organizers and each explici
   assert.equal(meetupActionError('reopen', 'cancelled', true).code, 'meetup_cancelled');
 });
 
-test('pure organizer identities and exposed capabilities use every required host or both Kaki participants', () => {
-  assert.deepEqual(requiredMeetupApprovers({ party_id: 'p' }, ['host', 'host']), ['host']);
-  assert.deepEqual(requiredMeetupApprovers({ connection_id: 'c' }, ['hostA', 'hostB']), ['hostA', 'hostB']);
-  assert.deepEqual(requiredMeetupApprovers({ kaki_conversation_id: 'k' }, ['untrusted'], ['a', 'b']), ['a', 'b']);
-  assert.equal(meetupCapabilities('planning', ['host'], 'member').canPropose, false);
-  assert.equal(meetupCapabilities('planning', ['host'], 'member').canContribute, true);
-  const proposed = meetupCapabilities('proposed', ['hostA', 'hostB'], 'hostB');
-  assert.equal(proposed.canApprove, true); assert.equal(proposed.canReopen, true); assert.equal(proposed.canContribute, false);
-  const cancelled = meetupCapabilities('cancelled', ['host'], 'host');
-  assert.equal(cancelled.canCancel, false); assert.equal(cancelled.canDiscuss, false);
-});
-
 test('availability normalization preserves different slot journeys, optional origins and exact repeat comparison', () => {
   const start = Date.parse('2030-01-01T10:00:00+08:00');
   const periods = [

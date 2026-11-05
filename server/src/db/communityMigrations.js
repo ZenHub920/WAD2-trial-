@@ -96,6 +96,9 @@ export function migrateCommunity(db) {
       CREATE TRIGGER IF NOT EXISTS party_memberships_cancelled AFTER UPDATE OF status ON parties WHEN NEW.status='cancelled' AND OLD.status<>'cancelled'
       BEGIN UPDATE group_memberships SET status='left',left_at=datetime('now')
         WHERE party_id=NEW.id AND status='active'; END;`);
+    // Groups no longer start as private drafts: list any left unpublished.
+    db.exec(`UPDATE group_settings SET published=1 WHERE published=0
+      AND party_id IN(SELECT id FROM parties WHERE status<>'cancelled')`);
     // Do not silently discard duplicate legacy groups or assign a person twice.
     const add = db.prepare(
       `INSERT OR IGNORE INTO group_memberships(party_id,user_id,concert_id,source) VALUES(?,?,?,?)`,

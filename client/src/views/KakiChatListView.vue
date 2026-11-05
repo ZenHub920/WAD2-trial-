@@ -27,9 +27,7 @@ const blockedLoading = ref(false);
 const openingMatch = ref(null);
 const unblockingId = ref(null);
 
-const channelLink = channel => channel.connectionId
-  ? `/groups/connections/${encodeURIComponent(channel.connectionId)}/channel`
-  : `/groups/${encodeURIComponent(channel.partyId)}/channel`;
+const channelLink = channel => `/groups/${encodeURIComponent(channel.partyId)}/channel`;
 
 // Server times come as ISO strings or SQLite "YYYY-MM-DD HH:MM:SS" (UTC).
 function stamp(value) {
@@ -58,8 +56,7 @@ const threads = computed(() => [
     at: c.lastMessage?.createdAt ?? c.createdAt,
   })),
   ...channels.value.map((channel) => ({
-    key: channel.connectionId ? `connection:${channel.connectionId}` : `group:${channel.partyId}`,
-    kind: channel.connectionId ? 'Connected groups' : 'Group', to: channelLink(channel),
+    key: `group:${channel.partyId}`, kind: 'Group', to: channelLink(channel),
     title: channel.name, initial: (channel.concert.artist || '?').slice(0, 1), unread: channel.unread ?? 0,
     preview: channel.lastMessage?.deleted ? 'Message deleted' : channel.lastMessage?.body ?? 'No messages yet',
     muted: !channel.lastMessage || channel.lastMessage.deleted,
@@ -110,11 +107,10 @@ async function loadChannels({ quiet = false } = {}) {
   const request = ++channelsRequest, userId = currentUser.value?.id;
   if (!quiet) channelsLoading.value = true;
   try {
-    const results = await Promise.allSettled([api.groupChannels(), api.connectionChannels()]);
+    const result = await api.groupChannels();
     if (request !== channelsRequest || currentUser.value?.id !== userId) return;
-    channels.value = results.flatMap(result => result.status === 'fulfilled' ? result.value.channels : []);
-    channels.value.sort((a, b) => String(b.lastMessage?.createdAt ?? '').localeCompare(String(a.lastMessage?.createdAt ?? '')) || a.name.localeCompare(b.name));
-    channelsError.value = results.find(result => result.status === 'rejected')?.reason ?? null;
+    channels.value = result.channels;
+    channelsError.value = null;
   } catch (err) {
     if (request === channelsRequest && currentUser.value?.id === userId) channelsError.value = err;
   } finally {
@@ -181,8 +177,8 @@ function when(iso) {
 let stopListening = null;
 onMounted(() => {
   stopListening = onChatEvent(type => {
-    if (type === 'ready' || !type.startsWith('group-') && !type.startsWith('connection-')) load({ quiet: true });
-    if (type === 'ready' || type.startsWith('group-') || type.startsWith('connection-')) loadChannels({ quiet: true });
+    if (type === 'ready' || !type.startsWith('group-')) load({ quiet: true });
+    if (type === 'ready' || type.startsWith('group-')) loadChannels({ quiet: true });
     refreshUnread();
   });
   load();

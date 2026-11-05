@@ -611,9 +611,9 @@ describe('organizer place/time picker preserves the algorithm and reviewed choic
     expect(document.querySelector('[role="dialog"]')).toBe(null);
     expect(timeSelect(wrapper).element.value).toBe(String(late));
   });
-  it.each(['group', 'connection', 'kaki'])('preserves %s organizer authority and its existing explicit approval semantics', async scope => {
+  it.each(['group', 'kaki'])('preserves %s organizer authority and its existing explicit approval semantics', async scope => {
     const multiple = scope !== 'group';
-    const wrapper = await open(plan({ scope: scope === 'kaki' ? { kakiConversationId: 'pair-1' } : scope === 'connection' ? { connectionId: 'connection-1' } : { partyId: 'group-1' },
+    const wrapper = await open(plan({ scope: scope === 'kaki' ? { kakiConversationId: 'pair-1' } : { partyId: 'group-1' },
       requiredApprovers: multiple ? ['user-1', 'user-2'] : ['user-1'] }));
     await button(wrapper, multiple ? 'Propose this time & place' : 'Confirm this time & place').trigger('click'); await flushPromises();
     const dialog = document.querySelector('[role="dialog"]');

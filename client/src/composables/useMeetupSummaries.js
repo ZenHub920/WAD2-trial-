@@ -77,7 +77,7 @@ export function useMeetupSummaries() {
   onMounted(() => {
     if (consumers++ === 0) {
       stopEvents = onChatEvent(type => {
-        if (['ready', 'meetup-updated', 'group-members', 'connection-members'].includes(type)) refresh();
+        if (['ready', 'meetup-updated', 'group-members'].includes(type)) refresh();
       });
       window.addEventListener('focus', refresh);
     }

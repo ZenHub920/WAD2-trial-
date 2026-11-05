@@ -25,5 +25,5 @@ export const group = (id, name) => ({
   id, name, hostName: `${name} host`, artist: 'Test artist', eventDate: '2030-01-01',
   section: 'ga_standing', remainingCapacity: 1, memberCount: 2, spendBand: 2,
   arrivalPlan: 'mid', compatibility: 0.8, reasons: [{ label: 'Similar concert energy' }],
-  settings: { published: true, connect_open: true }, status: 'open', concertId: 'concert-1',
+  settings: { published: true }, status: 'open', concertId: 'concert-1',
 });

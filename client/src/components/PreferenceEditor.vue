@@ -484,12 +484,26 @@ function save() {
   gap: var(--space-2);
   max-width: 560px;
 }
+/* Matches the other form fields: soft border, rounded, same height as Add. */
 .preference-editor__add-row input {
   flex: 1;
   min-width: 0;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--field-bg);
+  color: var(--text-100);
+  font: inherit;
+}
+.preference-editor__add-row input:focus-visible {
+  outline: 2px solid var(--accent-400);
+  outline-offset: 1px;
 }
 .preference-editor__add-row .btn {
   flex: none;
+  min-height: 44px;
+  border-radius: var(--radius-md);
 }
 .preference-editor__suggestions {
   display: grid;
