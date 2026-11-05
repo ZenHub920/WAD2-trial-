@@ -528,6 +528,10 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
           <RouterLink :to="`/groups/${encodeURIComponent(currentGroup.partyId ?? currentGroup.id)}/members`" class="btn btn--primary">See your group</RouterLink>
           <RouterLink :to="`/groups/${encodeURIComponent(currentGroup.partyId ?? currentGroup.id)}/channel`" class="btn btn--ghost">Group messages</RouterLink>
           <button v-if="canPlanMeetup || meetupPlans.some(plan => plan.scope?.partyId === (currentGroup.partyId ?? currentGroup.id))" type="button" class="btn btn--ghost" @click="router.push(meetupLink({ partyId: currentGroup.partyId ?? currentGroup.id }))">{{ meetupLabel({ partyId: currentGroup.partyId ?? currentGroup.id }) }}</button>
+          <!-- Last in the row: this card already says they are in a group, so
+               looking at the others is one more thing to do from here, not an
+               announcement that needs its own panel. -->
+          <RouterLink :to="{ path: '/groups', query: { ...(concertId ? { concertId } : {}), mode: 'direct' } }" class="btn btn--ghost">View other groups</RouterLink>
         </div>
       </section>
 
@@ -566,17 +570,20 @@ function dateLabel(value) { if (!value) return ''; const date = new Date(typeof 
       </section>
 
       <template v-if="seeker || currentGroup || currentOffer || reads.matching.loaded || reads.request.error">
-      <section class="card group-panel joining-section" aria-labelledby="joining-mode-heading">
-        <!-- Someone already in a group for this show cannot change how they
-             joined it, so the chooser is only a dead end for them. They are
-             shown the one thing still open to them: looking at the others. -->
-        <template v-if="currentGroup">
-          <h2 id="joining-mode-heading">You’re in a group for this show</h2>
-          <div class="group-actions">
-            <RouterLink :to="{ path: '/groups', query: { ...(concertId ? { concertId } : {}), mode: 'direct' } }" class="btn btn--primary">View other groups</RouterLink>
-          </div>
-        </template>
-        <template v-else>
+      <!-- For a member the chooser inside is hidden, and the panels after it
+           are conditional too, so without this the card renders as an empty
+           white box under their group. The heading is conditional as well, so
+           the label has to follow it: a dangling aria-labelledby names nothing. -->
+      <section
+        v-if="!currentGroup || displayedMode === 'algorithm' || activeProposals.length || pendingDirect.length"
+        class="card group-panel joining-section"
+        :aria-labelledby="currentGroup ? undefined : 'joining-mode-heading'"
+        :aria-label="currentGroup ? 'Your matching progress' : undefined"
+      >
+        <!-- Someone already in a group cannot change how they joined it, so
+             the chooser is only a dead end for them. Their way to the other
+             groups sits in the card above, beside the rest of their actions. -->
+        <template v-if="!currentGroup">
         <h2 id="joining-mode-heading">How do you want to find a group?</h2>
         <p class="group-status" role="status">{{ enrollmentSummary }} Viewing a pathway does not change this.</p>
         <div class="joining-modes" role="group" aria-label="Ways to find a group">

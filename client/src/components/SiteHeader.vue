@@ -53,18 +53,58 @@ function syncMenu(event) {
   mobileMenu.value = event.matches;
   if (!event.matches) menuOpen.value = false;
 }
+/**
+ * The bar under the current page, as one element that moves.
+ *
+ * Measured rather than guessed: the links are text, so their widths depend on
+ * the font, the language and the viewport, and nothing but the live box is
+ * right. It is `null` until a measurement succeeds, which is what keeps the
+ * bar from flashing at the far left on first paint, and on the stacked mobile
+ * menu — where a horizontal bar would mean nothing — it stays hidden and the
+ * active link falls back to its own underline.
+ */
+const primaryNav = ref(null);
+const indicator = ref(null);
+
+function measureIndicator() {
+  const list = primaryNav.value;
+  const active = list?.querySelector('a.router-link-active');
+  if (!list || !active || mobileMenu.value) { indicator.value = null; return; }
+  const from = list.getBoundingClientRect();
+  const to = active.getBoundingClientRect();
+  if (!to.width) { indicator.value = null; return; }
+  indicator.value = { left: `${to.left - from.left}px`, width: `${to.width}px` };
+}
+
+const remeasure = () => { void nextTick(measureIndicator); };
+watch(() => route.fullPath, remeasure);
+watch(mobileMenu, remeasure);
+watch(currentUser, remeasure);
+watch(unreadTotal, remeasure);
+
+let navResize;
 onMounted(() => {
+  remeasure();
+  // Fonts land after first paint and change every link's width with them.
+  document.fonts?.ready?.then(remeasure).catch(() => {});
+  if (typeof ResizeObserver === 'function') {
+    navResize = new ResizeObserver(measureIndicator);
+    if (primaryNav.value) navResize.observe(primaryNav.value);
+  }
   menuQuery = window.matchMedia('(max-width: 1100px)');
   syncMenu(menuQuery);
   menuQuery.addEventListener('change', syncMenu);
   window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', measureIndicator);
   window.addEventListener('keydown', onKeydown);
   document.addEventListener('pointerdown', onOutside);
   onScroll();
 });
 onUnmounted(() => {
+  navResize?.disconnect();
   menuQuery?.removeEventListener('change', syncMenu);
   window.removeEventListener('scroll', onScroll);
+  window.removeEventListener('resize', measureIndicator);
   window.removeEventListener('keydown', onKeydown);
   document.removeEventListener('pointerdown', onOutside);
 });
@@ -74,12 +114,13 @@ onUnmounted(() => {
   <header ref="headerRoot" class="header" :class="{ 'header--scrolled': scrolled }">
     <div class="header__inner container container--wide">
       <RouterLink to="/" class="brand" @click="menuOpen = false">
-        <span class="brand__mark" aria-hidden="true"><span v-for="n in 4" :key="n" :style="{ height: `${6 + n * 3}px` }" /></span>
+        <span class="brand__mark" aria-hidden="true"><span v-for="n in 4" :key="n" :style="{ height: `${6 + n * 3}px` }" :data-bar="n" /></span>
         <span>Encore</span>
       </RouterLink>
       <nav id="main-navigation" ref="navigation" class="nav" :class="{ 'nav--open': menuOpen }" :inert="mobileMenu && !menuOpen ? '' : undefined" aria-label="Main navigation" @click="selectDestination">
         <div class="nav__context"><strong>Explore Encore</strong><p>Concerts, companions and your plans</p></div>
-        <div class="nav__primary">
+        <div ref="primaryNav" class="nav__primary">
+          <span v-if="indicator" class="nav__indicator" :style="indicator" aria-hidden="true" />
           <RouterLink to="/concerts">Concerts</RouterLink>
           <RouterLink to="/tickets">Tickets</RouterLink>
           <RouterLink to="/kaki">Find a companion</RouterLink>
@@ -159,6 +200,28 @@ onUnmounted(() => {
   width: 3px;
   background: var(--accent-400);
   border-radius: 2px;
+  /* Each bar scales about its own base, so they rise and fall from the floor
+     rather than floating. Four durations with no common multiple worth
+     waiting for, so the mark never visibly loops. */
+  transform-origin: 50% 100%;
+  animation: brand-pulse 1.1s var(--ease-settle, ease-in-out) infinite alternate;
+}
+.brand__mark span[data-bar='1'] { animation-duration: 1.3s; animation-delay: -0.9s; }
+.brand__mark span[data-bar='2'] { animation-duration: 0.9s; animation-delay: -0.3s; }
+.brand__mark span[data-bar='3'] { animation-duration: 1.5s; animation-delay: -1.1s; }
+.brand__mark span[data-bar='4'] { animation-duration: 1.1s; animation-delay: -0.5s; }
+
+/* Hovering the wordmark drives it harder, so the logo answers the pointer. */
+.brand:hover .brand__mark span { animation-duration: 0.45s; }
+
+@keyframes brand-pulse {
+  from { transform: scaleY(0.45); }
+  to { transform: scaleY(1.25); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand__mark span,
+  .brand:hover .brand__mark span { animation: none; transform: none; }
 }
 .header__utilities {
   order: 2;
@@ -196,10 +259,34 @@ onUnmounted(() => {
 .nav a:hover, .nav a.router-link-active {
   color: var(--accent-400);
 }
+.nav__primary { position: relative; }
 .nav__primary a.router-link-active {
-  box-shadow: inset 0 -2px var(--accent-400);
   background: var(--ink-750);
   color: var(--text-100);
+}
+
+/* One bar for the whole nav, slid into place, so changing page reads as the
+   marker travelling rather than blinking out and in somewhere else. */
+.nav__indicator {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent-400);
+  transition: left var(--dur-base) var(--ease-settle, ease-out), width var(--dur-base) var(--ease-settle, ease-out);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav__indicator { transition: none; }
+}
+
+/* The links stack here, so a single horizontal bar has nothing to point at.
+   The travelling indicator stands down and each link marks itself again. */
+@media (max-width: 1100px) {
+  .nav__indicator { display: none; }
+  .nav__primary a.router-link-active { box-shadow: inset 2px 0 var(--accent-400); }
 }
 .nav__badge {
   padding: 0.1em 0.45em;
