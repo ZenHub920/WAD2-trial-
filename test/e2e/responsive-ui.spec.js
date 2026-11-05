@@ -252,7 +252,7 @@ for (const theme of ['light', 'dark']) test(`responsive visual audit: ${theme} l
           const transition = await save.evaluate(element => getComputedStyle(element).transitionDuration.split(',').map(value => parseFloat(value)));
           expect(Math.max(...transition)).toBeLessThanOrEqual(.02);
           await host.page.getByRole('button', { name: /^Notifications/ }).click();
-          const popover = host.page.getByRole('region', { name: 'Notifications', exact: true });
+          const popover = host.page.getByRole('region', { name: 'Updates', exact: true });
           await expect(popover).toBeVisible();
           await expect(popover).toBeFocused();
           await fitsViewport(host.page, `notifications ${theme} ${width}`);
