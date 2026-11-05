@@ -65,9 +65,8 @@ onMounted(load);
 
 <template>
   <div class="container admin">
-    <header class="admin__head page-banner d-flex flex-wrap align-items-end justify-content-between gap-3">
+    <header class="admin__head page-banner d-flex flex-wrap align-items-center justify-content-between gap-3">
       <div>
-        <p class="admin__eyebrow">Admin</p>
         <h1>Proof of purchase</h1>
         <p>Check that each ticket for sale is real before it gets a Verified badge.</p>
       </div>
@@ -188,15 +187,6 @@ onMounted(load);
 
 .admin__head {
   margin-bottom: var(--space-6);
-}
-
-.admin__eyebrow {
-  margin-bottom: var(--space-1);
-  font-size: var(--step--2);
-  font-weight: 650;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  opacity: 0.8;
 }
 
 .admin__stats {

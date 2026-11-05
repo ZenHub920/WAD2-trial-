@@ -97,6 +97,7 @@ function clearFilters() {
       <header class="market-page__head page-banner">
         <div>
           <h1>Tickets</h1>
+          <p>Buy and sell concert tickets with fellow fans.</p>
         </div>
         <nav class="market-page__tools" aria-label="Ticket tools">
           <RouterLink to="/my-listings" class="btn btn--outline-light">My listings</RouterLink>

@@ -105,7 +105,6 @@ function clearFilters() {
     <div class="container container--wide">
       <header class="concert-market__head page-banner">
         <div>
-          <p class="concert-market__eyebrow mono">Live music · Good company</p>
           <h1>Concerts</h1>
           <p>Discover upcoming concerts, find a group and browse tickets from other fans.</p>
         </div>
@@ -192,13 +191,6 @@ function clearFilters() {
 }
 .concert-market__head > div {
   min-width: 0;
-}
-.concert-market__eyebrow {
-  margin-bottom: var(--space-2);
-  font-size: var(--step--2);
-  font-weight: 700;
-  letter-spacing: .1em;
-  text-transform: uppercase;
 }
 /* The concerts banner shows its stage photo in full colour, darkened on the
    left so the title stays readable. */
